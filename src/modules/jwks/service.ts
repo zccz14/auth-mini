@@ -90,7 +90,11 @@ export async function verifyJwt(
 
   const { payload } = verifyCompactJwt(token, storedKey.publicJwk)
 
-  if (typeof payload.exp === 'number' && payload.exp < getUnixTimeSeconds()) {
+  if (typeof payload.exp !== 'number' || !Number.isFinite(payload.exp)) {
+    throw new Error('JWT exp must be a number')
+  }
+
+  if (payload.exp < getUnixTimeSeconds()) {
     throw new Error('JWT expired')
   }
 

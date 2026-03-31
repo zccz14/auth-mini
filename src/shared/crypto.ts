@@ -117,6 +117,12 @@ export function verifyJwt(
   }
 
   const [encodedHeader, encodedPayload, encodedSignature] = segments
+  const header = JSON.parse(
+    decodeBase64Url(encodedHeader).toString('utf8')
+  ) as Partial<JwtHeader>
+
+  validateJwtHeader(header)
+
   const signingInput = `${encodedHeader}.${encodedPayload}`
   const signature = decodeBase64Url(encodedSignature)
   const verified = verify(
@@ -130,14 +136,27 @@ export function verifyJwt(
     throw new Error('Invalid JWT signature')
   }
 
-  const header = JSON.parse(
-    decodeBase64Url(encodedHeader).toString('utf8')
-  ) as JwtHeader
   const payload = JSON.parse(
     decodeBase64Url(encodedPayload).toString('utf8')
   ) as JwtPayload
 
   return { header, payload }
+}
+
+function validateJwtHeader(
+  header: Partial<JwtHeader>
+): asserts header is JwtHeader {
+  if (header.alg !== 'EdDSA') {
+    throw new Error('JWT header alg must be EdDSA')
+  }
+
+  if (header.typ !== 'JWT') {
+    throw new Error('JWT header typ must be JWT')
+  }
+
+  if (!header.kid) {
+    throw new Error('JWT missing kid')
+  }
 }
 
 function createPrivateJwkKey(privateJwk: PrivateJwk): KeyObject {
