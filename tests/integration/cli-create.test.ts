@@ -1,5 +1,35 @@
+import { spawn } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import { exists } from '../helpers/fs.js'
+
+async function runCommand(command: string, args: string[]) {
+  return new Promise<{ exitCode: number; stdout: string; stderr: string }>(
+    (resolve, reject) => {
+      const child = spawn(command, args, {
+        cwd: process.cwd(),
+        stdio: ['ignore', 'pipe', 'pipe']
+      })
+
+      let stdout = ''
+      let stderr = ''
+
+      child.stdout.on('data', (chunk: Buffer) => {
+        stdout += chunk.toString()
+      })
+      child.stderr.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString()
+      })
+      child.on('error', reject)
+      child.on('close', (code) => {
+        resolve({
+          exitCode: code ?? 1,
+          stdout,
+          stderr
+        })
+      })
+    }
+  )
+}
 
 describe('workspace bootstrap', () => {
   it('exposes the mini-auth bin entry', async () => {
@@ -42,6 +72,22 @@ describe('workspace bootstrap', () => {
       '*.ts': ['prettier --write', 'eslint --fix']
     })
     expect(hook).toContain('npx lint-staged')
+  })
+
+  it('runs the built cli help smoke path', async () => {
+    const { runCli } = await import('../helpers/cli.js')
+
+    const build = await runCommand('npm', ['run', 'build'])
+
+    expect(build.exitCode).toBe(0)
+    expect(await exists('dist/index.js')).toBe(true)
+
+    const result = await runCli(['--help'])
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(result.stdout).toContain('mini-auth')
+    expect(result.stdout).toContain('--help')
   })
 
   it('creates all v1 tables', async () => {
