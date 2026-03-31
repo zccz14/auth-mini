@@ -81,6 +81,9 @@ out
 # Nuxt.js build / generate output
 .nuxt
 dist
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
 
 # Gatsby files
 .cache/
