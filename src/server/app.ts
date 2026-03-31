@@ -16,6 +16,17 @@ import {
   refreshSessionTokens
 } from '../modules/session/service.js'
 import {
+  deleteCredential,
+  DuplicateCredentialError,
+  generateAuthenticationOptions,
+  generateRegistrationOptions,
+  InvalidWebauthnAuthenticationError,
+  InvalidWebauthnRegistrationError,
+  verifyAuthentication,
+  verifyRegistration,
+  WebauthnCredentialNotFoundError
+} from '../modules/webauthn/service.js'
+import {
   getUserById,
   listActiveUserSessions,
   listUserWebauthnCredentials
@@ -23,14 +34,20 @@ import {
 import {
   emailStartSchema,
   emailVerifySchema,
-  refreshSchema
+  refreshSchema,
+  webauthnAuthenticateVerifySchema,
+  webauthnRegisterVerifySchema
 } from '../shared/http-schemas.js'
 import { requireAccessToken, type AuthVariables } from './auth.js'
 import {
+  credentialNotFoundError,
+  duplicateCredentialError,
   HttpError,
   invalidEmailOtpError,
   invalidRefreshTokenError,
   invalidRequestError,
+  invalidWebauthnAuthenticationError,
+  invalidWebauthnRegistrationError,
   smtpNotConfiguredError,
   smtpTemporarilyUnavailableError
 } from './errors.js'
@@ -38,6 +55,8 @@ import {
 type AppVariables = AuthVariables & {
   db: DatabaseClient
   issuer: string
+  origins: string[]
+  rpId: string
   smtpTransport: SmtpTransport
 }
 
@@ -50,6 +69,8 @@ const failingSmtpTransport: SmtpTransport = {
 export function createApp(input: {
   db: DatabaseClient
   issuer: string
+  origins: string[]
+  rpId: string
   smtpTransport?: SmtpTransport
 }) {
   const app = new Hono<{ Variables: AppVariables }>()
@@ -57,6 +78,8 @@ export function createApp(input: {
   app.use(async (c, next) => {
     c.set('db', input.db)
     c.set('issuer', input.issuer)
+    c.set('origins', input.origins)
+    c.set('rpId', input.rpId)
     c.set('smtpTransport', input.smtpTransport ?? failingSmtpTransport)
     await next()
   })
@@ -65,7 +88,7 @@ export function createApp(input: {
     const httpError = toHttpError(error)
     return c.json(
       { error: httpError.code },
-      httpError.status as 400 | 401 | 500 | 503
+      httpError.status as 400 | 401 | 404 | 409 | 500 | 503
     )
   })
 
@@ -130,6 +153,71 @@ export function createApp(input: {
     return c.json({ ok: true })
   })
 
+  app.post('/webauthn/register/options', requireAccessToken, async (c) => {
+    const user = getUserById(c.var.db, c.var.auth.sub)
+
+    if (!user) {
+      throw new HttpError(401, 'invalid_access_token')
+    }
+
+    return c.json(
+      generateRegistrationOptions(c.var.db, {
+        userId: user.id,
+        email: user.email,
+        rpId: c.var.rpId
+      })
+    )
+  })
+
+  app.post('/webauthn/register/verify', requireAccessToken, async (c) => {
+    const body = await parseJson(c.req.raw, webauthnRegisterVerifySchema)
+
+    return c.json(
+      verifyRegistration(c.var.db, {
+        userId: c.var.auth.sub,
+        requestId: body.request_id,
+        credential: body.credential,
+        rpId: c.var.rpId,
+        origins: c.var.origins
+      })
+    )
+  })
+
+  app.post('/webauthn/authenticate/options', async (c) => {
+    return c.json(
+      generateAuthenticationOptions(c.var.db, {
+        rpId: c.var.rpId
+      })
+    )
+  })
+
+  app.post('/webauthn/authenticate/verify', async (c) => {
+    const body = await parseJson(c.req.raw, webauthnAuthenticateVerifySchema)
+    const result = await verifyAuthentication(c.var.db, {
+      requestId: body.request_id,
+      credential: body.credential,
+      rpId: c.var.rpId,
+      origins: c.var.origins,
+      issuer: c.var.issuer
+    })
+
+    return c.json({
+      access_token: result.access_token,
+      token_type: result.token_type,
+      expires_in: result.expires_in,
+      refresh_token: result.refresh_token
+    })
+  })
+
+  app.delete('/webauthn/credentials/:id', requireAccessToken, async (c) => {
+    return c.json(
+      deleteCredential(c.var.db, {
+        credentialId: c.req.param('id'),
+        userId: c.var.auth.sub
+      })
+    )
+  })
+
   app.get('/jwks', async (c) => {
     const keys = await listPublicKeys(c.var.db)
     return c.json({ keys })
@@ -175,6 +263,22 @@ function toHttpError(error: unknown): HttpError {
 
   if (error instanceof InvalidRefreshTokenError) {
     return invalidRefreshTokenError()
+  }
+
+  if (error instanceof InvalidWebauthnRegistrationError) {
+    return invalidWebauthnRegistrationError()
+  }
+
+  if (error instanceof InvalidWebauthnAuthenticationError) {
+    return invalidWebauthnAuthenticationError()
+  }
+
+  if (error instanceof DuplicateCredentialError) {
+    return duplicateCredentialError()
+  }
+
+  if (error instanceof WebauthnCredentialNotFoundError) {
+    return credentialNotFoundError()
   }
 
   return new HttpError(500, 'internal_error')

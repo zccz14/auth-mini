@@ -1,0 +1,445 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createTestApp } from '../helpers/app.js'
+import { extractOtpCode } from '../helpers/mock-smtp.js'
+import { createTestPasskey } from '../helpers/webauthn.js'
+
+const json = (value: unknown) => JSON.stringify(value)
+const origin = 'https://app.example.com'
+
+const openApps: Array<{ close(): void }> = []
+
+afterEach(() => {
+  vi.useRealTimers()
+
+  while (openApps.length > 0) {
+    openApps.pop()?.close()
+  }
+})
+
+describe('webauthn routes', () => {
+  it('register/options requires authenticated user', async () => {
+    const testApp = await createTestApp()
+    openApps.push(testApp)
+
+    const response = await testApp.app.request('/webauthn/register/options', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: json({})
+    })
+
+    expect(response.status).toBe(401)
+    expect(await response.json()).toEqual({ error: 'invalid_access_token' })
+  })
+
+  it('register/verify stores a discoverable credential', async () => {
+    const testApp = await createSignedInApp('register@example.com')
+    openApps.push(testApp)
+    const passkey = createTestPasskey('register@example.com')
+
+    const optionsResponse = await testApp.app.request(
+      '/webauthn/register/options',
+      {
+        method: 'POST',
+        headers: authHeaders(testApp.tokens.access_token)
+      }
+    )
+    const optionsBody = await optionsResponse.json()
+    const credential = passkey.createRegistrationCredential(
+      optionsBody.publicKey,
+      origin
+    )
+
+    const verifyResponse = await testApp.app.request(
+      '/webauthn/register/verify',
+      {
+        method: 'POST',
+        headers: authHeaders(testApp.tokens.access_token),
+        body: json({ request_id: optionsBody.request_id, credential })
+      }
+    )
+
+    const storedCredential = testApp.db
+      .prepare(
+        'SELECT user_id, credential_id, transports, counter FROM webauthn_credentials WHERE user_id = ?'
+      )
+      .get(testApp.userId) as
+      | {
+          user_id: string
+          credential_id: string
+          transports: string
+          counter: number
+        }
+      | undefined
+
+    expect(optionsResponse.status).toBe(200)
+    expect(optionsBody).toMatchObject({
+      request_id: expect.any(String),
+      publicKey: {
+        challenge: expect.any(String),
+        rp: { id: 'example.com', name: 'mini-auth' },
+        user: {
+          id: expect.any(String),
+          name: 'register@example.com',
+          displayName: 'register@example.com'
+        },
+        timeout: 300000,
+        authenticatorSelection: {
+          residentKey: 'required',
+          userVerification: 'preferred'
+        }
+      }
+    })
+    expect(verifyResponse.status).toBe(200)
+    expect(await verifyResponse.json()).toEqual({ ok: true })
+    expect(storedCredential).toEqual({
+      user_id: testApp.userId,
+      credential_id: passkey.credentialId,
+      transports: 'internal',
+      counter: 0
+    })
+  })
+
+  it('authenticate/options returns independent request ids for concurrent requests', async () => {
+    const testApp = await createTestApp()
+    openApps.push(testApp)
+
+    const [firstResponse, secondResponse] = await Promise.all([
+      testApp.app.request('/webauthn/authenticate/options', { method: 'POST' }),
+      testApp.app.request('/webauthn/authenticate/options', { method: 'POST' })
+    ])
+    const firstBody = await firstResponse.json()
+    const secondBody = await secondResponse.json()
+
+    expect(firstResponse.status).toBe(200)
+    expect(secondResponse.status).toBe(200)
+    expect(firstBody.request_id).not.toBe(secondBody.request_id)
+    expect(firstBody.publicKey.challenge).not.toBe(
+      secondBody.publicKey.challenge
+    )
+  })
+
+  it('authenticate/options omits allowCredentials', async () => {
+    const testApp = await createTestApp()
+    openApps.push(testApp)
+
+    const response = await testApp.app.request(
+      '/webauthn/authenticate/options',
+      {
+        method: 'POST'
+      }
+    )
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body).toMatchObject({
+      request_id: expect.any(String),
+      publicKey: {
+        challenge: expect.any(String),
+        rpId: 'example.com',
+        timeout: 300000,
+        userVerification: 'preferred'
+      }
+    })
+    expect(body.publicKey.allowCredentials).toBeUndefined()
+  })
+
+  it('authenticate/verify signs in by credential id', async () => {
+    const testApp = await createSignedInApp('signin@example.com')
+    openApps.push(testApp)
+    const passkey = await registerPasskey(testApp, 'signin@example.com')
+
+    const optionsResponse = await testApp.app.request(
+      '/webauthn/authenticate/options',
+      {
+        method: 'POST'
+      }
+    )
+    const optionsBody = await optionsResponse.json()
+    const credential = passkey.createAuthenticationCredential(
+      optionsBody.publicKey,
+      origin
+    )
+
+    const verifyResponse = await testApp.app.request(
+      '/webauthn/authenticate/verify',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: json({ request_id: optionsBody.request_id, credential })
+      }
+    )
+    const storedCredential = testApp.db
+      .prepare('SELECT counter FROM webauthn_credentials WHERE user_id = ?')
+      .get(testApp.userId) as { counter: number }
+
+    expect(verifyResponse.status).toBe(200)
+    expect(await verifyResponse.json()).toMatchObject({
+      access_token: expect.any(String),
+      token_type: 'Bearer',
+      expires_in: 900,
+      refresh_token: expect.any(String)
+    })
+    expect(storedCredential.counter).toBe(1)
+  })
+
+  it('authenticate/verify rejects replayed or expired challenges', async () => {
+    const testApp = await createSignedInApp('replay@example.com')
+    openApps.push(testApp)
+    const passkey = await registerPasskey(testApp, 'replay@example.com')
+
+    const replayOptions = await getAuthOptions(testApp)
+    const replayCredential = passkey.createAuthenticationCredential(
+      replayOptions.publicKey,
+      origin
+    )
+    const firstResponse = await verifyAuth(
+      testApp,
+      replayOptions.request_id,
+      replayCredential
+    )
+    const secondResponse = await verifyAuth(
+      testApp,
+      replayOptions.request_id,
+      replayCredential
+    )
+
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2030-01-01T00:00:00.000Z'))
+    const expiredOptions = await getAuthOptions(testApp)
+    testApp.db
+      .prepare(
+        'UPDATE webauthn_challenges SET expires_at = ? WHERE request_id = ?'
+      )
+      .run('2029-12-31T00:00:00.000Z', expiredOptions.request_id)
+    const expiredCredential = passkey.createAuthenticationCredential(
+      expiredOptions.publicKey,
+      origin
+    )
+    const expiredResponse = await verifyAuth(
+      testApp,
+      expiredOptions.request_id,
+      expiredCredential
+    )
+
+    expect(firstResponse.status).toBe(200)
+    expect(secondResponse.status).toBe(400)
+    expect(await secondResponse.json()).toEqual({
+      error: 'invalid_webauthn_authentication'
+    })
+    expect(expiredResponse.status).toBe(400)
+    expect(await expiredResponse.json()).toEqual({
+      error: 'invalid_webauthn_authentication'
+    })
+  })
+
+  it('register/verify rejects duplicate credential ids', async () => {
+    const testApp = await createTestApp()
+    openApps.push(testApp)
+    const firstApp = await signInOnExistingApp(
+      testApp,
+      'first-passkey@example.com'
+    )
+    const secondApp = await signInOnExistingApp(
+      testApp,
+      'second-passkey@example.com'
+    )
+    const passkey = createTestPasskey('shared-passkey')
+
+    const firstOptions = await getRegisterOptions(firstApp)
+    const firstCredential = passkey.createRegistrationCredential(
+      firstOptions.publicKey,
+      origin
+    )
+    const firstVerify = await firstApp.app.request(
+      '/webauthn/register/verify',
+      {
+        method: 'POST',
+        headers: authHeaders(firstApp.tokens.access_token),
+        body: json({
+          request_id: firstOptions.request_id,
+          credential: firstCredential
+        })
+      }
+    )
+
+    const secondOptions = await getRegisterOptions(secondApp)
+    const secondCredential = passkey.createRegistrationCredential(
+      secondOptions.publicKey,
+      origin
+    )
+    const secondVerify = await secondApp.app.request(
+      '/webauthn/register/verify',
+      {
+        method: 'POST',
+        headers: authHeaders(secondApp.tokens.access_token),
+        body: json({
+          request_id: secondOptions.request_id,
+          credential: secondCredential
+        })
+      }
+    )
+
+    expect(firstVerify.status).toBe(200)
+    expect(secondVerify.status).toBe(409)
+    expect(await secondVerify.json()).toEqual({ error: 'duplicate_credential' })
+  })
+
+  it('delete credential only succeeds for the owning user', async () => {
+    const ownerApp = await createSignedInApp('owner@example.com')
+    const otherApp = await createSignedInApp('other@example.com')
+    openApps.push(ownerApp, otherApp)
+
+    await registerPasskey(ownerApp, 'owner@example.com')
+    const credential = ownerApp.db
+      .prepare('SELECT id FROM webauthn_credentials WHERE user_id = ?')
+      .get(ownerApp.userId) as { id: string }
+
+    const deniedResponse = await otherApp.app.request(
+      `/webauthn/credentials/${credential.id}`,
+      {
+        method: 'DELETE',
+        headers: {
+          authorization: `Bearer ${otherApp.tokens.access_token}`
+        }
+      }
+    )
+    const allowedResponse = await ownerApp.app.request(
+      `/webauthn/credentials/${credential.id}`,
+      {
+        method: 'DELETE',
+        headers: {
+          authorization: `Bearer ${ownerApp.tokens.access_token}`
+        }
+      }
+    )
+    const deleted = ownerApp.db
+      .prepare('SELECT id FROM webauthn_credentials WHERE id = ?')
+      .get(credential.id)
+
+    expect(deniedResponse.status).toBe(404)
+    expect(allowedResponse.status).toBe(200)
+    expect(await allowedResponse.json()).toEqual({ ok: true })
+    expect(deleted).toBeUndefined()
+  })
+
+  it('webauthn authenticate requests do not invalidate each other', async () => {
+    const testApp = await createSignedInApp('multi-auth@example.com')
+    openApps.push(testApp)
+    const passkey = await registerPasskey(testApp, 'multi-auth@example.com')
+    const firstOptions = await getAuthOptions(testApp)
+    const secondOptions = await getAuthOptions(testApp)
+
+    const firstResponse = await verifyAuth(
+      testApp,
+      firstOptions.request_id,
+      passkey.createAuthenticationCredential(firstOptions.publicKey, origin)
+    )
+    const secondResponse = await verifyAuth(
+      testApp,
+      secondOptions.request_id,
+      passkey.createAuthenticationCredential(secondOptions.publicKey, origin)
+    )
+
+    expect(firstResponse.status).toBe(200)
+    expect(secondResponse.status).toBe(200)
+  })
+})
+
+async function createSignedInApp(email: string) {
+  const testApp = await createTestApp()
+
+  return signInOnExistingApp(testApp, email)
+}
+
+async function signInOnExistingApp(
+  testApp: Awaited<ReturnType<typeof createTestApp>>,
+  email: string
+) {
+  await testApp.app.request('/email/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: json({ email })
+  })
+
+  const latestMail = testApp.mailbox[testApp.mailbox.length - 1]
+  const code = extractOtpCode(latestMail?.text ?? '')
+  const verifyResponse = await testApp.app.request('/email/verify', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: json({ email, code })
+  })
+  const tokens = (await verifyResponse.json()) as {
+    access_token: string
+    refresh_token: string
+  }
+  const user = testApp.db
+    .prepare('SELECT id FROM users WHERE email = ?')
+    .get(email) as { id: string }
+
+  return {
+    ...testApp,
+    tokens,
+    userId: user.id
+  }
+}
+
+function authHeaders(accessToken: string): Record<string, string> {
+  return {
+    authorization: `Bearer ${accessToken}`,
+    'content-type': 'application/json'
+  }
+}
+
+async function getRegisterOptions(
+  testApp: Awaited<ReturnType<typeof createSignedInApp>>
+) {
+  const response = await testApp.app.request('/webauthn/register/options', {
+    method: 'POST',
+    headers: authHeaders(testApp.tokens.access_token)
+  })
+
+  return response.json()
+}
+
+async function getAuthOptions(
+  testApp: Awaited<ReturnType<typeof createSignedInApp>>
+) {
+  const response = await testApp.app.request('/webauthn/authenticate/options', {
+    method: 'POST'
+  })
+
+  return response.json()
+}
+
+async function registerPasskey(
+  testApp: Awaited<ReturnType<typeof createSignedInApp>>,
+  seed: string
+) {
+  const passkey = createTestPasskey(seed)
+  const options = await getRegisterOptions(testApp)
+  const credential = passkey.createRegistrationCredential(
+    options.publicKey,
+    origin
+  )
+  const response = await testApp.app.request('/webauthn/register/verify', {
+    method: 'POST',
+    headers: authHeaders(testApp.tokens.access_token),
+    body: json({ request_id: options.request_id, credential })
+  })
+
+  expect(response.status).toBe(200)
+
+  return passkey
+}
+
+async function verifyAuth(
+  testApp: Awaited<ReturnType<typeof createSignedInApp>>,
+  requestId: string,
+  credential: unknown
+) {
+  return testApp.app.request('/webauthn/authenticate/verify', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: json({ request_id: requestId, credential })
+  })
+}

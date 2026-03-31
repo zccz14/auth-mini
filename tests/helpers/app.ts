@@ -64,6 +64,8 @@ export async function createTestApp(options: CreateTestAppOptions = {}) {
   const app = createApp({
     db,
     issuer: 'https://issuer.example',
+    origins: ['https://app.example.com'],
+    rpId: 'example.com',
     smtpTransport: smtp.transport
   })
 

@@ -57,6 +57,46 @@ describe('session routes', () => {
     expect(rotatedSession?.revoked_at).toBeNull()
   })
 
+  it('refresh rejects revoked session reuse', async () => {
+    const testApp = await createSignedInApp('refresh-reuse@example.com')
+    openApps.push(testApp)
+
+    const firstResponse = await testApp.app.request('/session/refresh', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: json({ refresh_token: testApp.tokens.refresh_token })
+    })
+    const secondResponse = await testApp.app.request('/session/refresh', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: json({ refresh_token: testApp.tokens.refresh_token })
+    })
+
+    expect(firstResponse.status).toBe(200)
+    expect(secondResponse.status).toBe(401)
+    expect(await secondResponse.json()).toEqual({
+      error: 'invalid_refresh_token'
+    })
+  })
+
+  it('refresh rejects expired session', async () => {
+    const testApp = await createSignedInApp('refresh-expired@example.com')
+    openApps.push(testApp)
+
+    testApp.db
+      .prepare('UPDATE sessions SET expires_at = ? WHERE id = ?')
+      .run('2020-01-01T00:00:00.000Z', testApp.sessionId)
+
+    const response = await testApp.app.request('/session/refresh', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: json({ refresh_token: testApp.tokens.refresh_token })
+    })
+
+    expect(response.status).toBe(401)
+    expect(await response.json()).toEqual({ error: 'invalid_refresh_token' })
+  })
+
   it('logout revokes the session referenced by sid', async () => {
     const testApp = await createSignedInApp('logout@example.com')
     openApps.push(testApp)

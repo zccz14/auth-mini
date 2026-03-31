@@ -73,6 +73,37 @@ describe('jwks service', () => {
     }
   })
 
+  it('old jwks keys remain available long enough for unexpired access token verification', async () => {
+    const dbPath = await createTempDbPath()
+    await bootstrapDatabase(dbPath)
+    const db = createDatabaseClient(dbPath)
+
+    try {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2030-01-01T00:00:00.000Z'))
+
+      await bootstrapKeys(db)
+
+      const oldToken = await signJwt(db, {
+        sub: 'user-1',
+        typ: 'access',
+        sid: 'session-1'
+      })
+
+      await rotateKeys(db)
+
+      vi.setSystemTime(new Date('2030-01-01T00:10:00.000Z'))
+
+      await expect(verifyJwt(db, oldToken)).resolves.toMatchObject({
+        sub: 'user-1',
+        sid: 'session-1',
+        typ: 'access'
+      })
+    } finally {
+      db.close()
+    }
+  })
+
   it('rejects tokens with missing or non-numeric exp claims', async () => {
     const dbPath = await createTempDbPath()
     await bootstrapDatabase(dbPath)

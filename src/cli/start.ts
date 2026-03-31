@@ -17,6 +17,8 @@ export async function runStartCommand(
   const app = createApp({
     db,
     issuer: config.issuer,
+    origins: config.origins,
+    rpId: config.rpId,
     smtpTransport: createRuntimeSmtpTransport()
   })
 
