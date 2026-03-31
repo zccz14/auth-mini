@@ -38,8 +38,8 @@ describe('workspace bootstrap', () => {
     expect(await exists('.lintstagedrc.json')).toBe(true)
     expect(await exists('.husky/pre-commit')).toBe(true)
     expect(lintStaged.default).toEqual({
-      '*.{js,json,md,ts}': 'prettier --write',
-      '*.ts': 'eslint --fix'
+      '*.{js,json,md}': 'prettier --write',
+      '*.ts': ['prettier --write', 'eslint --fix']
     })
     expect(hook).toContain('npx lint-staged')
   })
@@ -122,6 +122,10 @@ describe('workspace bootstrap', () => {
     const db = createDatabaseClient(tempDbPath)
 
     try {
+      db.prepare(
+        'INSERT INTO users (id, email, email_verified_at) VALUES (?, ?, ?)'
+      ).run('user-1', 'user@example.com', '2026-03-31T00:00:00.000Z')
+
       expect(() => {
         db.prepare(
           [
@@ -153,6 +157,22 @@ describe('workspace bootstrap', () => {
           '2030-01-01T00:00:00.000Z'
         )
       }).not.toThrow()
+
+      expect(() => {
+        db.prepare(
+          [
+            'INSERT INTO webauthn_challenges',
+            '(request_id, type, challenge, user_id, expires_at)',
+            'VALUES (?, ?, ?, ?, ?)'
+          ].join(' ')
+        ).run(
+          'authenticate-with-user',
+          'authenticate',
+          'challenge',
+          'user-1',
+          '2030-01-01T00:00:00.000Z'
+        )
+      }).toThrowError(/CHECK constraint failed/)
     } finally {
       db.close()
     }

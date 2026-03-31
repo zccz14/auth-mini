@@ -9,7 +9,7 @@ No need to use Supabase or Firebase for auth-only simple projects. Extremely eas
 ```bash
 # Initialize the database and initialize the SMTP and JWKS configurations.
 # This command will create a `mini-auth.sqlite` file in the current directory to store user data, sessions, and configurations.
-# SMTP Configuration is stored in the `smtp_config` table, and JWKS keys are stored in the `jwks_keys` table in the SQLite database.
+# SMTP Configuration is stored in the `smtp_configs` table, and JWKS keys are stored in the `jwks_keys` table in the SQLite database.
 npx mini-auth create
 
 # Start the auth server from sqlite file. (mini-auth.sqlite)
