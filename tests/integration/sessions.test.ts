@@ -1,8 +1,16 @@
+import { mkdtemp, writeFile } from 'node:fs/promises'
+import { createServer } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { bootstrapDatabase } from '../../src/infra/db/bootstrap.js'
+import { createDatabaseClient } from '../../src/infra/db/client.js'
+import { importSmtpConfigs } from '../../src/infra/smtp/config-import.js'
 import { runStartCommand } from '../../src/cli/start.js'
 import { hashValue } from '../../src/shared/crypto.js'
 import { createTestApp } from '../helpers/app.js'
-import { extractOtpCode } from '../helpers/mock-smtp.js'
+import { createTempDbPath } from '../helpers/db.js'
+import { extractOtpCode, startMockSmtpServer } from '../helpers/mock-smtp.js'
 
 const json = (value: unknown) => JSON.stringify(value)
 
@@ -179,6 +187,51 @@ describe('session routes', () => {
       })
     ).rejects.toThrowError()
   })
+
+  it('start succeeds with valid required config and can be cleanly started and stopped', async () => {
+    const smtpServer = await startMockSmtpServer()
+    const dbPath = await createTempDbPath()
+    const port = await getAvailablePort()
+
+    await bootstrapDatabase(dbPath)
+    const db = createDatabaseClient(dbPath)
+
+    await importSmtpConfigs(
+      db,
+      await writeRuntimeSmtpConfigJson({
+        host: '127.0.0.1',
+        port: smtpServer.port,
+        username: 'mailer',
+        password: 'secret',
+        from_email: 'noreply@example.com',
+        from_name: 'mini-auth'
+      })
+    )
+    db.close()
+
+    const server = await runStartCommand({
+      dbPath,
+      host: '127.0.0.1',
+      port,
+      issuer: 'https://issuer.example',
+      rpId: 'example.com',
+      origin: ['https://app.example.com']
+    })
+
+    const response = await fetch(`http://127.0.0.1:${port}/email/start`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: json({ email: 'runtime@example.com' })
+    })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ ok: true })
+    expect(smtpServer.mailbox).toHaveLength(1)
+    expect(smtpServer.mailbox[0]?.to).toBe('runtime@example.com')
+
+    await server.close()
+    await smtpServer.close()
+  })
 })
 
 async function createSignedInApp(email: string) {
@@ -216,4 +269,46 @@ async function createSignedInApp(email: string) {
     userId: user.id,
     sessionId: session.id
   }
+}
+
+async function writeRuntimeSmtpConfigJson(row: {
+  host: string
+  port: number
+  username: string
+  password: string
+  from_email: string
+  from_name: string
+}) {
+  const directoryPath = await mkdtemp(join(tmpdir(), 'mini-auth-runtime-smtp-'))
+  const filePath = join(directoryPath, 'smtp.json')
+
+  await writeFile(filePath, JSON.stringify([row]), 'utf8')
+
+  return filePath
+}
+
+async function getAvailablePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer()
+
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address()
+
+      if (!address || typeof address === 'string') {
+        reject(new Error('Failed to allocate a test port'))
+        return
+      }
+
+      const { port } = address
+      server.close((error) => {
+        if (error) {
+          reject(error)
+          return
+        }
+
+        resolve(port)
+      })
+    })
+  })
 }

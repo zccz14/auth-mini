@@ -1,3 +1,6 @@
+import { Buffer } from 'node:buffer'
+import net from 'node:net'
+import tls from 'node:tls'
 import type { DatabaseClient } from '../db/client.js'
 
 export type SmtpConfig = {
@@ -30,7 +33,7 @@ export type MailMessage = {
 }
 
 export type SmtpTransport = {
-  send(message: MailMessage): Promise<void>
+  send(config: NormalizedSmtpConfig, message: MailMessage): Promise<void>
 }
 
 type SmtpConfigRow = {
@@ -112,12 +115,40 @@ export async function sendOtpMail(
     ? `${config.fromName} <${config.fromEmail}>`
     : config.fromEmail
 
-  await transport.send({
+  await transport.send(config, {
     from,
     to: email,
     subject: 'Your mini-auth verification code',
     text: `Your verification code is ${code}. It expires in 10 minutes.`
   })
+}
+
+export function createRuntimeSmtpTransport(): SmtpTransport {
+  return {
+    async send(config, message) {
+      const socket = await connectSmtp(config)
+
+      try {
+        await readReply(socket)
+        await sendCommand(socket, `EHLO ${getEhloName(config.host)}`)
+        await readMultilineReply(socket)
+        await sendCommand(socket, `AUTH PLAIN ${encodeAuthPlain(config)}`)
+        await readReply(socket)
+        await sendCommand(socket, `MAIL FROM:<${config.fromEmail}>`)
+        await readReply(socket)
+        await sendCommand(socket, `RCPT TO:<${message.to}>`)
+        await readReply(socket)
+        await sendCommand(socket, 'DATA')
+        await readReply(socket)
+        await writeLine(socket, buildMessageData(message))
+        await readReply(socket)
+        await sendCommand(socket, 'QUIT')
+        await readReply(socket)
+      } finally {
+        socket.end()
+      }
+    }
+  }
 }
 
 function normalizeSmtpConfig(config: SmtpConfig): NormalizedSmtpConfig {
@@ -127,4 +158,121 @@ function normalizeSmtpConfig(config: SmtpConfig): NormalizedSmtpConfig {
     secure: config.secure ?? false,
     weight: config.weight ?? 1
   }
+}
+
+async function connectSmtp(
+  config: NormalizedSmtpConfig
+): Promise<net.Socket | tls.TLSSocket> {
+  return new Promise((resolve, reject) => {
+    const socket = config.secure
+      ? tls.connect({
+          host: config.host,
+          port: config.port,
+          rejectUnauthorized: false
+        })
+      : net.connect({
+          host: config.host,
+          port: config.port
+        })
+
+    socket.once('error', reject)
+    socket.once('connect', () => {
+      socket.off('error', reject)
+      resolve(socket)
+    })
+  })
+}
+
+async function sendCommand(
+  socket: net.Socket | tls.TLSSocket,
+  command: string
+): Promise<void> {
+  await writeLine(socket, command)
+}
+
+async function writeLine(
+  socket: net.Socket | tls.TLSSocket,
+  value: string
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    socket.write(`${value}\r\n`, (error) => {
+      if (error) {
+        reject(error)
+        return
+      }
+
+      resolve()
+    })
+  })
+}
+
+async function readReply(socket: net.Socket | tls.TLSSocket): Promise<string> {
+  const lines = await readSmtpLines(socket)
+  return lines[0] ?? ''
+}
+
+async function readMultilineReply(
+  socket: net.Socket | tls.TLSSocket
+): Promise<string[]> {
+  return readSmtpLines(socket)
+}
+
+async function readSmtpLines(
+  socket: net.Socket | tls.TLSSocket
+): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    let buffer = ''
+
+    const onData = (chunk: Buffer) => {
+      buffer += chunk.toString('utf8')
+
+      if (!buffer.includes('\r\n')) {
+        return
+      }
+
+      const lines = buffer.split('\r\n').filter(Boolean)
+      const lastLine = lines.at(-1)
+
+      if (!lastLine || lastLine.length < 4 || lastLine[3] === '-') {
+        return
+      }
+
+      cleanup()
+      resolve(lines)
+    }
+
+    const onError = (error: Error) => {
+      cleanup()
+      reject(error)
+    }
+
+    const cleanup = () => {
+      socket.off('data', onData)
+      socket.off('error', onError)
+    }
+
+    socket.on('data', onData)
+    socket.on('error', onError)
+  })
+}
+
+function encodeAuthPlain(config: NormalizedSmtpConfig): string {
+  return Buffer.from(
+    `\u0000${config.username}\u0000${config.password}`
+  ).toString('base64')
+}
+
+function buildMessageData(message: MailMessage): string {
+  return [
+    `From: ${message.from}`,
+    `To: ${message.to}`,
+    `Subject: ${message.subject}`,
+    '',
+    message.text,
+    '.'
+  ].join('\r\n')
+}
+
+function getEhloName(host: string): string {
+  return host === '127.0.0.1' ? 'localhost' : host
 }
