@@ -31,12 +31,18 @@ describe('session routes', () => {
         'SELECT id, revoked_at FROM sessions ORDER BY created_at ASC, id ASC'
       )
       .all() as Array<{ id: string; revoked_at: string | null }>
+    const originalSession = sessions.find(
+      (session) => session.id === testApp.sessionId
+    )
+    const rotatedSession = sessions.find(
+      (session) => session.id !== testApp.sessionId
+    )
 
     expect(response.status).toBe(200)
     expect(body.refresh_token).not.toBe(testApp.tokens.refresh_token)
     expect(sessions).toHaveLength(2)
-    expect(sessions[0]?.revoked_at).toBeTruthy()
-    expect(sessions[1]?.revoked_at).toBeNull()
+    expect(originalSession?.revoked_at).toBeTruthy()
+    expect(rotatedSession?.revoked_at).toBeNull()
   })
 
   it('logout revokes the session referenced by sid', async () => {
