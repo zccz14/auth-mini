@@ -1,0 +1,80 @@
+import { bootstrapDatabase } from '../../src/infra/db/bootstrap.js'
+import { createDatabaseClient } from '../../src/infra/db/client.js'
+import { createApp } from '../../src/server/app.js'
+import { bootstrapKeys } from '../../src/modules/jwks/service.js'
+import { createTempDbPath } from './db.js'
+import { createMockSmtp } from './mock-smtp.js'
+
+type CreateTestAppOptions = {
+  smtpConfigs?: Array<{
+    host?: string
+    port?: number
+    username?: string
+    password?: string
+    fromEmail?: string
+    fromName?: string
+    secure?: boolean
+    isActive?: boolean
+    weight?: number
+  }>
+}
+
+export async function createTestApp(options: CreateTestAppOptions = {}) {
+  const dbPath = await createTempDbPath()
+  await bootstrapDatabase(dbPath)
+  const db = createDatabaseClient(dbPath)
+  const smtp = createMockSmtp()
+
+  await bootstrapKeys(db)
+
+  const smtpConfigs = options.smtpConfigs ?? [
+    {
+      host: 'smtp.example.com',
+      port: 587,
+      username: 'mailer',
+      password: 'secret',
+      fromEmail: 'noreply@example.com',
+      fromName: 'mini-auth',
+      secure: false,
+      isActive: true,
+      weight: 1
+    }
+  ]
+
+  for (const config of smtpConfigs) {
+    db.prepare(
+      [
+        'INSERT INTO smtp_configs',
+        '(host, port, username, password, from_email, from_name, secure, is_active, weight)',
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      ].join(' ')
+    ).run(
+      config.host ?? 'smtp.example.com',
+      config.port ?? 587,
+      config.username ?? 'mailer',
+      config.password ?? 'secret',
+      config.fromEmail ?? 'noreply@example.com',
+      config.fromName ?? '',
+      (config.secure ?? false) ? 1 : 0,
+      (config.isActive ?? true) ? 1 : 0,
+      config.weight ?? 1
+    )
+  }
+
+  const app = createApp({
+    db,
+    issuer: 'https://issuer.example',
+    smtpTransport: smtp.transport
+  })
+
+  return {
+    app,
+    db,
+    dbPath,
+    mailbox: smtp.mailbox,
+    failNextMail: smtp.failNextSend,
+    close() {
+      db.close()
+    }
+  }
+}

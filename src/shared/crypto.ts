@@ -1,7 +1,9 @@
 import {
+  createHash,
   createPrivateKey,
   createPublicKey,
   generateKeyPairSync,
+  randomBytes,
   randomUUID,
   sign,
   verify,
@@ -45,6 +47,14 @@ export function encodeBase64Url(value: string | Buffer): string {
 
 export function decodeBase64Url(value: string): Buffer {
   return Buffer.from(value, 'base64url')
+}
+
+export function hashValue(value: string): string {
+  return createHash('sha256').update(value).digest('hex')
+}
+
+export function generateOpaqueToken(size = 32): string {
+  return randomBytes(size).toString('base64url')
 }
 
 export function generateEd25519KeyRecord(): KeyRecord {

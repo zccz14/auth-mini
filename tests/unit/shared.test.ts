@@ -2,6 +2,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { selectSmtpConfig } from '../../src/infra/smtp/mailer.js'
 import { parseRuntimeConfig } from '../../src/shared/config.js'
 import { TTLS, getExpiresAtUnixSeconds } from '../../src/shared/time.js'
 import { createTempDbPath } from '../helpers/db.js'
@@ -27,6 +28,40 @@ describe('test helpers', () => {
 })
 
 describe('shared runtime defaults', () => {
+  it('selects only active smtp configs and defaults weight to 1', () => {
+    const config = selectSmtpConfig(
+      [
+        {
+          id: 1,
+          host: 'inactive.example.com',
+          port: 587,
+          username: 'inactive',
+          password: 'secret',
+          fromEmail: 'inactive@example.com',
+          isActive: false
+        },
+        {
+          id: 2,
+          host: 'primary.example.com',
+          port: 587,
+          username: 'primary',
+          password: 'secret',
+          fromEmail: 'primary@example.com',
+          isActive: true
+        }
+      ],
+      () => 0
+    )
+
+    expect(config).toMatchObject({
+      id: 2,
+      weight: 1,
+      fromName: '',
+      secure: false,
+      isActive: true
+    })
+  })
+
   it('exposes agreed TTL defaults', () => {
     expect(TTLS.otpSeconds).toBe(600)
     expect(TTLS.webauthnChallengeSeconds).toBe(300)

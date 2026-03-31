@@ -2,6 +2,7 @@
 
 import { cac } from 'cac'
 import { runCreateCommand } from './cli/create.js'
+import { runStartCommand } from './cli/start.js'
 import { runRotateJwksCommand } from './cli/rotate-jwks.js'
 
 const cli = cac('mini-auth')
@@ -28,11 +29,29 @@ cli
   .option('--origin <origin>', 'Allowed WebAuthn origin', {
     default: [] as string[]
   })
-  .action(async () => {
-    await executeCommand(async () => {
-      throw new Error('start command is not implemented yet')
-    })
-  })
+  .action(
+    async (
+      dbPath: string,
+      options: {
+        host?: string
+        port?: string
+        issuer?: string
+        rpId?: string
+        origin?: string[]
+      }
+    ) => {
+      await executeCommand(async () => {
+        await runStartCommand({
+          dbPath,
+          host: options.host,
+          port: options.port,
+          issuer: options.issuer,
+          rpId: options.rpId,
+          origin: options.origin
+        })
+      })
+    }
+  )
 
 cli.version('0.1.0')
 cli.help()
