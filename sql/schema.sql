@@ -35,6 +35,10 @@ CREATE TABLE IF NOT EXISTS jwks_keys (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS jwks_keys_one_active_idx
+  ON jwks_keys (is_active)
+  WHERE is_active = 1;
+
 CREATE TABLE IF NOT EXISTS smtp_configs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   host TEXT NOT NULL,
@@ -67,5 +71,9 @@ CREATE TABLE IF NOT EXISTS webauthn_challenges (
   expires_at TEXT NOT NULL,
   consumed_at TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CHECK (
+    (type = 'register' AND user_id IS NOT NULL) OR
+    (type = 'authenticate' AND user_id IS NULL)
+  ),
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
