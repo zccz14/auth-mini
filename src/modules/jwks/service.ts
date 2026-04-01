@@ -33,7 +33,7 @@ export async function bootstrapKeys(db: DatabaseClient): Promise<{
 
 export async function rotateKeys(
   db: DatabaseClient,
-  input?: { logger?: AppLogger }
+  input: { logger: AppLogger }
 ): Promise<{
   id: string
   kid: string
@@ -41,7 +41,7 @@ export async function rotateKeys(
   const keyRecord = generateEd25519KeyRecord()
   insertActiveKey(db, keyRecord)
 
-  input?.logger?.info(
+  input.logger.info(
     { event: 'jwks.rotated', kid: keyRecord.kid },
     'JWKS rotated'
   )
@@ -51,13 +51,10 @@ export async function rotateKeys(
 
 export async function listPublicKeys(
   db: DatabaseClient,
-  input?: { logger?: AppLogger }
+  input: { logger: AppLogger }
 ): Promise<PublicJwk[]> {
   const keys = listKeys(db).map((key) => toPublicJwk(key.privateJwk))
-  input?.logger?.info(
-    { event: 'jwks.read', key_count: keys.length },
-    'JWKS read'
-  )
+  input.logger.info({ event: 'jwks.read', key_count: keys.length }, 'JWKS read')
 
   return keys
 }

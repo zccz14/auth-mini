@@ -1,7 +1,7 @@
 import { createPrivateKey, sign } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { runRotateJwksCommand } from '../../src/cli/rotate-jwks.js'
 import { bootstrapDatabase } from '../../src/infra/db/bootstrap.js'
-import type { DatabaseClient } from '../../src/infra/db/client.js'
 import { createDatabaseClient } from '../../src/infra/db/client.js'
 import {
   bootstrapKeys,
@@ -61,14 +61,11 @@ describe('jwks service', () => {
         sid: 'session-1'
       })
 
-      const rotatedKey = await (
-        rotateKeys as unknown as (
-          db: DatabaseClient,
-          input: { logger: (typeof logCollector)['logger'] }
-        ) => Promise<{ id: string; kid: string }>
-      )(db, { logger: logCollector.logger })
+      const rotatedKey = await rotateKeys(db, { logger: logCollector.logger })
       const payload = await verifyJwt(db, token)
-      const publicKeys = await listPublicKeys(db)
+      const publicKeys = await listPublicKeys(db, {
+        logger: logCollector.logger
+      })
 
       expect(rotatedKey.kid).not.toBe(firstKey.kid)
       expect(payload).toMatchObject({
@@ -91,6 +88,25 @@ describe('jwks service', () => {
     }
   })
 
+  it('cli rotation emits the required jwks rotated event', async () => {
+    const dbPath = await createTempDbPath()
+    const logCollector = createMemoryLogCollector()
+
+    await bootstrapDatabase(dbPath)
+
+    await runRotateJwksCommand({
+      dbPath,
+      loggerSink: logCollector.sink
+    })
+
+    expect(logCollector.entries).toContainEqual(
+      expect.objectContaining({
+        event: 'jwks.rotated',
+        kid: expect.any(String)
+      })
+    )
+  })
+
   it('old jwks keys remain available long enough for unexpired access token verification', async () => {
     const dbPath = await createTempDbPath()
     await bootstrapDatabase(dbPath)
@@ -99,6 +115,7 @@ describe('jwks service', () => {
     try {
       vi.useFakeTimers()
       vi.setSystemTime(new Date('2030-01-01T00:00:00.000Z'))
+      const logCollector = createMemoryLogCollector()
 
       await bootstrapKeys(db)
 
@@ -108,7 +125,7 @@ describe('jwks service', () => {
         sid: 'session-1'
       })
 
-      await rotateKeys(db)
+      await rotateKeys(db, { logger: logCollector.logger })
 
       vi.setSystemTime(new Date('2030-01-01T00:10:00.000Z'))
 
