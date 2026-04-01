@@ -1,4 +1,5 @@
 import type { DatabaseClient } from '../../infra/db/client.js'
+import type { AppLogger } from '../../shared/logger.js'
 import {
   generateEd25519KeyRecord,
   signJwt as signCompactJwt,
@@ -30,18 +31,35 @@ export async function bootstrapKeys(db: DatabaseClient): Promise<{
   return { id: keyRecord.id, kid: keyRecord.kid }
 }
 
-export async function rotateKeys(db: DatabaseClient): Promise<{
+export async function rotateKeys(
+  db: DatabaseClient,
+  input?: { logger?: AppLogger }
+): Promise<{
   id: string
   kid: string
 }> {
   const keyRecord = generateEd25519KeyRecord()
   insertActiveKey(db, keyRecord)
 
+  input?.logger?.info(
+    { event: 'jwks.rotated', kid: keyRecord.kid },
+    'JWKS rotated'
+  )
+
   return { id: keyRecord.id, kid: keyRecord.kid }
 }
 
-export async function listPublicKeys(db: DatabaseClient): Promise<PublicJwk[]> {
-  return listKeys(db).map((key) => toPublicJwk(key.privateJwk))
+export async function listPublicKeys(
+  db: DatabaseClient,
+  input?: { logger?: AppLogger }
+): Promise<PublicJwk[]> {
+  const keys = listKeys(db).map((key) => toPublicJwk(key.privateJwk))
+  input?.logger?.info(
+    { event: 'jwks.read', key_count: keys.length },
+    'JWKS read'
+  )
+
+  return keys
 }
 
 export async function signJwt(

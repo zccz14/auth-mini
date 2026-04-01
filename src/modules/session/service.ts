@@ -1,4 +1,5 @@
 import type { DatabaseClient } from '../../infra/db/client.js'
+import type { AppLogger } from '../../shared/logger.js'
 import { signJwt } from '../jwks/service.js'
 import {
   TTLS,
@@ -28,7 +29,7 @@ export class InvalidRefreshTokenError extends Error {
 
 export async function mintSessionTokens(
   db: DatabaseClient,
-  input: { userId: string; issuer: string }
+  input: { userId: string; issuer: string; logger?: AppLogger }
 ): Promise<TokenPair & { session: Session }> {
   const refreshToken = generateOpaqueToken()
   const issuedAt = getUnixTimeSeconds()
@@ -58,7 +59,7 @@ export async function mintSessionTokens(
 
 export async function refreshSessionTokens(
   db: DatabaseClient,
-  input: { refreshToken: string; issuer: string }
+  input: { refreshToken: string; issuer: string; logger?: AppLogger }
 ): Promise<TokenPair & { session: Session }> {
   const now = new Date().toISOString()
   const session = revokeSessionByRefreshTokenHash(
@@ -68,15 +69,42 @@ export async function refreshSessionTokens(
   )
 
   if (!session) {
+    input.logger?.warn(
+      { event: 'session.refresh.failed', reason: 'invalid_refresh_token' },
+      'Session refresh failed'
+    )
     throw new InvalidRefreshTokenError()
   }
 
-  return mintSessionTokens(db, {
+  const tokens = await mintSessionTokens(db, {
     userId: session.userId,
-    issuer: input.issuer
+    issuer: input.issuer,
+    logger: input.logger
   })
+
+  input.logger?.info(
+    {
+      event: 'session.refresh.succeeded',
+      session_id: tokens.session.id,
+      user_id: session.userId
+    },
+    'Session refresh succeeded'
+  )
+
+  return tokens
 }
 
-export function logoutSession(db: DatabaseClient, sessionId: string): void {
-  revokeSessionById(db, sessionId, new Date().toISOString())
+export function logoutSession(
+  db: DatabaseClient,
+  input: { sessionId: string; userId?: string; logger?: AppLogger }
+): void {
+  revokeSessionById(db, input.sessionId, new Date().toISOString())
+  input.logger?.info(
+    {
+      event: 'session.logout.succeeded',
+      session_id: input.sessionId,
+      ...(input.userId ? { user_id: input.userId } : {})
+    },
+    'Session logout succeeded'
+  )
 }

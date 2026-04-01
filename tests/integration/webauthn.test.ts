@@ -133,6 +133,18 @@ describe('webauthn routes', () => {
       transports: 'internal',
       counter: 0
     })
+    expectLogEntry(testApp.logs, {
+      event: 'webauthn.register.options.created',
+      user_id: testApp.userId
+    })
+    expectLogEntry(testApp.logs, {
+      event: 'webauthn.register.verify.succeeded',
+      user_id: testApp.userId,
+      credential_id: passkey.credentialId
+    })
+    expect(JSON.stringify(testApp.logs)).not.toContain(
+      credential.response.clientDataJSON
+    )
   })
 
   it('second register/options invalidates the first unused request id', async () => {
@@ -187,6 +199,10 @@ describe('webauthn routes', () => {
     expect(storedCredentials).toEqual([
       { credential_id: freshPasskey.credentialId }
     ])
+    expectLogEntry(testApp.logs, {
+      event: 'webauthn.register.verify.failed',
+      user_id: testApp.userId
+    })
   })
 
   it('authenticate/options returns independent request ids for concurrent requests', async () => {
@@ -231,6 +247,10 @@ describe('webauthn routes', () => {
       }
     })
     expect(body.publicKey.allowCredentials).toBeUndefined()
+    expectLogEntry(testApp.logs, {
+      event: 'webauthn.authenticate.options.created',
+      request_id: body.request_id
+    })
   })
 
   it('authenticate/verify signs in by credential id', async () => {
@@ -270,6 +290,14 @@ describe('webauthn routes', () => {
       refresh_token: expect.any(String)
     })
     expect(storedCredential.counter).toBe(1)
+    expectLogEntry(testApp.logs, {
+      event: 'webauthn.authenticate.verify.succeeded',
+      user_id: testApp.userId,
+      credential_id: passkey.credentialId
+    })
+    expect(JSON.stringify(testApp.logs)).not.toContain(
+      credential.response.clientDataJSON
+    )
   })
 
   it('authenticate/verify rejects replayed or expired challenges', async () => {
@@ -319,6 +347,9 @@ describe('webauthn routes', () => {
     expect(expiredResponse.status).toBe(400)
     expect(await expiredResponse.json()).toEqual({
       error: 'invalid_webauthn_authentication'
+    })
+    expectLogEntry(testApp.logs, {
+      event: 'webauthn.authenticate.verify.failed'
     })
   })
 
@@ -659,4 +690,11 @@ async function verifyAuth(
     headers: { 'content-type': 'application/json' },
     body: json({ request_id: requestId, credential })
   })
+}
+
+function expectLogEntry(
+  logs: Array<Record<string, unknown>>,
+  expected: Record<string, unknown>
+) {
+  expect(logs).toContainEqual(expect.objectContaining(expected))
 }

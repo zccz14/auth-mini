@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer'
 import type { DatabaseClient } from '../db/client.js'
+import type { AppLogger } from '../../shared/logger.js'
 
 export type SmtpConfig = {
   id: number
@@ -102,12 +103,14 @@ export function selectSmtpConfig(
 export async function sendOtpMail(
   config: SmtpConfig,
   email: string,
-  code: string
+  code: string,
+  options?: { logger?: AppLogger }
 ): Promise<void> {
   const smtpConfig = normalizeSmtpConfig(config)
   await sendMailWithNodemailer(
     smtpConfig,
-    buildOtpMessage(smtpConfig, email, code)
+    buildOtpMessage(smtpConfig, email, code),
+    options
   )
 }
 
@@ -132,16 +135,53 @@ function normalizeSmtpConfig(config: SmtpConfig): NormalizedSmtpConfig {
 
 async function sendMailWithNodemailer(
   config: NormalizedSmtpConfig,
-  message: MailMessage
+  message: MailMessage,
+  options?: { logger?: AppLogger }
 ): Promise<void> {
-  const transport = nodemailer.createTransport(buildTransportOptions(config))
-  const info = await transport.sendMail(message)
+  options?.logger?.info(
+    {
+      event: 'smtp.send.attempted',
+      email: message.to,
+      smtp_config_id: config.id,
+      smtp_host: config.host,
+      smtp_port: config.port
+    },
+    'SMTP send attempted'
+  )
 
-  if (
-    !recipientExists(info.accepted, message.to) ||
-    recipientExists(info.rejected, message.to)
-  ) {
-    throw new Error(`SMTP delivery failed for ${message.to}`)
+  try {
+    const transport = nodemailer.createTransport(buildTransportOptions(config))
+    const info = await transport.sendMail(message)
+
+    if (
+      !recipientExists(info.accepted, message.to) ||
+      recipientExists(info.rejected, message.to)
+    ) {
+      throw new Error(`SMTP delivery failed for ${message.to}`)
+    }
+
+    options?.logger?.info(
+      {
+        event: 'smtp.send.succeeded',
+        email: message.to,
+        smtp_config_id: config.id,
+        smtp_host: config.host,
+        smtp_port: config.port
+      },
+      'SMTP send succeeded'
+    )
+  } catch (error) {
+    options?.logger?.warn(
+      {
+        event: 'smtp.send.failed',
+        email: message.to,
+        smtp_config_id: config.id,
+        smtp_host: config.host,
+        smtp_port: config.port
+      },
+      'SMTP send failed'
+    )
+    throw error
   }
 }
 

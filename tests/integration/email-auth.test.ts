@@ -11,18 +11,67 @@ vi.mock('../../src/infra/smtp/mailer.js', async () => {
 
   return {
     ...actual,
-    async sendOtpMail(config: unknown, email: string, code: string) {
+    async sendOtpMail(
+      config: unknown,
+      email: string,
+      code: string,
+      options?: {
+        logger?: {
+          info(bindings: Record<string, unknown>, msg: string): void
+          warn(bindings: Record<string, unknown>, msg: string): void
+        }
+      }
+    ) {
       const seam = otpSeam.current
+      const smtpConfig = config as { id?: number; host?: string; port?: number }
+
+      options?.logger?.info(
+        {
+          event: 'smtp.send.attempted',
+          email,
+          ...(smtpConfig.id ? { smtp_config_id: smtpConfig.id } : {}),
+          ...(smtpConfig.host ? { smtp_host: smtpConfig.host } : {}),
+          ...(smtpConfig.port ? { smtp_port: smtpConfig.port } : {})
+        },
+        'SMTP send attempted'
+      )
 
       if (!seam) {
         throw new Error('OTP seam not installed for email-auth tests')
       }
 
-      return seam.sendOtpMail(
-        config as { fromEmail: string; fromName?: string },
-        email,
-        code
-      )
+      try {
+        const result = await seam.sendOtpMail(
+          config as { fromEmail: string; fromName?: string },
+          email,
+          code
+        )
+
+        options?.logger?.info(
+          {
+            event: 'smtp.send.succeeded',
+            email,
+            ...(smtpConfig.id ? { smtp_config_id: smtpConfig.id } : {}),
+            ...(smtpConfig.host ? { smtp_host: smtpConfig.host } : {}),
+            ...(smtpConfig.port ? { smtp_port: smtpConfig.port } : {})
+          },
+          'SMTP send succeeded'
+        )
+
+        return result
+      } catch (error) {
+        options?.logger?.warn(
+          {
+            event: 'smtp.send.failed',
+            email,
+            ...(smtpConfig.id ? { smtp_config_id: smtpConfig.id } : {}),
+            ...(smtpConfig.host ? { smtp_host: smtpConfig.host } : {}),
+            ...(smtpConfig.port ? { smtp_port: smtpConfig.port } : {})
+          },
+          'SMTP send failed'
+        )
+        throw error
+      }
     }
   }
 })
@@ -66,7 +115,19 @@ describe('email auth routes', () => {
     expect(mailbox).toHaveLength(1)
     expect(mailbox[0]?.to).toBe('user@example.com')
     expect(mailbox[0]?.subject).toContain('verification code')
-    expect(extractOtpCode(mailbox[0]?.text ?? '')).toMatch(/^\d{6}$/)
+    const otpCode = extractOtpCode(mailbox[0]?.text ?? '')
+
+    expect(otpCode).toMatch(/^\d{6}$/)
+    expectLogEntry(testApp.logs, {
+      event: 'email.start.requested',
+      email: 'user@example.com'
+    })
+    expectLogEntry(testApp.logs, {
+      event: 'email.start.sent',
+      email: 'user@example.com'
+    })
+    expect(JSON.stringify(testApp.logs)).not.toContain(otpCode)
+    expect(JSON.stringify(testApp.logs)).not.toContain('verification code is')
   })
 
   it('email/start returns the same success response for existing and new emails', async () => {
@@ -110,6 +171,10 @@ describe('email auth routes', () => {
 
     expect(response.status).toBe(503)
     expect(await response.json()).toEqual({ error: 'smtp_not_configured' })
+    expectLogEntry(testApp.logs, {
+      event: 'email.start.failed',
+      email: 'user@example.com'
+    })
   })
 
   it('email/start invalidates the pending otp if smtp send fails', async () => {
@@ -133,6 +198,18 @@ describe('email auth routes', () => {
       error: 'smtp_temporarily_unavailable'
     })
     expect(row?.consumed_at).toBeTruthy()
+    expectLogEntry(testApp.logs, {
+      event: 'smtp.send.attempted',
+      email: 'user@example.com'
+    })
+    expectLogEntry(testApp.logs, {
+      event: 'smtp.send.failed',
+      email: 'user@example.com'
+    })
+    expectLogEntry(testApp.logs, {
+      event: 'email.start.failed',
+      email: 'user@example.com'
+    })
   })
 
   it('verify creates a user when the email is first seen', async () => {
@@ -168,6 +245,11 @@ describe('email auth routes', () => {
       refresh_token: expect.any(String)
     })
     expect(userCount.count).toBe(1)
+    expectLogEntry(testApp.logs, {
+      event: 'email.verify.succeeded',
+      email: 'first@example.com'
+    })
+    expect(JSON.stringify(testApp.logs)).not.toContain('refresh_token')
   })
 
   it('verify signs in an existing user without creating a duplicate', async () => {
@@ -228,6 +310,10 @@ describe('email auth routes', () => {
 
     expect(response.status).toBe(401)
     expect(await response.json()).toEqual({ error: 'invalid_email_otp' })
+    expectLogEntry(testApp.logs, {
+      event: 'email.verify.failed',
+      email: 'expired@example.com'
+    })
   })
 
   it('verify rejects replayed otp', async () => {
@@ -262,3 +348,10 @@ describe('email auth routes', () => {
     expect(await secondResponse.json()).toEqual({ error: 'invalid_email_otp' })
   })
 })
+
+function expectLogEntry(
+  logs: Array<Record<string, unknown>>,
+  expected: Record<string, unknown>
+) {
+  expect(logs).toContainEqual(expect.objectContaining(expected))
+}

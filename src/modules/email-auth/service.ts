@@ -6,6 +6,7 @@ import {
   sendOtpMail
 } from '../../infra/smtp/mailer.js'
 import { hashValue } from '../../shared/crypto.js'
+import type { AppLogger } from '../../shared/logger.js'
 import {
   TTLS,
   getExpiresAtUnixSeconds,
@@ -44,12 +45,24 @@ export class InvalidEmailOtpError extends Error {
 
 export async function startEmailAuth(
   db: DatabaseClient,
-  input: { email: string }
+  input: { email: string; logger?: AppLogger; ip?: string | null }
 ): Promise<{ ok: true }> {
   const email = normalizeEmail(input.email)
+  input.logger?.info(
+    {
+      event: 'email.start.requested',
+      email,
+      ...(input.ip ? { ip: input.ip } : {})
+    },
+    'Email auth start requested'
+  )
   const smtpConfig = selectSmtpConfig(listSmtpConfigs(db))
 
   if (!smtpConfig) {
+    input.logger?.warn(
+      { event: 'email.start.failed', email, reason: 'smtp_not_configured' },
+      'Email auth start failed'
+    )
     throw new SmtpNotConfiguredError()
   }
 
@@ -64,18 +77,36 @@ export async function startEmailAuth(
   })
 
   try {
-    await sendOtpMail(smtpConfig, email, code)
+    await sendOtpMail(smtpConfig, email, code, { logger: input.logger })
   } catch {
     invalidateEmailOtp(db, email, new Date().toISOString())
+    input.logger?.warn(
+      {
+        event: 'email.start.failed',
+        email,
+        reason: 'smtp_temporarily_unavailable',
+        smtp_config_id: smtpConfig.id
+      },
+      'Email auth start failed'
+    )
     throw new SmtpDeliveryError()
   }
+
+  input.logger?.info(
+    {
+      event: 'email.start.sent',
+      email,
+      smtp_config_id: smtpConfig.id
+    },
+    'Email auth start sent'
+  )
 
   return { ok: true }
 }
 
 export async function verifyEmailAuth(
   db: DatabaseClient,
-  input: { email: string; code: string; issuer: string }
+  input: { email: string; code: string; issuer: string; logger?: AppLogger }
 ): Promise<TokenPair> {
   const email = normalizeEmail(input.email)
   const otp = getEmailOtp(db, email)
@@ -87,10 +118,18 @@ export async function verifyEmailAuth(
     otp.expiresAt <= now ||
     otp.codeHash !== hashValue(input.code)
   ) {
+    input.logger?.warn(
+      { event: 'email.verify.failed', email, reason: 'invalid_email_otp' },
+      'Email auth verify failed'
+    )
     throw new InvalidEmailOtpError()
   }
 
   if (!consumeEmailOtp(db, email, now)) {
+    input.logger?.warn(
+      { event: 'email.verify.failed', email, reason: 'invalid_email_otp' },
+      'Email auth verify failed'
+    )
     throw new InvalidEmailOtpError()
   }
 
@@ -104,8 +143,19 @@ export async function verifyEmailAuth(
 
   const tokens = await mintSessionTokens(db, {
     userId: user.id,
-    issuer: input.issuer
+    issuer: input.issuer,
+    logger: input.logger
   })
+
+  input.logger?.info(
+    {
+      event: 'email.verify.succeeded',
+      email,
+      user_id: user.id,
+      session_id: tokens.session.id
+    },
+    'Email auth verify succeeded'
+  )
 
   return {
     access_token: tokens.access_token,

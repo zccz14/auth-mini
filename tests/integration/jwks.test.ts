@@ -1,6 +1,7 @@
 import { createPrivateKey, sign } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { bootstrapDatabase } from '../../src/infra/db/bootstrap.js'
+import type { DatabaseClient } from '../../src/infra/db/client.js'
 import { createDatabaseClient } from '../../src/infra/db/client.js'
 import {
   bootstrapKeys,
@@ -10,7 +11,9 @@ import {
   verifyJwt
 } from '../../src/modules/jwks/service.js'
 import { encodeBase64Url, type PrivateJwk } from '../../src/shared/crypto.js'
+import { createTestApp } from '../helpers/app.js'
 import { createTempDbPath } from '../helpers/db.js'
+import { createMemoryLogCollector } from '../helpers/logging.js'
 
 describe('jwks service', () => {
   afterEach(() => {
@@ -18,26 +21,29 @@ describe('jwks service', () => {
   })
 
   it('generates an Ed25519 signing key and emits a public jwks entry', async () => {
-    const dbPath = await createTempDbPath()
-    await bootstrapDatabase(dbPath)
-    const db = createDatabaseClient(dbPath)
+    const testApp = await createTestApp()
 
     try {
-      const result = await bootstrapKeys(db)
-      const publicKeys = await listPublicKeys(db)
+      const response = await testApp.app.request('/jwks')
+      const body = await response.json()
 
-      expect(result.kid).toBeDefined()
-      expect(publicKeys).toHaveLength(1)
-      expect(publicKeys[0]).toMatchObject({
-        kid: result.kid,
+      expect(response.status).toBe(200)
+      expect(body.keys).toHaveLength(1)
+      expect(body.keys[0]).toMatchObject({
+        kid: expect.any(String),
         alg: 'EdDSA',
         kty: 'OKP',
         crv: 'Ed25519',
         use: 'sig'
       })
-      expect(publicKeys[0]).not.toHaveProperty('d')
+      expect(body.keys[0]).not.toHaveProperty('d')
+      expect(testApp.logs).toContainEqual(
+        expect.objectContaining({
+          event: 'jwks.read'
+        })
+      )
     } finally {
-      db.close()
+      testApp.close()
     }
   })
 
@@ -45,6 +51,7 @@ describe('jwks service', () => {
     const dbPath = await createTempDbPath()
     await bootstrapDatabase(dbPath)
     const db = createDatabaseClient(dbPath)
+    const logCollector = createMemoryLogCollector()
 
     try {
       const firstKey = await bootstrapKeys(db)
@@ -54,7 +61,12 @@ describe('jwks service', () => {
         sid: 'session-1'
       })
 
-      const rotatedKey = await rotateKeys(db)
+      const rotatedKey = await (
+        rotateKeys as unknown as (
+          db: DatabaseClient,
+          input: { logger: (typeof logCollector)['logger'] }
+        ) => Promise<{ id: string; kid: string }>
+      )(db, { logger: logCollector.logger })
       const payload = await verifyJwt(db, token)
       const publicKeys = await listPublicKeys(db)
 
@@ -68,6 +80,12 @@ describe('jwks service', () => {
         firstKey.kid,
         rotatedKey.kid
       ])
+      expect(logCollector.entries).toContainEqual(
+        expect.objectContaining({
+          event: 'jwks.rotated',
+          kid: rotatedKey.kid
+        })
+      )
     } finally {
       db.close()
     }

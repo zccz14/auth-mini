@@ -155,7 +155,11 @@ export function createApp(input: {
 
   app.post('/email/start', async (c) => {
     const body = await parseJson(c.req.raw, emailStartSchema)
-    const result = await startEmailAuth(c.var.db, { email: body.email })
+    const result = await startEmailAuth(c.var.db, {
+      email: body.email,
+      logger: c.var.logger,
+      ip: c.var.clientIp
+    })
 
     return c.json(result)
   })
@@ -165,7 +169,8 @@ export function createApp(input: {
     const result = await verifyEmailAuth(c.var.db, {
       email: body.email,
       code: body.code,
-      issuer: c.var.issuer
+      issuer: c.var.issuer,
+      logger: c.var.logger
     })
 
     return c.json(result)
@@ -195,7 +200,8 @@ export function createApp(input: {
     const body = await parseJson(c.req.raw, refreshSchema)
     const result = await refreshSessionTokens(c.var.db, {
       refreshToken: body.refresh_token,
-      issuer: c.var.issuer
+      issuer: c.var.issuer,
+      logger: c.var.logger
     })
 
     return c.json({
@@ -207,7 +213,11 @@ export function createApp(input: {
   })
 
   app.post('/session/logout', requireAccessToken, async (c) => {
-    logoutSession(c.var.db, c.var.auth.sid)
+    logoutSession(c.var.db, {
+      sessionId: c.var.auth.sid,
+      userId: c.var.auth.sub,
+      logger: c.var.logger
+    })
     return c.json({ ok: true })
   })
 
@@ -222,7 +232,8 @@ export function createApp(input: {
       generateRegistrationOptions(c.var.db, {
         userId: user.id,
         email: user.email,
-        rpId: c.var.rpId
+        rpId: c.var.rpId,
+        logger: c.var.logger
       })
     )
   })
@@ -236,7 +247,8 @@ export function createApp(input: {
         requestId: body.request_id,
         credential: body.credential,
         rpId: c.var.rpId,
-        origins: c.var.origins
+        origins: c.var.origins,
+        logger: c.var.logger
       })
     )
   })
@@ -244,7 +256,8 @@ export function createApp(input: {
   app.post('/webauthn/authenticate/options', async (c) => {
     return c.json(
       generateAuthenticationOptions(c.var.db, {
-        rpId: c.var.rpId
+        rpId: c.var.rpId,
+        logger: c.var.logger
       })
     )
   })
@@ -256,7 +269,8 @@ export function createApp(input: {
       credential: body.credential,
       rpId: c.var.rpId,
       origins: c.var.origins,
-      issuer: c.var.issuer
+      issuer: c.var.issuer,
+      logger: c.var.logger
     })
 
     return c.json({
@@ -277,7 +291,7 @@ export function createApp(input: {
   })
 
   app.get('/jwks', async (c) => {
-    const keys = await listPublicKeys(c.var.db)
+    const keys = await listPublicKeys(c.var.db, { logger: c.var.logger })
     return c.json({ keys })
   })
 

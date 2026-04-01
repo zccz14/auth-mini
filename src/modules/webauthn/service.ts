@@ -8,6 +8,7 @@ import {
 import { Decoder } from 'cbor-x'
 import type { DatabaseClient } from '../../infra/db/client.js'
 import { decodeBase64Url, encodeBase64Url } from '../../shared/crypto.js'
+import type { AppLogger } from '../../shared/logger.js'
 import { TTLS } from '../../shared/time.js'
 import { mintSessionTokens } from '../session/service.js'
 import {
@@ -87,7 +88,7 @@ export class WebauthnCredentialNotFoundError extends Error {
 
 export function generateRegistrationOptions(
   db: DatabaseClient,
-  input: { userId: string; email: string; rpId: string }
+  input: { userId: string; email: string; rpId: string; logger?: AppLogger }
 ): {
   request_id: string
   publicKey: {
@@ -118,7 +119,20 @@ export function generateRegistrationOptions(
     expiresAt
   })
 
-  return {
+  const response: {
+    request_id: string
+    publicKey: {
+      challenge: string
+      rp: { name: 'mini-auth'; id: string }
+      user: { id: string; name: string; displayName: string }
+      pubKeyCredParams: Array<{ type: 'public-key'; alg: -7 }>
+      timeout: number
+      authenticatorSelection: {
+        residentKey: 'required'
+        userVerification: 'preferred'
+      }
+    }
+  } = {
     request_id: record.requestId,
     publicKey: {
       challenge,
@@ -139,6 +153,17 @@ export function generateRegistrationOptions(
       }
     }
   }
+
+  input.logger?.info(
+    {
+      event: 'webauthn.register.options.created',
+      request_id: record.requestId,
+      user_id: input.userId
+    },
+    'WebAuthn registration options created'
+  )
+
+  return response
 }
 
 export function verifyRegistration(
@@ -149,28 +174,29 @@ export function verifyRegistration(
     credential: RegistrationCredential
     rpId: string
     origins: string[]
+    logger?: AppLogger
   }
 ): { ok: true } {
-  const challenge = getValidChallenge(db, input.requestId, 'register')
-
-  if (challenge.userId !== input.userId) {
-    throw new InvalidWebauthnRegistrationError()
-  }
-
-  const verified = verifyRegistrationResponse(
-    input.credential,
-    challenge.challenge,
-    input.rpId,
-    input.origins
-  )
-
-  const now = new Date().toISOString()
-
-  if (!consumeChallenge(db, challenge.requestId, now)) {
-    throw new InvalidWebauthnRegistrationError()
-  }
-
   try {
+    const challenge = getValidChallenge(db, input.requestId, 'register')
+
+    if (challenge.userId !== input.userId) {
+      throw new InvalidWebauthnRegistrationError()
+    }
+
+    const verified = verifyRegistrationResponse(
+      input.credential,
+      challenge.challenge,
+      input.rpId,
+      input.origins
+    )
+
+    const now = new Date().toISOString()
+
+    if (!consumeChallenge(db, challenge.requestId, now)) {
+      throw new InvalidWebauthnRegistrationError()
+    }
+
     createCredential(db, {
       userId: input.userId,
       credentialId: verified.credentialId,
@@ -178,7 +204,24 @@ export function verifyRegistration(
       counter: verified.counter,
       transports: verified.transports
     })
+    input.logger?.info(
+      {
+        event: 'webauthn.register.verify.succeeded',
+        request_id: input.requestId,
+        user_id: input.userId,
+        credential_id: verified.credentialId
+      },
+      'WebAuthn registration verified'
+    )
   } catch (error) {
+    input.logger?.warn(
+      {
+        event: 'webauthn.register.verify.failed',
+        request_id: input.requestId,
+        user_id: input.userId
+      },
+      'WebAuthn registration failed'
+    )
     if (isSqliteUniqueConstraint(error)) {
       throw new DuplicateCredentialError()
     }
@@ -191,7 +234,7 @@ export function verifyRegistration(
 
 export function generateAuthenticationOptions(
   db: DatabaseClient,
-  input: { rpId: string }
+  input: { rpId: string; logger?: AppLogger }
 ): {
   request_id: string
   publicKey: {
@@ -212,7 +255,15 @@ export function generateAuthenticationOptions(
     expiresAt
   })
 
-  return {
+  const response: {
+    request_id: string
+    publicKey: {
+      challenge: string
+      rpId: string
+      timeout: number
+      userVerification: 'preferred'
+    }
+  } = {
     request_id: record.requestId,
     publicKey: {
       challenge,
@@ -221,6 +272,16 @@ export function generateAuthenticationOptions(
       userVerification: 'preferred'
     }
   }
+
+  input.logger?.info(
+    {
+      event: 'webauthn.authenticate.options.created',
+      request_id: record.requestId
+    },
+    'WebAuthn authentication options created'
+  )
+
+  return response
 }
 
 export async function verifyAuthentication(
@@ -231,40 +292,70 @@ export async function verifyAuthentication(
     rpId: string
     origins: string[]
     issuer: string
+    logger?: AppLogger
   }
 ) {
-  const challenge = getValidChallenge(db, input.requestId, 'authenticate')
-  const storedCredential = getCredentialByCredentialId(db, input.credential.id)
+  try {
+    const challenge = getValidChallenge(db, input.requestId, 'authenticate')
+    const storedCredential = getCredentialByCredentialId(
+      db,
+      input.credential.id
+    )
 
-  if (!storedCredential) {
-    throw new InvalidWebauthnAuthenticationError()
-  }
+    if (!storedCredential) {
+      throw new InvalidWebauthnAuthenticationError()
+    }
 
-  const nextCounter = verifyAuthenticationResponse(
-    input.credential,
-    challenge.challenge,
-    input.rpId,
-    input.origins,
-    JSON.parse(storedCredential.publicKey) as JsonWebKeyWithCurve,
-    storedCredential.counter
-  )
+    const nextCounter = verifyAuthenticationResponse(
+      input.credential,
+      challenge.challenge,
+      input.rpId,
+      input.origins,
+      JSON.parse(storedCredential.publicKey) as JsonWebKeyWithCurve,
+      storedCredential.counter
+    )
 
-  if (
-    !consumeChallengeAndUpdateCredentialCounter(db, {
-      requestId: challenge.requestId,
-      credentialId: storedCredential.id,
-      expectedCounter: storedCredential.counter,
-      nextCounter,
-      now: new Date().toISOString()
+    if (
+      !consumeChallengeAndUpdateCredentialCounter(db, {
+        requestId: challenge.requestId,
+        credentialId: storedCredential.id,
+        expectedCounter: storedCredential.counter,
+        nextCounter,
+        now: new Date().toISOString()
+      })
+    ) {
+      throw new InvalidWebauthnAuthenticationError()
+    }
+
+    const tokens = await mintSessionTokens(db, {
+      userId: storedCredential.userId,
+      issuer: input.issuer,
+      logger: input.logger
     })
-  ) {
-    throw new InvalidWebauthnAuthenticationError()
-  }
 
-  return mintSessionTokens(db, {
-    userId: storedCredential.userId,
-    issuer: input.issuer
-  })
+    input.logger?.info(
+      {
+        event: 'webauthn.authenticate.verify.succeeded',
+        request_id: input.requestId,
+        user_id: storedCredential.userId,
+        credential_id: storedCredential.credentialId,
+        session_id: tokens.session.id
+      },
+      'WebAuthn authentication verified'
+    )
+
+    return tokens
+  } catch (error) {
+    input.logger?.warn(
+      {
+        event: 'webauthn.authenticate.verify.failed',
+        request_id: input.requestId,
+        credential_id: input.credential.id
+      },
+      'WebAuthn authentication failed'
+    )
+    throw error
+  }
 }
 
 export function deleteCredential(

@@ -67,6 +67,14 @@ describe('session routes', () => {
     expect(sessions).toHaveLength(2)
     expect(originalSession?.revoked_at).toBeTruthy()
     expect(rotatedSession?.revoked_at).toBeNull()
+    expectLogEntry(testApp.logs, {
+      event: 'session.refresh.succeeded',
+      session_id: rotatedSession?.id,
+      user_id: testApp.userId
+    })
+    expect(JSON.stringify(testApp.logs)).not.toContain(
+      testApp.tokens.refresh_token
+    )
   })
 
   it('refresh rejects revoked session reuse', async () => {
@@ -88,6 +96,9 @@ describe('session routes', () => {
     expect(secondResponse.status).toBe(401)
     expect(await secondResponse.json()).toEqual({
       error: 'invalid_refresh_token'
+    })
+    expectLogEntry(testApp.logs, {
+      event: 'session.refresh.failed'
     })
   })
 
@@ -168,6 +179,11 @@ describe('session routes', () => {
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ ok: true })
     expect(session.revoked_at).toBeTruthy()
+    expectLogEntry(testApp.logs, {
+      event: 'session.logout.succeeded',
+      session_id: testApp.sessionId,
+      user_id: testApp.userId
+    })
   })
 
   it('logout makes the current refresh token unusable', async () => {
@@ -529,4 +545,11 @@ async function getAvailablePort(): Promise<number> {
       })
     })
   })
+}
+
+function expectLogEntry(
+  logs: Array<Record<string, unknown>>,
+  expected: Record<string, unknown>
+) {
+  expect(logs).toContainEqual(expect.objectContaining(expected))
 }
