@@ -32,6 +32,14 @@ describe('cli lifecycle logging', () => {
     )
     expect(result.logs).toContainEqual(
       expect.objectContaining({
+        event: 'jwks.bootstrap.created',
+        command: 'create',
+        db_path: dbPath,
+        kid: expect.any(String)
+      })
+    )
+    expect(result.logs).toContainEqual(
+      expect.objectContaining({
         event: 'cli.create.completed',
         command: 'create',
         db_path: dbPath

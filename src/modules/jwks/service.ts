@@ -15,7 +15,10 @@ import {
 } from '../../shared/time.js'
 import { getActiveKey, getKeyByKid, insertActiveKey, listKeys } from './repo.js'
 
-export async function bootstrapKeys(db: DatabaseClient): Promise<{
+export async function bootstrapKeys(
+  db: DatabaseClient,
+  input?: { logger?: AppLogger }
+): Promise<{
   id: string
   kid: string
 }> {
@@ -27,6 +30,11 @@ export async function bootstrapKeys(db: DatabaseClient): Promise<{
 
   const keyRecord = generateEd25519KeyRecord()
   insertActiveKey(db, keyRecord)
+
+  input?.logger?.info(
+    { event: 'jwks.bootstrap.created', kid: keyRecord.kid },
+    'Initial JWKS signing key created'
+  )
 
   return { id: keyRecord.id, kid: keyRecord.kid }
 }

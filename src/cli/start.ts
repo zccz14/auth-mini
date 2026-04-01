@@ -26,7 +26,7 @@ export async function runStartCommand(
   try {
     logger.info({ event: 'cli.start.started' }, 'Starting mini-auth server')
 
-    await bootstrapKeys(db)
+    await bootstrapKeys(db, { logger })
 
     const clientIps = new WeakMap<Request, string | null>()
 

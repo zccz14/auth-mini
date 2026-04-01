@@ -83,6 +83,12 @@ describe('runStartCommand', () => {
       runStartCommand({ dbPath: '/tmp/mini-auth.db' })
     ).rejects.toThrow('bootstrap failed')
     expect(db.close).toHaveBeenCalledTimes(1)
+    expect(bootstrapKeys).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        logger: expect.any(Object)
+      })
+    )
   })
 
   it('converts async request handler failures into a 500 response', async () => {

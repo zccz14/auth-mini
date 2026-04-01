@@ -23,7 +23,7 @@ export async function runCreateCommand(input: unknown): Promise<void> {
   const db = createDatabaseClient(command.dbPath)
 
   try {
-    await bootstrapKeys(db)
+    await bootstrapKeys(db, { logger })
 
     if (command.smtpConfig) {
       await importSmtpConfigs(db, command.smtpConfig)

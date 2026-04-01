@@ -88,6 +88,30 @@ describe('jwks service', () => {
     }
   })
 
+  it('emits a structured bootstrap event only when creating the first key', async () => {
+    const dbPath = await createTempDbPath()
+    await bootstrapDatabase(dbPath)
+    const db = createDatabaseClient(dbPath)
+    const logCollector = createMemoryLogCollector()
+
+    try {
+      const firstKey = await bootstrapKeys(db, { logger: logCollector.logger })
+      const entryCountAfterCreate = logCollector.entries.length
+
+      await bootstrapKeys(db, { logger: logCollector.logger })
+
+      expect(logCollector.entries).toContainEqual(
+        expect.objectContaining({
+          event: 'jwks.bootstrap.created',
+          kid: firstKey.kid
+        })
+      )
+      expect(logCollector.entries).toHaveLength(entryCountAfterCreate)
+    } finally {
+      db.close()
+    }
+  })
+
   it('cli rotation emits the required jwks rotated event', async () => {
     const dbPath = await createTempDbPath()
     const logCollector = createMemoryLogCollector()
