@@ -98,7 +98,16 @@ export function logoutSession(
   db: DatabaseClient,
   input: { sessionId: string; userId?: string; logger?: AppLogger }
 ): void {
-  revokeSessionById(db, input.sessionId, new Date().toISOString())
+  const revoked = revokeSessionById(
+    db,
+    input.sessionId,
+    new Date().toISOString()
+  )
+
+  if (!revoked) {
+    return
+  }
+
   input.logger?.info(
     {
       event: 'session.logout.succeeded',

@@ -186,6 +186,34 @@ describe('session routes', () => {
     })
   })
 
+  it('logout does not log success when the session was already revoked', async () => {
+    const testApp = await createSignedInApp('logout-repeat@example.com')
+    openApps.push(testApp)
+
+    const firstResponse = await testApp.app.request('/session/logout', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${testApp.tokens.access_token}`
+      }
+    })
+    const secondResponse = await testApp.app.request('/session/logout', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${testApp.tokens.access_token}`
+      }
+    })
+
+    const logoutSuccessLogs = testApp.logs.filter(
+      (entry) =>
+        entry.event === 'session.logout.succeeded' &&
+        entry.session_id === testApp.sessionId
+    )
+
+    expect(firstResponse.status).toBe(200)
+    expect(secondResponse.status).toBe(200)
+    expect(logoutSuccessLogs).toHaveLength(1)
+  })
+
   it('logout makes the current refresh token unusable', async () => {
     const testApp = await createSignedInApp('logout-refresh@example.com')
     openApps.push(testApp)

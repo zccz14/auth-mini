@@ -64,10 +64,18 @@ export function revokeSessionById(
   db: DatabaseClient,
   id: string,
   now: string
-): void {
-  db.prepare(
-    'UPDATE sessions SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ?'
-  ).run(now, id)
+): boolean {
+  const result = db
+    .prepare(
+      [
+        'UPDATE sessions',
+        'SET revoked_at = ?',
+        'WHERE id = ? AND revoked_at IS NULL AND expires_at > ?'
+      ].join(' ')
+    )
+    .run(now, id, now)
+
+  return result.changes > 0
 }
 
 export function revokeSessionByRefreshTokenHash(
