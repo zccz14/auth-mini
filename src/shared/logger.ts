@@ -14,11 +14,6 @@ export type AppLogger = {
   error(bindings: LogBindings, msg: string): void
 }
 
-export type MemoryLoggerSink = LoggerSink & {
-  entries: Record<string, unknown>[]
-  lines: string[]
-}
-
 const BASE_BINDINGS = {
   service: 'mini-auth'
 } as const
@@ -67,21 +62,5 @@ export function withErrorFields(error: unknown): Record<string, unknown> {
     error_name: error.name,
     error_message: error.message,
     ...(error.stack ? { stack: error.stack } : {})
-  }
-}
-
-export function createMemoryLoggerSink(): MemoryLoggerSink {
-  return {
-    entries: [],
-    lines: [],
-    write(line: string) {
-      const trimmedLine = line.trim()
-      if (trimmedLine.length === 0) {
-        return
-      }
-
-      this.lines.push(trimmedLine)
-      this.entries.push(JSON.parse(trimmedLine) as Record<string, unknown>)
-    }
   }
 }
