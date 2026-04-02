@@ -8,60 +8,60 @@ import {
   sign,
   verify,
   type JsonWebKey,
-  type KeyObject
-} from 'node:crypto'
+  type KeyObject,
+} from 'node:crypto';
 
-export type JwtPayload = Record<string, unknown>
+export type JwtPayload = Record<string, unknown>;
 
 export type PublicJwk = JsonWebKey & {
-  alg: 'EdDSA'
-  crv: 'Ed25519'
-  kid: string
-  kty: 'OKP'
-  use: 'sig'
-  x: string
-}
+  alg: 'EdDSA';
+  crv: 'Ed25519';
+  kid: string;
+  kty: 'OKP';
+  use: 'sig';
+  x: string;
+};
 
 export type PrivateJwk = PublicJwk & {
-  d: string
-}
+  d: string;
+};
 
 export type KeyRecord = {
-  id: string
-  kid: string
-  alg: 'EdDSA'
-  publicJwk: PublicJwk
-  privateJwk: PrivateJwk
-}
+  id: string;
+  kid: string;
+  alg: 'EdDSA';
+  publicJwk: PublicJwk;
+  privateJwk: PrivateJwk;
+};
 
 type JwtHeader = {
-  alg: 'EdDSA'
-  kid: string
-  typ: 'JWT'
-}
+  alg: 'EdDSA';
+  kid: string;
+  typ: 'JWT';
+};
 
 export function encodeBase64Url(value: string | Buffer): string {
-  const buffer = typeof value === 'string' ? Buffer.from(value, 'utf8') : value
-  return buffer.toString('base64url')
+  const buffer = typeof value === 'string' ? Buffer.from(value, 'utf8') : value;
+  return buffer.toString('base64url');
 }
 
 export function decodeBase64Url(value: string): Buffer {
-  return Buffer.from(value, 'base64url')
+  return Buffer.from(value, 'base64url');
 }
 
 export function hashValue(value: string): string {
-  return createHash('sha256').update(value).digest('hex')
+  return createHash('sha256').update(value).digest('hex');
 }
 
 export function generateOpaqueToken(size = 32): string {
-  return randomBytes(size).toString('base64url')
+  return randomBytes(size).toString('base64url');
 }
 
 export function generateEd25519KeyRecord(): KeyRecord {
-  const { privateKey, publicKey } = generateKeyPairSync('ed25519')
-  const kid = randomUUID()
-  const publicJwk = publicKey.export({ format: 'jwk' }) as PublicJwk
-  const privateJwk = privateKey.export({ format: 'jwk' }) as PrivateJwk
+  const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+  const kid = randomUUID();
+  const publicJwk = publicKey.export({ format: 'jwk' }) as PublicJwk;
+  const privateJwk = privateKey.export({ format: 'jwk' }) as PrivateJwk;
 
   return {
     id: randomUUID(),
@@ -73,7 +73,7 @@ export function generateEd25519KeyRecord(): KeyRecord {
       kid,
       kty: 'OKP',
       crv: 'Ed25519',
-      use: 'sig'
+      use: 'sig',
     },
     privateJwk: {
       ...privateJwk,
@@ -81,9 +81,9 @@ export function generateEd25519KeyRecord(): KeyRecord {
       kid,
       kty: 'OKP',
       crv: 'Ed25519',
-      use: 'sig'
-    }
-  }
+      use: 'sig',
+    },
+  };
 }
 
 export function toPublicJwk(privateJwk: PrivateJwk): PublicJwk {
@@ -93,86 +93,86 @@ export function toPublicJwk(privateJwk: PrivateJwk): PublicJwk {
     kid: privateJwk.kid,
     kty: privateJwk.kty,
     use: privateJwk.use,
-    x: privateJwk.x
-  }
+    x: privateJwk.x,
+  };
 }
 
 export function signJwt(
   payload: JwtPayload,
   privateJwk: PrivateJwk,
-  kid = privateJwk.kid
+  kid = privateJwk.kid,
 ): string {
   const encodedHeader = encodeBase64Url(
-    JSON.stringify({ alg: 'EdDSA', kid, typ: 'JWT' } satisfies JwtHeader)
-  )
-  const encodedPayload = encodeBase64Url(JSON.stringify(payload))
-  const signingInput = `${encodedHeader}.${encodedPayload}`
+    JSON.stringify({ alg: 'EdDSA', kid, typ: 'JWT' } satisfies JwtHeader),
+  );
+  const encodedPayload = encodeBase64Url(JSON.stringify(payload));
+  const signingInput = `${encodedHeader}.${encodedPayload}`;
   const signature = sign(
     null,
     Buffer.from(signingInput, 'utf8'),
-    createPrivateJwkKey(privateJwk)
-  )
+    createPrivateJwkKey(privateJwk),
+  );
 
-  return `${signingInput}.${encodeBase64Url(signature)}`
+  return `${signingInput}.${encodeBase64Url(signature)}`;
 }
 
 export function verifyJwt(
   token: string,
-  publicJwk: PublicJwk
+  publicJwk: PublicJwk,
 ): { header: JwtHeader; payload: JwtPayload } {
-  const segments = token.split('.')
+  const segments = token.split('.');
 
   if (segments.length !== 3) {
-    throw new Error('Invalid JWT format')
+    throw new Error('Invalid JWT format');
   }
 
-  const [encodedHeader, encodedPayload, encodedSignature] = segments
+  const [encodedHeader, encodedPayload, encodedSignature] = segments;
   const header = JSON.parse(
-    decodeBase64Url(encodedHeader).toString('utf8')
-  ) as Partial<JwtHeader>
+    decodeBase64Url(encodedHeader).toString('utf8'),
+  ) as Partial<JwtHeader>;
 
-  validateJwtHeader(header)
+  validateJwtHeader(header);
 
-  const signingInput = `${encodedHeader}.${encodedPayload}`
-  const signature = decodeBase64Url(encodedSignature)
+  const signingInput = `${encodedHeader}.${encodedPayload}`;
+  const signature = decodeBase64Url(encodedSignature);
   const verified = verify(
     null,
     Buffer.from(signingInput, 'utf8'),
     createPublicJwkKey(publicJwk),
-    signature
-  )
+    signature,
+  );
 
   if (!verified) {
-    throw new Error('Invalid JWT signature')
+    throw new Error('Invalid JWT signature');
   }
 
   const payload = JSON.parse(
-    decodeBase64Url(encodedPayload).toString('utf8')
-  ) as JwtPayload
+    decodeBase64Url(encodedPayload).toString('utf8'),
+  ) as JwtPayload;
 
-  return { header, payload }
+  return { header, payload };
 }
 
 function validateJwtHeader(
-  header: Partial<JwtHeader>
+  header: Partial<JwtHeader>,
 ): asserts header is JwtHeader {
   if (header.alg !== 'EdDSA') {
-    throw new Error('JWT header alg must be EdDSA')
+    throw new Error('JWT header alg must be EdDSA');
   }
 
   if (header.typ !== 'JWT') {
-    throw new Error('JWT header typ must be JWT')
+    throw new Error('JWT header typ must be JWT');
   }
 
   if (!header.kid) {
-    throw new Error('JWT missing kid')
+    throw new Error('JWT missing kid');
   }
 }
 
 function createPrivateJwkKey(privateJwk: PrivateJwk): KeyObject {
-  return createPrivateKey({ format: 'jwk', key: privateJwk })
+  return createPrivateKey({ format: 'jwk', key: privateJwk });
 }
 
 function createPublicJwkKey(publicJwk: PublicJwk): KeyObject {
-  return createPublicKey({ format: 'jwk', key: publicJwk })
+  return createPublicKey({ format: 'jwk', key: publicJwk });
 }

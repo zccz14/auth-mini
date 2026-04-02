@@ -1,54 +1,54 @@
-import type { MiddlewareHandler } from 'hono'
-import type { DatabaseClient } from '../infra/db/client.js'
-import { verifyJwt } from '../modules/jwks/service.js'
-import { invalidAccessTokenError } from './errors.js'
+import type { MiddlewareHandler } from 'hono';
+import type { DatabaseClient } from '../infra/db/client.js';
+import { verifyJwt } from '../modules/jwks/service.js';
+import { invalidAccessTokenError } from './errors.js';
 
 export type AccessTokenClaims = {
-  sub: string
-  sid: string
-}
+  sub: string;
+  sid: string;
+};
 
 export type AuthVariables = {
-  auth: AccessTokenClaims
-}
+  auth: AccessTokenClaims;
+};
 
 type AuthContextVariables = AuthVariables & {
-  db: DatabaseClient
-}
+  db: DatabaseClient;
+};
 
 export const requireAccessToken: MiddlewareHandler<{
-  Variables: AuthContextVariables
+  Variables: AuthContextVariables;
 }> = async (c, next) => {
-  const authorization = c.req.header('authorization')
+  const authorization = c.req.header('authorization');
 
   if (!authorization?.startsWith('Bearer ')) {
-    throw invalidAccessTokenError()
+    throw invalidAccessTokenError();
   }
 
-  const token = authorization.slice('Bearer '.length).trim()
+  const token = authorization.slice('Bearer '.length).trim();
 
   if (!token) {
-    throw invalidAccessTokenError()
+    throw invalidAccessTokenError();
   }
 
   try {
-    const payload = await verifyJwt(c.var.db, token)
+    const payload = await verifyJwt(c.var.db, token);
 
     if (
       payload.typ !== 'access' ||
       typeof payload.sub !== 'string' ||
       typeof payload.sid !== 'string'
     ) {
-      throw new Error('Invalid access token payload')
+      throw new Error('Invalid access token payload');
     }
 
     c.set('auth', {
       sub: payload.sub,
-      sid: payload.sid
-    })
+      sid: payload.sid,
+    });
   } catch {
-    throw invalidAccessTokenError()
+    throw invalidAccessTokenError();
   }
 
-  await next()
-}
+  await next();
+};

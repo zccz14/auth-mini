@@ -1,25 +1,25 @@
 #!/usr/bin/env node
 
-import { cac } from 'cac'
-import { runCreateCommand } from './cli/create.js'
-import { normalizeOriginOption } from './cli/options.js'
-import { runStartCommand } from './cli/start.js'
-import { runRotateJwksCommand } from './cli/rotate-jwks.js'
+import { cac } from 'cac';
+import { runCreateCommand } from './cli/create.js';
+import { normalizeOriginOption } from './cli/options.js';
+import { runStartCommand } from './cli/start.js';
+import { runRotateJwksCommand } from './cli/rotate-jwks.js';
 
-const cli = cac('mini-auth')
+const cli = cac('mini-auth');
 
 cli
   .command('create <dbPath>')
   .option('--smtp-config <file>', 'SMTP config JSON file')
   .action(async (dbPath: string, options: { smtpConfig?: string }) => {
     await executeCommand(() =>
-      runCreateCommand({ dbPath, smtpConfig: options.smtpConfig })
-    )
-  })
+      runCreateCommand({ dbPath, smtpConfig: options.smtpConfig }),
+    );
+  });
 
 cli.command('rotate-jwks <dbPath>').action(async (dbPath: string) => {
-  await executeCommand(() => runRotateJwksCommand({ dbPath }))
-})
+  await executeCommand(() => runRotateJwksCommand({ dbPath }));
+});
 
 cli
   .command('start <dbPath>')
@@ -28,18 +28,18 @@ cli
   .option('--issuer <url>', 'JWT issuer URL')
   .option('--rp-id <rpId>', 'WebAuthn relying party ID')
   .option('--origin <origin>', 'Allowed WebAuthn origin', {
-    default: [] as string[]
+    default: [] as string[],
   })
   .action(
     async (
       dbPath: string,
       options: {
-        host?: string
-        port?: string
-        issuer?: string
-        rpId?: string
-        origin?: string | string[]
-      }
+        host?: string;
+        port?: string;
+        issuer?: string;
+        rpId?: string;
+        origin?: string | string[];
+      },
     ) => {
       await executeCommand(async () => {
         await runStartCommand({
@@ -48,22 +48,22 @@ cli
           port: options.port,
           issuer: options.issuer,
           rpId: options.rpId,
-          origin: normalizeOriginOption(options.origin)
-        })
-      })
-    }
-  )
+          origin: normalizeOriginOption(options.origin),
+        });
+      });
+    },
+  );
 
-cli.version('0.1.0')
-cli.help()
-cli.parse()
+cli.version('0.1.0');
+cli.help();
+cli.parse();
 
 async function executeCommand(run: () => Promise<void>): Promise<void> {
   try {
-    await run()
+    await run();
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error'
-    console.error(message)
-    process.exitCode = 1
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error(message);
+    process.exitCode = 1;
   }
 }

@@ -1,185 +1,185 @@
-import { createServer } from 'node:http'
-import { afterEach, describe, expect, it } from 'vitest'
-import { bootstrapDatabase } from '../../src/infra/db/bootstrap.js'
-import { createDatabaseClient } from '../../src/infra/db/client.js'
-import { runStartCommand } from '../../src/cli/start.js'
-import { createApp } from '../../src/server/app.js'
-import { createTestApp } from '../helpers/app.js'
-import { createTempDbPath } from '../helpers/db.js'
+import { createServer } from 'node:http';
+import { afterEach, describe, expect, it } from 'vitest';
+import { bootstrapDatabase } from '../../src/infra/db/bootstrap.js';
+import { createDatabaseClient } from '../../src/infra/db/client.js';
+import { runStartCommand } from '../../src/cli/start.js';
+import { createApp } from '../../src/server/app.js';
+import { createTestApp } from '../helpers/app.js';
+import { createTempDbPath } from '../helpers/db.js';
 import {
   completedEntriesForRequest,
-  createMemoryLogCollector
-} from '../helpers/logging.js'
+  createMemoryLogCollector,
+} from '../helpers/logging.js';
 
-const json = (value: unknown) => JSON.stringify(value)
+const json = (value: unknown) => JSON.stringify(value);
 
-const openResources: Array<{ close(): Promise<void> | void }> = []
+const openResources: Array<{ close(): Promise<void> | void }> = [];
 
 afterEach(async () => {
   while (openResources.length > 0) {
-    await openResources.pop()?.close()
+    await openResources.pop()?.close();
   }
-})
+});
 
 describe('http request logging', () => {
   it('emits request start and one terminal completion event', async () => {
-    const testApp = await createTestApp({ clientIp: '203.0.113.5' })
-    openResources.push(testApp)
+    const testApp = await createTestApp({ clientIp: '203.0.113.5' });
+    openResources.push(testApp);
 
-    const response = await testApp.app.request('/jwks', { method: 'GET' })
+    const response = await testApp.app.request('/jwks', { method: 'GET' });
 
-    expect(response.status).toBe(200)
+    expect(response.status).toBe(200);
 
     const started = testApp.logs.find(
-      (entry) => entry.event === 'http.request.started'
-    )
-    const requestId = started?.request_id
+      (entry) => entry.event === 'http.request.started',
+    );
+    const requestId = started?.request_id;
 
     expect(started).toMatchObject({
       event: 'http.request.started',
       method: 'GET',
       path: '/jwks',
-      ip: '203.0.113.5'
-    })
-    expect(requestId).toEqual(expect.any(String))
+      ip: '203.0.113.5',
+    });
+    expect(requestId).toEqual(expect.any(String));
     expect(
-      completedEntriesForRequest(testApp.logs, String(requestId))
-    ).toHaveLength(1)
+      completedEntriesForRequest(testApp.logs, String(requestId)),
+    ).toHaveLength(1);
     expect(
-      completedEntriesForRequest(testApp.logs, String(requestId))[0]
+      completedEntriesForRequest(testApp.logs, String(requestId))[0],
     ).toMatchObject({
       event: 'http.request.completed',
       status_code: 200,
       duration_ms: expect.any(Number),
-      ip: '203.0.113.5'
-    })
-  })
+      ip: '203.0.113.5',
+    });
+  });
 
   it('emits one terminal completion event for handled errors', async () => {
     const testApp = await createTestApp({
       clientIp: '203.0.113.7',
-      smtpConfigs: []
-    })
-    openResources.push(testApp)
+      smtpConfigs: [],
+    });
+    openResources.push(testApp);
 
     const response = await testApp.app.request('/email/start', {
       method: 'POST',
       headers: {
-        'content-type': 'application/json'
+        'content-type': 'application/json',
       },
-      body: json({ email: 'user@example.com' })
-    })
+      body: json({ email: 'user@example.com' }),
+    });
 
-    expect(response.status).toBe(503)
+    expect(response.status).toBe(503);
 
     const started = testApp.logs.find(
-      (entry) => entry.event === 'http.request.started'
-    )
-    const requestId = String(started?.request_id)
+      (entry) => entry.event === 'http.request.started',
+    );
+    const requestId = String(started?.request_id);
 
-    expect(completedEntriesForRequest(testApp.logs, requestId)).toHaveLength(1)
+    expect(completedEntriesForRequest(testApp.logs, requestId)).toHaveLength(1);
     expect(
-      completedEntriesForRequest(testApp.logs, requestId)[0]
+      completedEntriesForRequest(testApp.logs, requestId)[0],
     ).toMatchObject({
       event: 'http.request.completed',
       status_code: 503,
       duration_ms: expect.any(Number),
-      ip: '203.0.113.7'
-    })
-  })
+      ip: '203.0.113.7',
+    });
+  });
 
   it('emits one diagnostic error log and one terminal completion event for unhandled exceptions', async () => {
-    const dbPath = await createTempDbPath()
-    await bootstrapDatabase(dbPath)
-    const db = createDatabaseClient(dbPath)
-    const logCollector = createMemoryLogCollector()
-    const clientIps = new WeakMap<Request, string | null>()
+    const dbPath = await createTempDbPath();
+    await bootstrapDatabase(dbPath);
+    const db = createDatabaseClient(dbPath);
+    const logCollector = createMemoryLogCollector();
+    const clientIps = new WeakMap<Request, string | null>();
     const app = createApp({
       db,
       getClientIp(request) {
-        return clientIps.get(request) ?? null
+        return clientIps.get(request) ?? null;
       },
       issuer: 'https://issuer.example',
       origins: ['https://app.example.com'],
       rpId: 'example.com',
-      logger: logCollector.logger
-    })
+      logger: logCollector.logger,
+    });
 
     openResources.push({
       close() {
-        db.close()
-      }
-    })
+        db.close();
+      },
+    });
 
     app.get('/boom', () => {
-      throw new Error('boom')
-    })
+      throw new Error('boom');
+    });
 
-    const request = new Request('http://mini-auth.test/boom')
-    clientIps.set(request, '203.0.113.9')
+    const request = new Request('http://mini-auth.test/boom');
+    clientIps.set(request, '203.0.113.9');
 
-    const response = await app.fetch(request)
+    const response = await app.fetch(request);
 
-    expect(response.status).toBe(500)
+    expect(response.status).toBe(500);
 
     const started = logCollector.entries.find(
-      (entry) => entry.event === 'http.request.started'
-    )
-    const requestId = String(started?.request_id)
+      (entry) => entry.event === 'http.request.started',
+    );
+    const requestId = String(started?.request_id);
     const errorEntries = logCollector.entries.filter(
       (entry) =>
-        entry.request_id === requestId && entry.error_message === 'boom'
-    )
+        entry.request_id === requestId && entry.error_message === 'boom',
+    );
 
-    expect(errorEntries).toHaveLength(1)
+    expect(errorEntries).toHaveLength(1);
     expect(errorEntries[0]).toMatchObject({
       error_name: 'Error',
-      error_message: 'boom'
-    })
+      error_message: 'boom',
+    });
     expect(
-      completedEntriesForRequest(logCollector.entries, requestId)
-    ).toHaveLength(1)
+      completedEntriesForRequest(logCollector.entries, requestId),
+    ).toHaveLength(1);
     expect(
-      completedEntriesForRequest(logCollector.entries, requestId)[0]
+      completedEntriesForRequest(logCollector.entries, requestId)[0],
     ).toMatchObject({
       event: 'http.request.completed',
       status_code: 500,
       duration_ms: expect.any(Number),
-      ip: '203.0.113.9'
-    })
-  })
+      ip: '203.0.113.9',
+    });
+  });
 
   it('captures client ip from the direct socket path', async () => {
-    const runtime = await startLoggedServer()
-    openResources.push(runtime)
+    const runtime = await startLoggedServer();
+    openResources.push(runtime);
 
     const response = await fetch(`${runtime.url}/jwks`, {
       headers: {
-        'x-forwarded-for': '198.51.100.9'
-      }
-    })
+        'x-forwarded-for': '198.51.100.9',
+      },
+    });
 
-    expect(response.status).toBe(200)
+    expect(response.status).toBe(200);
 
     const completed = runtime.logs.find(
-      (entry) => entry.event === 'http.request.completed'
-    )
+      (entry) => entry.event === 'http.request.completed',
+    );
 
     expect(completed).toMatchObject({
       event: 'http.request.completed',
       status_code: 200,
-      ip: expect.any(String)
-    })
-    expect(completed?.ip).not.toBe('198.51.100.9')
-  })
-})
+      ip: expect.any(String),
+    });
+    expect(completed?.ip).not.toBe('198.51.100.9');
+  });
+});
 
 async function startLoggedServer() {
-  const dbPath = await createTempDbPath()
-  const port = await getAvailablePort()
-  const logCollector = createMemoryLogCollector()
+  const dbPath = await createTempDbPath();
+  const port = await getAvailablePort();
+  const logCollector = createMemoryLogCollector();
 
-  await bootstrapDatabase(dbPath)
+  await bootstrapDatabase(dbPath);
 
   const server = await runStartCommand({
     dbPath,
@@ -188,38 +188,38 @@ async function startLoggedServer() {
     issuer: 'https://issuer.example',
     rpId: 'example.com',
     origin: ['https://app.example.com'],
-    loggerSink: logCollector.sink
-  })
+    loggerSink: logCollector.sink,
+  });
 
   return {
     ...server,
     logs: logCollector.entries,
-    url: `http://127.0.0.1:${port}`
-  }
+    url: `http://127.0.0.1:${port}`,
+  };
 }
 
 async function getAvailablePort(): Promise<number> {
   return new Promise((resolve, reject) => {
-    const server = createServer()
+    const server = createServer();
 
-    server.once('error', reject)
+    server.once('error', reject);
     server.listen(0, '127.0.0.1', () => {
-      const address = server.address()
+      const address = server.address();
 
       if (!address || typeof address === 'string') {
-        reject(new Error('Failed to allocate a test port'))
-        return
+        reject(new Error('Failed to allocate a test port'));
+        return;
       }
 
-      const { port } = address
+      const { port } = address;
       server.close((error) => {
         if (error) {
-          reject(error)
-          return
+          reject(error);
+          return;
         }
 
-        resolve(port)
-      })
-    })
-  })
+        resolve(port);
+      });
+    });
+  });
 }

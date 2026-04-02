@@ -1,42 +1,40 @@
-import { spawn } from 'node:child_process'
-import { resolve } from 'node:path'
-import { runCreateCommand } from '../../src/cli/create.js'
-import { runRotateJwksCommand } from '../../src/cli/rotate-jwks.js'
-import { createMemoryLogCollector, type LogEntry } from './logging.js'
+import { spawn } from 'node:child_process';
+import { resolve } from 'node:path';
+import { runCreateCommand } from '../../src/cli/create.js';
+import { runRotateJwksCommand } from '../../src/cli/rotate-jwks.js';
+import { createMemoryLogCollector, type LogEntry } from './logging.js';
 
-let buildPromise: Promise<void> | null = null
+let buildPromise: Promise<void> | null = null;
 
 export async function ensureCliIsBuilt(): Promise<void> {
   if (!buildPromise) {
     buildPromise = runCommand('npm', ['run', 'build']).then((result) => {
       if (result.exitCode !== 0) {
-        throw new Error(result.stderr || result.stdout || 'CLI build failed')
+        throw new Error(result.stderr || result.stdout || 'CLI build failed');
       }
-    })
+    });
   }
 
-  await buildPromise
+  await buildPromise;
 }
 
 export async function runCli(
-  args: string[]
+  args: string[],
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  const cliEntrypoint = resolve(process.cwd(), 'dist/index.js')
+  const cliEntrypoint = resolve(process.cwd(), 'dist/index.js');
 
-  return runCommand(process.execPath, [cliEntrypoint, ...args])
+  return runCommand(process.execPath, [cliEntrypoint, ...args]);
 }
 
-export async function runLoggedCli(
-  args: string[]
-): Promise<{
-  exitCode: number
-  stdout: string
-  stderr: string
-  logs: LogEntry[]
+export async function runLoggedCli(args: string[]): Promise<{
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  logs: LogEntry[];
 }> {
-  await ensureCliIsBuilt()
+  await ensureCliIsBuilt();
 
-  const result = await runCli(args)
+  const result = await runCli(args);
 
   return {
     ...result,
@@ -44,67 +42,67 @@ export async function runLoggedCli(
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => line.length > 0)
-      .map((line) => JSON.parse(line) as LogEntry)
-  }
+      .map((line) => JSON.parse(line) as LogEntry),
+  };
 }
 
 export async function runLoggedCreateCommand(input: {
-  dbPath: string
-  smtpConfig?: string
+  dbPath: string;
+  smtpConfig?: string;
 }): Promise<{ logs: LogEntry[] }> {
-  const logCollector = createMemoryLogCollector()
+  const logCollector = createMemoryLogCollector();
 
   await runCreateCommand({
     ...input,
-    loggerSink: logCollector.sink
-  })
+    loggerSink: logCollector.sink,
+  });
 
   return {
-    logs: logCollector.entries
-  }
+    logs: logCollector.entries,
+  };
 }
 
 export async function runLoggedRotateJwksCommand(input: {
-  dbPath: string
+  dbPath: string;
 }): Promise<{ logs: LogEntry[] }> {
-  const logCollector = createMemoryLogCollector()
+  const logCollector = createMemoryLogCollector();
 
   await runRotateJwksCommand({
     ...input,
-    loggerSink: logCollector.sink
-  })
+    loggerSink: logCollector.sink,
+  });
 
   return {
-    logs: logCollector.entries
-  }
+    logs: logCollector.entries,
+  };
 }
 
 async function runCommand(
   command: string,
-  args: string[]
+  args: string[],
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   return new Promise((resolveRun, reject) => {
     const child = spawn(command, args, {
       cwd: process.cwd(),
-      stdio: ['ignore', 'pipe', 'pipe']
-    })
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
 
-    let stdout = ''
-    let stderr = ''
+    let stdout = '';
+    let stderr = '';
 
     child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString()
-    })
+      stdout += chunk.toString();
+    });
     child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString()
-    })
-    child.on('error', reject)
+      stderr += chunk.toString();
+    });
+    child.on('error', reject);
     child.on('close', (code) => {
       resolveRun({
         exitCode: code ?? 1,
         stdout,
-        stderr
-      })
-    })
-  })
+        stderr,
+      });
+    });
+  });
 }

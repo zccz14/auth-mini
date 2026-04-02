@@ -1,11 +1,11 @@
-import { readFile } from 'node:fs/promises'
-import type Database from 'better-sqlite3'
+import { readFile } from 'node:fs/promises';
+import type Database from 'better-sqlite3';
 
 export async function runSqlFile(
   db: Database.Database,
-  sqlFilePath: string
+  sqlFilePath: string,
 ): Promise<void> {
-  const sql = await readFile(sqlFilePath, 'utf8')
+  const sql = await readFile(sqlFilePath, 'utf8');
 
-  db.exec(sql)
+  db.exec(sql);
 }

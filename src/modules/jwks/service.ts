@@ -1,125 +1,133 @@
-import type { DatabaseClient } from '../../infra/db/client.js'
-import type { AppLogger } from '../../shared/logger.js'
+import type { DatabaseClient } from '../../infra/db/client.js';
+import type { AppLogger } from '../../shared/logger.js';
 import {
   generateEd25519KeyRecord,
   signJwt as signCompactJwt,
   toPublicJwk,
   verifyJwt as verifyCompactJwt,
   type JwtPayload,
-  type PublicJwk
-} from '../../shared/crypto.js'
+  type PublicJwk,
+} from '../../shared/crypto.js';
 import {
   TTLS,
   getExpiresAtUnixSeconds,
-  getUnixTimeSeconds
-} from '../../shared/time.js'
-import { getActiveKey, getKeyByKid, insertActiveKey, listKeys } from './repo.js'
+  getUnixTimeSeconds,
+} from '../../shared/time.js';
+import {
+  getActiveKey,
+  getKeyByKid,
+  insertActiveKey,
+  listKeys,
+} from './repo.js';
 
 export async function bootstrapKeys(
   db: DatabaseClient,
-  input?: { logger?: AppLogger }
+  input?: { logger?: AppLogger },
 ): Promise<{
-  id: string
-  kid: string
+  id: string;
+  kid: string;
 }> {
-  const activeKey = getActiveKey(db)
+  const activeKey = getActiveKey(db);
 
   if (activeKey) {
-    return { id: activeKey.id, kid: activeKey.kid }
+    return { id: activeKey.id, kid: activeKey.kid };
   }
 
-  const keyRecord = generateEd25519KeyRecord()
-  insertActiveKey(db, keyRecord)
+  const keyRecord = generateEd25519KeyRecord();
+  insertActiveKey(db, keyRecord);
 
   input?.logger?.info(
     { event: 'jwks.bootstrap.created', kid: keyRecord.kid },
-    'Initial JWKS signing key created'
-  )
+    'Initial JWKS signing key created',
+  );
 
-  return { id: keyRecord.id, kid: keyRecord.kid }
+  return { id: keyRecord.id, kid: keyRecord.kid };
 }
 
 export async function rotateKeys(
   db: DatabaseClient,
-  input: { logger: AppLogger }
+  input: { logger: AppLogger },
 ): Promise<{
-  id: string
-  kid: string
+  id: string;
+  kid: string;
 }> {
-  const keyRecord = generateEd25519KeyRecord()
-  insertActiveKey(db, keyRecord)
+  const keyRecord = generateEd25519KeyRecord();
+  insertActiveKey(db, keyRecord);
 
   input.logger.info(
     { event: 'jwks.rotated', kid: keyRecord.kid },
-    'JWKS rotated'
-  )
+    'JWKS rotated',
+  );
 
-  return { id: keyRecord.id, kid: keyRecord.kid }
+  return { id: keyRecord.id, kid: keyRecord.kid };
 }
 
 export async function listPublicKeys(
   db: DatabaseClient,
-  input: { logger: AppLogger }
+  input: { logger: AppLogger },
 ): Promise<PublicJwk[]> {
-  const keys = listKeys(db).map((key) => toPublicJwk(key.privateJwk))
-  input.logger.info({ event: 'jwks.read', key_count: keys.length }, 'JWKS read')
+  const keys = listKeys(db).map((key) => toPublicJwk(key.privateJwk));
+  input.logger.info(
+    { event: 'jwks.read', key_count: keys.length },
+    'JWKS read',
+  );
 
-  return keys
+  return keys;
 }
 
 export async function signJwt(
   db: DatabaseClient,
-  payload: JwtPayload
+  payload: JwtPayload,
 ): Promise<string> {
-  const activeKey = getActiveKey(db)
+  const activeKey = getActiveKey(db);
 
   if (!activeKey) {
-    throw new Error('No active JWKS signing key')
+    throw new Error('No active JWKS signing key');
   }
 
-  const iat = getUnixTimeSeconds()
+  const iat = getUnixTimeSeconds();
   const claims = {
     ...payload,
     iat,
-    exp: getExpiresAtUnixSeconds(iat, TTLS.accessTokenSeconds)
-  }
+    exp: getExpiresAtUnixSeconds(iat, TTLS.accessTokenSeconds),
+  };
 
-  return signCompactJwt(claims, activeKey.privateJwk, activeKey.kid)
+  return signCompactJwt(claims, activeKey.privateJwk, activeKey.kid);
 }
 
 export async function verifyJwt(
   db: DatabaseClient,
-  token: string
+  token: string,
 ): Promise<JwtPayload> {
-  const headerSegment = token.split('.')[0]
+  const headerSegment = token.split('.')[0];
 
   if (!headerSegment) {
-    throw new Error('Invalid JWT format')
+    throw new Error('Invalid JWT format');
   }
 
   const header = JSON.parse(
-    Buffer.from(headerSegment, 'base64url').toString('utf8')
-  ) as { kid?: string }
+    Buffer.from(headerSegment, 'base64url').toString('utf8'),
+  ) as { kid?: string };
 
   if (!header.kid) {
-    throw new Error('JWT missing kid')
+    throw new Error('JWT missing kid');
   }
 
-  const storedKey = getKeyByKid(db, header.kid)
+  const storedKey = getKeyByKid(db, header.kid);
 
   if (!storedKey) {
-    throw new Error('Unknown JWT kid')
+    throw new Error('Unknown JWT kid');
   }
 
-  const { payload } = verifyCompactJwt(token, storedKey.publicJwk)
+  const { payload } = verifyCompactJwt(token, storedKey.publicJwk);
 
   if (typeof payload.exp !== 'number' || !Number.isFinite(payload.exp)) {
-    throw new Error('JWT exp must be a number')
+    throw new Error('JWT exp must be a number');
   }
 
   if (payload.exp <= getUnixTimeSeconds()) {
-    throw new Error('JWT expired')
+    throw new Error('JWT expired');
   }
 
-  return payload
+  return payload;
 }

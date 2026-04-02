@@ -1,48 +1,48 @@
-import type { AppLogger } from '../../src/shared/logger.js'
-import { createRootLogger } from '../../src/shared/logger.js'
+import type { AppLogger } from '../../src/shared/logger.js';
+import { createRootLogger } from '../../src/shared/logger.js';
 
-export type LogEntry = Record<string, unknown>
+export type LogEntry = Record<string, unknown>;
 
 export type MemoryLogCollector = {
-  entries: LogEntry[]
-  lines: string[]
-  logger: AppLogger
-  sink: { write(line: string): void }
-}
+  entries: LogEntry[];
+  lines: string[];
+  logger: AppLogger;
+  sink: { write(line: string): void };
+};
 
 export function createMemoryLogCollector(): MemoryLogCollector {
-  const entries: LogEntry[] = []
-  const lines: string[] = []
+  const entries: LogEntry[] = [];
+  const lines: string[] = [];
   const sink = {
     write(line: string) {
-      const trimmedLine = line.trim()
+      const trimmedLine = line.trim();
 
       if (trimmedLine.length === 0) {
-        return
+        return;
       }
 
-      lines.push(trimmedLine)
-      entries.push(JSON.parse(trimmedLine) as LogEntry)
-    }
-  }
+      lines.push(trimmedLine);
+      entries.push(JSON.parse(trimmedLine) as LogEntry);
+    },
+  };
 
   return {
     entries,
     lines,
     logger: createRootLogger({ sink }),
-    sink
-  }
+    sink,
+  };
 }
 
 export function entriesForRequest(entries: LogEntry[], requestId: string) {
-  return entries.filter((entry) => entry.request_id === requestId)
+  return entries.filter((entry) => entry.request_id === requestId);
 }
 
 export function completedEntriesForRequest(
   entries: LogEntry[],
-  requestId: string
+  requestId: string,
 ) {
   return entriesForRequest(entries, requestId).filter(
-    (entry) => entry.event === 'http.request.completed'
-  )
+    (entry) => entry.event === 'http.request.completed',
+  );
 }

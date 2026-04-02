@@ -1,116 +1,117 @@
-import { randomInt } from 'node:crypto'
-import type { DatabaseClient } from '../../infra/db/client.js'
+import { randomInt } from 'node:crypto';
+import type { DatabaseClient } from '../../infra/db/client.js';
 import {
   listSmtpConfigs,
   selectSmtpConfig,
-  sendOtpMail
-} from '../../infra/smtp/mailer.js'
-import { hashValue } from '../../shared/crypto.js'
-import type { AppLogger } from '../../shared/logger.js'
+  sendOtpMail,
+} from '../../infra/smtp/mailer.js';
+import { hashValue } from '../../shared/crypto.js';
+import type { AppLogger } from '../../shared/logger.js';
 import {
   TTLS,
   getExpiresAtUnixSeconds,
-  getUnixTimeSeconds
-} from '../../shared/time.js'
+  getUnixTimeSeconds,
+} from '../../shared/time.js';
 import {
   createUser,
   getUserByEmail,
-  markUserEmailVerified
-} from '../users/repo.js'
-import { mintSessionTokens, type TokenPair } from '../session/service.js'
+  markUserEmailVerified,
+} from '../users/repo.js';
+import { mintSessionTokens, type TokenPair } from '../session/service.js';
 import {
   consumeEmailOtp,
   getEmailOtp,
   invalidateEmailOtp,
-  upsertEmailOtp
-} from './repo.js'
+  upsertEmailOtp,
+} from './repo.js';
 
 export class SmtpNotConfiguredError extends Error {
   constructor() {
-    super('smtp_not_configured')
+    super('smtp_not_configured');
   }
 }
 
 export class SmtpDeliveryError extends Error {
   constructor() {
-    super('smtp_temporarily_unavailable')
+    super('smtp_temporarily_unavailable');
   }
 }
 
 export class InvalidEmailOtpError extends Error {
   constructor() {
-    super('invalid_email_otp')
+    super('invalid_email_otp');
   }
 }
 
 export async function startEmailAuth(
   db: DatabaseClient,
-  input: { email: string; logger?: AppLogger; ip?: string | null }
+  input: { email: string; logger?: AppLogger; ip?: string | null },
 ): Promise<{ ok: true }> {
-  const email = normalizeEmail(input.email)
+  const email = normalizeEmail(input.email);
   input.logger?.info(
     {
       event: 'email.start.requested',
       email,
-      ...(input.ip ? { ip: input.ip } : {})
+      ...(input.ip ? { ip: input.ip } : {}),
     },
-    'Email auth start requested'
-  )
-  const smtpConfig = selectSmtpConfig(listSmtpConfigs(db))
+    'Email auth start requested',
+  );
+  const smtpConfig = selectSmtpConfig(listSmtpConfigs(db));
 
   if (!smtpConfig) {
     input.logger?.warn(
       { event: 'email.start.failed', email, reason: 'smtp_not_configured' },
-      'Email auth start failed'
-    )
-    throw new SmtpNotConfiguredError()
+      'Email auth start failed',
+    );
+    throw new SmtpNotConfiguredError();
   }
 
-  const code = generateOtpCode()
+  const code = generateOtpCode();
 
   upsertEmailOtp(db, {
     email,
     codeHash: hashValue(code),
     expiresAt: new Date(
-      getExpiresAtUnixSeconds(getUnixTimeSeconds(), TTLS.otpSeconds) * 1000
-    ).toISOString()
-  })
+      getExpiresAtUnixSeconds(getUnixTimeSeconds(), TTLS.otpSeconds) * 1000,
+    ).toISOString(),
+  });
 
   try {
-    await sendOtpMail(smtpConfig, email, code, { logger: input.logger })
-  } catch {
-    invalidateEmailOtp(db, email, new Date().toISOString())
+    await sendOtpMail(smtpConfig, email, code, { logger: input.logger });
+  } catch (err) {
+    invalidateEmailOtp(db, email, new Date().toISOString());
     input.logger?.warn(
       {
         event: 'email.start.failed',
         email,
         reason: 'smtp_temporarily_unavailable',
-        smtp_config_id: smtpConfig.id
+        message: err instanceof Error ? err.message : String(err),
+        smtp_config_id: smtpConfig.id,
       },
-      'Email auth start failed'
-    )
-    throw new SmtpDeliveryError()
+      'Email auth start failed',
+    );
+    throw new SmtpDeliveryError();
   }
 
   input.logger?.info(
     {
       event: 'email.start.sent',
       email,
-      smtp_config_id: smtpConfig.id
+      smtp_config_id: smtpConfig.id,
     },
-    'Email auth start sent'
-  )
+    'Email auth start sent',
+  );
 
-  return { ok: true }
+  return { ok: true };
 }
 
 export async function verifyEmailAuth(
   db: DatabaseClient,
-  input: { email: string; code: string; issuer: string; logger?: AppLogger }
+  input: { email: string; code: string; issuer: string; logger?: AppLogger },
 ): Promise<TokenPair> {
-  const email = normalizeEmail(input.email)
-  const otp = getEmailOtp(db, email)
-  const now = new Date().toISOString()
+  const email = normalizeEmail(input.email);
+  const otp = getEmailOtp(db, email);
+  const now = new Date().toISOString();
 
   if (
     !otp ||
@@ -120,55 +121,55 @@ export async function verifyEmailAuth(
   ) {
     input.logger?.warn(
       { event: 'email.verify.failed', email, reason: 'invalid_email_otp' },
-      'Email auth verify failed'
-    )
-    throw new InvalidEmailOtpError()
+      'Email auth verify failed',
+    );
+    throw new InvalidEmailOtpError();
   }
 
   if (!consumeEmailOtp(db, email, now)) {
     input.logger?.warn(
       { event: 'email.verify.failed', email, reason: 'invalid_email_otp' },
-      'Email auth verify failed'
-    )
-    throw new InvalidEmailOtpError()
+      'Email auth verify failed',
+    );
+    throw new InvalidEmailOtpError();
   }
 
-  let user = getUserByEmail(db, email)
+  let user = getUserByEmail(db, email);
 
   if (!user) {
-    user = createUser(db, email, now)
+    user = createUser(db, email, now);
   } else if (!user.emailVerifiedAt) {
-    markUserEmailVerified(db, user.id, now)
+    markUserEmailVerified(db, user.id, now);
   }
 
   const tokens = await mintSessionTokens(db, {
     userId: user.id,
     issuer: input.issuer,
-    logger: input.logger
-  })
+    logger: input.logger,
+  });
 
   input.logger?.info(
     {
       event: 'email.verify.succeeded',
       email,
       user_id: user.id,
-      session_id: tokens.session.id
+      session_id: tokens.session.id,
     },
-    'Email auth verify succeeded'
-  )
+    'Email auth verify succeeded',
+  );
 
   return {
     access_token: tokens.access_token,
     token_type: tokens.token_type,
     expires_in: tokens.expires_in,
-    refresh_token: tokens.refresh_token
-  }
+    refresh_token: tokens.refresh_token,
+  };
 }
 
 function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase()
+  return email.trim().toLowerCase();
 }
 
 function generateOtpCode(): string {
-  return randomInt(0, 1_000_000).toString().padStart(6, '0')
+  return randomInt(0, 1_000_000).toString().padStart(6, '0');
 }

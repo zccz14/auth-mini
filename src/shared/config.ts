@@ -1,4 +1,4 @@
-import { z } from 'zod'
+import { z } from 'zod';
 
 const runtimeConfigSchema = z.object({
   dbPath: z.string().min(1),
@@ -6,32 +6,32 @@ const runtimeConfigSchema = z.object({
   port: z.coerce.number().int().positive().default(7777),
   issuer: z.url(),
   rpId: z.string().min(1),
-  origin: z.array(z.string().min(1)).min(1)
-})
+  origin: z.array(z.string().min(1)).min(1),
+});
 
 const createCommandSchema = z.object({
   dbPath: z.string().min(1),
-  smtpConfig: z.string().min(1).optional()
-})
+  smtpConfig: z.string().min(1).optional(),
+});
 
 const rotateJwksCommandSchema = z.object({
-  dbPath: z.string().min(1)
-})
+  dbPath: z.string().min(1),
+});
 
 export type RuntimeConfig = {
-  dbPath: string
-  host: string
-  port: number
-  issuer: string
-  rpId: string
-  origins: string[]
-}
+  dbPath: string;
+  host: string;
+  port: number;
+  issuer: string;
+  rpId: string;
+  origins: string[];
+};
 
-export type CreateCommandInput = z.infer<typeof createCommandSchema>
-export type RotateJwksCommandInput = z.infer<typeof rotateJwksCommandSchema>
+export type CreateCommandInput = z.infer<typeof createCommandSchema>;
+export type RotateJwksCommandInput = z.infer<typeof rotateJwksCommandSchema>;
 
 export function parseRuntimeConfig(input: unknown): RuntimeConfig {
-  const parsed = runtimeConfigSchema.parse(input)
+  const parsed = runtimeConfigSchema.parse(input);
 
   return {
     dbPath: parsed.dbPath,
@@ -39,16 +39,16 @@ export function parseRuntimeConfig(input: unknown): RuntimeConfig {
     port: parsed.port,
     issuer: parsed.issuer,
     rpId: parsed.rpId,
-    origins: parsed.origin
-  }
+    origins: parsed.origin,
+  };
 }
 
 export function parseCreateCommandInput(input: unknown): CreateCommandInput {
-  return createCommandSchema.parse(input)
+  return createCommandSchema.parse(input);
 }
 
 export function parseRotateJwksCommandInput(
-  input: unknown
+  input: unknown,
 ): RotateJwksCommandInput {
-  return rotateJwksCommandSchema.parse(input)
+  return rotateJwksCommandSchema.parse(input);
 }
