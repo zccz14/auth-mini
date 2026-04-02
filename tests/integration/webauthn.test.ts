@@ -176,6 +176,32 @@ describe('webauthn routes', () => {
     expect(await response.json()).toEqual({ ok: true });
   });
 
+  it('register/verify accepts a credential without clientExtensionResults', async () => {
+    const testApp = await createSignedInApp('register-no-ext@example.com');
+    openApps.push(testApp);
+    const passkey = createTestPasskey('register-no-ext@example.com');
+
+    const options = await getRegisterOptions(testApp);
+    const credential = passkey.createRegistrationCredential(
+      options.publicKey,
+      origin,
+    );
+    const credentialWithoutExtensions = { ...credential };
+    delete credentialWithoutExtensions.clientExtensionResults;
+
+    const response = await testApp.app.request('/webauthn/register/verify', {
+      method: 'POST',
+      headers: authHeaders(testApp.tokens.access_token),
+      body: json({
+        request_id: options.request_id,
+        credential: credentialWithoutExtensions,
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+  });
+
   it('second register/options invalidates the first unused request id', async () => {
     const testApp = await createSignedInApp('replace-register@example.com');
     openApps.push(testApp);

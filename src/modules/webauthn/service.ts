@@ -27,7 +27,7 @@ type ParsedCredential = {
 };
 
 type RegistrationCredential = ParsedCredential & {
-  clientExtensionResults: Record<string, unknown>;
+  clientExtensionResults?: Record<string, unknown>;
   response: {
     clientDataJSON: string;
     attestationObject: string;
@@ -182,8 +182,13 @@ export async function verifyRegistration(
       throw new InvalidWebauthnRegistrationError();
     }
 
+    const credential = {
+      ...input.credential,
+      clientExtensionResults: input.credential.clientExtensionResults ?? {},
+    };
+
     const verification = await verifySimpleWebAuthnRegistrationResponse({
-      response: input.credential as Parameters<
+      response: credential as Parameters<
         typeof verifySimpleWebAuthnRegistrationResponse
       >[0]['response'],
       expectedChallenge: challenge.challenge,
@@ -196,7 +201,8 @@ export async function verifyRegistration(
       throw new InvalidWebauthnRegistrationError();
     }
 
-    const { credential } = verification.registrationInfo;
+    const { credential: registrationCredential } =
+      verification.registrationInfo;
 
     const now = new Date().toISOString();
 
@@ -206,17 +212,17 @@ export async function verifyRegistration(
 
     createCredential(db, {
       userId: input.userId,
-      credentialId: credential.id,
-      publicKey: encodeBase64Url(Buffer.from(credential.publicKey)),
-      counter: credential.counter,
-      transports: credential.transports ?? [],
+      credentialId: registrationCredential.id,
+      publicKey: encodeBase64Url(Buffer.from(registrationCredential.publicKey)),
+      counter: registrationCredential.counter,
+      transports: registrationCredential.transports ?? [],
     });
     input.logger?.info(
       {
         event: 'webauthn.register.verify.succeeded',
         request_id: input.requestId,
         user_id: input.userId,
-        credential_id: credential.id,
+        credential_id: registrationCredential.id,
       },
       'WebAuthn registration verified',
     );

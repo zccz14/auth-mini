@@ -152,7 +152,7 @@ Authentication options are username-less and intentionally omit `allowCredential
 
 WebAuthn registration and authentication verification now use `@simplewebauthn/server`. mini-auth intentionally limits advertised registration algorithms to `-7` (ES256) and `-257` (RS256), because those are the algorithms explicitly covered by the integration test suite.
 
-Generating a new register or authenticate challenge invalidates the previous unused challenge of the same type, so the client can simply request a fresh challenge instead of calling a separate cancel endpoint.
+Generating a new registration challenge invalidates the previous unused registration challenge for the same signed-in user. Authentication challenges are preserved so concurrent sign-in attempts can complete independently.
 
 ## Philosophy
 
