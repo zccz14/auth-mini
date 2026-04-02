@@ -1,7 +1,10 @@
 import {
+  generateAuthenticationOptions as generateSimpleWebAuthnAuthenticationOptions,
+  generateRegistrationOptions as generateSimpleWebAuthnRegistrationOptions,
+} from '@simplewebauthn/server';
+import {
   createHash,
   createPublicKey,
-  randomBytes,
   verify,
   type JsonWebKey,
 } from 'node:crypto';
@@ -86,24 +89,37 @@ export class WebauthnCredentialNotFoundError extends Error {
   }
 }
 
-export function generateRegistrationOptions(
+export async function generateRegistrationOptions(
   db: DatabaseClient,
   input: { userId: string; email: string; rpId: string; logger?: AppLogger },
-): {
+): Promise<{
   request_id: string;
   publicKey: {
     challenge: string;
     rp: { name: 'mini-auth'; id: string };
     user: { id: string; name: string; displayName: string };
-    pubKeyCredParams: Array<{ type: 'public-key'; alg: -7 }>;
+    pubKeyCredParams: Array<{ type: 'public-key'; alg: -7 | -257 }>;
     timeout: number;
     authenticatorSelection: {
       residentKey: 'required';
       userVerification: 'preferred';
     };
   };
-} {
-  const challenge = encodeBase64Url(randomBytes(32));
+}> {
+  const options = await generateSimpleWebAuthnRegistrationOptions({
+    rpName: 'mini-auth',
+    rpID: input.rpId,
+    userName: input.email,
+    userID: Buffer.from(input.userId, 'utf8'),
+    userDisplayName: input.email,
+    timeout: 300000,
+    authenticatorSelection: {
+      residentKey: 'required',
+      userVerification: 'preferred',
+    },
+    supportedAlgorithmIDs: [-7, -257],
+  });
+
   consumeUnusedRegistrationChallengesForUser(
     db,
     input.userId,
@@ -114,7 +130,7 @@ export function generateRegistrationOptions(
   ).toISOString();
   const record = createChallenge(db, {
     type: 'register',
-    challenge,
+    challenge: options.challenge,
     userId: input.userId,
     expiresAt,
   });
@@ -125,7 +141,7 @@ export function generateRegistrationOptions(
       challenge: string;
       rp: { name: 'mini-auth'; id: string };
       user: { id: string; name: string; displayName: string };
-      pubKeyCredParams: Array<{ type: 'public-key'; alg: -7 }>;
+      pubKeyCredParams: Array<{ type: 'public-key'; alg: -7 | -257 }>;
       timeout: number;
       authenticatorSelection: {
         residentKey: 'required';
@@ -135,18 +151,21 @@ export function generateRegistrationOptions(
   } = {
     request_id: record.requestId,
     publicKey: {
-      challenge,
+      challenge: options.challenge,
       rp: {
         name: 'mini-auth',
         id: input.rpId,
       },
       user: {
-        id: encodeBase64Url(Buffer.from(input.userId, 'utf8')),
+        id: options.user.id,
         name: input.email,
         displayName: input.email,
       },
-      pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
-      timeout: TTLS.webauthnChallengeSeconds * 1000,
+      pubKeyCredParams: options.pubKeyCredParams as Array<{
+        type: 'public-key';
+        alg: -7 | -257;
+      }>,
+      timeout: 300000,
       authenticatorSelection: {
         residentKey: 'required',
         userVerification: 'preferred',
@@ -232,10 +251,10 @@ export function verifyRegistration(
   return { ok: true };
 }
 
-export function generateAuthenticationOptions(
+export async function generateAuthenticationOptions(
   db: DatabaseClient,
   input: { rpId: string; logger?: AppLogger },
-): {
+): Promise<{
   request_id: string;
   publicKey: {
     challenge: string;
@@ -243,14 +262,19 @@ export function generateAuthenticationOptions(
     timeout: number;
     userVerification: 'preferred';
   };
-} {
-  const challenge = encodeBase64Url(randomBytes(32));
+}> {
+  const options = await generateSimpleWebAuthnAuthenticationOptions({
+    rpID: input.rpId,
+    timeout: 300000,
+    userVerification: 'preferred',
+  });
+
   const expiresAt = new Date(
     Date.now() + TTLS.webauthnChallengeSeconds * 1000,
   ).toISOString();
   const record = createChallenge(db, {
     type: 'authenticate',
-    challenge,
+    challenge: options.challenge,
     userId: null,
     expiresAt,
   });
@@ -266,9 +290,9 @@ export function generateAuthenticationOptions(
   } = {
     request_id: record.requestId,
     publicKey: {
-      challenge,
+      challenge: options.challenge,
       rpId: input.rpId,
-      timeout: TTLS.webauthnChallengeSeconds * 1000,
+      timeout: 300000,
       userVerification: 'preferred',
     },
   };

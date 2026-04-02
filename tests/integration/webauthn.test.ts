@@ -118,6 +118,10 @@ describe('webauthn routes', () => {
           name: 'register@example.com',
           displayName: 'register@example.com',
         },
+        pubKeyCredParams: [
+          { type: 'public-key', alg: -7 },
+          { type: 'public-key', alg: -257 },
+        ],
         timeout: 300000,
         authenticatorSelection: {
           residentKey: 'required',
@@ -239,6 +243,14 @@ describe('webauthn routes', () => {
     expect(response.status).toBe(200);
     expect(body).toMatchObject({
       request_id: expect.any(String),
+    });
+    expect(body.publicKey).toEqual({
+      challenge: expect.any(String),
+      rpId: 'example.com',
+      timeout: 300000,
+      userVerification: 'preferred',
+    });
+    expect(body).toMatchObject({
       publicKey: {
         challenge: expect.any(String),
         rpId: 'example.com',

@@ -229,7 +229,7 @@ export function createApp(input: {
     }
 
     return c.json(
-      generateRegistrationOptions(c.var.db, {
+      await generateRegistrationOptions(c.var.db, {
         userId: user.id,
         email: user.email,
         rpId: c.var.rpId,
@@ -255,7 +255,7 @@ export function createApp(input: {
 
   app.post('/webauthn/authenticate/options', async (c) => {
     return c.json(
-      generateAuthenticationOptions(c.var.db, {
+      await generateAuthenticationOptions(c.var.db, {
         rpId: c.var.rpId,
         logger: c.var.logger,
       }),
