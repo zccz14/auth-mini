@@ -1,3 +1,5 @@
+import { getDemoSetupState } from './setup.js';
+
 const storageKey = 'mini-auth-demo-state';
 
 const state = {
@@ -21,6 +23,7 @@ const elements = {
   latestResponse: document.querySelector('#latest-response'),
   pageOrigin: document.querySelector('#page-origin'),
   pageRpId: document.querySelector('#page-rp-id'),
+  setupWarning: document.querySelector('#setup-warning'),
   proxyCommand: document.querySelector('#proxy-command'),
   originCommand: document.querySelector('#origin-command'),
   emailStartOutput: document.querySelector('#email-start-output'),
@@ -381,13 +384,23 @@ function renderState() {
 }
 
 function renderSetupHints() {
-  const origin = window.location.origin;
-  const rpId = window.location.hostname;
+  const setupState = getDemoSetupState(window.location);
 
-  elements.pageOrigin.textContent = origin;
-  elements.pageRpId.textContent = rpId;
-  elements.proxyCommand.textContent = `live-server demo --proxy=/api:http://127.0.0.1:7777`;
-  elements.originCommand.textContent = `mini-auth start ./mini-auth.sqlite --origin ${origin} --rp-id ${rpId}`;
+  elements.pageOrigin.textContent = setupState.currentOrigin;
+  elements.pageRpId.textContent = setupState.currentRpId;
+  elements.proxyCommand.textContent = setupState.proxyCommand;
+  elements.originCommand.textContent = `mini-auth start ./mini-auth.sqlite --origin ${setupState.suggestedOrigin} --rp-id ${setupState.suggestedRpId}`;
+  elements.setupWarning.textContent = setupState.warning;
+  elements.setupWarning.hidden = !setupState.warning;
+
+  if (!setupState.webauthnReady && window.PublicKeyCredential) {
+    const message = `${setupState.warning}\n\nSuggested origin: ${setupState.suggestedOrigin}\nSuggested RP ID: ${setupState.suggestedRpId}`;
+
+    setSectionResult('register', 'error', message);
+    setSectionResult('authenticate', 'error', message);
+    elements.registerButton.disabled = true;
+    elements.authenticateButton.disabled = true;
+  }
 }
 
 function setSectionLoading(name, message) {
