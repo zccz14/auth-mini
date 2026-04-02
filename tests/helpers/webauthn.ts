@@ -21,6 +21,30 @@ type AuthenticationOptions = {
   rpId: string;
 };
 
+type RegistrationCredential = {
+  id: string;
+  rawId: string;
+  type: 'public-key';
+  clientExtensionResults?: Record<string, unknown>;
+  response: {
+    clientDataJSON: string;
+    attestationObject: string;
+    transports?: string[];
+  };
+};
+
+type AuthenticationCredential = {
+  id: string;
+  rawId: string;
+  type: 'public-key';
+  response: {
+    clientDataJSON: string;
+    authenticatorData: string;
+    signature: string;
+    userHandle?: string | null;
+  };
+};
+
 type TestPasskeyAlgorithm = 'ES256' | 'RS256';
 
 type CreateTestPasskeyInput =
@@ -50,7 +74,10 @@ export function createTestPasskey(
 
   return {
     credentialId: encodeBase64Url(credentialId),
-    createRegistrationCredential(options: RegistrationOptions, origin: string) {
+    createRegistrationCredential(
+      options: RegistrationOptions,
+      origin: string,
+    ): RegistrationCredential {
       const clientDataJSON = toClientDataJSON({
         type: 'webauthn.create',
         challenge: options.challenge,
@@ -95,7 +122,7 @@ export function createTestPasskey(
     createAuthenticationCredential(
       options: AuthenticationOptions,
       origin: string,
-    ) {
+    ): AuthenticationCredential {
       counter += 1;
       return this.createAuthenticationCredentialWithCounter(
         options,
@@ -107,7 +134,7 @@ export function createTestPasskey(
       options: AuthenticationOptions,
       origin: string,
       nextCounter: number,
-    ) {
+    ): AuthenticationCredential {
       const clientDataJSON = toClientDataJSON({
         type: 'webauthn.get',
         challenge: options.challenge,
