@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   cancelledNavigatorCredentials,
+  countRefreshCalls,
   createMiniAuthForTest,
   createWebauthnRequestRecorder,
   fakeAuthenticatedStorageWithMe,
@@ -140,6 +141,87 @@ describe('sdk webauthn flows', () => {
           transports: ['internal'],
         },
       },
+    });
+  });
+
+  it('refreshes again before register verify when the passkey prompt takes too long', async () => {
+    let currentTime = Date.parse('2026-04-03T00:09:00.000Z');
+    const fetch = vi.fn(async (input: unknown, init?: RequestInit) => {
+      const path =
+        input instanceof URL ? input.pathname : new URL(String(input)).pathname;
+
+      if (path === '/webauthn/register/options') {
+        return jsonResponse({
+          request_id: 'request-register',
+          publicKey: {
+            challenge: 'CQoLDA',
+            rp: { id: 'auth.example.com', name: 'mini-auth' },
+            user: {
+              id: 'DQ4PEA',
+              name: 'u@example.com',
+              displayName: 'u@example.com',
+            },
+            pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+            timeout: 300000,
+          },
+        });
+      }
+
+      if (path === '/session/refresh') {
+        return jsonResponse({
+          access_token: 'refreshed-access',
+          refresh_token: 'refreshed-refresh',
+          expires_in: 900,
+          token_type: 'Bearer',
+        });
+      }
+
+      if (path === '/me') {
+        return jsonResponse({
+          user_id: 'u1',
+          email: 'u@example.com',
+          webauthn_credentials: [],
+          active_sessions: [],
+        });
+      }
+
+      if (path === '/webauthn/register/verify') {
+        return jsonResponse({ ok: true });
+      }
+
+      throw new Error(
+        `Unhandled fetch path: ${path} ${JSON.stringify(init ?? {})}`,
+      );
+    });
+    const sdk = createMiniAuthForTest({
+      fetch,
+      now: () => currentTime,
+      navigatorCredentials: {
+        async create(options?: CredentialCreationOptions) {
+          currentTime = Date.parse('2026-04-03T00:11:00.000Z');
+          return fakeNavigatorCredentials().create(options);
+        },
+      },
+      storage: fakeAuthenticatedStorageWithMe(undefined, {
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+        receivedAt: '2026-04-03T00:00:00.000Z',
+        expiresAt: '2026-04-03T00:15:00.000Z',
+      }),
+    });
+
+    await sdk.webauthn.register();
+
+    expect(countRefreshCalls(fetch)).toBe(1);
+    expect(fetch.mock.calls[0]?.[1]).toMatchObject({
+      headers: expect.objectContaining({
+        authorization: 'Bearer access-token',
+      }),
+    });
+    expect(fetch.mock.calls.at(-1)?.[1]).toMatchObject({
+      headers: expect.objectContaining({
+        authorization: 'Bearer refreshed-access',
+      }),
     });
   });
 });

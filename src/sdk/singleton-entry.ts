@@ -485,11 +485,11 @@ function createRuntime() {
       },
       async register() {
         ensureWebauthnSupport('register');
-        const accessToken = await requireAccessToken();
+        const optionsAccessToken = await requireAccessToken();
         const options = await input.http.postJson(
           '/webauthn/register/options',
           {},
-          { accessToken },
+          { accessToken: optionsAccessToken },
         );
         const credential = await requestCredential(
           'register',
@@ -498,13 +498,14 @@ function createRuntime() {
             publicKey: decodeRegistrationOptions(options.publicKey),
           },
         );
+        const verifyAccessToken = await requireAccessToken();
         return await input.http.postJson(
           '/webauthn/register/verify',
           {
             request_id: options.request_id,
             credential: serializeCredential(credential),
           },
-          { accessToken },
+          { accessToken: verifyAccessToken },
         );
       },
     };
