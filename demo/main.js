@@ -304,18 +304,21 @@ function renderState() {
 }
 
 function renderSetupHints() {
-  const setupState = getDemoSetupState(window.location);
+  const setupState = getDemoSetupState({
+    origin: window.location.origin,
+    protocol: window.location.protocol,
+    hostname: window.location.hostname,
+    sdkUrl: elements.baseUrl.value,
+  });
 
   elements.pageOrigin.textContent = setupState.currentOrigin;
   elements.pageRpId.textContent = setupState.currentRpId;
-  elements.originCommand.textContent = `mini-auth start ./mini-auth.sqlite --origin ${setupState.suggestedOrigin} --rp-id ${setupState.suggestedRpId}`;
-  elements.setupWarning.textContent =
-    setupState.warning ||
-    'Serve this page from any static host, then start mini-auth with --origin set to the current page origin.';
+  elements.originCommand.textContent = setupState.startupCommand;
+  elements.setupWarning.textContent = setupState.corsWarning;
   elements.setupWarning.hidden = false;
 
-  if (!setupState.webauthnReady && window.PublicKeyCredential) {
-    const message = `${setupState.warning}\n\nSuggested origin: ${setupState.suggestedOrigin}\nSuggested RP ID: ${setupState.suggestedRpId}`;
+  if (setupState.passkeyWarning && window.PublicKeyCredential) {
+    const message = `${setupState.passkeyWarning}\n\nKeep --origin ${setupState.suggestedOrigin} for CORS, but use --rp-id ${setupState.suggestedRpId} and open this page on localhost or an HTTPS domain for passkeys.`;
 
     setSectionResult('register', 'error', message);
     setSectionResult('authenticate', 'error', message);

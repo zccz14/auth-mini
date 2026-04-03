@@ -13,6 +13,40 @@ describe('demo WebAuthn setup guidance', () => {
       expect.objectContaining({
         currentOrigin: 'http://localhost:8080',
         suggestedOrigin: 'http://localhost:8080',
+        corsWarning:
+          'Start mini-auth with --origin set to this page origin so the browser can call the auth server cross-origin.',
+      }),
+    );
+  });
+
+  it('includes the resolved auth server origin as issuer in the startup command', () => {
+    expect(
+      getDemoSetupState({
+        origin: 'http://localhost:8080',
+        protocol: 'http:',
+        hostname: 'localhost',
+        sdkUrl: 'http://127.0.0.1:7777/sdk/singleton-iife.js',
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        startupCommand:
+          'mini-auth start ./mini-auth.sqlite --issuer http://127.0.0.1:7777 --origin http://localhost:8080 --rp-id localhost',
+      }),
+    );
+  });
+
+  it('falls back to a placeholder issuer when sdk url derivation fails', () => {
+    expect(
+      getDemoSetupState({
+        origin: 'http://localhost:8080',
+        protocol: 'http:',
+        hostname: 'localhost',
+        sdkUrl: 'not-a-valid-url',
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        startupCommand:
+          'mini-auth start ./mini-auth.sqlite --issuer <auth-server-origin> --origin http://localhost:8080 --rp-id localhost',
       }),
     );
   });
@@ -37,9 +71,11 @@ describe('demo WebAuthn setup guidance', () => {
     ).toEqual(
       expect.objectContaining({
         webauthnReady: false,
-        suggestedOrigin: 'http://localhost:8080',
+        suggestedOrigin: 'http://127.0.0.1:8080',
         suggestedRpId: 'localhost',
-        warning:
+        corsWarning:
+          'Start mini-auth with --origin set to this page origin so the browser can call the auth server cross-origin.',
+        passkeyWarning:
           'This demo is running on an IP address. Passkeys require a domain RP ID, so open the demo on localhost or an HTTPS domain instead.',
       }),
     );
@@ -55,9 +91,9 @@ describe('demo WebAuthn setup guidance', () => {
     ).toEqual(
       expect.objectContaining({
         webauthnReady: false,
-        suggestedOrigin: 'https://localhost:8443',
+        suggestedOrigin: 'https://127.0.0.1:8443',
         suggestedRpId: 'localhost',
-        warning:
+        passkeyWarning:
           'This demo is running on an IP address. Passkeys require a domain RP ID, so open the demo on localhost or an HTTPS domain instead.',
       }),
     );
@@ -73,9 +109,9 @@ describe('demo WebAuthn setup guidance', () => {
     ).toEqual(
       expect.objectContaining({
         webauthnReady: false,
-        suggestedOrigin: 'https://localhost:8443',
+        suggestedOrigin: 'https://[::1]:8443',
         suggestedRpId: 'localhost',
-        warning:
+        passkeyWarning:
           'This demo is running on an IP address. Passkeys require a domain RP ID, so open the demo on localhost or an HTTPS domain instead.',
       }),
     );
@@ -93,7 +129,7 @@ describe('demo WebAuthn setup guidance', () => {
         webauthnReady: true,
         suggestedOrigin: 'http://localhost:8080',
         suggestedRpId: 'localhost',
-        warning: '',
+        passkeyWarning: '',
       }),
     );
   });

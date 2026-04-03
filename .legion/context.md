@@ -9,7 +9,9 @@
 - 2026-04-04: 已提交 design/plan 文档：`cf36bb9 docs: add cors sdk demo design and plan`。
 - 2026-04-04: Task 1 已完成并提交：`82d091c feat: add auth server cors responses`；该切片补齐了全局 CORS middleware、allowed/disallowed origin、preflight、error-path 与 `Vary: Origin` 行为。
 - 2026-04-04: Task 2 已完成并提交：`3470131 test: cover sdk endpoint cors contract`；该切片为 `/sdk/singleton-iife.js` 补上了 allowed-origin CORS 测试，并去掉了 served source 里的 same-origin 限制文案。
-- 2026-04-04: Task 3 已完成并通过 spec/code review；当前 demo 已移除 proxy 文案，setup 继续从 `window.location.origin` 推导 Auth Server `--origin`，并允许通过 `?sdk-origin=` 覆盖默认 SDK origin，下一步进入 README 与最终验证。
+- 2026-04-04: Task 3 已完成并提交：`e4c0626 feat: update demo for direct cors usage`；该切片移除了 proxy 文案，setup 继续从 `window.location.origin` 推导 Auth Server `--origin`，并允许通过 `?sdk-origin=` 覆盖默认 SDK origin。
+- 2026-04-04: Task 4 已完成最终实现与验证；README 已更新 cross-origin 浏览器接入说明，demo 启动命令现在会根据实际 SDK URL 渲染具体 `--issuer`，并将 passkey 限制与 CORS allowlist 提示拆开。
+- 2026-04-04: 已完成最终全量验证：`npm test && npm run typecheck && npm run lint && npm run build`，结果为 21 个 test files / 148 个 tests 全通过，typecheck/lint/build 全成功。
 
 ## Decisions
 
@@ -19,5 +21,5 @@
 
 ## Next
 
-- 提交 Task 3 的 Demo 去 proxy 化切片。
-- 然后进入 Task 4：README、全量验证与 push。
+- 提交 Task 4 的 README / demo 收尾切片。
+- 然后 push 当前分支到远端。

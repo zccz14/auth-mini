@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { ZodType } from 'zod';
 import type { DatabaseClient } from '../infra/db/client.js';
 import { listPublicKeys } from '../modules/jwks/service.js';
@@ -443,7 +443,7 @@ function applyCorsHeaders(
 function buildErrorResponse(
   c: {
     req: { header(name: string): string | undefined };
-    json: typeof Response.json;
+    json: Context['json'];
   },
   error: unknown,
   input: {

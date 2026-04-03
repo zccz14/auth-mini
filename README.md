@@ -102,10 +102,10 @@ Refresh uses the refresh token in the JSON body:
 
 mini-auth also serves a singleton browser SDK at `GET /sdk/singleton-iife.js`.
 
-Load it from the same origin as the auth API, or from the same-origin proxy prefix that fronts the auth API:
+Load the script from the auth server origin. The singleton SDK still infers its API base URL from its own `src`, so the script origin and API origin must match:
 
 ```html
-<script src="/api/sdk/singleton-iife.js"></script>
+<script src="https://auth.example.com/sdk/singleton-iife.js"></script>
 <script>
   window.MiniAuth.session.onChange((state) => {
     console.log('auth status:', state.status);
@@ -113,7 +113,22 @@ Load it from the same origin as the auth API, or from the same-origin proxy pref
 </script>
 ```
 
-v1 is intentionally zero-config: the script infers its API base URL from its own `src`, persists session state in `localStorage`, and automatically refreshes access tokens. Cross-origin embedding is intentionally unsupported in v1; use same-origin deployment or a same-origin reverse proxy only.
+v1 is intentionally zero-config: the script infers its API base URL from its own `src`, persists session state in `localStorage`, and automatically refreshes access tokens. Browser pages may be hosted on a different origin than the auth server as long as the page origin is explicitly allowed with `--origin` when you start mini-auth.
+
+Same-origin proxy deployment is still supported if you prefer to front mini-auth through your app origin, but direct cross-origin loading is now the primary browser SDK path.
+
+For example, this page:
+
+- page origin: `http://localhost:3000`
+- auth server origin: `http://127.0.0.1:7777`
+
+works when mini-auth is started with `--origin http://localhost:3000` and the page loads the SDK from the auth server:
+
+```html
+<script src="http://127.0.0.1:7777/sdk/singleton-iife.js"></script>
+```
+
+The demo follows this same contract by default for direct cross-origin usage, and can optionally override the SDK script origin with `?sdk-origin=` when you want to point the page at a different auth server origin.
 
 ### Startup state model
 
@@ -127,7 +142,7 @@ If a refresh token is already stored, startup enters `recovering` first and then
 ### Passkey example
 
 ```html
-<script src="/api/sdk/singleton-iife.js"></script>
+<script src="https://auth.example.com/sdk/singleton-iife.js"></script>
 <script>
   async function signIn(email, code) {
     await window.MiniAuth.email.start({ email });
@@ -144,7 +159,8 @@ If a refresh token is already stored, startup enters `recovering` first and then
 
 ### Operational limits
 
-- v1 supports same-origin or same-origin proxy deployment only.
+- The SDK script origin must match the auth API origin because the singleton client derives its base URL from the script `src`.
+- Cross-origin browser pages are supported only when the page origin is included in `--origin`.
 - v1 is designed for single-tab reliability. Because refresh tokens rotate, multiple tabs sharing one session may race and invalidate one another.
 
 ## WebAuthn flow
