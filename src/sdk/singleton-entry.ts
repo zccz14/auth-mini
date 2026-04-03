@@ -667,7 +667,7 @@ function createRuntime() {
       currentScript: document.currentScript,
       fetch: resolveFetch(window.fetch?.bind(window)),
     }).sdk;
-    /* v1 supports same-origin or same-origin proxy deployment only. */
+    /* v1 supports direct browser loading from allowed origins. */
   }
 
   function toNullableString(value) {

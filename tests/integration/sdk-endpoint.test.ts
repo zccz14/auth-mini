@@ -22,6 +22,24 @@ describe('singleton sdk endpoint', () => {
     }
   });
 
+  it('returns cors headers for allowed origins on the singleton sdk endpoint', async () => {
+    const testApp = await createTestApp();
+
+    try {
+      const response = await testApp.app.request('/sdk/singleton-iife.js', {
+        headers: { origin: 'https://app.example.com' },
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get('access-control-allow-origin')).toBe(
+        'https://app.example.com',
+      );
+      expect(response.headers.get('vary')).toBe('Origin');
+    } finally {
+      testApp.close();
+    }
+  });
+
   it('bootstraps window.MiniAuth from the served source', async () => {
     const testApp = await createTestApp();
 
@@ -75,13 +93,13 @@ describe('singleton sdk endpoint', () => {
     }
   });
 
-  it('documents the same-origin deployment limitation in served source', async () => {
+  it('does not describe the served source as same-origin-only', async () => {
     const testApp = await createTestApp();
 
     try {
       const response = await testApp.app.request('/sdk/singleton-iife.js');
 
-      expect(await response.text()).toContain('same-origin');
+      expect(await response.text()).not.toContain('same-origin');
     } finally {
       testApp.close();
     }
