@@ -9,5 +9,4 @@ export function getDemoSetupState(locationLike: {
   suggestedRpId: string;
   webauthnReady: boolean;
   warning: string;
-  proxyCommand: string;
 };

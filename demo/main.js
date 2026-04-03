@@ -21,7 +21,6 @@ const elements = {
   pageOrigin: document.querySelector('#page-origin'),
   pageRpId: document.querySelector('#page-rp-id'),
   setupWarning: document.querySelector('#setup-warning'),
-  proxyCommand: document.querySelector('#proxy-command'),
   originCommand: document.querySelector('#origin-command'),
   emailStartOutput: document.querySelector('#email-start-output'),
   emailVerifyOutput: document.querySelector('#email-verify-output'),
@@ -69,7 +68,7 @@ async function initialize() {
     elements.statusConfig.textContent = 'SDK missing';
     elements.setupWarning.hidden = false;
     elements.setupWarning.textContent =
-      'MiniAuth SDK did not load. Serve /api/sdk/singleton-iife.js from the same origin or same-origin proxy path.';
+      'MiniAuth SDK did not load. Point this page at an auth server SDK URL and make sure that server was started with --origin matching this page origin.';
     disableFlowButtons();
     renderState();
     return;
@@ -232,20 +231,42 @@ async function handleAuthenticatePasskey() {
 }
 
 async function clearState() {
+  let logoutError = null;
+
   if (sdk) {
-    await sdk.session.logout();
+    try {
+      await sdk.session.logout();
+    } catch (error) {
+      logoutError = error;
+    }
   }
 
+  state.email = '';
   state.latestAction = 'MiniAuth.session.logout()';
-  state.latestResult = 'Local SDK session cleared.';
+  state.latestResult = logoutError
+    ? `Local demo state cleared. SDK logout failed: ${formatError(logoutError)}`
+    : 'Local demo state cleared.';
+  persistState();
+  elements.email.value = '';
   elements.otpCode.value = '';
+  elements.accessToken.value = '';
+  elements.refreshToken.value = '';
+  elements.requestId.value = logoutError ? 'logout-failed' : 'anonymous';
+  elements.statusConfig.textContent = logoutError
+    ? 'Logout failed'
+    : 'anonymous';
 
   for (const view of Object.values(sectionViews)) {
     setPillState(view.pill, 'Idle', '');
     view.output.textContent = 'No request yet.';
   }
 
-  renderState();
+  if (!logoutError) {
+    renderState();
+  } else {
+    elements.latestRequest.textContent = state.latestAction;
+    elements.latestResponse.textContent = state.latestResult;
+  }
 }
 
 function hydrateState() {
@@ -255,7 +276,10 @@ function hydrateState() {
     state.email = typeof saved.email === 'string' ? saved.email : '';
   }
 
-  elements.baseUrl.value = '/api/sdk/singleton-iife.js';
+  elements.baseUrl.value =
+    window.__MINI_AUTH_SDK_URL__ ||
+    document.querySelector('script[data-mini-auth-sdk]')?.src ||
+    'http://127.0.0.1:7777/sdk/singleton-iife.js';
   elements.email.value = state.email;
 }
 
@@ -284,10 +308,11 @@ function renderSetupHints() {
 
   elements.pageOrigin.textContent = setupState.currentOrigin;
   elements.pageRpId.textContent = setupState.currentRpId;
-  elements.proxyCommand.textContent = setupState.proxyCommand;
   elements.originCommand.textContent = `mini-auth start ./mini-auth.sqlite --origin ${setupState.suggestedOrigin} --rp-id ${setupState.suggestedRpId}`;
-  elements.setupWarning.textContent = setupState.warning;
-  elements.setupWarning.hidden = !setupState.warning;
+  elements.setupWarning.textContent =
+    setupState.warning ||
+    'Serve this page from any static host, then start mini-auth with --origin set to the current page origin.';
+  elements.setupWarning.hidden = false;
 
   if (!setupState.webauthnReady && window.PublicKeyCredential) {
     const message = `${setupState.warning}\n\nSuggested origin: ${setupState.suggestedOrigin}\nSuggested RP ID: ${setupState.suggestedRpId}`;

@@ -4,7 +4,8 @@ export function getDemoSetupState(locationLike) {
   const hostname = locationLike.hostname;
   const localhostOrigin = buildLocalhostOrigin(origin);
   const ipAddressHost = isIpAddressHost(hostname);
-  const webauthnReady = protocol === 'https:' || hostname === 'localhost';
+  const webauthnReady =
+    hostname === 'localhost' || (protocol === 'https:' && !ipAddressHost);
 
   return {
     currentOrigin: origin,
@@ -17,13 +18,17 @@ export function getDemoSetupState(locationLike) {
       : webauthnReady
         ? ''
         : 'This demo must run on localhost or an HTTPS domain before passkeys will work.',
-    proxyCommand:
-      'live-server demo --host=localhost --port=8080 --proxy=/api:http://127.0.0.1:7777',
   };
 }
 
 function buildLocalhostOrigin(origin) {
-  return origin.replace(/^http:\/\/[^/:]+/, 'http://localhost');
+  try {
+    const url = new URL(origin);
+    url.hostname = 'localhost';
+    return url.origin;
+  } catch {
+    return origin;
+  }
 }
 
 function isIpAddressHost(hostname) {

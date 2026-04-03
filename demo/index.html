@@ -21,20 +21,19 @@
         <div>
           <h2>Setup</h2>
           <p>
-            The server does not expose CORS headers, so the simplest browser
-            setup is to run the demo through a same-origin proxy.
+            Load this page from any static server, then start mini-auth on
+            another origin with <code>--origin</code> set to the current page
+            origin shown below.
+          </p>
+          <p>
+            If your Auth Server is not at <code>http://127.0.0.1:7777</code>,
+            open this page with <code>?sdk-origin=https://your-auth-origin</code>.
           </p>
           <p id="setup-warning" hidden></p>
         </div>
         <div class="setup-grid">
           <div>
-            <h3>Recommended live-server command</h3>
-            <pre id="proxy-command">
-live-server demo --proxy=/api:http://127.0.0.1:7777</pre
-            >
-          </div>
-          <div>
-            <h3>Server must allow this origin</h3>
+            <h3>Start Auth Server</h3>
             <pre id="origin-command">
 mini-auth start ... --origin http://127.0.0.1:8080</pre
             >
@@ -59,7 +58,7 @@ mini-auth start ... --origin http://127.0.0.1:8080</pre
                 id="base-url"
                 type="text"
                 readonly
-                placeholder="/api/sdk/singleton-iife.js"
+                placeholder="http://127.0.0.1:7777/sdk/singleton-iife.js"
               />
             </label>
 
@@ -234,7 +233,27 @@ No request yet.</pre
       </div>
     </main>
 
-    <script src="/api/sdk/singleton-iife.js"></script>
-    <script type="module" src="./main.js"></script>
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const sdkOrigin = params.get('sdk-origin') || 'http://127.0.0.1:7777';
+      const sdkUrl = new URL('/sdk/singleton-iife.js', sdkOrigin).toString();
+      window.__MINI_AUTH_SDK_URL__ = sdkUrl;
+
+      const sdkScript = document.createElement('script');
+      sdkScript.src = sdkUrl;
+      sdkScript.dataset.miniAuthSdk = 'true';
+      document.body.append(sdkScript);
+
+      const mainScript = document.createElement('script');
+      mainScript.type = 'module';
+      mainScript.src = './main.js';
+
+      sdkScript.addEventListener('load', () => document.body.append(mainScript), {
+        once: true,
+      });
+      sdkScript.addEventListener('error', () => document.body.append(mainScript), {
+        once: true,
+      });
+    </script>
   </body>
 </html>
