@@ -153,6 +153,21 @@ export function createApp(input: {
     );
   });
 
+  app.get('/sdk/singleton-iife.js', (c) => {
+    return c.body(
+      [
+        '/* mini-auth singleton SDK placeholder */',
+        '/* v1 supports same-origin or same-origin proxy deployment only. */',
+        'window.MiniAuth = window.MiniAuth ?? {};',
+      ].join('\n'),
+      200,
+      {
+        'content-type': 'application/javascript; charset=utf-8',
+        'cache-control': 'no-cache',
+      },
+    );
+  });
+
   app.post('/email/start', async (c) => {
     const body = await parseJson(c.req.raw, emailStartSchema);
     const result = await startEmailAuth(c.var.db, {
