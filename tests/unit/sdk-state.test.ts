@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createSingletonSdk } from '../../src/sdk/singleton-entry.js';
 import { createStateStore } from '../../src/sdk/state.js';
+import type { MeResponse } from '../../src/sdk/types.js';
 import { fakeStorage } from '../helpers/sdk.js';
 
 describe('sdk state store', () => {
@@ -112,7 +113,7 @@ describe('sdk state store', () => {
 
   it('clones caller-owned me objects before freezing internal state', () => {
     const sdk = createStateStore(fakeStorage());
-    const me = {
+    const me: MeResponse = {
       user_id: 'u',
       email: 'u@example.com',
       webauthn_credentials: [],

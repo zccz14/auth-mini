@@ -56,6 +56,13 @@ export type EmailStartResponse = {
   ok?: boolean;
 } & Record<string, unknown>;
 
+export type WebauthnVerifyResponse = Record<string, unknown>;
+
+export type NavigatorCredentialsLike = {
+  create?: (options?: CredentialCreationOptions) => Promise<unknown>;
+  get?: (options?: CredentialRequestOptions) => Promise<unknown>;
+};
+
 export type Listener = (state: SessionSnapshot) => void;
 
 export type MiniAuthApi = {
@@ -73,7 +80,10 @@ export type MiniAuthApi = {
     refresh(): Promise<SessionResult>;
     logout(): Promise<void>;
   };
-  webauthn: Record<string, never>;
+  webauthn: {
+    authenticate(): Promise<SessionResult>;
+    register(): Promise<WebauthnVerifyResponse>;
+  };
 };
 
 export type MiniAuthInternal = MiniAuthApi & {
@@ -85,6 +95,8 @@ export type InternalSdkDeps = {
   baseUrl: string;
   fetch: FetchLike;
   now?: () => number;
+  navigatorCredentials?: NavigatorCredentialsLike;
+  publicKeyCredential?: unknown;
   storage: Storage;
 };
 

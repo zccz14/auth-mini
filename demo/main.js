@@ -1,15 +1,12 @@
 import { getDemoSetupState } from './setup.js';
 
-const storageKey = 'mini-auth-demo-state';
+const storageKey = 'mini-auth-demo-inputs';
+const sdk = window.MiniAuth;
 
 const state = {
-  baseUrl: '/api',
   email: '',
-  accessToken: '',
-  refreshToken: '',
-  requestId: '',
-  latestRequest: null,
-  latestResponse: null,
+  latestAction: 'No request yet.',
+  latestResult: 'No response yet.',
 };
 
 const elements = {
@@ -61,13 +58,34 @@ const sectionViews = {
   },
 };
 
-initialize();
+void initialize();
 
-function initialize() {
+async function initialize() {
   hydrateState();
   renderSetupHints();
-  renderState();
   wireEvents();
+
+  if (!sdk) {
+    elements.statusConfig.textContent = 'SDK missing';
+    elements.setupWarning.hidden = false;
+    elements.setupWarning.textContent =
+      'MiniAuth SDK did not load. Serve /api/sdk/singleton-iife.js from the same origin or same-origin proxy path.';
+    disableFlowButtons();
+    renderState();
+    return;
+  }
+
+  sdk.session.onChange(() => renderState());
+  renderState();
+
+  try {
+    await sdk.ready;
+    renderState();
+  } catch (error) {
+    state.latestAction = 'SDK startup recovery';
+    state.latestResult = formatError(error);
+    renderState();
+  }
 
   if (!window.PublicKeyCredential) {
     setSectionResult(
@@ -86,12 +104,6 @@ function initialize() {
 }
 
 function wireEvents() {
-  elements.baseUrl.addEventListener('input', () => {
-    state.baseUrl = elements.baseUrl.value.trim() || '/api';
-    renderState();
-    persistState();
-  });
-
   elements.email.addEventListener('input', () => {
     state.email = elements.email.value.trim();
     persistState();
@@ -117,17 +129,19 @@ async function handleEmailStart() {
 
   state.email = email;
   persistState();
+  state.latestAction = 'MiniAuth.email.start()';
   setSectionLoading('email-start', 'Sending OTP...');
+  renderState();
 
   try {
-    const data = await requestJson('/email/start', {
-      method: 'POST',
-      body: { email },
-    });
-
-    setSectionResult('email-start', 'success', formatValue(data));
+    const result = await sdk.email.start({ email });
+    state.latestResult = formatValue(result);
+    setSectionResult('email-start', 'success', formatValue(result));
+    renderState();
   } catch (error) {
+    state.latestResult = formatError(error);
     setSectionResult('email-start', 'error', formatError(error));
+    renderState();
   }
 }
 
@@ -146,190 +160,84 @@ async function handleEmailVerify() {
 
   state.email = email;
   persistState();
+  state.latestAction = 'MiniAuth.email.verify()';
   setSectionLoading('email-verify', 'Verifying OTP...');
+  renderState();
 
   try {
-    const data = await requestJson('/email/verify', {
-      method: 'POST',
-      body: { email, code },
+    const session = await sdk.email.verify({ email, code });
+    state.latestResult = formatValue({
+      session,
+      me: sdk.me.get(),
     });
-
-    updateSession(data);
-    setSectionResult('email-verify', 'success', formatValue(data));
+    setSectionResult(
+      'email-verify',
+      'success',
+      formatValue({
+        session,
+        me: sdk.me.get(),
+      }),
+    );
+    renderState();
   } catch (error) {
+    state.latestResult = formatError(error);
     setSectionResult('email-verify', 'error', formatError(error));
+    renderState();
   }
 }
 
 async function handleRegisterPasskey() {
-  if (!state.accessToken) {
-    setSectionResult(
-      'register',
-      'error',
-      'Access token missing. Complete email verify first.',
-    );
-    return;
-  }
-
-  setSectionLoading('register', 'Fetching registration options...');
+  state.latestAction = 'MiniAuth.webauthn.register()';
+  setSectionLoading('register', 'Creating passkey...');
+  renderState();
 
   try {
-    const optionsData = await requestJson('/webauthn/register/options', {
-      method: 'POST',
-      headers: authorizationHeaders(),
-    });
-
-    state.requestId = optionsData.request_id;
+    const verify = await sdk.webauthn.register();
+    const me = await sdk.me.reload();
+    state.latestResult = formatValue({ verify, me });
+    setSectionResult('register', 'success', formatValue({ verify, me }));
     renderState();
-    persistState();
-
-    const credential = await navigator.credentials.create({
-      publicKey: toCreatePublicKeyOptions(optionsData.publicKey),
-    });
-
-    if (!credential) {
-      throw new Error('Passkey creation was cancelled.');
-    }
-
-    setSectionLoading('register', 'Verifying registration...');
-
-    const data = await requestJson('/webauthn/register/verify', {
-      method: 'POST',
-      headers: authorizationHeaders(),
-      body: {
-        request_id: optionsData.request_id,
-        credential: serializeCredential(credential),
-      },
-    });
-
-    setSectionResult(
-      'register',
-      'success',
-      formatValue({
-        options: optionsData,
-        verify: data,
-      }),
-    );
   } catch (error) {
+    state.latestResult = formatError(error);
     setSectionResult('register', 'error', formatError(error));
+    renderState();
   }
 }
 
 async function handleAuthenticatePasskey() {
-  setSectionLoading('authenticate', 'Fetching authentication options...');
+  state.latestAction = 'MiniAuth.webauthn.authenticate()';
+  setSectionLoading('authenticate', 'Signing in with passkey...');
+  renderState();
 
   try {
-    const optionsData = await requestJson('/webauthn/authenticate/options', {
-      method: 'POST',
+    const session = await sdk.webauthn.authenticate();
+    state.latestResult = formatValue({
+      session,
+      me: sdk.me.get(),
     });
-
-    state.requestId = optionsData.request_id;
-    renderState();
-    persistState();
-
-    const credential = await navigator.credentials.get({
-      publicKey: toGetPublicKeyOptions(optionsData.publicKey),
-    });
-
-    if (!credential) {
-      throw new Error('Passkey sign-in was cancelled.');
-    }
-
-    setSectionLoading('authenticate', 'Verifying authentication...');
-
-    const data = await requestJson('/webauthn/authenticate/verify', {
-      method: 'POST',
-      body: {
-        request_id: optionsData.request_id,
-        credential: serializeCredential(credential),
-      },
-    });
-
-    updateSession(data);
     setSectionResult(
       'authenticate',
       'success',
       formatValue({
-        options: optionsData,
-        verify: data,
+        session,
+        me: sdk.me.get(),
       }),
     );
+    renderState();
   } catch (error) {
+    state.latestResult = formatError(error);
     setSectionResult('authenticate', 'error', formatError(error));
+    renderState();
   }
 }
 
-async function requestJson(path, options) {
-  const url = new URL(joinUrl(state.baseUrl, path), window.location.href);
-  const headers = {
-    'content-type': 'application/json',
-    ...(options.headers || {}),
-  };
-  const requestInit = {
-    method: options.method,
-    headers,
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  };
-
-  state.latestRequest = {
-    method: options.method,
-    url: url.toString(),
-    headers,
-    body: options.body ?? null,
-  };
-  renderState();
-
-  let response;
-
-  try {
-    response = await fetch(url, requestInit);
-  } catch (error) {
-    throw new Error(
-      `Network request failed. If you are using live-server, confirm the proxy or same-origin setup.\n\n${error instanceof Error ? error.message : String(error)}`,
-    );
+async function clearState() {
+  if (sdk) {
+    await sdk.session.logout();
   }
 
-  const rawText = await response.text();
-  const parsedBody = parseJsonSafe(rawText);
-
-  state.latestResponse = {
-    status: response.status,
-    ok: response.ok,
-    body: parsedBody ?? rawText,
-  };
-  renderState();
-
-  if (!response.ok) {
-    const error = new Error(
-      `HTTP ${response.status}\n\n${formatValue(parsedBody ?? rawText)}`,
-    );
-    error.status = response.status;
-    error.body = parsedBody ?? rawText;
-    throw error;
-  }
-
-  return parsedBody ?? rawText;
-}
-
-function authorizationHeaders() {
-  return {
-    authorization: `Bearer ${state.accessToken}`,
-  };
-}
-
-function updateSession(tokens) {
-  state.accessToken = tokens.access_token || '';
-  state.refreshToken = tokens.refresh_token || '';
-  renderState();
-  persistState();
-}
-
-function clearState() {
-  state.accessToken = '';
-  state.refreshToken = '';
-  state.requestId = '';
-  state.latestRequest = null;
-  state.latestResponse = null;
+  state.latestAction = 'MiniAuth.session.logout()';
+  state.latestResult = 'Local SDK session cleared.';
   elements.otpCode.value = '';
 
   for (const view of Object.values(sectionViews)) {
@@ -338,24 +246,16 @@ function clearState() {
   }
 
   renderState();
-  persistState();
 }
 
 function hydrateState() {
   const saved = parseJsonSafe(localStorage.getItem(storageKey) || '');
 
   if (saved && typeof saved === 'object') {
-    state.baseUrl = typeof saved.baseUrl === 'string' ? saved.baseUrl : '/api';
     state.email = typeof saved.email === 'string' ? saved.email : '';
-    state.accessToken =
-      typeof saved.accessToken === 'string' ? saved.accessToken : '';
-    state.refreshToken =
-      typeof saved.refreshToken === 'string' ? saved.refreshToken : '';
-    state.requestId =
-      typeof saved.requestId === 'string' ? saved.requestId : '';
   }
 
-  elements.baseUrl.value = state.baseUrl;
+  elements.baseUrl.value = '/api/sdk/singleton-iife.js';
   elements.email.value = state.email;
 }
 
@@ -363,24 +263,20 @@ function persistState() {
   localStorage.setItem(
     storageKey,
     JSON.stringify({
-      baseUrl: state.baseUrl,
       email: state.email,
-      accessToken: state.accessToken,
-      refreshToken: state.refreshToken,
-      requestId: state.requestId,
     }),
   );
 }
 
 function renderState() {
-  elements.accessToken.value = state.accessToken;
-  elements.refreshToken.value = state.refreshToken;
-  elements.requestId.value = state.requestId;
-  elements.latestRequest.textContent =
-    formatValue(state.latestRequest) || 'No request yet.';
-  elements.latestResponse.textContent =
-    formatValue(state.latestResponse) || 'No response yet.';
-  elements.statusConfig.textContent = 'Ready';
+  const snapshot = sdk?.session.getState();
+
+  elements.accessToken.value = snapshot?.accessToken || '';
+  elements.refreshToken.value = snapshot?.refreshToken || '';
+  elements.requestId.value = snapshot?.status || 'sdk-unavailable';
+  elements.latestRequest.textContent = state.latestAction;
+  elements.latestResponse.textContent = state.latestResult;
+  elements.statusConfig.textContent = snapshot?.status || 'Ready';
 }
 
 function renderSetupHints() {
@@ -401,6 +297,14 @@ function renderSetupHints() {
     elements.registerButton.disabled = true;
     elements.authenticateButton.disabled = true;
   }
+}
+
+function disableFlowButtons() {
+  elements.emailStartButton.disabled = true;
+  elements.emailVerifyButton.disabled = true;
+  elements.registerButton.disabled = true;
+  elements.authenticateButton.disabled = true;
+  elements.clearStateButton.disabled = true;
 }
 
 function setSectionLoading(name, message) {
@@ -428,113 +332,6 @@ function setPillState(element, label, className) {
   if (className) {
     element.classList.add(className);
   }
-}
-
-function toCreatePublicKeyOptions(publicKey) {
-  return {
-    ...publicKey,
-    challenge: base64urlToUint8Array(publicKey.challenge),
-    user: {
-      ...publicKey.user,
-      id: base64urlToUint8Array(publicKey.user.id),
-    },
-    excludeCredentials: Array.isArray(publicKey.excludeCredentials)
-      ? publicKey.excludeCredentials.map((item) => ({
-          ...item,
-          id: base64urlToUint8Array(item.id),
-        }))
-      : undefined,
-  };
-}
-
-function toGetPublicKeyOptions(publicKey) {
-  return {
-    ...publicKey,
-    challenge: base64urlToUint8Array(publicKey.challenge),
-    allowCredentials: Array.isArray(publicKey.allowCredentials)
-      ? publicKey.allowCredentials.map((item) => ({
-          ...item,
-          id: base64urlToUint8Array(item.id),
-        }))
-      : undefined,
-  };
-}
-
-function serializeCredential(credential) {
-  const response = credential.response;
-  const serialized = {
-    id: credential.id,
-    rawId: uint8ArrayToBase64url(credential.rawId),
-    type: credential.type,
-    response: {
-      clientDataJSON: uint8ArrayToBase64url(response.clientDataJSON),
-    },
-  };
-
-  if (typeof response.getTransports === 'function') {
-    serialized.response.transports = response.getTransports();
-  }
-
-  if ('attestationObject' in response) {
-    serialized.response.attestationObject = uint8ArrayToBase64url(
-      response.attestationObject,
-    );
-  }
-
-  if ('authenticatorData' in response) {
-    serialized.response.authenticatorData = uint8ArrayToBase64url(
-      response.authenticatorData,
-    );
-  }
-
-  if ('signature' in response) {
-    serialized.response.signature = uint8ArrayToBase64url(response.signature);
-  }
-
-  if ('userHandle' in response && response.userHandle) {
-    serialized.response.userHandle = uint8ArrayToBase64url(response.userHandle);
-  }
-
-  return serialized;
-}
-
-function base64urlToUint8Array(value) {
-  const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
-  const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=');
-  const binary = window.atob(padded);
-  const bytes = new Uint8Array(binary.length);
-
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-
-  return bytes;
-}
-
-function uint8ArrayToBase64url(buffer) {
-  const bytes =
-    buffer instanceof ArrayBuffer
-      ? new Uint8Array(buffer)
-      : new Uint8Array(buffer);
-  let binary = '';
-
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-
-  return window
-    .btoa(binary)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '');
-}
-
-function joinUrl(base, path) {
-  if (!base) {
-    return path;
-  }
-
-  return `${base.replace(/\/$/, '')}${path}`;
 }
 
 function parseJsonSafe(value) {

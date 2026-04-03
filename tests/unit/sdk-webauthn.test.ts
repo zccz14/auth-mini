@@ -1,0 +1,145 @@
+import { describe, expect, it } from 'vitest';
+import {
+  cancelledNavigatorCredentials,
+  createMiniAuthForTest,
+  createWebauthnRequestRecorder,
+  fakeAuthenticatedStorageWithMe,
+  fakeNavigatorCredentials,
+  jsonResponse,
+  readJsonBody,
+} from '../helpers/sdk.js';
+
+describe('sdk webauthn flows', () => {
+  it('throws webauthn_unsupported when browser webauthn apis are unavailable', async () => {
+    const sdk = createMiniAuthForTest({
+      publicKeyCredential: undefined,
+    });
+
+    await expect(sdk.webauthn.authenticate()).rejects.toMatchObject({
+      code: 'webauthn_unsupported',
+    });
+  });
+
+  it('throws webauthn_cancelled when the user cancels passkey auth', async () => {
+    const sdk = createMiniAuthForTest({
+      fetch: createWebauthnRequestRecorder(),
+      navigatorCredentials: cancelledNavigatorCredentials(),
+    });
+
+    await expect(sdk.webauthn.authenticate()).rejects.toMatchObject({
+      code: 'webauthn_cancelled',
+    });
+  });
+
+  it('authenticates, stores session, and makes me available synchronously', async () => {
+    const fetch = createWebauthnRequestRecorder();
+    const sdk = createMiniAuthForTest({
+      fetch,
+      navigatorCredentials: fakeNavigatorCredentials(),
+    });
+
+    const result = await sdk.webauthn.authenticate();
+
+    expect(result.accessToken).toBe('access-authenticated');
+    expect(sdk.me.get()?.email).toBe('u@example.com');
+    expect(sdk.session.getState().status).toBe('authenticated');
+    expect(readJsonBody(fetch, '/webauthn/authenticate/verify')).toEqual({
+      request_id: 'request-authenticate',
+      credential: {
+        id: 'authenticate-credential',
+        rawId: 'FRYXGA',
+        type: 'public-key',
+        response: {
+          clientDataJSON: 'GRobHA',
+          authenticatorData: 'HR4fIA',
+          signature: 'ISIjJA',
+          userHandle: 'JSYnKA',
+        },
+      },
+    });
+  });
+
+  it('rolls back local auth state when post-auth me loading fails', async () => {
+    const fetch = createWebauthnRequestRecorder()
+      .mockImplementationOnce(async () =>
+        jsonResponse({
+          request_id: 'request-authenticate',
+          publicKey: {
+            challenge: 'AQIDBA',
+            rpId: 'auth.example.com',
+          },
+        }),
+      )
+      .mockImplementationOnce(async () =>
+        jsonResponse({
+          access_token: 'access-authenticated',
+          refresh_token: 'refresh-authenticated',
+          expires_in: 900,
+          token_type: 'Bearer',
+        }),
+      )
+      .mockImplementationOnce(async () =>
+        jsonResponse({ error: 'internal_error' }, 500),
+      );
+    const sdk = createMiniAuthForTest({
+      fetch,
+      navigatorCredentials: fakeNavigatorCredentials(),
+    });
+
+    await expect(sdk.webauthn.authenticate()).rejects.toMatchObject({
+      error: 'internal_error',
+    });
+    expect(sdk.session.getState().status).toBe('anonymous');
+    expect(sdk.me.get()).toBeNull();
+  });
+
+  it('requires an authenticated session before passkey registration', async () => {
+    const sdk = createMiniAuthForTest();
+
+    await expect(sdk.webauthn.register()).rejects.toMatchObject({
+      code: 'missing_session',
+    });
+  });
+
+  it('register throws webauthn_unsupported when browser apis are unavailable', async () => {
+    const sdk = createMiniAuthForTest({
+      storage: fakeAuthenticatedStorageWithMe(),
+      publicKeyCredential: undefined,
+    });
+
+    await expect(sdk.webauthn.register()).rejects.toMatchObject({
+      code: 'webauthn_unsupported',
+    });
+  });
+
+  it('registers a passkey and serializes the browser credential', async () => {
+    const fetch = createWebauthnRequestRecorder();
+    const sdk = createMiniAuthForTest({
+      fetch,
+      storage: fakeAuthenticatedStorageWithMe(),
+      navigatorCredentials: fakeNavigatorCredentials(),
+    });
+
+    const result = await sdk.webauthn.register();
+
+    expect(result).toEqual({ ok: true });
+    expect(readJsonBody(fetch, '/webauthn/register/verify')).toEqual({
+      request_id: 'request-register',
+      credential: {
+        id: 'register-credential',
+        rawId: 'AQIDBA',
+        type: 'public-key',
+        clientExtensionResults: {
+          credProps: {
+            rk: true,
+          },
+        },
+        response: {
+          clientDataJSON: 'BQYHCA',
+          attestationObject: 'CQoLDA',
+          transports: ['internal'],
+        },
+      },
+    });
+  });
+});

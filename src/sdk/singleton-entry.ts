@@ -459,6 +459,109 @@ function createRuntime() {
     };
   }
 
+  function createWebauthnModule(input) {
+    return {
+      async authenticate() {
+        ensureWebauthnSupport('authenticate');
+        const options = await input.http.postJson(
+          '/webauthn/authenticate/options',
+          {},
+        );
+        const credential = await requestCredential(
+          'authenticate',
+          input.navigatorCredentials.get,
+          {
+            publicKey: decodeAuthenticationOptions(options.publicKey),
+          },
+        );
+        const response = await input.http.postJson(
+          '/webauthn/authenticate/verify',
+          {
+            request_id: options.request_id,
+            credential: serializeCredential(credential),
+          },
+        );
+        return await input.session.acceptSessionResponse(response);
+      },
+      async register() {
+        ensureWebauthnSupport('register');
+        const accessToken = await requireAccessToken();
+        const options = await input.http.postJson(
+          '/webauthn/register/options',
+          {},
+          { accessToken },
+        );
+        const credential = await requestCredential(
+          'register',
+          input.navigatorCredentials.create,
+          {
+            publicKey: decodeRegistrationOptions(options.publicKey),
+          },
+        );
+        return await input.http.postJson(
+          '/webauthn/register/verify',
+          {
+            request_id: options.request_id,
+            credential: serializeCredential(credential),
+          },
+          { accessToken },
+        );
+      },
+    };
+
+    function ensureWebauthnSupport(mode) {
+      const hasMethod =
+        mode === 'register'
+          ? typeof input.navigatorCredentials?.create === 'function'
+          : typeof input.navigatorCredentials?.get === 'function';
+      if (!input.publicKeyCredential || !hasMethod) {
+        throw createSdkError(
+          'webauthn_unsupported',
+          'WebAuthn is unavailable in this browser',
+        );
+      }
+    }
+
+    async function requestCredential(mode, invoke, options) {
+      try {
+        const credential = await invoke(options);
+        if (!credential) {
+          throw createSdkError(
+            'webauthn_cancelled',
+            mode === 'register'
+              ? 'Passkey registration cancelled'
+              : 'Passkey authentication cancelled',
+          );
+        }
+        return credential;
+      } catch (error) {
+        if (isWebauthnCancelledError(error)) {
+          throw createSdkError(
+            'webauthn_cancelled',
+            mode === 'register'
+              ? 'Passkey registration cancelled'
+              : 'Passkey authentication cancelled',
+          );
+        }
+        throw error;
+      }
+    }
+
+    async function requireAccessToken() {
+      const snapshot = input.state.getState();
+      if (!snapshot.refreshToken && !snapshot.accessToken) {
+        throw createSdkError(
+          'missing_session',
+          'Missing authenticated session',
+        );
+      }
+      if (!snapshot.accessToken || needsRefresh(snapshot, input.now())) {
+        return (await input.session.refresh()).accessToken;
+      }
+      return snapshot.accessToken;
+    }
+  }
+
   function createMiniAuthInternal(input) {
     const state = createStateStore(input.storage);
     const http = createHttpClient({
@@ -470,6 +573,7 @@ function createRuntime() {
       now: input.now ?? (() => Date.now()),
       state,
     });
+    const now = input.now ?? (() => Date.now());
     const api = {
       email: createEmailModule({ http, session }),
       me: {
@@ -494,7 +598,14 @@ function createRuntime() {
           return session.logout();
         },
       },
-      webauthn: {},
+      webauthn: createWebauthnModule({
+        http,
+        navigatorCredentials: input.navigatorCredentials,
+        now,
+        publicKeyCredential: input.publicKeyCredential,
+        session,
+        state,
+      }),
     };
     const ready =
       input.autoRecover !== false && state.getState().status === 'recovering'
@@ -504,13 +615,16 @@ function createRuntime() {
   }
 
   function createSingletonSdk(input = {}) {
+    const browser = typeof window === 'undefined' ? globalThis : window;
     return createMiniAuthInternal({
       baseUrl: input.baseUrl ?? 'https://mini-auth.local',
       fetch: resolveFetch(input.fetch),
+      navigatorCredentials: browser.navigator?.credentials,
       now: input.now,
+      publicKeyCredential: browser.PublicKeyCredential,
       storage: resolveSdkStorage({
         storage: input.storage,
-        getDefaultStorage: () => window.localStorage,
+        getDefaultStorage: () => browser.localStorage,
       }),
     });
   }
@@ -548,6 +662,110 @@ function createRuntime() {
       return null;
     }
     return typeof value === 'string' ? value : undefined;
+  }
+
+  function decodeRegistrationOptions(publicKey) {
+    return {
+      ...publicKey,
+      challenge: decodeBase64Url(publicKey.challenge),
+      user: {
+        ...publicKey.user,
+        id: decodeBase64Url(publicKey.user.id),
+      },
+      excludeCredentials: Array.isArray(publicKey.excludeCredentials)
+        ? publicKey.excludeCredentials.map((item) => ({
+            ...item,
+            id: decodeBase64Url(item.id),
+          }))
+        : undefined,
+    };
+  }
+
+  function decodeAuthenticationOptions(publicKey) {
+    return {
+      ...publicKey,
+      challenge: decodeBase64Url(publicKey.challenge),
+      allowCredentials: Array.isArray(publicKey.allowCredentials)
+        ? publicKey.allowCredentials.map((item) => ({
+            ...item,
+            id: decodeBase64Url(item.id),
+          }))
+        : undefined,
+    };
+  }
+
+  function serializeCredential(credential) {
+    const response = credential.response;
+    const serialized = {
+      id: credential.id,
+      rawId: encodeBase64Url(credential.rawId),
+      type: credential.type,
+      response: {
+        clientDataJSON: encodeBase64Url(response.clientDataJSON),
+      },
+    };
+
+    if (typeof credential.getClientExtensionResults === 'function') {
+      serialized.clientExtensionResults =
+        credential.getClientExtensionResults();
+    } else if (credential.clientExtensionResults) {
+      serialized.clientExtensionResults = credential.clientExtensionResults;
+    }
+
+    if (typeof response.getTransports === 'function') {
+      serialized.response.transports = response.getTransports();
+    }
+    if ('attestationObject' in response && response.attestationObject) {
+      serialized.response.attestationObject = encodeBase64Url(
+        response.attestationObject,
+      );
+    }
+    if ('authenticatorData' in response && response.authenticatorData) {
+      serialized.response.authenticatorData = encodeBase64Url(
+        response.authenticatorData,
+      );
+    }
+    if ('signature' in response && response.signature) {
+      serialized.response.signature = encodeBase64Url(response.signature);
+    }
+    if ('userHandle' in response && response.userHandle) {
+      serialized.response.userHandle = encodeBase64Url(response.userHandle);
+    }
+    return serialized;
+  }
+
+  function isWebauthnCancelledError(error) {
+    return (
+      error?.code === 'webauthn_cancelled' ||
+      error?.name === 'AbortError' ||
+      error?.name === 'NotAllowedError'
+    );
+  }
+
+  function decodeBase64Url(value) {
+    const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=');
+    const buffer =
+      typeof Buffer !== 'undefined'
+        ? Buffer.from(padded, 'base64')
+        : Uint8Array.from(globalThis.atob(padded), (char) =>
+            char.charCodeAt(0),
+          );
+    return new Uint8Array(buffer);
+  }
+
+  function encodeBase64Url(value) {
+    const bytes =
+      value instanceof Uint8Array
+        ? value
+        : value instanceof ArrayBuffer
+          ? new Uint8Array(value)
+          : new Uint8Array(value.buffer ?? value);
+    const base64 =
+      typeof Buffer !== 'undefined'
+        ? Buffer.from(bytes).toString('base64')
+        : globalThis.btoa(String.fromCharCode(...bytes));
+    return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
   }
 
   function toMe(value) {

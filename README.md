@@ -98,6 +98,55 @@ Refresh uses the refresh token in the JSON body:
 
 `GET /me` returns the current user, stored WebAuthn credentials, and only active sessions.
 
+## Browser SDK
+
+mini-auth also serves a singleton browser SDK at `GET /sdk/singleton-iife.js`.
+
+Load it from the same origin as the auth API, or from the same-origin proxy prefix that fronts the auth API:
+
+```html
+<script src="/api/sdk/singleton-iife.js"></script>
+<script>
+  window.MiniAuth.session.onChange((state) => {
+    console.log('auth status:', state.status);
+  });
+</script>
+```
+
+v1 is intentionally zero-config: the script infers its API base URL from its own `src`, persists session state in `localStorage`, and automatically refreshes access tokens. Cross-origin embedding is intentionally unsupported in v1; use same-origin deployment or a same-origin reverse proxy only.
+
+### Startup state model
+
+If a refresh token is already stored, startup enters `recovering` first and then settles to `authenticated` or `anonymous` after recovery completes. During recovery, `MiniAuth.me.get()` may return the last cached snapshot while `MiniAuth.session.getState().status` still reports `recovering`.
+
+### `me.get()` vs `me.reload()`
+
+- `MiniAuth.me.get()` returns the current cached `/me` snapshot synchronously.
+- `MiniAuth.me.reload()` performs authenticated network I/O, follows the SDK refresh rules, updates cached state, and resolves with the fresh `/me` payload.
+
+### Passkey example
+
+```html
+<script src="/api/sdk/singleton-iife.js"></script>
+<script>
+  async function signIn(email, code) {
+    await window.MiniAuth.email.start({ email });
+    await window.MiniAuth.email.verify({ email, code });
+    console.log(window.MiniAuth.me.get());
+  }
+
+  async function signInWithPasskey() {
+    await window.MiniAuth.webauthn.authenticate();
+    console.log(window.MiniAuth.me.get());
+  }
+</script>
+```
+
+### Operational limits
+
+- v1 supports same-origin or same-origin proxy deployment only.
+- v1 is designed for single-tab reliability. Because refresh tokens rotate, multiple tabs sharing one session may race and invalidate one another.
+
 ## WebAuthn flow
 
 1. Sign in with email OTP.
