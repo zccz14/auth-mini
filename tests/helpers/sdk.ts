@@ -30,3 +30,26 @@ export function fakeStorage(seed: StorageSeed = {}): Storage {
     },
   };
 }
+
+export function executeServedSdk(
+  source: string,
+  options: {
+    currentScriptSrc?: string | null;
+    storage?: Storage;
+  } = {},
+): Window & typeof globalThis {
+  const windowObject = {} as Window & typeof globalThis;
+  const document = {
+    currentScript:
+      options.currentScriptSrc === undefined
+        ? { src: 'https://app.example.com/sdk/singleton-iife.js' }
+        : options.currentScriptSrc === null
+          ? null
+          : { src: options.currentScriptSrc },
+  };
+  const storage = options.storage ?? fakeStorage();
+
+  const run = new Function('window', 'document', 'localStorage', source);
+  run(windowObject, document, storage);
+  return windowObject;
+}

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createSingletonSdk } from '../../src/sdk/singleton-entry.js';
 import { createStateStore } from '../../src/sdk/state.js';
 import { fakeStorage } from '../helpers/sdk.js';
 
@@ -55,5 +56,55 @@ describe('sdk state store', () => {
     sdk.setAnonymous();
 
     expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('exposes session.getState and session.onChange on the public singleton api', () => {
+    const sdk = createSingletonSdk({
+      storage: fakeStorage({
+        refreshToken: 'rt',
+        expiresAt: '2026-04-03T00:00:00.000Z',
+      }),
+    });
+    const listener = vi.fn();
+    const unsubscribe = sdk.session.onChange(listener);
+
+    expect(sdk.session.getState()).toMatchObject({
+      status: 'recovering',
+      refreshToken: 'rt',
+    });
+    expect(typeof unsubscribe).toBe('function');
+  });
+
+  it('returns immutable snapshots from the state store', () => {
+    const sdk = createStateStore(fakeStorage());
+
+    sdk.setAuthenticated({
+      accessToken: 'a',
+      refreshToken: 'r',
+      expiresAt: 'x',
+      me: {
+        user_id: 'u',
+        email: 'u@example.com',
+        webauthn_credentials: [],
+        active_sessions: [],
+      },
+    });
+
+    const snapshot = sdk.getState();
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    expect(() => {
+      (snapshot as { status: string }).status = 'anonymous';
+    }).toThrow();
+    expect(sdk.getState().status).toBe('authenticated');
+  });
+
+  it('ignores invalid persisted storage payloads', () => {
+    const storage = fakeStorage();
+    storage.setItem('mini-auth.sdk', JSON.stringify({ refreshToken: 123 }));
+
+    const sdk = createStateStore(storage);
+
+    expect(sdk.getState().status).toBe('anonymous');
+    expect(sdk.getState().refreshToken).toBeNull();
   });
 });

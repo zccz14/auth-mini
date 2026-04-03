@@ -43,6 +43,7 @@ import {
   withErrorFields,
 } from '../shared/logger.js';
 import { requireAccessToken, type AuthVariables } from './auth.js';
+import { renderSingletonIifeSource } from '../sdk/singleton-entry.js';
 import {
   credentialNotFoundError,
   duplicateCredentialError,
@@ -154,18 +155,10 @@ export function createApp(input: {
   });
 
   app.get('/sdk/singleton-iife.js', (c) => {
-    return c.body(
-      [
-        '/* mini-auth singleton SDK placeholder */',
-        '/* v1 supports same-origin or same-origin proxy deployment only. */',
-        'window.MiniAuth = window.MiniAuth ?? {};',
-      ].join('\n'),
-      200,
-      {
-        'content-type': 'application/javascript; charset=utf-8',
-        'cache-control': 'no-cache',
-      },
-    );
+    return c.body(renderSingletonIifeSource(), 200, {
+      'content-type': 'application/javascript; charset=utf-8',
+      'cache-control': 'no-cache',
+    });
   });
 
   app.post('/email/start', async (c) => {

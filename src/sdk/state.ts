@@ -17,7 +17,7 @@ export function createStateStore(storage: Storage) {
 
   return {
     getState(): SessionSnapshot {
-      return state;
+      return cloneSnapshot(state);
     },
     onChange(listener: Listener): () => void {
       listeners.add(listener);
@@ -43,10 +43,10 @@ export function createStateStore(storage: Storage) {
   };
 
   function updateState(next: SessionSnapshot) {
-    state = next;
+    state = freezeSnapshot(next);
 
     for (const listener of listeners) {
-      listener(state);
+      listener(cloneSnapshot(state));
     }
   }
 }
@@ -69,12 +69,40 @@ function hydrateState(storage: Storage): SessionSnapshot {
 }
 
 function createSnapshot(status: SdkStatus): SessionSnapshot {
-  return {
+  return freezeSnapshot({
     status,
     authenticated: status === 'authenticated',
     accessToken: null,
     refreshToken: null,
     expiresAt: null,
     me: null,
-  };
+  });
+}
+
+function cloneSnapshot(snapshot: SessionSnapshot): SessionSnapshot {
+  return freezeSnapshot({
+    status: snapshot.status,
+    authenticated: snapshot.authenticated,
+    accessToken: snapshot.accessToken,
+    refreshToken: snapshot.refreshToken,
+    expiresAt: snapshot.expiresAt,
+    me: snapshot.me
+      ? {
+          user_id: snapshot.me.user_id,
+          email: snapshot.me.email,
+          webauthn_credentials: [...snapshot.me.webauthn_credentials],
+          active_sessions: [...snapshot.me.active_sessions],
+        }
+      : null,
+  });
+}
+
+function freezeSnapshot(snapshot: SessionSnapshot): SessionSnapshot {
+  if (snapshot.me) {
+    Object.freeze(snapshot.me.webauthn_credentials);
+    Object.freeze(snapshot.me.active_sessions);
+    Object.freeze(snapshot.me);
+  }
+
+  return Object.freeze(snapshot);
 }

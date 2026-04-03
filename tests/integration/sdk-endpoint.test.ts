@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createTestApp } from '../helpers/app.js';
+import { executeServedSdk, fakeStorage } from '../helpers/sdk.js';
 
 describe('singleton sdk endpoint', () => {
   it('serves the singleton sdk as javascript with no-cache headers', async () => {
@@ -15,6 +16,45 @@ describe('singleton sdk endpoint', () => {
       );
       expect(response.headers.get('cache-control')).toContain('no-cache');
       expect(body).toContain('window.MiniAuth');
+      expect(body).toContain('bootstrapSingletonSdk');
+    } finally {
+      testApp.close();
+    }
+  });
+
+  it('bootstraps window.MiniAuth from the served source', async () => {
+    const testApp = await createTestApp();
+
+    try {
+      const response = await testApp.app.request('/sdk/singleton-iife.js');
+      const body = await response.text();
+      const storage = fakeStorage({
+        refreshToken: 'rt',
+        expiresAt: '2026-04-03T00:00:00.000Z',
+      });
+
+      const windowObject = executeServedSdk(body, { storage });
+
+      expect(windowObject.MiniAuth.session.getState()).toMatchObject({
+        status: 'recovering',
+        refreshToken: 'rt',
+      });
+      expect(typeof windowObject.MiniAuth.session.onChange).toBe('function');
+    } finally {
+      testApp.close();
+    }
+  });
+
+  it('surfaces sdk init failure from the served source when currentScript is unavailable', async () => {
+    const testApp = await createTestApp();
+
+    try {
+      const response = await testApp.app.request('/sdk/singleton-iife.js');
+      const body = await response.text();
+
+      expect(() => executeServedSdk(body, { currentScriptSrc: null })).toThrow(
+        'sdk_init_failed',
+      );
     } finally {
       testApp.close();
     }
