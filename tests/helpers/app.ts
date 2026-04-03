@@ -7,6 +7,7 @@ import { createMemoryLogCollector } from './logging.js';
 
 type CreateTestAppOptions = {
   clientIp?: string | null;
+  origins?: string[];
   smtpConfigs?: Array<{
     host?: string;
     port?: number;
@@ -69,7 +70,7 @@ export async function createTestApp(options: CreateTestAppOptions = {}) {
       return clientIps.get(request) ?? null;
     },
     issuer: 'https://issuer.example',
-    origins: ['https://app.example.com'],
+    origins: options.origins ?? ['https://app.example.com'],
     rpId: 'example.com',
     logger: logCollector.logger,
   });

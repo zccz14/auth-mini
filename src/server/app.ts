@@ -77,6 +77,9 @@ export function createApp(input: {
 }) {
   const app = new Hono<{ Variables: AppVariables }>();
 
+  const corsAllowMethods = 'GET, POST, DELETE, OPTIONS';
+  const corsAllowHeaders = 'Authorization, Content-Type';
+
   app.use(async (c, next) => {
     const requestId = createRequestId();
 
@@ -92,6 +95,46 @@ export function createApp(input: {
   });
 
   app.use(async (c, next) => {
+    const origin = c.req.header('Origin');
+    const allowedOrigin =
+      origin && c.var.origins.includes(origin) ? origin : undefined;
+    const requestedMethod = c.req.header('Access-Control-Request-Method');
+
+    if (origin && requestedMethod && c.req.method === 'OPTIONS') {
+      c.res = new Response(null, { status: 204 });
+      applyOriginVaryHeader(c.res.headers);
+
+      if (allowedOrigin) {
+        applyCorsHeaders(
+          c.res.headers,
+          allowedOrigin,
+          true,
+          corsAllowMethods,
+          corsAllowHeaders,
+        );
+      }
+
+      return;
+    }
+
+    await next();
+
+    if (origin) {
+      applyOriginVaryHeader(c.res.headers);
+    }
+
+    if (allowedOrigin) {
+      applyCorsHeaders(
+        c.res.headers,
+        allowedOrigin,
+        false,
+        corsAllowMethods,
+        corsAllowHeaders,
+      );
+    }
+  });
+
+  app.use(async (c, next) => {
     const startedAt = Date.now();
 
     c.var.logger.info(
@@ -104,22 +147,13 @@ export function createApp(input: {
     try {
       await next();
     } catch (error) {
-      const httpError = toHttpError(error);
-
-      if (httpError.status === 500) {
-        c.var.logger.error(
-          {
-            event: 'http.request.error',
-            ...withErrorFields(error),
-          },
-          'Unhandled request error',
-        );
-      }
-
-      c.res = c.json(
-        { error: httpError.code },
-        httpError.status as 400 | 401 | 404 | 409 | 500 | 503,
-      );
+      c.res = buildErrorResponse(c, error, {
+        allowedOrigins: c.var.origins,
+        allowMethods: corsAllowMethods,
+        allowHeaders: corsAllowHeaders,
+        logger: c.var.logger,
+        logUnhandled: true,
+      });
     }
 
     c.var.logger.info(
@@ -133,25 +167,13 @@ export function createApp(input: {
   });
 
   app.onError((error, c) => {
-    if ('logger' in c.var) {
-      const httpError = toHttpError(error);
-
-      if (httpError.status === 500) {
-        c.var.logger.error(
-          {
-            event: 'http.request.error',
-            ...withErrorFields(error),
-          },
-          'Unhandled request error',
-        );
-      }
-    }
-
-    const httpError = toHttpError(error);
-    return c.json(
-      { error: httpError.code },
-      httpError.status as 400 | 401 | 404 | 409 | 500 | 503,
-    );
+    return buildErrorResponse(c, error, {
+      allowedOrigins: input.origins,
+      allowMethods: corsAllowMethods,
+      allowHeaders: corsAllowHeaders,
+      logger: 'logger' in c.var ? c.var.logger : undefined,
+      logUnhandled: true,
+    });
   });
 
   app.get('/sdk/singleton-iife.js', (c) => {
@@ -398,4 +420,92 @@ function toRouteField(routePath: string): string | undefined {
   }
 
   return routePath;
+}
+
+function applyCorsHeaders(
+  headers: Headers,
+  origin: string,
+  includePreflightHeaders: boolean,
+  allowMethods: string,
+  allowHeaders: string,
+) {
+  headers.set('access-control-allow-origin', origin);
+  applyOriginVaryHeader(headers);
+
+  if (!includePreflightHeaders) {
+    return;
+  }
+
+  headers.set('access-control-allow-methods', allowMethods);
+  headers.set('access-control-allow-headers', allowHeaders);
+}
+
+function buildErrorResponse(
+  c: {
+    req: { header(name: string): string | undefined };
+    json: typeof Response.json;
+  },
+  error: unknown,
+  input: {
+    allowedOrigins: string[];
+    allowMethods: string;
+    allowHeaders: string;
+    logger?: AppLogger;
+    logUnhandled: boolean;
+  },
+): Response {
+  const httpError = toHttpError(error);
+
+  if (input.logUnhandled && input.logger && httpError.status === 500) {
+    input.logger.error(
+      {
+        event: 'http.request.error',
+        ...withErrorFields(error),
+      },
+      'Unhandled request error',
+    );
+  }
+
+  const response = c.json(
+    { error: httpError.code },
+    httpError.status as 400 | 401 | 404 | 409 | 500 | 503,
+  );
+  const origin = c.req.header('Origin');
+
+  if (origin) {
+    applyOriginVaryHeader(response.headers);
+  }
+
+  if (origin && input.allowedOrigins.includes(origin)) {
+    applyCorsHeaders(
+      response.headers,
+      origin,
+      false,
+      input.allowMethods,
+      input.allowHeaders,
+    );
+  }
+
+  return response;
+}
+
+function applyOriginVaryHeader(headers: Headers) {
+  headers.set('vary', appendVaryHeader(headers.get('vary'), 'Origin'));
+}
+
+function appendVaryHeader(existing: string | null, value: string): string {
+  if (!existing) {
+    return value;
+  }
+
+  const values = existing
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (values.includes(value)) {
+    return existing;
+  }
+
+  return `${existing}, ${value}`;
 }
