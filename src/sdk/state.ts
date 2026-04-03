@@ -26,14 +26,16 @@ export function createStateStore(storage: Storage) {
       };
     },
     setAuthenticated(next: AuthenticatedStateInput): void {
-      writePersistedSdkState(storage, next);
+      const persisted = clonePersistedState(next);
+
+      writePersistedSdkState(storage, persisted);
       updateState({
         status: 'authenticated',
         authenticated: true,
-        accessToken: next.accessToken,
-        refreshToken: next.refreshToken,
-        expiresAt: next.expiresAt,
-        me: next.me,
+        accessToken: persisted.accessToken,
+        refreshToken: persisted.refreshToken,
+        expiresAt: persisted.expiresAt,
+        me: persisted.me,
       });
     },
     setAnonymous(): void {
@@ -105,4 +107,22 @@ function freezeSnapshot(snapshot: SessionSnapshot): SessionSnapshot {
   }
 
   return Object.freeze(snapshot);
+}
+
+function clonePersistedState(
+  state: AuthenticatedStateInput,
+): AuthenticatedStateInput {
+  return {
+    accessToken: state.accessToken,
+    refreshToken: state.refreshToken,
+    expiresAt: state.expiresAt,
+    me: state.me
+      ? {
+          user_id: state.me.user_id,
+          email: state.me.email,
+          webauthn_credentials: [...state.me.webauthn_credentials],
+          active_sessions: [...state.me.active_sessions],
+        }
+      : null,
+  };
 }

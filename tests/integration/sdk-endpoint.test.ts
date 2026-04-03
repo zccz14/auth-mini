@@ -60,6 +60,21 @@ describe('singleton sdk endpoint', () => {
     }
   });
 
+  it('surfaces sdk init failure from the served source when localStorage is unavailable', async () => {
+    const testApp = await createTestApp();
+
+    try {
+      const response = await testApp.app.request('/sdk/singleton-iife.js');
+      const body = await response.text();
+
+      expect(() =>
+        executeServedSdk(body, { storageUnavailable: true }),
+      ).toThrow('sdk_init_failed');
+    } finally {
+      testApp.close();
+    }
+  });
+
   it('documents the same-origin deployment limitation in served source', async () => {
     const testApp = await createTestApp();
 

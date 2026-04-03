@@ -107,4 +107,28 @@ describe('sdk state store', () => {
     expect(sdk.getState().status).toBe('anonymous');
     expect(sdk.getState().refreshToken).toBeNull();
   });
+
+  it('clones caller-owned me objects before freezing internal state', () => {
+    const sdk = createStateStore(fakeStorage());
+    const me = {
+      user_id: 'u',
+      email: 'u@example.com',
+      webauthn_credentials: [],
+      active_sessions: [],
+    };
+
+    sdk.setAuthenticated({
+      accessToken: 'a',
+      refreshToken: 'r',
+      expiresAt: 'x',
+      me,
+    });
+
+    me.email = 'mutated@example.com';
+    me.webauthn_credentials.push('new-device');
+
+    expect(Object.isFrozen(me)).toBe(false);
+    expect(sdk.getState().me).toMatchObject({ email: 'u@example.com' });
+    expect(sdk.getState().me?.webauthn_credentials).toEqual([]);
+  });
 });

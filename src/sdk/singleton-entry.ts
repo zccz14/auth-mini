@@ -7,6 +7,10 @@ type BootstrapInput = {
   storage?: Storage;
 };
 
+type SingletonInput = {
+  storage?: Storage;
+};
+
 export function bootstrapSingletonSdk(input: BootstrapInput) {
   const scriptUrl = input.currentScript?.src;
 
@@ -20,8 +24,13 @@ export function bootstrapSingletonSdk(input: BootstrapInput) {
   };
 }
 
-export function createSingletonSdk(input: { storage?: Storage } = {}) {
-  const state = createStateStore(requireStorage(input.storage));
+export function createSingletonSdk(input: SingletonInput = {}) {
+  const state = createStateStore(
+    resolveSdkStorage({
+      storage: input.storage,
+      getDefaultStorage: () => globalThis.localStorage,
+    }),
+  );
 
   return {
     email: {},
@@ -37,58 +46,138 @@ export function createSingletonSdk(input: { storage?: Storage } = {}) {
 }
 
 export function renderSingletonIifeSource(): string {
-  return `(() => {
+  return `(${singletonIifeRuntime.toString()})();`;
+}
+
+function resolveSdkStorage(input: {
+  storage?: Storage;
+  getDefaultStorage: () => Storage | undefined;
+}): Storage {
+  if (input.storage) {
+    return input.storage;
+  }
+
+  let storage: Storage | undefined;
+
+  try {
+    storage = input.getDefaultStorage();
+  } catch {
+    throw createSdkError('sdk_init_failed', 'localStorage is unavailable');
+  }
+
+  if (!storage) {
+    throw createSdkError('sdk_init_failed', 'localStorage is unavailable');
+  }
+
+  return storage;
+}
+
+function singletonIifeRuntime() {
   const SDK_STORAGE_KEY = 'mini-auth.sdk';
+
   function createSdkError(code, message) {
-    const error = new Error(code + ': ' + message);
+    const error = new Error(`${code}: ${message}`);
     error.name = 'MiniAuthSdkError';
     error.code = code;
     return error;
   }
+
   function inferBaseUrl(scriptUrl) {
     const url = new URL(scriptUrl);
+
     if (!url.pathname.endsWith('/sdk/singleton-iife.js')) {
       throw createSdkError('sdk_init_failed', 'Cannot infer SDK base URL');
     }
+
     const basePath = url.pathname.slice(0, -'/sdk/singleton-iife.js'.length);
-    return '' + url.origin + basePath;
+    return `${url.origin}${basePath}`;
   }
-  function cloneSnapshot(snapshot) {
-    const next = {
-      status: snapshot.status,
-      authenticated: snapshot.authenticated,
-      accessToken: snapshot.accessToken,
-      refreshToken: snapshot.refreshToken,
-      expiresAt: snapshot.expiresAt,
-      me: snapshot.me
-        ? {
-            user_id: snapshot.me.user_id,
-            email: snapshot.me.email,
-            webauthn_credentials: [...snapshot.me.webauthn_credentials],
-            active_sessions: [...snapshot.me.active_sessions],
-          }
-        : null,
-    };
-    if (next.me) {
-      Object.freeze(next.me.webauthn_credentials);
-      Object.freeze(next.me.active_sessions);
-      Object.freeze(next.me);
+
+  function resolveSdkStorage(input) {
+    if (input.storage) {
+      return input.storage;
     }
-    return Object.freeze(next);
+
+    let storage;
+
+    try {
+      storage = input.getDefaultStorage();
+    } catch {
+      throw createSdkError('sdk_init_failed', 'localStorage is unavailable');
+    }
+
+    if (!storage) {
+      throw createSdkError('sdk_init_failed', 'localStorage is unavailable');
+    }
+
+    return storage;
   }
-  function isRecord(value) {
-    return typeof value === 'object' && value !== null;
+
+  function readPersistedSdkState(storage) {
+    const raw = storage.getItem(SDK_STORAGE_KEY);
+
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+
+      if (!parsed || typeof parsed !== 'object') {
+        return null;
+      }
+
+      const accessToken = toNullableString(parsed.accessToken);
+      const refreshToken = toNullableString(parsed.refreshToken);
+      const expiresAt = toNullableString(parsed.expiresAt);
+      const me = toMeResponse(parsed.me);
+
+      if (
+        accessToken === undefined ||
+        refreshToken === undefined ||
+        expiresAt === undefined ||
+        me === undefined
+      ) {
+        return null;
+      }
+
+      return {
+        accessToken,
+        refreshToken,
+        expiresAt,
+        me,
+      };
+    } catch {
+      return null;
+    }
   }
+
   function toNullableString(value) {
-    if (value === undefined || value === null) return null;
+    if (value === undefined || value === null) {
+      return null;
+    }
+
     return typeof value === 'string' ? value : undefined;
   }
+
   function toMeResponse(value) {
-    if (value === undefined || value === null) return null;
-    if (!isRecord(value)) return undefined;
-    if (typeof value.user_id !== 'string' || typeof value.email !== 'string' || !Array.isArray(value.webauthn_credentials) || !Array.isArray(value.active_sessions)) {
+    if (value === undefined || value === null) {
+      return null;
+    }
+
+    if (!value || typeof value !== 'object') {
       return undefined;
     }
+
+    if (
+      typeof value.user_id !== 'string' ||
+      typeof value.email !== 'string' ||
+      !Array.isArray(value.webauthn_credentials) ||
+      !Array.isArray(value.active_sessions)
+    ) {
+      return undefined;
+    }
+
     return {
       user_id: value.user_id,
       email: value.email,
@@ -96,56 +185,88 @@ export function renderSingletonIifeSource(): string {
       active_sessions: [...value.active_sessions],
     };
   }
-  function readPersistedSdkState(storage) {
-    const raw = storage.getItem(SDK_STORAGE_KEY);
-    if (!raw) return null;
-    try {
-      const parsed = JSON.parse(raw);
-      if (!isRecord(parsed)) return null;
-      const accessToken = toNullableString(parsed.accessToken);
-      const refreshToken = toNullableString(parsed.refreshToken);
-      const expiresAt = toNullableString(parsed.expiresAt);
-      const me = toMeResponse(parsed.me);
-      if (accessToken === undefined || refreshToken === undefined || expiresAt === undefined || me === undefined) {
-        return null;
-      }
-      return { accessToken, refreshToken, expiresAt, me };
-    } catch {
-      return null;
-    }
-  }
+
   function createStateStore(storage) {
     const listeners = new Set();
-    const persisted = readPersistedSdkState(storage);
-    let state = cloneSnapshot(
-      persisted && persisted.refreshToken
-        ? {
-            status: 'recovering',
-            authenticated: false,
-            accessToken: persisted.accessToken,
-            refreshToken: persisted.refreshToken,
-            expiresAt: persisted.expiresAt,
-            me: persisted.me,
-          }
-        : {
-            status: 'anonymous',
-            authenticated: false,
-            accessToken: null,
-            refreshToken: null,
-            expiresAt: null,
-            me: null,
-          },
-    );
+    const state = hydrateState(storage);
+
     return {
-      getState() { return cloneSnapshot(state); },
+      getState() {
+        return cloneSnapshot(state);
+      },
       onChange(listener) {
         listeners.add(listener);
-        return () => listeners.delete(listener);
+        return () => {
+          listeners.delete(listener);
+        };
       },
     };
+
+    function hydrateState(storage) {
+      const persisted = readPersistedSdkState(storage);
+
+      if (!persisted || !persisted.refreshToken) {
+        return createSnapshot('anonymous');
+      }
+
+      return freezeSnapshot({
+        status: 'recovering',
+        authenticated: false,
+        accessToken: persisted.accessToken,
+        refreshToken: persisted.refreshToken,
+        expiresAt: persisted.expiresAt,
+        me: persisted.me,
+      });
+    }
+
+    function createSnapshot(status) {
+      return freezeSnapshot({
+        status,
+        authenticated: status === 'authenticated',
+        accessToken: null,
+        refreshToken: null,
+        expiresAt: null,
+        me: null,
+      });
+    }
+
+    function cloneSnapshot(snapshot) {
+      return freezeSnapshot({
+        status: snapshot.status,
+        authenticated: snapshot.authenticated,
+        accessToken: snapshot.accessToken,
+        refreshToken: snapshot.refreshToken,
+        expiresAt: snapshot.expiresAt,
+        me: snapshot.me
+          ? {
+              user_id: snapshot.me.user_id,
+              email: snapshot.me.email,
+              webauthn_credentials: [...snapshot.me.webauthn_credentials],
+              active_sessions: [...snapshot.me.active_sessions],
+            }
+          : null,
+      });
+    }
+
+    function freezeSnapshot(snapshot) {
+      if (snapshot.me) {
+        Object.freeze(snapshot.me.webauthn_credentials);
+        Object.freeze(snapshot.me.active_sessions);
+        Object.freeze(snapshot.me);
+      }
+
+      return Object.freeze(snapshot);
+    }
   }
+
   function createSingletonSdk(input = {}) {
-    const state = createStateStore(input.storage || localStorage);
+    const state = createStateStore(
+      resolveSdkStorage({
+        storage: input.storage,
+        getDefaultStorage: () => window.localStorage,
+      }),
+    );
+
     return {
       email: {},
       webauthn: {},
@@ -156,32 +277,25 @@ export function renderSingletonIifeSource(): string {
       },
     };
   }
+
   function bootstrapSingletonSdk(input) {
-    const scriptUrl = input.currentScript && input.currentScript.src;
+    const scriptUrl = input.currentScript?.src;
+
     if (!scriptUrl) {
-      throw createSdkError('sdk_init_failed', 'Cannot determine SDK script URL');
+      throw createSdkError(
+        'sdk_init_failed',
+        'Cannot determine SDK script URL',
+      );
     }
+
     return {
       baseUrl: inferBaseUrl(scriptUrl),
       sdk: createSingletonSdk({ storage: input.storage }),
     };
   }
+
   /* v1 supports same-origin or same-origin proxy deployment only. */
   window.MiniAuth = bootstrapSingletonSdk({
     currentScript: document.currentScript,
-    storage: localStorage,
   }).sdk;
-})();`;
-}
-
-function requireStorage(storage: Storage | undefined): Storage {
-  if (storage) {
-    return storage;
-  }
-
-  if (typeof localStorage === 'undefined') {
-    throw createSdkError('sdk_init_failed', 'localStorage is unavailable');
-  }
-
-  return localStorage;
 }

@@ -36,6 +36,7 @@ export function executeServedSdk(
   options: {
     currentScriptSrc?: string | null;
     storage?: Storage;
+    storageUnavailable?: boolean;
   } = {},
 ): Window & typeof globalThis {
   const windowObject = {} as Window & typeof globalThis;
@@ -47,9 +48,21 @@ export function executeServedSdk(
           ? null
           : { src: options.currentScriptSrc },
   };
-  const storage = options.storage ?? fakeStorage();
+  if (options.storageUnavailable) {
+    Object.defineProperty(windowObject, 'localStorage', {
+      configurable: true,
+      get() {
+        throw new Error('localStorage blocked');
+      },
+    });
+  } else {
+    Object.defineProperty(windowObject, 'localStorage', {
+      configurable: true,
+      value: options.storage ?? fakeStorage(),
+    });
+  }
 
-  const run = new Function('window', 'document', 'localStorage', source);
-  run(windowObject, document, storage);
+  const run = new Function('window', 'document', source);
+  run(windowObject, document);
   return windowObject;
 }
