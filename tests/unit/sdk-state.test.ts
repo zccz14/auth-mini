@@ -30,6 +30,7 @@ describe('sdk state store', () => {
     sdk.setAuthenticated({
       accessToken: 'a',
       refreshToken: 'r',
+      receivedAt: '2026-04-03T00:00:00.000Z',
       expiresAt: 'x',
       me: {
         user_id: 'u',
@@ -81,6 +82,7 @@ describe('sdk state store', () => {
     sdk.setAuthenticated({
       accessToken: 'a',
       refreshToken: 'r',
+      receivedAt: '2026-04-03T00:00:00.000Z',
       expiresAt: 'x',
       me: {
         user_id: 'u',
@@ -120,6 +122,7 @@ describe('sdk state store', () => {
     sdk.setAuthenticated({
       accessToken: 'a',
       refreshToken: 'r',
+      receivedAt: '2026-04-03T00:00:00.000Z',
       expiresAt: 'x',
       me,
     });

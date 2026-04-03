@@ -7,7 +7,7 @@
     "mini-auth": "dist/index.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node dist/sdk/build-singleton-iife.js",
     "test": "vitest run tests",
     "test:integration": "vitest run tests/integration",
     "lint": "eslint .",

@@ -1,4 +1,8 @@
-import type { PersistedSdkState } from '../../src/sdk/types.js';
+import {
+  createMiniAuthInternal,
+  type InternalSdkDeps,
+} from '../../src/sdk/singleton-entry.js';
+import type { MeResponse, PersistedSdkState } from '../../src/sdk/types.js';
 
 type StorageSeed = Partial<PersistedSdkState>;
 
@@ -6,7 +10,17 @@ export function fakeStorage(seed: StorageSeed = {}): Storage {
   const data = new Map<string, string>();
 
   if (Object.keys(seed).length > 0) {
-    data.set('mini-auth.sdk', JSON.stringify(seed));
+    data.set(
+      'mini-auth.sdk',
+      JSON.stringify({
+        accessToken: null,
+        refreshToken: null,
+        receivedAt: null,
+        expiresAt: null,
+        me: null,
+        ...seed,
+      }),
+    );
   }
 
   return {
@@ -28,6 +42,92 @@ export function fakeStorage(seed: StorageSeed = {}): Storage {
     setItem(key, value) {
       data.set(key, value);
     },
+  };
+}
+
+export function fakeAuthenticatedStorage(
+  seed: Partial<PersistedSdkState> = {},
+): Storage {
+  return fakeStorage({
+    accessToken: 'access-token',
+    refreshToken: 'refresh-token',
+    receivedAt: '2026-04-03T00:00:00.000Z',
+    expiresAt: '2026-04-03T00:15:00.000Z',
+    me: null,
+    ...seed,
+  });
+}
+
+export function fakeAuthenticatedStorageWithMe(
+  me: MeResponse = createMe(),
+  seed: Partial<PersistedSdkState> = {},
+): Storage {
+  return fakeAuthenticatedStorage({
+    me,
+    ...seed,
+  });
+}
+
+export function fakeAlmostExpiredStorage(): Storage {
+  return fakeAuthenticatedStorage({
+    receivedAt: '2026-04-03T00:00:00.000Z',
+    expiresAt: '2026-04-03T00:03:00.000Z',
+  });
+}
+
+export function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+    },
+  });
+}
+
+export function createMiniAuthForTest(options: Partial<InternalSdkDeps> = {}) {
+  return createMiniAuthInternal({
+    autoRecover: false,
+    baseUrl: 'https://auth.example.com',
+    fetch: async () => jsonResponse({ ok: true }),
+    now: () => Date.parse('2026-04-03T00:00:00.000Z'),
+    storage: fakeStorage(),
+    ...options,
+  });
+}
+
+export function countRefreshCalls(
+  fetchMock: (input: unknown) => unknown,
+): number {
+  return readFetchPaths(fetchMock).filter((path) => path === '/session/refresh')
+    .length;
+}
+
+export function countLogoutCalls(
+  fetchMock: (input: unknown) => unknown,
+): number {
+  return readFetchPaths(fetchMock).filter((path) => path === '/session/logout')
+    .length;
+}
+
+function readFetchPaths(fetchMock: {
+  mock?: { calls: Array<[unknown, ...unknown[]]> };
+}) {
+  return (fetchMock.mock?.calls ?? []).map(([input]) => {
+    if (input instanceof URL) {
+      return input.pathname;
+    }
+
+    return new URL(String(input)).pathname;
+  });
+}
+
+function createMe(overrides: Partial<MeResponse> = {}): MeResponse {
+  return {
+    user_id: 'user-1',
+    email: 'u@example.com',
+    webauthn_credentials: [],
+    active_sessions: [],
+    ...overrides,
   };
 }
 
