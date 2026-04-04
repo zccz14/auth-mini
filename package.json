@@ -1,10 +1,25 @@
 {
-  "name": "mini-auth",
+  "name": "auth-mini",
   "version": "0.1.0",
-  "private": true,
+  "description": "Minimal, opinionated auth server for apps that just need auth.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zccz14/mini-auth.git"
+  },
+  "homepage": "https://github.com/zccz14/mini-auth#readme",
+  "bugs": {
+    "url": "https://github.com/zccz14/mini-auth/issues"
+  },
   "type": "module",
+  "files": [
+    "dist"
+  ],
   "bin": {
     "mini-auth": "dist/index.js"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node dist/sdk/build-singleton-iife.js",
