@@ -3,7 +3,6 @@ const WAITING_FOR_SDK_ORIGIN_MESSAGE =
 
 export function getDemoSetupState(locationLike) {
   const origin = locationLike.origin;
-  const hostname = locationLike.hostname;
   const normalizedSdkOrigin = resolveSdkOrigin(locationLike);
   const corsWarning =
     'Start auth-mini with --origin set to this page origin so the browser can call the auth server cross-origin.';
