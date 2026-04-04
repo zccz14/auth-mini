@@ -163,7 +163,7 @@ export function buildDemoContent(setupState) {
       'If you use a custom GitHub Pages domain, publish a matching CNAME file and keep that domain stable; change auth-mini --origin whenever the docs URL path/domain changes enough to alter window.location.origin.',
     ],
     knownIssues: [
-      'Passkeys depend on a valid RP ID and a browser environment that supports WebAuthn.',
+      'Passkeys require a browser environment that supports WebAuthn.',
       'Cross-origin pages must start auth-mini with --origin set to the page origin before browser calls will succeed.',
       'Multiple tabs can currently race during session refresh. This is a known SDK bug, not a product contract.',
     ],

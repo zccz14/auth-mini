@@ -13,7 +13,6 @@ export function renderContentState(root, setupState, content) {
   setText(root, '#hero-audience', content.hero?.audience || '');
   setList(root, '#hero-capabilities', content.hero?.capabilities || []);
   setText(root, '#page-origin', setupState.currentOrigin || '');
-  setText(root, '#page-rp-id', setupState.suggestedRpId || '');
   setText(root, '#origin-command', content.startupCommand || '');
   setText(root, '#sdk-script-snippet', content.sdkScriptTag || '');
   setText(root, '#jose-snippet', content.joseSnippet || '');
@@ -28,11 +27,6 @@ export function renderContentState(root, setupState, content) {
   if (configError) {
     configError.textContent = setupState.configError || '';
     configError.hidden = !setupState.configError;
-  }
-
-  if (setupState.passkeyWarning) {
-    setText(root, '#register-output', setupState.passkeyWarning);
-    setText(root, '#authenticate-output', setupState.passkeyWarning);
   }
 }
 
@@ -268,10 +262,7 @@ export function createDemoRuntime({
         return;
       }
 
-      const passkeyBlockReason = getPasskeyBlockReason(
-        setupState,
-        windowObject,
-      );
+      const passkeyBlockReason = getPasskeyBlockReason(windowObject);
       if (passkeyBlockReason) {
         setSectionResult(sectionViews, 'register', 'error', passkeyBlockReason);
         setSectionResult(
@@ -656,11 +647,7 @@ function persistState(localStorage, email) {
   );
 }
 
-function getPasskeyBlockReason(setupState, windowObject) {
-  if (setupState.passkeyWarning) {
-    return setupState.passkeyWarning;
-  }
-
+function getPasskeyBlockReason(windowObject) {
   if (!windowObject.PublicKeyCredential) {
     return BROWSER_PASSKEY_WARNING;
   }

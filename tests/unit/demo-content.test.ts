@@ -8,9 +8,8 @@ const sampleState = {
   issuer: 'https://auth.example.com',
   jwksUrl: 'https://auth.example.com/jwks',
   suggestedOrigin: 'https://docs.example.com',
-  suggestedRpId: 'auth.example.com',
   startupCommand:
-    'auth-mini start ./auth-mini.sqlite --issuer https://auth.example.com --origin https://docs.example.com --rp-id auth.example.com',
+    'auth-mini start ./auth-mini.sqlite --issuer https://auth.example.com --origin https://docs.example.com',
 };
 
 describe('demo content builders', () => {
@@ -202,7 +201,6 @@ describe('demo content builders', () => {
     const content = buildDemoContent(sampleState);
     const knownIssues = content.knownIssues.join('\n');
 
-    expect(knownIssues).toContain('RP ID');
     expect(knownIssues).toContain('browser');
     expect(knownIssues).toContain('--origin');
     expect(knownIssues).toContain('known SDK bug');

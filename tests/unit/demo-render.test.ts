@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 type FakeNode = FakeElement;
@@ -24,21 +25,16 @@ type FakeRenderRoot = {
 
 const sampleSetupState = {
   currentOrigin: 'https://docs.example.com',
-  currentRpId: 'docs.example.com',
   suggestedOrigin: 'https://docs.example.com',
-  suggestedRpId: 'auth.example.com',
   sdkOrigin: 'https://auth.example.com',
   sdkScriptUrl: 'https://auth.example.com/sdk/singleton-iife.js',
   issuer: 'https://auth.example.com',
   jwksUrl: 'https://auth.example.com/jwks',
   configError: '',
-  webauthnReady: false,
   corsWarning:
     'Start auth-mini with --origin set to this page origin so the browser can call the auth server cross-origin.',
-  passkeyWarning:
-    'Open this page on localhost or an HTTPS domain for passkeys.',
   startupCommand:
-    'auth-mini start ./auth-mini.sqlite --issuer https://auth.example.com --origin https://docs.example.com --rp-id auth.example.com',
+    'auth-mini start ./auth-mini.sqlite --issuer https://auth.example.com --origin https://docs.example.com',
 };
 
 describe('demo render helpers', () => {
@@ -187,12 +183,43 @@ describe('demo render helpers', () => {
     expect(root.querySelector('#setup-warning')?.textContent).toContain(
       '--origin',
     );
-    expect(root.querySelector('#register-output')?.textContent).toContain(
-      'localhost or an HTTPS domain',
+    expect(root.querySelector('#register-output')?.textContent).not.toContain(
+      'localhost',
     );
-    expect(root.querySelector('#authenticate-output')?.textContent).toContain(
-      'localhost or an HTTPS domain',
+    expect(
+      root.querySelector('#authenticate-output')?.textContent,
+    ).not.toContain('localhost');
+  });
+
+  it('ignores legacy passkey warning fields during startup rendering', async () => {
+    const { buildDemoContent } = await import('../../demo/content.js');
+    const { renderContentState } = await import('../../demo/main.js');
+    const root = createRenderRoot();
+    const setupState = {
+      ...sampleSetupState,
+      passkeyWarning:
+        'Open this page on localhost or an HTTPS domain for passkeys.',
+    };
+    const content = buildDemoContent(sampleSetupState);
+
+    renderContentState(root, setupState, content);
+
+    expect(root.querySelector('#register-output')?.textContent).not.toContain(
+      'localhost',
     );
+    expect(
+      root.querySelector('#authenticate-output')?.textContent,
+    ).not.toContain('localhost');
+  });
+
+  it('removes the rp id slot from the static page shell', () => {
+    const html = readFileSync(
+      new URL('../../demo/index.html', import.meta.url),
+      'utf8',
+    );
+
+    expect(html).not.toContain('page-rp-id');
+    expect(html).not.toContain('Suggested RP ID');
   });
 
   it('hydrates the visible sdk origin input from resolved setup state', async () => {
@@ -247,7 +274,6 @@ function createRenderRoot(): FakeRenderRoot {
   makeElement('config-error');
   makeElement('setup-warning');
   makeElement('page-origin');
-  makeElement('page-rp-id');
   makeElement('how-it-works-list');
   makeElement('api-reference-list');
   makeElement('backend-notes-list');

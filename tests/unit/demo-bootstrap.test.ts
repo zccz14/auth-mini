@@ -375,6 +375,31 @@ describe('demo bootstrap', () => {
     ).toMatch(/passkeys/i);
   });
 
+  it('keeps passkey actions enabled when the browser supports webauthn', async () => {
+    const env = createTestEnvironment(
+      'http://127.0.0.1:8080/demo/?sdk-origin=http://127.0.0.1:7777',
+    );
+    const { bootstrapDemoPage } = await import('../../demo/bootstrap.js');
+    env.window.MiniAuth = createFakeSdk();
+
+    await runBootstrap(bootstrapDemoPage, env, {
+      loadSdkScript: async () => {},
+    });
+
+    expect(env.document.querySelector('#register-button')?.disabled).toBe(
+      false,
+    );
+    expect(env.document.querySelector('#authenticate-button')?.disabled).toBe(
+      false,
+    );
+    expect(
+      env.document.querySelector('#register-output')?.textContent,
+    ).not.toContain('localhost');
+    expect(
+      env.document.querySelector('#authenticate-output')?.textContent,
+    ).not.toContain('localhost');
+  });
+
   it('real demo/main.js bootstraps from window.location on import', async () => {
     const env = createTestEnvironment(
       'http://localhost/demo/?sdk-origin=https://auth.example.com',
