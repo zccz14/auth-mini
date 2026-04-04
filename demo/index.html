@@ -48,7 +48,9 @@
             />
           </label>
 
-          <p id="config-error" class="callout callout-error" hidden></p>
+          <p id="config-error" class="callout callout-error" hidden>
+            Config validation messages render here when runtime wiring lands.
+          </p>
 
           <div class="inline-meta">
             <span>Page origin: <strong id="page-origin"></strong></span>
@@ -96,7 +98,7 @@ mini-auth start ... --origin http://127.0.0.1:8080</pre
 
           <details class="doc-details panel inset-panel">
             <summary>Show browser script snippet</summary>
-            <pre id="sdk-script-snippet" class="doc-code"></pre>
+            <pre id="sdk-script-snippet" class="doc-code">Runtime snippet target: Task 4 renders the config-derived script tag here.</pre>
           </details>
         </div>
       </section>
@@ -132,9 +134,9 @@ mini-auth start ... --origin http://127.0.0.1:8080</pre
               <details class="doc-details inline-details">
                 <summary>Show runtime values</summary>
                 <p>
-                  The canonical runtime values live in the hero and quick-start
-                  blocks above so docs copy and the live SDK target stay in one
-                  place.
+                  Static layout note: runtime-derived values stay centralized in
+                  the docs sections above and will be rendered here later if the
+                  playground needs a secondary view.
                 </p>
               </details>
             </article>
@@ -344,10 +346,13 @@ No request yet.</pre
                 <h3>POST /email/start</h3>
               </div>
             </div>
-            <p class="card-copy">Render target for runtime-generated API entries.</p>
+            <p class="card-copy">
+              Static placeholder for Task 4 runtime-generated API reference
+              entries.
+            </p>
             <details class="doc-details">
               <summary>Show request and response</summary>
-              <pre class="doc-code">Waiting for runtime content.</pre>
+              <pre class="doc-code">Placeholder only: request/response examples render here after runtime content wiring.</pre>
             </details>
           </article>
         </div>
@@ -371,12 +376,14 @@ No request yet.</pre
                 <h3>Node / TypeScript snippet</h3>
               </div>
             </div>
-            <pre id="jose-snippet" class="doc-code"></pre>
+            <pre id="jose-snippet" class="doc-code">Runtime snippet target: Task 4 renders the jose JWT verification example here.</pre>
           </article>
 
           <details id="backend-notes-disclosure" class="doc-details panel inset-panel">
             <summary>More backend JWT notes</summary>
-            <ul id="backend-notes-list" class="doc-list"></ul>
+            <ul id="backend-notes-list" class="doc-list">
+              <li>Placeholder only: backend JWT notes render here from shared page state.</li>
+            </ul>
           </details>
         </div>
       </section>
@@ -420,28 +427,6 @@ No request yet.</pre
       </section>
     </main>
 
-    <script>
-      const params = new URLSearchParams(window.location.search);
-      const sdkOrigin = params.get('sdk-origin') || 'http://127.0.0.1:7777';
-      window.__MINI_AUTH_SDK_ORIGIN__ = sdkOrigin;
-      const sdkUrl = new URL('/sdk/singleton-iife.js', sdkOrigin).toString();
-      window.__MINI_AUTH_SDK_URL__ = sdkUrl;
-
-      const sdkScript = document.createElement('script');
-      sdkScript.src = sdkUrl;
-      sdkScript.dataset.miniAuthSdk = 'true';
-      document.body.append(sdkScript);
-
-      const mainScript = document.createElement('script');
-      mainScript.type = 'module';
-      mainScript.src = './main.js';
-
-      sdkScript.addEventListener('load', () => document.body.append(mainScript), {
-        once: true,
-      });
-      sdkScript.addEventListener('error', () => document.body.append(mainScript), {
-        once: true,
-      });
-    </script>
+    <script type="module" src="./main.js"></script>
   </body>
 </html>
