@@ -39,6 +39,7 @@ describe('demo content builders', () => {
       'POST /webauthn/register/verify',
       'POST /webauthn/authenticate/options',
       'POST /webauthn/authenticate/verify',
+      'DELETE /webauthn/credentials/cred_123',
       'GET /jwks',
     ];
 
@@ -86,6 +87,7 @@ describe('demo content builders', () => {
       content.apiReference.map((entry) => [entry.path, entry]),
     );
 
+    expect(byPath.get('/me')?.request).toContain('authorization');
     expect(byPath.get('/me')?.response).toContain('user_id');
     expect(byPath.get('/me')?.response).toContain('webauthn_credentials');
     expect(byPath.get('/me')?.response).toContain('active_sessions');
@@ -134,6 +136,12 @@ describe('demo content builders', () => {
     );
     expect(byPath.get('/webauthn/authenticate/verify')?.request).toContain(
       'credential',
+    );
+    expect(byPath.get('/webauthn/credentials/cred_123')?.request).toContain(
+      'authorization',
+    );
+    expect(byPath.get('/webauthn/credentials/cred_123')?.response).toContain(
+      'ok',
     );
   });
 

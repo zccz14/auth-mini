@@ -74,6 +74,7 @@ export function buildDemoContent(setupState) {
         method: 'GET',
         path: '/me',
         when: 'Hydrate frontend user/session state after sign-in or refresh.',
+        headers: { authorization: 'Bearer <access_token>' },
         response:
           '{ "user_id": "user_123", "email": "user@example.com", "webauthn_credentials": [{ "credential_id": "cred_123", "public_key": "<base64url>", "counter": 1, "transports": "internal" }], "active_sessions": [{ "id": "sess_123", "created_at": "2026-04-04T00:00:00.000Z", "expires_at": "2026-04-05T00:00:00.000Z" }] }',
       }),
@@ -127,6 +128,14 @@ export function buildDemoContent(setupState) {
       }),
       makeApiEntry({
         sdkOrigin,
+        method: 'DELETE',
+        path: '/webauthn/credentials/cred_123',
+        when: 'Delete a saved passkey credential for the signed-in user.',
+        headers: { authorization: 'Bearer <access_token>' },
+        response: '{ "ok": true }',
+      }),
+      makeApiEntry({
+        sdkOrigin,
         method: 'GET',
         path: '/jwks',
         when: 'Publish the JWKS used to verify JWT signatures.',
@@ -174,12 +183,21 @@ function makeApiEntry({
 
 function buildRequestSnippet({ body, headers = {}, method, path, sdkOrigin }) {
   const url = `${sdkOrigin}${path}`;
-
-  if (method === 'GET') {
-    return `fetch('${url}', { method: 'GET' })`;
-  }
-
   const requestHeaders = { ...headers };
+
+  if (method === 'GET' || method === 'DELETE') {
+    const lines = [`fetch('${url}', {`, `  method: '${method}',`];
+
+    if (Object.keys(requestHeaders).length > 0) {
+      lines.push(
+        `  headers: ${JSON.stringify(requestHeaders, null, 2).replaceAll('\n', '\n  ')},`,
+      );
+    }
+
+    lines.push('})');
+
+    return lines.join('\n');
+  }
 
   if (body !== undefined) {
     requestHeaders['content-type'] = 'application/json';
