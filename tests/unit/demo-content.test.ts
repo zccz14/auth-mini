@@ -80,6 +80,30 @@ describe('demo content builders', () => {
     expect(content.deploymentNotes.join('\n')).toContain('--origin');
   });
 
+  it('keeps api examples aligned with the server auth contracts', () => {
+    const content = buildDemoContent(sampleState);
+    const byPath = new Map(
+      content.apiReference.map((entry) => [entry.path, entry]),
+    );
+
+    expect(byPath.get('/email/verify')?.response).toContain('access_token');
+    expect(byPath.get('/email/verify')?.response).toContain('refresh_token');
+    expect(byPath.get('/session/refresh')?.request).toContain('refresh_token');
+    expect(byPath.get('/session/logout')?.request).toContain('authorization');
+    expect(byPath.get('/session/logout')?.request).not.toContain(
+      'refreshToken',
+    );
+    expect(byPath.get('/webauthn/register/options')?.request).toContain(
+      'authorization',
+    );
+    expect(byPath.get('/webauthn/register/options')?.request).not.toContain(
+      'user@example.com',
+    );
+    expect(
+      byPath.get('/webauthn/authenticate/options')?.response,
+    ).not.toContain('allowCredentials');
+  });
+
   it('describes multi-tab behavior as a bug, not a supported limit', () => {
     const content = buildDemoContent(sampleState);
 

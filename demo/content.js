@@ -58,16 +58,16 @@ export function buildDemoContent(setupState) {
         when: 'Exchange the email OTP for a signed-in session.',
         body: { email: 'user@example.com', code: '123456' },
         response:
-          '{ "accessToken": "<jwt>", "refreshToken": "<refresh-token>", "user": { "email": "user@example.com" } }',
+          '{ "access_token": "<jwt>", "token_type": "Bearer", "expires_in": 3600, "refresh_token": "<refresh-token>" }',
       }),
       makeApiEntry({
         sdkOrigin,
         method: 'POST',
         path: '/session/refresh',
         when: 'Rotate a refresh token into a fresh access token.',
-        body: { refreshToken: '<refresh-token>' },
+        body: { refresh_token: '<refresh-token>' },
         response:
-          '{ "accessToken": "<jwt>", "refreshToken": "<refresh-token>" }',
+          '{ "access_token": "<jwt>", "token_type": "Bearer", "expires_in": 3600, "refresh_token": "<refresh-token>" }',
       }),
       makeApiEntry({
         sdkOrigin,
@@ -82,7 +82,7 @@ export function buildDemoContent(setupState) {
         method: 'POST',
         path: '/session/logout',
         when: 'Invalidate the active session and clear refresh credentials.',
-        body: { refreshToken: '<refresh-token>' },
+        headers: { authorization: 'Bearer <access_token>' },
         response: '{ "ok": true }',
       }),
       makeApiEntry({
@@ -90,7 +90,7 @@ export function buildDemoContent(setupState) {
         method: 'POST',
         path: '/webauthn/register/options',
         when: 'Request registration options before creating a passkey.',
-        body: { email: 'user@example.com' },
+        headers: { authorization: 'Bearer <access_token>' },
         response: '{ "challenge": "...", "rp": { "name": "mini-auth" } }',
       }),
       makeApiEntry({
@@ -106,8 +106,8 @@ export function buildDemoContent(setupState) {
         method: 'POST',
         path: '/webauthn/authenticate/options',
         when: 'Request authentication options for username-less passkey sign-in.',
-        body: {},
-        response: '{ "challenge": "...", "allowCredentials": [] }',
+        response:
+          '{ "challenge": "...", "rpId": "auth.example.com", "userVerification": "preferred" }',
       }),
       makeApiEntry({
         sdkOrigin,
@@ -116,7 +116,7 @@ export function buildDemoContent(setupState) {
         when: 'Verify the passkey assertion and create a session.',
         body: { credential: '<PublicKeyCredential>' },
         response:
-          '{ "accessToken": "<jwt>", "refreshToken": "<refresh-token>", "user": { "email": "user@example.com" } }',
+          '{ "access_token": "<jwt>", "token_type": "Bearer", "expires_in": 3600, "refresh_token": "<refresh-token>" }',
       }),
       makeApiEntry({
         sdkOrigin,
@@ -146,29 +146,51 @@ export function buildDemoContent(setupState) {
   };
 }
 
-function makeApiEntry({ body, method, path, response, sdkOrigin, when }) {
+function makeApiEntry({
+  body,
+  headers,
+  method,
+  path,
+  response,
+  sdkOrigin,
+  when,
+}) {
   return {
     method,
     path,
     when,
     detailsLabel: API_DETAILS_LABEL,
-    request: buildRequestSnippet({ body, method, path, sdkOrigin }),
+    request: buildRequestSnippet({ body, headers, method, path, sdkOrigin }),
     response,
   };
 }
 
-function buildRequestSnippet({ body, method, path, sdkOrigin }) {
+function buildRequestSnippet({ body, headers = {}, method, path, sdkOrigin }) {
   const url = `${sdkOrigin}${path}`;
 
   if (method === 'GET') {
     return `fetch('${url}', { method: 'GET' })`;
   }
 
-  return [
-    `fetch('${url}', {`,
-    `  method: '${method}',`,
-    "  headers: { 'content-type': 'application/json' },",
-    `  body: JSON.stringify(${JSON.stringify(body, null, 2)}),`,
-    '})',
-  ].join('\n');
+  const requestHeaders = { ...headers };
+
+  if (body !== undefined) {
+    requestHeaders['content-type'] = 'application/json';
+  }
+
+  const lines = [`fetch('${url}', {`, `  method: '${method}',`];
+
+  if (Object.keys(requestHeaders).length > 0) {
+    lines.push(
+      `  headers: ${JSON.stringify(requestHeaders, null, 2).replaceAll('\n', '\n  ')},`,
+    );
+  }
+
+  if (body !== undefined) {
+    lines.push(`  body: JSON.stringify(${JSON.stringify(body, null, 2)}),`);
+  }
+
+  lines.push('})');
+
+  return lines.join('\n');
 }
