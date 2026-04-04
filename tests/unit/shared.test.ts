@@ -13,7 +13,7 @@ import { exists } from '../helpers/fs.js';
 
 describe('test helpers', () => {
   it('reports whether a path exists', async () => {
-    const tempDir = await mkdtemp(join(tmpdir(), 'mini-auth-fs-'));
+    const tempDir = await mkdtemp(join(tmpdir(), 'auth-mini-fs-'));
     const filePath = join(tempDir, 'present.txt');
 
     await writeFile(filePath, 'ok', 'utf8');
@@ -88,13 +88,13 @@ describe('shared runtime defaults', () => {
   it('parses runtime config with cli defaults and ordered origins', () => {
     expect(
       parseRuntimeConfig({
-        dbPath: '/tmp/mini-auth.sqlite',
+        dbPath: '/tmp/auth-mini.sqlite',
         issuer: 'https://issuer.example',
         rpId: 'example.com',
         origin: ['https://one.example', 'https://two.example'],
       }),
     ).toEqual({
-      dbPath: '/tmp/mini-auth.sqlite',
+      dbPath: '/tmp/auth-mini.sqlite',
       host: '127.0.0.1',
       port: 7777,
       issuer: 'https://issuer.example',

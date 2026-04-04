@@ -37,7 +37,7 @@ describe('shared logger', () => {
     logger.info({ event: 'test.event' }, 'hello');
 
     expect(sink.entries[0]).toMatchObject({
-      service: 'mini-auth',
+      service: 'auth-mini',
       event: 'test.event',
       msg: 'hello',
     });
@@ -50,7 +50,7 @@ describe('shared logger', () => {
     logger.info({ event: 'child.event', email: 'user@example.com' }, 'ok');
 
     expect(sink.entries[0]).toMatchObject({
-      service: 'mini-auth',
+      service: 'auth-mini',
       request_id: 'req-1',
       event: 'child.event',
       email: 'user@example.com',

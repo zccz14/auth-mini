@@ -3,15 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>mini-auth · Single-page demo docs</title>
+    <title>auth-mini · Single-page demo docs</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <main class="page-shell">
       <section class="hero panel section-grid">
         <div class="doc-prose hero-copy-block">
-          <p class="eyebrow">mini-auth</p>
-          <h1 id="hero-title">mini-auth</h1>
+          <p class="eyebrow">auth-mini</p>
+          <h1 id="hero-title">auth-mini</h1>
           <p id="hero-value-prop" class="lede">
             A small, self-hosted auth server for apps that just need auth.
           </p>
@@ -33,7 +33,7 @@
           <p class="step-label">Shortest path</p>
           <h2>Bring your own auth origin</h2>
           <p>
-            Point this page at your mini-auth server, keep the page origin in
+            Point this page at your auth-mini server, keep the page origin in
             <code>--origin</code>, then verify email OTP and passkeys from the
             same page.
           </p>
@@ -75,7 +75,7 @@
       <section class="quick-start panel section-grid">
         <div class="doc-prose">
           <p class="eyebrow">Quick start</p>
-          <h2>Start mini-auth with this page origin</h2>
+          <h2>Start auth-mini with this page origin</h2>
           <p>
             The command below stays aligned with this page and your chosen auth
             origin. Copy it first, then come back to the playground.
@@ -92,7 +92,7 @@
               </div>
             </div>
             <pre id="origin-command" class="doc-code">
-mini-auth start ... --origin http://127.0.0.1:8080</pre
+auth-mini start ... --origin http://127.0.0.1:8080</pre
             >
           </article>
 
@@ -111,7 +111,7 @@ mini-auth start ... --origin http://127.0.0.1:8080</pre
           </div>
           <p class="section-intro">
             Keep the same controls from the original demo, but place them inside
-            a page that also explains how to wire mini-auth in production.
+            a page that also explains how to wire auth-mini in production.
           </p>
         </div>
 
@@ -393,7 +393,7 @@ No request yet.</pre
           <p class="eyebrow">Deployment notes</p>
           <h2>Static hosting stays first-class</h2>
           <p>
-            Use relative local assets for this page, then configure mini-auth to
+            Use relative local assets for this page, then configure auth-mini to
             trust whatever final page origin you deploy.
           </p>
         </div>
@@ -401,7 +401,7 @@ No request yet.</pre
         <div class="panel inset-panel">
           <ul id="deployment-notes-list" class="doc-list">
             <li>Publish the contents of <code>demo/</code> so <code>index.html</code>, <code>./style.css</code>, and <code>./main.js</code> stay path-safe on GitHub Pages.</li>
-            <li>Set mini-auth <code>--origin</code> to the final browser page origin, then use <code>?sdk-origin=</code> when the docs page and auth server are on different origins.</li>
+            <li>Set auth-mini <code>--origin</code> to the final browser page origin, then use <code>?sdk-origin=</code> when the docs page and auth server are on different origins.</li>
             <li>Custom GitHub Pages domains should ship a matching <code>CNAME</code> file so the browser origin stays stable for WebAuthn and CORS.</li>
           </ul>
         </div>

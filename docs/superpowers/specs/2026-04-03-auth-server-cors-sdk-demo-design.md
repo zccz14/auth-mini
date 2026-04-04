@@ -43,7 +43,7 @@
 - Auth Server origin：例如 `http://127.0.0.1:7777`
 - SDK 脚本：`http://127.0.0.1:7777/sdk/singleton-iife.js`
 - SDK 推导出的 API base URL：`http://127.0.0.1:7777`
-- Auth Server 启动参数：`mini-auth start ... --origin http://127.0.0.1:8080`
+- Auth Server 启动参数：`auth-mini start ... --origin http://127.0.0.1:8080`
 
 ### 明确合同
 
@@ -140,7 +140,7 @@
 
 - 展示当前页面 origin。
 - 展示推导出的 RP ID 与所需的 `--origin` 值。
-- 展示推荐的 `mini-auth start ... --origin <current-page-origin>` 命令。
+- 展示推荐的 `auth-mini start ... --origin <current-page-origin>` 命令。
 - 不再展示 proxy 命令。
 - 不再展示如何启动 demo 静态服务器。
 

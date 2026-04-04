@@ -34,11 +34,11 @@ const sampleSetupState = {
   configError: '',
   webauthnReady: false,
   corsWarning:
-    'Start mini-auth with --origin set to this page origin so the browser can call the auth server cross-origin.',
+    'Start auth-mini with --origin set to this page origin so the browser can call the auth server cross-origin.',
   passkeyWarning:
     'Open this page on localhost or an HTTPS domain for passkeys.',
   startupCommand:
-    'mini-auth start ./mini-auth.sqlite --issuer https://auth.example.com --origin https://docs.example.com --rp-id auth.example.com',
+    'auth-mini start ./auth-mini.sqlite --issuer https://auth.example.com --origin https://docs.example.com --rp-id auth.example.com',
 };
 
 describe('demo render helpers', () => {
@@ -143,7 +143,7 @@ describe('demo render helpers', () => {
     renderContentState(root, sampleSetupState, content);
 
     expect(root.querySelector('#hero-title')?.textContent).toContain(
-      'mini-auth',
+      'auth-mini',
     );
     expect(root.querySelector('#how-it-works-list')?.textContent).toContain(
       'script origin',

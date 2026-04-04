@@ -1,8 +1,8 @@
-# mini-auth Logging Implementation Plan
+# auth-mini Logging Implementation Plan
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add structured JSON logging to `mini-auth` with `pino`, covering HTTP, CLI, auth flows, SMTP, and key runtime events without leaking secrets.
+**Goal:** Add structured JSON logging to `auth-mini` with `pino`, covering HTTP, CLI, auth flows, SMTP, and key runtime events without leaking secrets.
 
 **Architecture:** Introduce a thin shared logger module backed by `pino`, then thread request-scoped and command-scoped loggers through the existing composition points instead of calling `console.*` directly. Request middleware emits one canonical terminal request event per request, while business modules emit focused domain events with allowlisted fields only.
 
@@ -65,7 +65,7 @@ describe('shared logger', () => {
     logger.info({ event: 'test.event' }, 'hello');
 
     expect(sink.entries[0]).toMatchObject({
-      service: 'mini-auth',
+      service: 'auth-mini',
       event: 'test.event',
       msg: 'hello',
     });
@@ -78,7 +78,7 @@ describe('shared logger', () => {
     logger.info({ event: 'child.event', email: 'user@example.com' }, 'ok');
 
     expect(sink.entries[0]).toMatchObject({
-      service: 'mini-auth',
+      service: 'auth-mini',
       request_id: 'req-1',
       event: 'child.event',
       email: 'user@example.com',
@@ -127,7 +127,7 @@ export function withErrorFields(error: unknown): Record<string, unknown>;
 
 Implementation rules:
 
-- default base bindings include `service: 'mini-auth'`
+- default base bindings include `service: 'auth-mini'`
 - output stays JSON-only with no pretty transport
 - `withErrorFields` returns only allowlisted error metadata such as `error_name`, `error_message`, and optionally `stack`
 - do not export raw `pino` instances from the module
@@ -181,7 +181,7 @@ it('emits request start and one terminal completion event', async () => {
   const response = await testApp.app.request('/jwks', {
     method: 'GET',
     headers: {
-      'x-mini-auth-remote-address': '203.0.113.5',
+      'x-auth-mini-remote-address': '203.0.113.5',
     },
   });
 
@@ -217,7 +217,7 @@ it('emits request start and one terminal completion event', async () => {
 });
 ```
 
-Use a single internal remote-address mechanism for both runtime adapter code and tests: `src/cli/start.ts` populates `x-mini-auth-remote-address` from `req.socket.remoteAddress`, and test helpers may populate the same header explicitly. Do not read `X-Forwarded-For`.
+Use a single internal remote-address mechanism for both runtime adapter code and tests: `src/cli/start.ts` populates `x-auth-mini-remote-address` from `req.socket.remoteAddress`, and test helpers may populate the same header explicitly. Do not read `X-Forwarded-For`.
 
 - [ ] **Step 2: Run the focused request-logging tests to verify they fail**
 
@@ -283,7 +283,7 @@ Implement:
 
 - `const logger = createRootLogger()` near config parsing
 - `createApp({ db, issuer, origins, rpId, logger })`
-- attach the direct socket remote address to the synthesized `Request`, for example by setting a private request header like `x-mini-auth-remote-address` before `app.fetch(request)` or by passing it through an app adapter hook
+- attach the direct socket remote address to the synthesized `Request`, for example by setting a private request header like `x-auth-mini-remote-address` before `app.fetch(request)` or by passing it through an app adapter hook
 - log `cli.start.started`, `server.listening`, and `server.shutdown.completed`
 - never log request or response bodies
 
@@ -490,12 +490,12 @@ Make sure command handlers:
 
 Add a short section that states:
 
-- `mini-auth` writes structured JSON logs by default
+- `auth-mini` writes structured JSON logs by default
 - logs are suitable for redirection to a file
 - example usage:
 
 ```bash
-npx mini-auth start ./mini-auth.sqlite --issuer https://auth.example.com --rp-id example.com --origin https://app.example.com >> mini-auth.log
+npx auth-mini start ./auth-mini.sqlite --issuer https://auth.example.com --rp-id example.com --origin https://app.example.com >> auth-mini.log
 ```
 
 - logs may contain plaintext email and client IP in the current version

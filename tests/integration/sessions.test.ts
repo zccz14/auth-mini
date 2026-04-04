@@ -346,7 +346,7 @@ describe('session routes', () => {
   it('start fails fast when required webauthn config is missing', async () => {
     await expect(
       runStartCommand({
-        dbPath: '/tmp/mini-auth.sqlite',
+        dbPath: '/tmp/auth-mini.sqlite',
         issuer: 'https://issuer.example',
       }),
     ).rejects.toThrowError();
@@ -368,7 +368,7 @@ describe('session routes', () => {
         username: 'mailer',
         password: 'secret',
         from_email: 'noreply@example.com',
-        from_name: 'mini-auth',
+        from_name: 'auth-mini',
       }),
     );
     db.close();
@@ -415,7 +415,7 @@ describe('session routes', () => {
         username: 'mailer',
         password: 'secret',
         from_email: 'noreply@example.com',
-        from_name: 'mini-auth',
+        from_name: 'auth-mini',
       }),
     );
     db.close();
@@ -542,7 +542,7 @@ async function writeRuntimeSmtpConfigJson(row: {
   from_name: string;
 }) {
   const directoryPath = await mkdtemp(
-    join(tmpdir(), 'mini-auth-runtime-smtp-'),
+    join(tmpdir(), 'auth-mini-runtime-smtp-'),
   );
   const filePath = join(directoryPath, 'smtp.json');
 

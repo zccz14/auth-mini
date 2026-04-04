@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make `mini-auth start` accept a single `--origin` flag without requiring the user to repeat it.
+**Goal:** Make `auth-mini start` accept a single `--origin` flag without requiring the user to repeat it.
 
 **Architecture:** Keep runtime config consumers unchanged by normalizing CLI input at the `cac` boundary. Add one regression test that models the single-value case, then apply the minimal normalization in the `start` command action.
 

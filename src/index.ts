@@ -6,7 +6,7 @@ import { normalizeOriginOption } from './cli/options.js';
 import { runStartCommand } from './cli/start.js';
 import { runRotateJwksCommand } from './cli/rotate-jwks.js';
 
-const cli = cac('mini-auth');
+const cli = cac('auth-mini');
 
 cli
   .command('create <dbPath>')

@@ -20,7 +20,7 @@ export function buildDemoContent(setupState) {
       : '<!-- Add ?sdk-origin=https://your-auth-origin to render the exact SDK script tag. -->',
     startupCommand,
     hero: {
-      title: 'mini-auth',
+      title: 'auth-mini',
       valueProp:
         'A small, self-hosted auth server for apps that just need auth.',
       audience:
@@ -35,7 +35,7 @@ export function buildDemoContent(setupState) {
       ],
     },
     howItWorks: [
-      'The page origin is the value you pass to mini-auth --origin.',
+      'The page origin is the value you pass to auth-mini --origin.',
       'The sdk-origin is where the browser loads /sdk/singleton-iife.js.',
       'script origin == api origin: the singleton SDK always talks back to the auth server that served the script.',
       'WebAuthn and CORS both depend on the auth server being started with the right origin settings.',
@@ -99,7 +99,7 @@ export function buildDemoContent(setupState) {
         when: 'Request registration options before creating a passkey.',
         headers: { authorization: 'Bearer <access_token>' },
         response:
-          '{ "request_id": "request-register", "publicKey": { "challenge": "...", "rp": { "id": "auth.example.com", "name": "mini-auth" }, "user": { "id": "<base64url>", "name": "user@example.com", "displayName": "user@example.com" }, "pubKeyCredParams": [{ "type": "public-key", "alg": -7 }, { "type": "public-key", "alg": -257 }], "timeout": 300000, "authenticatorSelection": { "residentKey": "required", "userVerification": "preferred" } } }',
+          '{ "request_id": "request-register", "publicKey": { "challenge": "...", "rp": { "id": "auth.example.com", "name": "auth-mini" }, "user": { "id": "<base64url>", "name": "user@example.com", "displayName": "user@example.com" }, "pubKeyCredParams": [{ "type": "public-key", "alg": -7 }, { "type": "public-key", "alg": -257 }], "timeout": 300000, "authenticatorSelection": { "residentKey": "required", "userVerification": "preferred" } } }',
       }),
       makeApiEntry({
         sdkOrigin: resolvedSdkOrigin,
@@ -158,13 +158,13 @@ export function buildDemoContent(setupState) {
     backendNotesDisclosureLabel: 'More backend JWT notes',
     deploymentNotes: [
       'For GitHub Pages, publish the contents of demo/ so index.html stays at the final page URL and its relative ./style.css + ./main.js assets keep working on project subpaths.',
-      `After publish, start mini-auth with --origin ${currentOrigin} (or whatever final page origin you actually deployed) because --origin must match the browser page origin, not the auth server origin.`,
+      `After publish, start auth-mini with --origin ${currentOrigin} (or whatever final page origin you actually deployed) because --origin must match the browser page origin, not the auth server origin.`,
       'If docs and auth live on different origins, keep the page URL on the docs host and append ?sdk-origin=https://your-auth-origin so the browser loads the SDK from the auth host.',
-      'If you use a custom GitHub Pages domain, publish a matching CNAME file and keep that domain stable; change mini-auth --origin whenever the docs URL path/domain changes enough to alter window.location.origin.',
+      'If you use a custom GitHub Pages domain, publish a matching CNAME file and keep that domain stable; change auth-mini --origin whenever the docs URL path/domain changes enough to alter window.location.origin.',
     ],
     knownIssues: [
       'Passkeys depend on a valid RP ID and a browser environment that supports WebAuthn.',
-      'Cross-origin pages must start mini-auth with --origin set to the page origin before browser calls will succeed.',
+      'Cross-origin pages must start auth-mini with --origin set to the page origin before browser calls will succeed.',
       'Multiple tabs can currently race during session refresh. This is a known SDK bug, not a product contract.',
     ],
   };

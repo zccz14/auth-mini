@@ -62,7 +62,7 @@ describe('runStartCommand', () => {
     });
     createRootLogger.mockReturnValue({ child: loggerChild });
     parseRuntimeConfig.mockReturnValue({
-      dbPath: '/tmp/mini-auth.db',
+      dbPath: '/tmp/auth-mini.db',
       host: '127.0.0.1',
       port: 4100,
       issuer: 'https://issuer.example',
@@ -80,7 +80,7 @@ describe('runStartCommand', () => {
     const runStartCommand = await loadRunStartCommand();
 
     await expect(
-      runStartCommand({ dbPath: '/tmp/mini-auth.db' }),
+      runStartCommand({ dbPath: '/tmp/auth-mini.db' }),
     ).rejects.toThrow('bootstrap failed');
     expect(db.close).toHaveBeenCalledTimes(1);
     expect(bootstrapKeys).toHaveBeenCalledWith(
@@ -118,7 +118,7 @@ describe('runStartCommand', () => {
     });
 
     const runStartCommand = await loadRunStartCommand();
-    const server = await runStartCommand({ dbPath: '/tmp/mini-auth.db' });
+    const server = await runStartCommand({ dbPath: '/tmp/auth-mini.db' });
 
     const response = createResponseRecorder();
 

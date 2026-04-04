@@ -8,10 +8,10 @@ import { countRows, createTempDbPath } from '../helpers/db.js';
 import { exists } from '../helpers/fs.js';
 
 describe('workspace bootstrap', () => {
-  it('exposes the mini-auth bin entry', async () => {
+  it('exposes the auth-mini bin entry', async () => {
     const { default: pkg } = await import('../../package.json');
 
-    expect(pkg.bin['mini-auth']).toBe('dist/index.js');
+    expect(pkg.bin['auth-mini']).toBe('dist/index.js');
   });
 
   it('defines build, test, lint, format, and typecheck scripts', async () => {
@@ -59,7 +59,7 @@ describe('workspace bootstrap', () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe('');
-    expect(result.stdout).toContain('mini-auth');
+    expect(result.stdout).toContain('auth-mini');
     expect(result.stdout).toContain('--help');
   });
 
@@ -91,7 +91,7 @@ describe('workspace bootstrap', () => {
   it('create imports valid smtp json', async () => {
     await ensureCliIsBuilt();
     const dbPath = await createTempDbPath();
-    const tempDir = await mkdtemp(join(tmpdir(), 'mini-auth-smtp-'));
+    const tempDir = await mkdtemp(join(tmpdir(), 'auth-mini-smtp-'));
     const smtpJsonPath = join(tempDir, 'smtp.json');
 
     await writeFile(
@@ -155,7 +155,7 @@ describe('workspace bootstrap', () => {
   it('create rejects invalid smtp json and imports nothing', async () => {
     await ensureCliIsBuilt();
     const dbPath = await createTempDbPath();
-    const tempDir = await mkdtemp(join(tmpdir(), 'mini-auth-smtp-'));
+    const tempDir = await mkdtemp(join(tmpdir(), 'auth-mini-smtp-'));
     const smtpJsonPath = join(tempDir, 'smtp.json');
 
     await writeFile(smtpJsonPath, '{"host":"broken"}', 'utf8');
@@ -175,7 +175,7 @@ describe('workspace bootstrap', () => {
   it('create rejects smtp rows missing host, port, username, password, or from_email', async () => {
     await ensureCliIsBuilt();
     const dbPath = await createTempDbPath();
-    const tempDir = await mkdtemp(join(tmpdir(), 'mini-auth-smtp-'));
+    const tempDir = await mkdtemp(join(tmpdir(), 'auth-mini-smtp-'));
     const smtpJsonPath = join(tempDir, 'smtp.json');
 
     await writeFile(

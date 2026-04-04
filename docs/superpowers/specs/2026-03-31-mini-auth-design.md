@@ -1,4 +1,4 @@
-# mini-auth Design
+# auth-mini Design
 
 ## Context
 
@@ -163,7 +163,7 @@ SMTP import file contract for v1:
     "username": "mailer",
     "password": "secret",
     "from_email": "noreply@example.com",
-    "from_name": "mini-auth",
+    "from_name": "auth-mini",
     "secure": false,
     "weight": 1
   }

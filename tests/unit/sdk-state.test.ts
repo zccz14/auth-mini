@@ -103,7 +103,7 @@ describe('sdk state store', () => {
 
   it('ignores invalid persisted storage payloads', () => {
     const storage = fakeStorage();
-    storage.setItem('mini-auth.sdk', JSON.stringify({ refreshToken: 123 }));
+    storage.setItem('auth-mini.sdk', JSON.stringify({ refreshToken: 123 }));
 
     const sdk = createStateStore(storage);
 

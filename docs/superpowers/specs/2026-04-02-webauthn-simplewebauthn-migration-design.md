@@ -80,7 +80,7 @@ The route must continue returning:
 
 - `request_id`
 - `publicKey.challenge`
-- `publicKey.rp.name = "mini-auth"`
+- `publicKey.rp.name = "auth-mini"`
 - `publicKey.rp.id = <rpId>`
 - `publicKey.user.id` as base64url
 - `publicKey.user.name = <email>`

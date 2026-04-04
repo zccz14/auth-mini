@@ -1,6 +1,6 @@
 import type { PersistedSdkState } from './types.js';
 
-export const SDK_STORAGE_KEY = 'mini-auth.sdk';
+export const SDK_STORAGE_KEY = 'auth-mini.sdk';
 
 export function readPersistedSdkState(
   storage: Storage,

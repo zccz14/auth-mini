@@ -59,7 +59,7 @@ function getRuntime() {
 
 function createRuntime() {
   const SDK_PATH_SUFFIX = '/sdk/singleton-iife.js';
-  const SDK_STORAGE_KEY = 'mini-auth.sdk';
+  const SDK_STORAGE_KEY = 'auth-mini.sdk';
 
   function createSdkError(code, message) {
     const error = new Error(`${code}: ${message}`);
@@ -630,7 +630,7 @@ function createRuntime() {
   function createSingletonSdk(input = {}) {
     const browser = typeof window === 'undefined' ? globalThis : window;
     return createMiniAuthInternal({
-      baseUrl: input.baseUrl ?? 'https://mini-auth.local',
+      baseUrl: input.baseUrl ?? 'https://auth-mini.local',
       fetch: resolveFetch(input.fetch),
       navigatorCredentials: browser.navigator?.credentials,
       now: input.now,

@@ -36,7 +36,7 @@ export async function createTestApp(options: CreateTestAppOptions = {}) {
       username: 'mailer',
       password: 'secret',
       fromEmail: 'noreply@example.com',
-      fromName: 'mini-auth',
+      fromName: 'auth-mini',
       secure: false,
       isActive: true,
       weight: 1,
@@ -79,7 +79,7 @@ export async function createTestApp(options: CreateTestAppOptions = {}) {
     app: {
       request(input: string, init?: RequestInit) {
         const request = new Request(
-          new URL(input, 'http://mini-auth.test'),
+          new URL(input, 'http://auth-mini.test'),
           init,
         );
         clientIps.set(request, options.clientIp ?? null);

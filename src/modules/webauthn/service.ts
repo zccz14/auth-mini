@@ -75,7 +75,7 @@ export async function generateRegistrationOptions(
   request_id: string;
   publicKey: {
     challenge: string;
-    rp: { name: 'mini-auth'; id: string };
+    rp: { name: 'auth-mini'; id: string };
     user: { id: string; name: string; displayName: string };
     pubKeyCredParams: Array<{ type: 'public-key'; alg: -7 | -257 }>;
     timeout: number;
@@ -86,7 +86,7 @@ export async function generateRegistrationOptions(
   };
 }> {
   const options = await generateSimpleWebAuthnRegistrationOptions({
-    rpName: 'mini-auth',
+    rpName: 'auth-mini',
     rpID: input.rpId,
     userName: input.email,
     userID: Buffer.from(input.userId, 'utf8'),
@@ -118,7 +118,7 @@ export async function generateRegistrationOptions(
     request_id: string;
     publicKey: {
       challenge: string;
-      rp: { name: 'mini-auth'; id: string };
+      rp: { name: 'auth-mini'; id: string };
       user: { id: string; name: string; displayName: string };
       pubKeyCredParams: Array<{ type: 'public-key'; alg: -7 | -257 }>;
       timeout: number;
@@ -132,7 +132,7 @@ export async function generateRegistrationOptions(
     publicKey: {
       challenge: options.challenge,
       rp: {
-        name: 'mini-auth',
+        name: 'auth-mini',
         id: input.rpId,
       },
       user: {

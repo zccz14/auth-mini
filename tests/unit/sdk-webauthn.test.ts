@@ -155,7 +155,7 @@ describe('sdk webauthn flows', () => {
           request_id: 'request-register',
           publicKey: {
             challenge: 'CQoLDA',
-            rp: { id: 'auth.example.com', name: 'mini-auth' },
+            rp: { id: 'auth.example.com', name: 'auth-mini' },
             user: {
               id: 'DQ4PEA',
               name: 'u@example.com',

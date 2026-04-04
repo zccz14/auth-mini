@@ -64,7 +64,7 @@ describe('smtp mailer', () => {
     expect(sendMail).toHaveBeenCalledWith({
       from: 'Mini Auth <noreply@example.com>',
       to: recipient,
-      subject: 'Your mini-auth verification code',
+      subject: 'Your auth-mini verification code',
       text: 'Your verification code is 123456. It expires in 10 minutes.',
     });
   });

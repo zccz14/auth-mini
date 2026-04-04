@@ -111,7 +111,7 @@ describe('webauthn routes', () => {
       request_id: expect.any(String),
       publicKey: {
         challenge: expect.any(String),
-        rp: { id: 'example.com', name: 'mini-auth' },
+        rp: { id: 'example.com', name: 'auth-mini' },
         user: {
           id: encodeBase64Url(testApp.userId),
           name: 'register@example.com',

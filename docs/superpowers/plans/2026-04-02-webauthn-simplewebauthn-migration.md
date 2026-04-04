@@ -86,7 +86,7 @@ In `src/modules/webauthn/service.ts`:
 
 ```ts
 const options = await generateRegistrationOptions({
-  rpName: 'mini-auth',
+  rpName: 'auth-mini',
   rpID: input.rpId,
   userName: input.email,
   userID: Buffer.from(input.userId, 'utf8'),

@@ -1,4 +1,4 @@
-# mini-auth
+# auth-mini
 
 Minimal Authentication Modules for Any App. Supports Email login, WebAuthn (Passkey) and JWT-based authentication. Using Hono HTTP Server and SQLite Database.
 
@@ -8,14 +8,14 @@ No need to use Supabase or Firebase for auth-only simple projects. Extremely eas
 
 ```bash
 # Initialize the database and initialize the SMTP and JWKS configurations.
-# This command will create a `mini-auth.sqlite` file in the current directory to store user data, sessions, and configurations.
+# This command will create a `auth-mini.sqlite` file in the current directory to store user data, sessions, and configurations.
 # SMTP Configuration is stored in the `smtp_configs` table, and JWKS keys are stored in the `jwks_keys` table in the SQLite database.
-npx mini-auth create
+npx auth-mini create
 
-# Start the auth server from sqlite file. (mini-auth.sqlite)
-npx mini-auth start mini-auth.sqlite --port 7777
+# Start the auth server from sqlite file. (auth-mini.sqlite)
+npx auth-mini start auth-mini.sqlite --port 7777
 # Auth server is running at http://localhost:7777
-# The Database is stored at ./mini-auth.sqlite
+# The Database is stored at ./auth-mini.sqlite
 ```
 
 ## Features
@@ -44,7 +44,7 @@ Email OTP (One-Time Password) provides a more secure alternative to traditional 
 
 Password-less authentication also using WebAuthn (Passkey) provides a more secure and user-friendly authentication experience. It eliminates the need for users to remember complex passwords, which can be easily forgotten or compromised. With WebAuthn, users can authenticate using their device's built-in biometric sensors (e.g., fingerprint or facial recognition) or a hardware security key, providing a strong level of security against phishing attacks and credential stuffing. Additionally, WebAuthn credentials are unique to each user and device, making it difficult for attackers to reuse stolen credentials across different accounts or services.
 
-mini-auth uses discoverable credentials for Passkey login. This means users first sign in with email, then register a Passkey while authenticated. After that, they can sign in with the Passkey directly without entering their email address first. During login, the server returns a WebAuthn challenge without requiring an email address, and the browser or operating system can show any locally available Passkeys for this site. The selected credential is then sent back to the server for verification, and mini-auth identifies the user from the credential ID.
+auth-mini uses discoverable credentials for Passkey login. This means users first sign in with email, then register a Passkey while authenticated. After that, they can sign in with the Passkey directly without entering their email address first. During login, the server returns a WebAuthn challenge without requiring an email address, and the browser or operating system can show any locally available Passkeys for this site. The selected credential is then sent back to the server for verification, and auth-mini identifies the user from the credential ID.
 
 To support this flow, Passkey registration should create a discoverable credential (also known as a resident credential). This is required for username-less login. Non-discoverable WebAuthn credentials usually require the server to know the user first and provide an allow-list of credential IDs, which would require the user to enter an email address or username before authentication.
 
@@ -94,7 +94,7 @@ WebAuthn (Passkey) endpoints:
 - `POST /webauthn/register/options` - Get WebAuthn registration options for the authenticated user. Requires a valid JWT token in the Authorization header. The returned options should create a discoverable credential so the Passkey can later be used for username-less login.
 - `POST /webauthn/register/verify` - Verify and store a new WebAuthn credential for the authenticated user. Requires a valid JWT token in the Authorization header.
 - `POST /webauthn/authenticate/options` - Get a WebAuthn authentication challenge for username-less Passkey login. No email address is required at this step. The request body can be empty, and the returned options should not include `allowCredentials`.
-- `POST /webauthn/authenticate/verify` - Authenticate with a WebAuthn credential. The request should include the assertion returned by the browser together with the server-issued `request_id`. mini-auth uses `request_id` to load the challenge and identifies the user by the returned credential ID before returning a session with refresh/access token pair if successful.
+- `POST /webauthn/authenticate/verify` - Authenticate with a WebAuthn credential. The request should include the assertion returned by the browser together with the server-issued `request_id`. auth-mini uses `request_id` to load the challenge and identifies the user by the returned credential ID before returning a session with refresh/access token pair if successful.
 - `DELETE /webauthn/credentials/:id` - Delete a WebAuthn credential by its ID. Requires a valid JWT token in the Authorization header.
 
 ### Passkey Flow Notes
@@ -109,7 +109,7 @@ WebAuthn (Passkey) endpoints:
 To rotate the JWKS keys, run the following command:
 
 ```bash
-npx mini-auth rotate-jwks
+npx auth-mini rotate-jwks
 ```
 
 This will generate a new set of JWKS keys and update the database. Existing JWT tokens signed with the old keys will become invalid, so users will need to sign in again to obtain new tokens.

@@ -10,7 +10,7 @@ const sampleState = {
   suggestedOrigin: 'https://docs.example.com',
   suggestedRpId: 'auth.example.com',
   startupCommand:
-    'mini-auth start ./mini-auth.sqlite --issuer https://auth.example.com --origin https://docs.example.com --rp-id auth.example.com',
+    'auth-mini start ./auth-mini.sqlite --issuer https://auth.example.com --origin https://docs.example.com --rp-id auth.example.com',
 };
 
 describe('demo content builders', () => {
@@ -171,7 +171,7 @@ describe('demo content builders', () => {
   it('includes hero and how-it-works copy for the landing-page role', () => {
     const content = buildDemoContent(sampleState);
 
-    expect(content.hero.title).toContain('mini-auth');
+    expect(content.hero.title).toContain('auth-mini');
     expect(content.hero.valueProp).toContain('small');
     expect(content.hero.audience).toContain('auth');
     expect(content.hero.capabilities).toEqual(

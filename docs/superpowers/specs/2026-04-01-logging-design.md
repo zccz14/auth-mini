@@ -1,8 +1,8 @@
-# mini-auth Logging Design
+# auth-mini Logging Design
 
 ## Context
 
-- Repository state: `mini-auth` already ships the core auth flows and recently switched SMTP delivery to `nodemailer`.
+- Repository state: `auth-mini` already ships the core auth flows and recently switched SMTP delivery to `nodemailer`.
 - Current product gap: the service lacks consistent structured logging across HTTP, CLI, auth flows, and infrastructure events.
 - Scope decision: defer OTP rate limiting for now because there is not enough production usage data to choose the right policy yet.
 - Primary goal: add machine-readable logs that are useful for local file capture, operational debugging, and future observability work.
@@ -95,7 +95,7 @@ Logs are structured around a stable `event` field rather than around freeform me
 
 Every log entry should use the standard `pino` fields and also include these stable application fields where relevant:
 
-- `service`: `mini-auth`
+- `service`: `auth-mini`
 - `event`: stable event name
 - `msg`: short readable description
 - `request_id`: request correlation id when inside an HTTP flow

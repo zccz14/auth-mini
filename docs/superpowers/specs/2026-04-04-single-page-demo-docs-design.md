@@ -1,4 +1,4 @@
-# mini-auth 单页 Demo / Docs 站点设计
+# auth-mini 单页 Demo / Docs 站点设计
 
 ## 背景
 
@@ -11,8 +11,8 @@
 ## 目标
 
 - 产出一个单页长文页面，同时承担 landing page、交互 demo、接入指南、API Reference 与后端 JWT 集成文档。
-- 保持 mini-auth 的产品定位：简单、直接、低配置；文档结构也应体现“看一页就能接起来”。
-- 页面运行时继续基于 `window.location.origin` 生成推荐的 `--origin`，不把 `mini-auth.zccz14.com` 或任何其它域名写死为产品合同。
+- 保持 auth-mini 的产品定位：简单、直接、低配置；文档结构也应体现“看一页就能接起来”。
+- 页面运行时继续基于 `window.location.origin` 生成推荐的 `--origin`，不把 `auth-mini.zccz14.com` 或任何其它域名写死为产品合同。
 - 页面允许访问者填入自己的 `sdk-origin`，并立即在同页完成接入验证。
 - 为后端消费者提供推荐的 JWT 验签路径，主推 `jose` 作为对接库。
 - 让 GitHub Pages 成为默认静态部署路径之一，但不把部署平台耦合进页面业务逻辑。
@@ -27,11 +27,11 @@
 
 ## 设计决策
 
-采用一个静态、单页、长文结构的站点来承载 mini-auth 的对外体验。页面既是文档，也是可交互的真实接入环境：访问者先读最短接入说明，再填写自己的 Auth Server 地址，然后直接在同页完成 email OTP、passkey、session 和 JWT 对接验证。页面的所有动态文案、命令与代码片段都围绕当前页面 origin 与用户输入的 Auth Server 配置联动生成。
+采用一个静态、单页、长文结构的站点来承载 auth-mini 的对外体验。页面既是文档，也是可交互的真实接入环境：访问者先读最短接入说明，再填写自己的 Auth Server 地址，然后直接在同页完成 email OTP、passkey、session 和 JWT 对接验证。页面的所有动态文案、命令与代码片段都围绕当前页面 origin 与用户输入的 Auth Server 配置联动生成。
 
 ## 为什么选这个方向
 
-- 它符合 mini-auth 的产品哲学：如果核心能力本来就简单，文档不应膨胀成必须跨页导航的大站。
+- 它符合 auth-mini 的产品哲学：如果核心能力本来就简单，文档不应膨胀成必须跨页导航的大站。
 - 它复用已有 demo 的运行模型，而不是重新设计另一套“官网”和另一套“测试页”。
 - 它让“文档”和“真实可运行示例”共享同一份配置状态，避免文档与 demo 漂移。
 - 它天然适合 GitHub Pages 这类静态托管，也保留将来迁移到任意静态宿主的自由度。
@@ -40,7 +40,7 @@
 
 ### 单页角色
 
-- 页面是 mini-auth 的主入口之一。
+- 页面是 auth-mini 的主入口之一。
 - 页面同时承担四种职责：
   - 项目介绍
   - 浏览器接入与配置说明
@@ -60,7 +60,7 @@
 
 ### 1. Hero
 
-- 用一句话解释 mini-auth：一个小而清晰的 Auth Server。
+- 用一句话解释 auth-mini：一个小而清晰的 Auth Server。
 - 展示核心能力：email OTP、passkey、JWT、JWKS、SQLite、自托管。
 - 强调目标用户：只想把 auth 跑起来，而不是引入整个平台。
 
@@ -69,7 +69,7 @@
 - 给出最短的启动命令。
 - 命令中的 `--origin` 由当前页面 origin 自动生成。
 - `--issuer` 默认直接使用当前输入的 `sdk-origin`。
-- 文案强调：页面部署到任何静态域名都可以，关键是把那个页面 origin 填进 mini-auth 的 `--origin`。
+- 文案强调：页面部署到任何静态域名都可以，关键是把那个页面 origin 填进 auth-mini 的 `--origin`。
 
 ### 3. Integration Playground
 
@@ -88,10 +88,10 @@
 
 ### 4. How It Works
 
-- 用简洁文案解释 mini-auth 的浏览器合同：
+- 用简洁文案解释 auth-mini 的浏览器合同：
   - 页面可以跨域
   - SDK script origin 必须等于 Auth API origin
-  - 页面 origin 必须出现在 mini-auth 的 `--origin` 中
+  - 页面 origin 必须出现在 auth-mini 的 `--origin` 中
 - 解释为什么页面会推荐一个 `--origin` 值，以及它与 WebAuthn / CORS 的关系。
 - 明确 GitHub Pages、自定义域名、localhost 只是不同托管 origin，不改变产品合同。
 
@@ -118,13 +118,13 @@
 
 ### 6. Backend JWT Integration
 
-- 增加“后端如何消费 mini-auth access token”的专门章节。
+- 增加“后端如何消费 auth-mini access token”的专门章节。
 - 主推使用 `jose`，而不是手写 JWKS 下载与密钥选择逻辑。
 - 给出 Node / TypeScript 的最短可用示例：
   - 使用 `createRemoteJWKSet(new URL('/jwks', issuer))`
   - 使用 `jwtVerify(token, jwks, { issuer: '<issuer>' })`
 - 文档明确：
-  - 后端主路径是本地验 JWT，而不是每次请求都回源 mini-auth
+  - 后端主路径是本地验 JWT，而不是每次请求都回源 auth-mini
   - 访问者应校验 `iss`
   - `aud` 是否校验取决于使用方服务边界，但页面要说明推荐做法
   - `GET /me` 更适合前端拉取当前用户态，而不是后端 API 的每次鉴权手段
@@ -163,7 +163,7 @@
 - 本设计默认使用 `sdk-origin` 的 host 作为推荐 `--rp-id`，因为 SDK script 与 API origin 合同固定绑定到 Auth Server origin。
 - 推荐的 `--rp-id` 默认直接取 `new URL(sdkOrigin).hostname`。
 - 页面不尝试做 eTLD+1、父域回退、子域裁剪或任何其它启发式推导。
-- 若该值不符合部署者预期，页面只提示用户在实际部署 mini-auth 时手动确认 `--rp-id`，不再自动猜测其它值，也不提供独立的页面配置入口。
+- 若该值不符合部署者预期，页面只提示用户在实际部署 auth-mini 时手动确认 `--rp-id`，不再自动猜测其它值，也不提供独立的页面配置入口。
 
 ### 联动原则
 
@@ -206,7 +206,7 @@
 - 仓库需要补充最小部署说明：
   - 如何发布 `demo/` 或构建产物到 GitHub Pages
   - 如使用自定义域名，如何配置 `CNAME`
-  - 页面域名变化后，mini-auth 应如何设置新的 `--origin`
+  - 页面域名变化后，auth-mini 应如何设置新的 `--origin`
 
 ## 内容风格
 
@@ -269,6 +269,6 @@
 - 仓库产出一个单页长文 demo/docs 页面，能同时承担项目介绍、接入说明、交互 demo、API Reference 和 JWT 集成文档。
 - 页面不绑定固定线上 Auth Server，仍从当前页面 origin 推导推荐的 `--origin`。
 - 页面中的命令、代码片段、说明文字和 playground runtime 共享同一份配置状态。
-- 页面明确推荐后端使用 `jose` 通过 `JWKS + jwtVerify` 集成 mini-auth access token。
+- 页面明确推荐后端使用 `jose` 通过 `JWKS + jwtVerify` 集成 auth-mini access token。
 - GitHub Pages 或其它静态托管只影响部署，不改变页面运行合同。
 - 文档将多 tab 会话竞争问题表述为待修复 bug，而不是正式产品限制。

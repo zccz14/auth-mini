@@ -15,7 +15,7 @@ export type AppLogger = {
 };
 
 const BASE_BINDINGS = {
-  service: 'mini-auth',
+  service: 'auth-mini',
 } as const;
 
 class WrappedLogger implements AppLogger {

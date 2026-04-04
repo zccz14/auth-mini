@@ -13,7 +13,7 @@ export function fakeStorage(seed: StorageSeed = {}): Storage {
 
   if (Object.keys(seed).length > 0) {
     data.set(
-      'mini-auth.sdk',
+      'auth-mini.sdk',
       JSON.stringify({
         accessToken: null,
         refreshToken: null,
@@ -207,7 +207,7 @@ export function createWebauthnRequestRecorder() {
           challenge: 'CQoLDA',
           rp: {
             id: 'auth.example.com',
-            name: 'mini-auth',
+            name: 'auth-mini',
           },
           user: {
             id: 'DQ4PEA',

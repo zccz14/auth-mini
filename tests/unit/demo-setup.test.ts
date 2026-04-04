@@ -132,9 +132,9 @@ describe('demo WebAuthn setup guidance', () => {
 
   it('keeps ?sdk-origin as the only supported external config input', () => {
     const state = getDemoSetupState({
-      origin: 'https://mini-auth.example.com',
+      origin: 'https://auth-mini.example.com',
       protocol: 'https:',
-      hostname: 'mini-auth.example.com',
+      hostname: 'auth-mini.example.com',
       sdkOriginInput: 'https://auth.example.com',
     });
 
@@ -165,7 +165,7 @@ describe('demo WebAuthn setup guidance', () => {
         currentOrigin: 'http://localhost:8080',
         suggestedOrigin: 'http://localhost:8080',
         corsWarning:
-          'Start mini-auth with --origin set to this page origin so the browser can call the auth server cross-origin.',
+          'Start auth-mini with --origin set to this page origin so the browser can call the auth server cross-origin.',
       }),
     );
   });
@@ -181,7 +181,7 @@ describe('demo WebAuthn setup guidance', () => {
     ).toEqual(
       expect.objectContaining({
         startupCommand:
-          'mini-auth start ./mini-auth.sqlite --issuer http://127.0.0.1:7777 --origin http://localhost:8080 --rp-id 127.0.0.1',
+          'auth-mini start ./auth-mini.sqlite --issuer http://127.0.0.1:7777 --origin http://localhost:8080 --rp-id 127.0.0.1',
       }),
     );
   });
@@ -245,7 +245,7 @@ describe('demo WebAuthn setup guidance', () => {
         configStatus: 'waiting',
         configError: expect.stringContaining('Add ?sdk-origin='),
         corsWarning:
-          'Start mini-auth with --origin set to this page origin so the browser can call the auth server cross-origin.',
+          'Start auth-mini with --origin set to this page origin so the browser can call the auth server cross-origin.',
         passkeyWarning: '',
       }),
     );

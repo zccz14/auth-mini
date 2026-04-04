@@ -24,7 +24,7 @@ export async function runStartCommand(
   });
   const db = createDatabaseClient(config.dbPath);
   try {
-    logger.info({ event: 'cli.start.started' }, 'Starting mini-auth server');
+    logger.info({ event: 'cli.start.started' }, 'Starting auth-mini server');
 
     await bootstrapKeys(db, { logger });
 
@@ -55,7 +55,7 @@ export async function runStartCommand(
             host: config.host,
             port: config.port,
           },
-          'mini-auth server listening',
+          'auth-mini server listening',
         );
         resolve();
       });
@@ -73,7 +73,7 @@ export async function runStartCommand(
             db.close();
             logger.info(
               { event: 'server.shutdown.completed' },
-              'mini-auth server shutdown complete',
+              'auth-mini server shutdown complete',
             );
             resolve();
           });

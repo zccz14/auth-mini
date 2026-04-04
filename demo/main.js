@@ -1,6 +1,6 @@
 import { bootstrapDemoPage } from './bootstrap.js';
 
-const STORAGE_KEY = 'mini-auth-demo-inputs';
+const STORAGE_KEY = 'auth-mini-demo-inputs';
 const DEFAULT_LATEST_ACTION = 'No request yet.';
 const DEFAULT_LATEST_RESULT = 'No response yet.';
 const DEFAULT_SDK_URL = 'http://127.0.0.1:7777/sdk/singleton-iife.js';

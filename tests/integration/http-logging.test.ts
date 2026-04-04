@@ -115,7 +115,7 @@ describe('http request logging', () => {
       throw new Error('boom');
     });
 
-    const request = new Request('http://mini-auth.test/boom');
+    const request = new Request('http://auth-mini.test/boom');
     clientIps.set(request, '203.0.113.9');
 
     const response = await app.fetch(request);

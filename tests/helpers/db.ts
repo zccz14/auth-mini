@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import Database from 'better-sqlite3';
 
 export async function createTempDbPath(): Promise<string> {
-  const directoryPath = await mkdtemp(join(tmpdir(), 'mini-auth-db-'));
-  return join(directoryPath, 'mini-auth.sqlite');
+  const directoryPath = await mkdtemp(join(tmpdir(), 'auth-mini-db-'));
+  return join(directoryPath, 'auth-mini.sqlite');
 }
 
 export async function listTables(dbPath: string): Promise<string[]> {

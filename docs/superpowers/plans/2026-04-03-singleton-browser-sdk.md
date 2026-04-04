@@ -6,7 +6,7 @@
 
 **Architecture:** Keep the server API shape intact and add one SDK-serving route plus a small browser-only SDK bundle generated from TypeScript source. Split the SDK into focused modules for base-path inference, storage/state, HTTP transport, session recovery/refresh, and WebAuthn conversions so unit tests can cover browser behavior without needing a real browser runner.
 
-**Tech Stack:** TypeScript, Hono, Vitest, existing mini-auth HTTP routes, browser APIs (`document.currentScript`, `localStorage`, `navigator.credentials`)
+**Tech Stack:** TypeScript, Hono, Vitest, existing auth-mini HTTP routes, browser APIs (`document.currentScript`, `localStorage`, `navigator.credentials`)
 
 ---
 

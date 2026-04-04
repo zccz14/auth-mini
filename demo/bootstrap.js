@@ -69,7 +69,7 @@ function readLocationInputs({ document, location, windowObject }) {
     hostname: url.hostname,
     sdkOriginInput,
     sdkUrl:
-      document?.querySelector?.('script[data-mini-auth-sdk]')?.src ||
+      document?.querySelector?.('script[data-auth-mini-sdk]')?.src ||
       windowObject?.__MINI_AUTH_SDK_URL__,
   };
 }

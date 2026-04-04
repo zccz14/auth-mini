@@ -2,7 +2,7 @@
 
 ## Context
 
-- `mini-auth start` uses `cac` for CLI parsing and `zod` for runtime config validation.
+- `auth-mini start` uses `cac` for CLI parsing and `zod` for runtime config validation.
 - `--origin` is documented as required and repeatable.
 - When `--origin` is passed once, `cac` returns a string; when passed multiple times, it returns a string array.
 - `parseRuntimeConfig()` currently accepts only an array for `origin`, so single-origin startup fails before the server starts.

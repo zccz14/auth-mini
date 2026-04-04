@@ -1,8 +1,8 @@
-# mini-auth Single-Page Demo / Docs Implementation Plan
+# auth-mini Single-Page Demo / Docs Implementation Plan
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 把现有 `demo/` 升级为单页长文站点，同时承担 mini-auth 的项目介绍、交互 demo、接入说明、API Reference、后端 JWT 集成与静态部署说明，并保持 `sdk-origin` 与页面 origin 的现有运行合同。
+**Goal:** 把现有 `demo/` 升级为单页长文站点，同时承担 auth-mini 的项目介绍、交互 demo、接入说明、API Reference、后端 JWT 集成与静态部署说明，并保持 `sdk-origin` 与页面 origin 的现有运行合同。
 
 **Architecture:** 把 demo 拆成三个明确职责的前端模块：`demo/setup.js` 只负责输入规范化与派生运行时配置，`demo/content.js` 负责生成文档内容、代码片段、API Reference 与部署说明数据，`demo/main.js` 负责 DOM 渲染、SDK 动态加载、表单交互与失败降级。页面仍然是纯静态 HTML/CSS/JS，但所有命令、snippet、JWT 示例与 playground runtime 都从同一份 `sdk-origin + window.location.origin` 派生状态生成。
 
@@ -100,7 +100,7 @@ export function getDemoSetupState(locationLike) {
     issuer: sdkOrigin,
     jwksUrl: new URL('/jwks', sdkOrigin).toString(),
     suggestedRpId,
-    startupCommand: `mini-auth start ./mini-auth.sqlite --issuer ${sdkOrigin} --origin ${currentOrigin} --rp-id ${suggestedRpId}`,
+    startupCommand: `auth-mini start ./auth-mini.sqlite --issuer ${sdkOrigin} --origin ${currentOrigin} --rp-id ${suggestedRpId}`,
   };
 }
 ```
@@ -110,9 +110,9 @@ export function getDemoSetupState(locationLike) {
 ```ts
 it('keeps ?sdk-origin as the only supported external config input', () => {
   const state = getDemoSetupState({
-    origin: 'https://mini-auth.example.com',
+    origin: 'https://auth-mini.example.com',
     protocol: 'https:',
-    hostname: 'mini-auth.example.com',
+    hostname: 'auth-mini.example.com',
     sdkOriginInput: 'https://auth.example.com',
   });
 
@@ -168,7 +168,7 @@ it('builds sdk script and jose snippets from the shared setup state', () => {
     suggestedOrigin: 'https://docs.example.com',
     suggestedRpId: 'auth.example.com',
     startupCommand:
-      'mini-auth start ./mini-auth.sqlite --issuer https://auth.example.com --origin https://docs.example.com --rp-id auth.example.com',
+      'auth-mini start ./auth-mini.sqlite --issuer https://auth.example.com --origin https://docs.example.com --rp-id auth.example.com',
   });
 
   expect(content.sdkScriptTag).toContain(
@@ -238,7 +238,7 @@ export function buildDemoContent(setupState) {
   return {
     sdkScriptTag: `<script src="${setupState.sdkScriptUrl}"></script>`,
     hero: {
-      title: 'mini-auth',
+      title: 'auth-mini',
       valueProp:
         'A small, self-hosted auth server for apps that just need auth.',
       audience:
@@ -253,7 +253,7 @@ export function buildDemoContent(setupState) {
       ],
     },
     howItWorks: [
-      'The page origin is the value you pass to mini-auth --origin.',
+      'The page origin is the value you pass to auth-mini --origin.',
       'The sdk-origin is where the browser loads /sdk/singleton-iife.js.',
       'script origin == api origin: the singleton SDK always talks back to the auth server that served the script.',
       'WebAuthn and CORS both depend on the auth server being started with the right origin settings.',
@@ -285,7 +285,7 @@ export function buildDemoContent(setupState) {
     backendNotesDisclosureLabel: 'More backend JWT notes',
     knownIssues: [
       'Passkeys depend on a valid RP ID and a browser environment that supports WebAuthn.',
-      'Cross-origin pages must start mini-auth with --origin set to the page origin.',
+      'Cross-origin pages must start auth-mini with --origin set to the page origin.',
       'Multiple tabs can currently race during session refresh. This is a known SDK bug, not a product contract.',
     ],
   };
@@ -323,7 +323,7 @@ it('documents audience validation and /me usage in backend jwt guidance', () => 
 it('includes hero and how-it-works copy for the landing-page role', () => {
   const content = buildDemoContent(sampleState);
 
-  expect(content.hero.title).toContain('mini-auth');
+  expect(content.hero.title).toContain('auth-mini');
   expect(content.hero.valueProp).toContain('small');
   expect(content.hero.audience).toContain('auth');
   expect(content.hero.capabilities).toEqual(
@@ -400,7 +400,7 @@ git commit -m "feat: add single-page demo content builders"
 
 ```html
 <section class="hero panel">
-  <p class="eyebrow">mini-auth</p>
+  <p class="eyebrow">auth-mini</p>
   <h1 id="hero-title"></h1>
   <p id="hero-value-prop"></p>
   <p id="hero-audience"></p>
@@ -536,7 +536,7 @@ it('renders hero and how-it-works content for the landing-page view', () => {
 
   renderContentState(root, sampleSetupState, sampleContent);
 
-  expect(root.querySelector('#hero-title')?.textContent).toContain('mini-auth');
+  expect(root.querySelector('#hero-title')?.textContent).toContain('auth-mini');
   expect(root.querySelector('#how-it-works-list')?.textContent).toContain(
     'script origin',
   );
@@ -572,7 +572,7 @@ it('renders explicit failure reasons for cors and webauthn guidance', () => {
     root,
     {
       ...sampleSetupState,
-      corsWarning: 'Start mini-auth with --origin set to this page origin.',
+      corsWarning: 'Start auth-mini with --origin set to this page origin.',
       passkeyWarning:
         'Open this page on localhost or an HTTPS domain for passkeys.',
     },
@@ -890,7 +890,7 @@ Expected: FAIL until deployment notes include GitHub Pages publishing, custom do
 deploymentNotes: [
   'Publish the static demo directory to GitHub Pages or any other static host.',
   'If you attach a custom domain, commit a matching CNAME file in the published artifact.',
-  'After moving the page to a new domain, start mini-auth with --origin set to the new page origin.',
+  'After moving the page to a new domain, start auth-mini with --origin set to the new page origin.',
 ],
 ```
 
@@ -950,17 +950,17 @@ Expected: PASS and regenerate the singleton IIFE successfully.
 - [ ] **Step 5: Manual smoke-check the retained playground flows on a local static host**
 
 Run: `python3 -m http.server 8080`
-Expected: `http://localhost:8080/demo/` still exposes working buttons for email start, email verify, passkey register, passkey authenticate, and logout/session visibility once pointed at a live mini-auth server.
+Expected: `http://localhost:8080/demo/` still exposes working buttons for email start, email verify, passkey register, passkey authenticate, and logout/session visibility once pointed at a live auth-mini server.
 
 - [ ] **Step 6: Manual smoke-check a non-root static path with an explicit server root**
 
-Run: `mkdir -p /tmp/mini-auth-pages/mini-auth && cp -R demo /tmp/mini-auth-pages/mini-auth/ && python3 -m http.server 8081 --directory /tmp/mini-auth-pages`
-Expected: `http://localhost:8081/mini-auth/demo/?sdk-origin=http://127.0.0.1:7777` loads styles and module scripts correctly, shows `http://localhost:8081` as the recommended `--origin`, and preserves all docs sections when served from a project-style subpath.
+Run: `mkdir -p /tmp/auth-mini-pages/auth-mini && cp -R demo /tmp/auth-mini-pages/auth-mini/ && python3 -m http.server 8081 --directory /tmp/auth-mini-pages`
+Expected: `http://localhost:8081/auth-mini/demo/?sdk-origin=http://127.0.0.1:7777` loads styles and module scripts correctly, shows `http://localhost:8081` as the recommended `--origin`, and preserves all docs sections when served from a project-style subpath.
 
 - [ ] **Step 7: Manual smoke-check SDK load failure with an explicit fault injection**
 
-Run: `python3 -m http.server 8082 --directory /tmp/mini-auth-pages`
-Expected: Visiting `http://localhost:8082/mini-auth/demo/?sdk-origin=http://127.0.0.1:9999` shows rendered docs, API Reference, deployment notes, and a visible SDK load failure message while playground actions stay disabled.
+Run: `python3 -m http.server 8082 --directory /tmp/auth-mini-pages`
+Expected: Visiting `http://localhost:8082/auth-mini/demo/?sdk-origin=http://127.0.0.1:9999` shows rendered docs, API Reference, deployment notes, and a visible SDK load failure message while playground actions stay disabled.
 
 - [ ] **Step 8: Commit the final verified slice**
 

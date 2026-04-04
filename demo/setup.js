@@ -8,7 +8,7 @@ export function getDemoSetupState(locationLike) {
   const pageHostIsIpAddress = isIpAddressHost(hostname);
   const normalizedSdkOrigin = resolveSdkOrigin(locationLike);
   const corsWarning =
-    'Start mini-auth with --origin set to this page origin so the browser can call the auth server cross-origin.';
+    'Start auth-mini with --origin set to this page origin so the browser can call the auth server cross-origin.';
 
   if (!normalizedSdkOrigin.ok) {
     return {
@@ -62,7 +62,7 @@ export function getDemoSetupState(locationLike) {
     webauthnReady,
     corsWarning,
     passkeyWarning,
-    startupCommand: `mini-auth start ./mini-auth.sqlite --issuer ${issuer} --origin ${origin} --rp-id ${suggestedRpId}`,
+    startupCommand: `auth-mini start ./auth-mini.sqlite --issuer ${issuer} --origin ${origin} --rp-id ${suggestedRpId}`,
   };
 }
 

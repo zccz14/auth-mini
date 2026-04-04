@@ -1,8 +1,8 @@
-# mini-auth 单页 Demo / Docs 执行契约
+# auth-mini 单页 Demo / Docs 执行契约
 
 ## 任务
 
-- 按 `docs/superpowers/specs/2026-04-04-single-page-demo-docs-design.md` 与 `docs/superpowers/plans/2026-04-04-single-page-demo-docs.md` 实现 mini-auth 的单页 Demo / Docs 页面。
+- 按 `docs/superpowers/specs/2026-04-04-single-page-demo-docs-design.md` 与 `docs/superpowers/plans/2026-04-04-single-page-demo-docs.md` 实现 auth-mini 的单页 Demo / Docs 页面。
 
 ## 验收
 

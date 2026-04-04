@@ -49,7 +49,7 @@ export function createOtpMailSeam(): OtpMailSeam {
       mailbox.push({
         from: formatFromAddress(config),
         to: email,
-        subject: 'Your mini-auth verification code',
+        subject: 'Your auth-mini verification code',
         text: `Your verification code is ${code}. It expires in 10 minutes.`,
       });
     },

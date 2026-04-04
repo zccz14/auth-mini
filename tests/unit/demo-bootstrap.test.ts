@@ -621,7 +621,7 @@ function createFakeDocument(options: {
     defaultView: null,
     createElement,
     querySelector(selector: string) {
-      if (selector === 'script[data-mini-auth-sdk]') {
+      if (selector === 'script[data-auth-mini-sdk]') {
         return (
           body.children.find((node) => node.dataset.miniAuthSdk === 'true') ??
           null

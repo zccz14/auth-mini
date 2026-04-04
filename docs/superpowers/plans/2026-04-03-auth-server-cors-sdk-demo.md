@@ -324,7 +324,7 @@ export function getDemoSetupState(locationLike) {
 
 ```html
 <p>
-  Load this page from any static server, then start mini-auth on another origin
+  Load this page from any static server, then start auth-mini on another origin
   with <code>--origin</code> set to the current page origin shown below.
 </p>
 ```
@@ -335,9 +335,9 @@ elements.baseUrl.value =
   'http://127.0.0.1:7777/sdk/singleton-iife.js';
 
 elements.setupWarning.textContent =
-  'Serve this page from any static host, then start mini-auth with --origin set to the current page origin.';
+  'Serve this page from any static host, then start auth-mini with --origin set to the current page origin.';
 
-elements.originCommand.textContent = `mini-auth start ./mini-auth.sqlite --origin ${setupState.suggestedOrigin} --rp-id ${setupState.suggestedRpId}`;
+elements.originCommand.textContent = `auth-mini start ./auth-mini.sqlite --origin ${setupState.suggestedOrigin} --rp-id ${setupState.suggestedRpId}`;
 ```
 
 - [ ] **Step 6: Remove proxy-only DOM wiring and stale SDK error wording**
@@ -378,7 +378,7 @@ git commit -m "feat: update demo for direct cors usage"
 - [ ] **Step 1: Write the documentation changes that replace same-origin-only guidance**
 
 ```md
-mini-auth now supports cross-origin browser apps when the page origin is listed
+auth-mini now supports cross-origin browser apps when the page origin is listed
 in `--origin`. The SDK script and API still come from the same auth server
 origin, and the singleton SDK continues to infer its base URL from the script
 URL.
@@ -391,7 +391,7 @@ URL.
 ```
 
 ```bash
-npx mini-auth start ./mini-auth.sqlite \
+npx auth-mini start ./auth-mini.sqlite \
   --issuer http://127.0.0.1:7777 \
   --rp-id localhost \
   --origin http://localhost:8080
@@ -404,7 +404,7 @@ Expected: PASS for all targeted browser-contract tests.
 
 - [ ] **Step 4: Run a direct cross-origin smoke test**
 
-Run: start a static server for `demo/` on `http://localhost:8080`, start mini-auth on `http://127.0.0.1:7777` with `--origin http://localhost:8080`, open the demo page, and confirm the page loads `http://127.0.0.1:7777/sdk/singleton-iife.js` plus at least one successful browser request such as `POST /email/start` or `GET /jwks`.
+Run: start a static server for `demo/` on `http://localhost:8080`, start auth-mini on `http://127.0.0.1:7777` with `--origin http://localhost:8080`, open the demo page, and confirm the page loads `http://127.0.0.1:7777/sdk/singleton-iife.js` plus at least one successful browser request such as `POST /email/start` or `GET /jwks`.
 Expected: PASS with no proxy in the path and no browser CORS failure for the allowed origin.
 
 - [ ] **Step 5: Run the broader repository verification commands**

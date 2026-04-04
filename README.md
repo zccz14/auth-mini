@@ -1,8 +1,8 @@
-# mini-auth
+# auth-mini
 
 Minimal, opinionated auth server for apps that just need auth.
 
-mini-auth is built for the common case: you want email sign-in, passkeys, JWTs, and a database you can actually understand, without adopting a full backend platform (e.g. Supabase) just to get authentication working.
+auth-mini is built for the common case: you want email sign-in, passkeys, JWTs, and a database you can actually understand, without adopting a full backend platform (e.g. Supabase) just to get authentication working.
 
 It uses email OTP for first login, discoverable WebAuthn credentials for username-less passkey login, and SQLite for storage. The goal is not to be an auth empire. The goal is to be small, clear, and easy to run.
 
@@ -24,13 +24,13 @@ See `demo/` for the single-page static demo/docs site that doubles as the browse
 Create a database and optionally import SMTP config rows from a JSON file:
 
 ```bash
-npx mini-auth create ./mini-auth.sqlite --smtp-config ./smtp.json
+npx auth-mini create ./auth-mini.sqlite --smtp-config ./smtp.json
 ```
 
 Start the server:
 
 ```bash
-npx mini-auth start ./mini-auth.sqlite \
+npx auth-mini start ./auth-mini.sqlite \
   --host 127.0.0.1 \
   --port 7777 \
   --issuer https://auth.example.com \
@@ -41,15 +41,15 @@ npx mini-auth start ./mini-auth.sqlite \
 Rotate JWKS keys:
 
 ```bash
-npx mini-auth rotate-jwks ./mini-auth.sqlite
+npx auth-mini rotate-jwks ./auth-mini.sqlite
 ```
 
 ## Logging
 
-mini-auth writes structured JSON logs by default. The logs are suitable for redirection to a file:
+auth-mini writes structured JSON logs by default. The logs are suitable for redirection to a file:
 
 ```bash
-npx mini-auth start ./mini-auth.sqlite --issuer https://auth.example.com --rp-id example.com --origin https://app.example.com >> mini-auth.log
+npx auth-mini start ./auth-mini.sqlite --issuer https://auth.example.com --rp-id example.com --origin https://app.example.com >> auth-mini.log
 ```
 
 In the current version, logs may contain plaintext email addresses and client IPs. Logs intentionally exclude OTP values, tokens, and SMTP passwords.
@@ -66,7 +66,7 @@ In the current version, logs may contain plaintext email addresses and client IP
     "username": "mailer",
     "password": "secret",
     "from_email": "noreply@example.com",
-    "from_name": "mini-auth",
+    "from_name": "auth-mini",
     "secure": false,
     "weight": 1
   }
@@ -104,7 +104,7 @@ Refresh uses the refresh token in the JSON body:
 
 ## Browser SDK
 
-mini-auth also serves a singleton browser SDK at `GET /sdk/singleton-iife.js`.
+auth-mini also serves a singleton browser SDK at `GET /sdk/singleton-iife.js`.
 
 Load the script from the auth server origin. The singleton SDK still infers its API base URL from its own `src`, so the script origin and API origin must match:
 
@@ -117,16 +117,16 @@ Load the script from the auth server origin. The singleton SDK still infers its 
 </script>
 ```
 
-v1 is intentionally zero-config: the script infers its API base URL from its own `src`, persists session state in `localStorage`, and automatically refreshes access tokens. Browser pages may be hosted on a different origin than the auth server as long as the page origin is explicitly allowed with `--origin` when you start mini-auth.
+v1 is intentionally zero-config: the script infers its API base URL from its own `src`, persists session state in `localStorage`, and automatically refreshes access tokens. Browser pages may be hosted on a different origin than the auth server as long as the page origin is explicitly allowed with `--origin` when you start auth-mini.
 
-Same-origin proxy deployment is still supported if you prefer to front mini-auth through your app origin, but direct cross-origin loading is now the primary browser SDK path.
+Same-origin proxy deployment is still supported if you prefer to front auth-mini through your app origin, but direct cross-origin loading is now the primary browser SDK path.
 
 For example, this page:
 
 - page origin: `http://localhost:3000`
 - auth server origin: `http://127.0.0.1:7777`
 
-works when mini-auth is started with `--origin http://localhost:3000` and the page loads the SDK from the auth server:
+works when auth-mini is started with `--origin http://localhost:3000` and the page loads the SDK from the auth server:
 
 ```html
 <script src="http://127.0.0.1:7777/sdk/singleton-iife.js"></script>
@@ -140,10 +140,10 @@ The static site lives in `demo/`.
 
 - Publish the **contents of `demo/`** so `index.html`, `./style.css`, and `./main.js` stay at the final URL you want browsers to open.
 - For GitHub Pages, that means publishing `demo/` as the Pages artifact (for example via a Pages Action that uploads `demo/`, or by copying `demo/` into the branch/folder Pages serves).
-- Project Pages subpaths such as `https://<user>.github.io/mini-auth/` are fine because the demo uses relative local assets.
-- `mini-auth --origin ...` must match the final **page origin** (`window.location.origin`), not the auth server origin. Path changes like `/mini-auth/` vs `/demo/` do not change `--origin`, but moving between `https://docs.example.com` and `https://example.github.io` does.
+- Project Pages subpaths such as `https://<user>.github.io/auth-mini/` are fine because the demo uses relative local assets.
+- `auth-mini --origin ...` must match the final **page origin** (`window.location.origin`), not the auth server origin. Path changes like `/auth-mini/` vs `/demo/` do not change `--origin`, but moving between `https://docs.example.com` and `https://example.github.io` does.
 - If the docs page and auth server live on different origins, keep the docs page on its static host and append `?sdk-origin=https://your-auth-origin` so the page loads `/sdk/singleton-iife.js` from the auth server.
-- If you attach a custom GitHub Pages domain, publish a matching `CNAME` file in the Pages artifact/root so GitHub serves that domain consistently; then start mini-auth with `--origin https://your-domain.example`.
+- If you attach a custom GitHub Pages domain, publish a matching `CNAME` file in the Pages artifact/root so GitHub serves that domain consistently; then start auth-mini with `--origin https://your-domain.example`.
 
 Example:
 
@@ -153,13 +153,13 @@ Example:
 Open:
 
 ```text
-https://example.github.io/mini-auth/?sdk-origin=https://auth.example.com
+https://example.github.io/auth-mini/?sdk-origin=https://auth.example.com
 ```
 
-Start mini-auth with:
+Start auth-mini with:
 
 ```bash
-mini-auth start ./mini-auth.sqlite --issuer https://auth.example.com --origin https://example.github.io --rp-id auth.example.com
+auth-mini start ./auth-mini.sqlite --issuer https://auth.example.com --origin https://example.github.io --rp-id auth.example.com
 ```
 
 ### Startup state model
@@ -205,7 +205,7 @@ If a refresh token is already stored, startup enters `recovering` first and then
 6. Pass `publicKey` into `navigator.credentials.get()`.
 7. Send `{ request_id, credential }` to `POST /webauthn/authenticate/verify`.
 
-mini-auth uses discoverable credentials for passkey login. Users sign in with email first, register a passkey while authenticated, and can later sign in directly with the passkey without entering an email address first.
+auth-mini uses discoverable credentials for passkey login. Users sign in with email first, register a passkey while authenticated, and can later sign in directly with the passkey without entering an email address first.
 
 Registration options require discoverable credentials:
 
@@ -214,7 +214,7 @@ Registration options require discoverable credentials:
   "request_id": "<uuid>",
   "publicKey": {
     "challenge": "<base64url>",
-    "rp": { "name": "mini-auth", "id": "example.com" },
+    "rp": { "name": "auth-mini", "id": "example.com" },
     "user": {
       "id": "<base64url>",
       "name": "user@example.com",
@@ -247,7 +247,7 @@ Authentication options are username-less and intentionally omit `allowCredential
 }
 ```
 
-WebAuthn registration and authentication verification now use `@simplewebauthn/server`. mini-auth intentionally limits advertised registration algorithms to `-7` (ES256) and `-257` (RS256), because those are the algorithms explicitly covered by the integration test suite.
+WebAuthn registration and authentication verification now use `@simplewebauthn/server`. auth-mini intentionally limits advertised registration algorithms to `-7` (ES256) and `-257` (RS256), because those are the algorithms explicitly covered by the integration test suite.
 
 Generating a new registration challenge invalidates the previous unused registration challenge for the same signed-in user. Authentication challenges are preserved so concurrent sign-in attempts can complete independently.
 
@@ -255,7 +255,7 @@ Generating a new registration challenge invalidates the previous unused registra
 
 ### Why not a full auth platform?
 
-If your project only needs authentication, adopting a large backend platform can be unnecessary overhead. mini-auth is for the case where you want to run a focused auth service yourself, keep the moving parts small, and understand exactly where your users, sessions, SMTP config, and signing keys live.
+If your project only needs authentication, adopting a large backend platform can be unnecessary overhead. auth-mini is for the case where you want to run a focused auth service yourself, keep the moving parts small, and understand exactly where your users, sessions, SMTP config, and signing keys live.
 
 ### Why email OTP first?
 
@@ -263,7 +263,7 @@ Email is familiar, universal, and gives you a practical recovery and communicati
 
 ### Why passwordless and discoverable passkeys?
 
-Passwords are easy to forget, easy to reuse, and expensive to defend forever. Email OTP removes the long-lived shared secret, and WebAuthn goes further by letting the device authenticate with phishing-resistant credentials. mini-auth specifically uses discoverable credentials so passkey login can be truly username-less instead of pretending to be passwordless while still asking for an identifier first.
+Passwords are easy to forget, easy to reuse, and expensive to defend forever. Email OTP removes the long-lived shared secret, and WebAuthn goes further by letting the device authenticate with phishing-resistant credentials. auth-mini specifically uses discoverable credentials so passkey login can be truly username-less instead of pretending to be passwordless while still asking for an identifier first.
 
 ### Why SQLite?
 
@@ -271,7 +271,7 @@ Auth data is usually small and operational simplicity matters. SQLite is easy to
 
 ### Why access + refresh tokens?
 
-Access tokens should be short-lived. Refresh tokens should be revocable and rotated. mini-auth keeps those roles separate: access tokens are JWTs signed by your keys and suitable for API verification, while refresh tokens are random database-backed secrets that can be invalidated and replaced on every refresh. That keeps API auth simple without pretending JWTs are easy to revoke after they leak.
+Access tokens should be short-lived. Refresh tokens should be revocable and rotated. auth-mini keeps those roles separate: access tokens are JWTs signed by your keys and suitable for API verification, while refresh tokens are random database-backed secrets that can be invalidated and replaced on every refresh. That keeps API auth simple without pretending JWTs are easy to revoke after they leak.
 
 ## Development
 
