@@ -53,11 +53,52 @@ describe('demo render helpers', () => {
 
     renderApiReference(root, content.apiReference);
 
-    expect(root.querySelector('#api-reference-list')?.textContent).toContain(
-      '/email/start',
+    expect(
+      root.querySelector('#api-reference-list article h3')?.textContent,
+    ).toContain('/email/start');
+    expect(
+      root.querySelector('#api-reference-list article details summary')
+        ?.textContent,
+    ).toContain('Show request and response');
+    expect(
+      root.querySelector('#api-reference-list article details pre')
+        ?.textContent,
+    ).toContain('https://auth.example.com/email/start');
+    expect(
+      root.querySelector('#api-reference-list article details pre:last-of-type')
+        ?.textContent,
+    ).toContain('{');
+    expect(
+      root.querySelectorAll('#api-reference-list article').length,
+    ).toBeGreaterThan(1);
+    expect(
+      root.querySelector('#api-reference-list article:last-of-type h3')
+        ?.textContent,
+    ).toContain('/jwks');
+  });
+
+  it('renders list sections as real list items', async () => {
+    const { buildDemoContent } = await import('../../demo/content.js');
+    const { renderContentState } = await import('../../demo/main.js');
+    const root = createRenderRoot();
+    const content = buildDemoContent(sampleSetupState);
+
+    renderContentState(root, sampleSetupState, content);
+
+    expect(root.querySelector('#hero-capabilities li')?.textContent).toContain(
+      'email OTP',
     );
-    expect(root.querySelector('#api-reference-list')?.textContent).toContain(
-      '/jwks',
+    expect(root.querySelector('#how-it-works-list li')?.textContent).toContain(
+      'page origin',
+    );
+    expect(root.querySelector('#backend-notes-list li')?.textContent).toContain(
+      'Validate iss',
+    );
+    expect(
+      root.querySelector('#deployment-notes-list li')?.textContent,
+    ).toContain('GitHub Pages');
+    expect(root.querySelector('#known-issues-list li')?.textContent).toContain(
+      'Passkeys',
     );
   });
 
@@ -90,9 +131,11 @@ describe('demo render helpers', () => {
     expect(
       root.querySelector('#backend-notes-disclosure-summary')?.textContent,
     ).toContain('More');
-    expect(root.querySelector('#api-reference-list')?.textContent).toContain(
-      'Show request and response',
-    );
+    expect(
+      root.querySelector('#api-reference-list article details summary')
+        ?.textContent,
+    ).toContain('Show request and response');
+    expect(root.querySelector('#backend-notes-list li')?.tagName).toBe('LI');
   });
 
   it('renders explicit failure reasons for cors and webauthn guidance', async () => {
@@ -118,12 +161,9 @@ describe('demo render helpers', () => {
 function createRenderRoot() {
   const elements = new Map();
   const makeElement = (id) => {
-    const element = {
-      id,
-      hidden: false,
-      textContent: '',
-      innerHTML: '',
-    };
+    const tagName =
+      id.includes('list') || id === 'hero-capabilities' ? 'ul' : 'div';
+    const element = createElement(tagName, id);
     elements.set(`#${id}`, element);
     return element;
   };
@@ -149,8 +189,97 @@ function createRenderRoot() {
   makeElement('authenticate-output');
 
   return {
+    createElement,
     querySelector(selector) {
-      return elements.get(selector) ?? null;
+      if (elements.has(selector)) {
+        return elements.get(selector) ?? null;
+      }
+
+      const parts = selector.split(' ');
+      const rootSelector = parts.shift();
+      const rootElement = elements.get(rootSelector);
+      if (!rootElement) {
+        return null;
+      }
+
+      return queryWithin(rootElement, parts);
+    },
+    querySelectorAll(selector) {
+      const parts = selector.split(' ');
+      const rootSelector = parts.shift();
+      const rootElement = elements.get(rootSelector);
+      if (!rootElement) {
+        return [];
+      }
+
+      return queryAllWithin(rootElement, parts);
     },
   };
+
+  function createElement(tagName, id = '') {
+    return {
+      id,
+      tagName: tagName.toUpperCase(),
+      hidden: false,
+      textContent: '',
+      innerHTML: '',
+      children: [],
+      append(...nodes) {
+        this.children.push(...nodes);
+        syncText(this);
+      },
+      appendChild(node) {
+        this.children.push(node);
+        syncText(this);
+        return node;
+      },
+      replaceChildren(...nodes) {
+        this.children = [...nodes];
+        syncText(this);
+      },
+    };
+  }
+
+  function queryWithin(element, selectors) {
+    return queryAllWithin(element, selectors)[0] ?? null;
+  }
+
+  function queryAllWithin(element, selectors) {
+    if (selectors.length === 0) {
+      return [element];
+    }
+
+    const [selector, ...rest] = selectors;
+    const matcher = selector.replace(':last-of-type', '');
+    const matches = [];
+    walk(element, (child) => {
+      if (child.tagName?.toLowerCase() === matcher) {
+        matches.push(child);
+      }
+    });
+
+    const filtered = selector.endsWith(':last-of-type')
+      ? matches.slice(-1)
+      : matches;
+
+    return rest.length === 0
+      ? filtered
+      : filtered.flatMap((child) => queryAllWithin(child, rest));
+  }
+
+  function walk(element, visit) {
+    for (const child of element.children) {
+      visit(child);
+      walk(child, visit);
+    }
+  }
+
+  function syncText(element) {
+    element.textContent = [
+      element.innerHTML,
+      ...element.children.map((child) => child.textContent),
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
 }

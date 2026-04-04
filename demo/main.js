@@ -47,13 +47,28 @@ export function renderApiReference(root, apiReference) {
     return;
   }
 
-  container.innerHTML = apiReference
-    .map(
-      (entry) =>
-        `<article><h3>${escapeHtml(entry.method)} ${escapeHtml(entry.path)}</h3><p>${escapeHtml(entry.when)}</p><details><summary>${escapeHtml(entry.detailsLabel)}</summary><pre>${escapeHtml(entry.request)}</pre><pre>${escapeHtml(entry.response)}</pre></details></article>`,
-    )
-    .join('');
-  container.textContent = container.innerHTML;
+  replaceChildren(
+    container,
+    apiReference.map((entry) => {
+      const article = createElementFor(root, 'article');
+      const title = createElementFor(root, 'h3');
+      const when = createElementFor(root, 'p');
+      const details = createElementFor(root, 'details');
+      const summary = createElementFor(root, 'summary');
+      const request = createElementFor(root, 'pre');
+      const response = createElementFor(root, 'pre');
+
+      title.textContent = `${entry.method} ${entry.path}`;
+      when.textContent = entry.when;
+      summary.textContent = entry.detailsLabel;
+      request.textContent = entry.request;
+      response.textContent = entry.response;
+
+      appendChildren(details, [summary, request, response]);
+      appendChildren(article, [title, when, details]);
+      return article;
+    }),
+  );
 }
 
 export function disableFlowButtons(root) {
@@ -582,10 +597,62 @@ function setList(root, selector, items) {
     return;
   }
 
-  element.innerHTML = items
-    .map((item) => `<li>${escapeHtml(item)}</li>`)
-    .join('');
-  element.textContent = items.join('\n');
+  replaceChildren(
+    element,
+    items.map((item) => {
+      const listItem = createElementFor(root, 'li');
+      listItem.textContent = item;
+      return listItem;
+    }),
+  );
+}
+
+function replaceChildren(element, children) {
+  if (typeof element.replaceChildren === 'function') {
+    element.replaceChildren(...children);
+    return;
+  }
+
+  element.children = [];
+  element.innerHTML = '';
+  appendChildren(element, children);
+}
+
+function appendChildren(element, children) {
+  if (typeof element.append === 'function') {
+    element.append(...children);
+    return;
+  }
+
+  for (const child of children) {
+    element.appendChild?.(child);
+  }
+}
+
+function createElementFor(root, tagName) {
+  if (typeof root.createElement === 'function') {
+    return root.createElement(tagName);
+  }
+
+  if (typeof globalThis.document?.createElement === 'function') {
+    return globalThis.document.createElement(tagName);
+  }
+
+  return {
+    tagName: tagName.toUpperCase(),
+    textContent: '',
+    children: [],
+    append(...nodes) {
+      this.children.push(...nodes);
+    },
+    appendChild(node) {
+      this.children.push(node);
+      return node;
+    },
+    replaceChildren(...nodes) {
+      this.children = [...nodes];
+    },
+  };
 }
 
 function setText(root, selector, value) {
@@ -629,14 +696,6 @@ function formatError(error) {
   }
 
   return String(error);
-}
-
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;');
 }
 
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {

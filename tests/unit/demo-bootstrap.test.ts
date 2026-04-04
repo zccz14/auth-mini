@@ -58,6 +58,13 @@ describe('demo bootstrap', () => {
       env.document.querySelector('#api-reference-list')?.textContent,
     ).toContain('/email/start');
     expect(
+      env.document.querySelector('#api-reference-list article h3')?.tagName,
+    ).toBe('H3');
+    expect(
+      env.document.querySelector('#api-reference-list article details summary')
+        ?.tagName,
+    ).toBe('SUMMARY');
+    expect(
       env.document.querySelector('#latest-response')?.textContent,
     ).toContain('MiniAuth SDK did not load');
   });
@@ -86,6 +93,10 @@ describe('demo bootstrap', () => {
     expect(env.document.querySelector('#email-start-button')?.disabled).toBe(
       true,
     );
+    expect(
+      env.document.querySelector('#api-reference-list article details pre')
+        ?.tagName,
+    ).toBe('PRE');
   });
 
   it('shows a cors-oriented failure message when sdk requests reject after startup', async () => {
@@ -167,6 +178,9 @@ describe('demo bootstrap', () => {
     expect(
       env.document.querySelector('#sdk-script-snippet')?.textContent,
     ).toContain('https://auth.example.com/sdk/singleton-iife.js');
+    expect(env.document.querySelector('#hero-capabilities li')?.tagName).toBe(
+      'LI',
+    );
   });
 
   it('changing sdk-origin preserves pathname/hash and forces a clean page reload', async () => {
@@ -336,7 +350,14 @@ function createFakeDocument(options) {
           null
         );
       }
-      return elements.get(selector) ?? null;
+      if (elements.has(selector)) {
+        return elements.get(selector) ?? null;
+      }
+
+      return queryNested(selector);
+    },
+    querySelectorAll(selector) {
+      return queryNestedAll(selector);
     },
   };
 
@@ -420,10 +441,16 @@ function createFakeDocument(options) {
       },
       append(...nodes) {
         this.children.push(...nodes);
+        syncText(this);
       },
       appendChild(node) {
         this.children.push(node);
+        syncText(this);
         return node;
+      },
+      replaceChildren(...nodes) {
+        this.children = [...nodes];
+        syncText(this);
       },
       addEventListener(type, listener) {
         const bucket = listeners.get(type) ?? [];
@@ -446,5 +473,56 @@ function createFakeDocument(options) {
         return Boolean(this[name]);
       },
     };
+  }
+
+  function queryNested(selector) {
+    return queryNestedAll(selector)[0] ?? null;
+  }
+
+  function queryNestedAll(selector) {
+    const parts = selector.split(' ');
+    const rootSelector = parts.shift();
+    const rootElement = elements.get(rootSelector);
+    if (!rootElement) {
+      return [];
+    }
+
+    return queryAllWithin(rootElement, parts);
+  }
+
+  function queryAllWithin(element, selectors) {
+    if (selectors.length === 0) {
+      return [element];
+    }
+
+    const [selector, ...rest] = selectors;
+    const matcher = selector.replace(':last-of-type', '');
+    const matches = [];
+    walk(element, (child) => {
+      if (child.tagName?.toLowerCase() === matcher) {
+        matches.push(child);
+      }
+    });
+
+    const filtered = selector.endsWith(':last-of-type')
+      ? matches.slice(-1)
+      : matches;
+
+    return rest.length === 0
+      ? filtered
+      : filtered.flatMap((child) => queryAllWithin(child, rest));
+  }
+
+  function walk(element, visit) {
+    for (const child of element.children) {
+      visit(child);
+      walk(child, visit);
+    }
+  }
+
+  function syncText(element) {
+    element.textContent = [
+      ...element.children.map((child) => child.textContent).filter(Boolean),
+    ].join('\n');
   }
 }
