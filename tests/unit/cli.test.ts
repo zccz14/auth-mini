@@ -26,13 +26,12 @@ describe('cli origin normalization', () => {
 
 describe('start cli boundary', () => {
   it('passes repeated --origin values to runStartCommand in order', async () => {
-    const runStartCommand = vi.fn().mockResolvedValue(undefined);
-    const runCli = await loadRunCli(runStartCommand);
+    const runStartCommand = vi.fn().mockResolvedValue({
+      close: vi.fn().mockResolvedValue(undefined),
+    });
+    const runStartCli = await loadRunStartCli(runStartCommand);
 
-    await runCli([
-      'node',
-      'auth-mini',
-      'start',
+    await runStartCli([
       'db.sqlite',
       '--origin',
       'https://one.example',
@@ -49,17 +48,12 @@ describe('start cli boundary', () => {
   });
 
   it('passes a single --origin as a one-item array', async () => {
-    const runStartCommand = vi.fn().mockResolvedValue(undefined);
-    const runCli = await loadRunCli(runStartCommand);
+    const runStartCommand = vi.fn().mockResolvedValue({
+      close: vi.fn().mockResolvedValue(undefined),
+    });
+    const runStartCli = await loadRunStartCli(runStartCommand);
 
-    await runCli([
-      'node',
-      'auth-mini',
-      'start',
-      'db.sqlite',
-      '--origin',
-      'https://one.example',
-    ]);
+    await runStartCli(['db.sqlite', '--origin', 'https://one.example']);
 
     expect(runStartCommand).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -70,10 +64,12 @@ describe('start cli boundary', () => {
   });
 
   it('keeps omitted --origin undefined at the app-command boundary', async () => {
-    const runStartCommand = vi.fn().mockResolvedValue(undefined);
-    const runCli = await loadRunCli(runStartCommand);
+    const runStartCommand = vi.fn().mockResolvedValue({
+      close: vi.fn().mockResolvedValue(undefined),
+    });
+    const runStartCli = await loadRunStartCli(runStartCommand);
 
-    await runCli(['node', 'auth-mini', 'start', 'db.sqlite']);
+    await runStartCli(['db.sqlite']);
 
     expect(runStartCommand).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -84,30 +80,41 @@ describe('start cli boundary', () => {
   });
 });
 
-async function loadRunCli(runStartCommand: ReturnType<typeof vi.fn>) {
+async function loadRunStartCli(runStartCommand: ReturnType<typeof vi.fn>) {
   vi.resetModules();
 
-  vi.doMock('../../src/app/commands/create.js', () => ({
-    runCreateCommand: vi.fn().mockResolvedValue(undefined),
-  }));
   vi.doMock('../../src/app/commands/start.js', () => ({ runStartCommand }));
-  vi.doMock('../../src/app/commands/rotate-jwks.js', () => ({
-    runRotateJwksCommand: vi.fn().mockResolvedValue(undefined),
-  }));
-  vi.doMock('../../src/cli/create.js', () => {
-    throw new Error('legacy create command import should not be used');
-  });
-  vi.doMock('../../src/cli/start.js', () => {
-    throw new Error('legacy start command import should not be used');
-  });
-  vi.doMock('../../src/cli/rotate-jwks.js', () => {
-    throw new Error('legacy rotate jwks command import should not be used');
-  });
-  vi.doMock('../../src/cli/options.js', () => {
-    throw new Error('legacy cli options import should not be used');
-  });
+  const module = await import('../../src/commands/start.ts');
 
-  const module = await import('../../src/index.ts');
+  return async (argv: string[]) => {
+    const handlers = new Map<NodeJS.Signals, () => void>();
+    const processOn = vi.spyOn(process, 'on').mockImplementation(((
+      signal: NodeJS.Signals,
+      handler: () => void,
+    ) => {
+      handlers.set(signal, handler);
+      return process;
+    }) as typeof process.on);
+    const processOff = vi.spyOn(process, 'off').mockImplementation(((
+      signal: NodeJS.Signals,
+    ) => {
+      handlers.delete(signal);
+      return process;
+    }) as typeof process.off);
 
-  return module.runCli;
+    try {
+      const commandPromise = module.default.run(argv, process.cwd());
+
+      await vi.waitFor(() => {
+        expect(runStartCommand).toHaveBeenCalledTimes(1);
+      });
+
+      handlers.get('SIGTERM')?.();
+
+      await commandPromise;
+    } finally {
+      processOn.mockRestore();
+      processOff.mockRestore();
+    }
+  };
 }

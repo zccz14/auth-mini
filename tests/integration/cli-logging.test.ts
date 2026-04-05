@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { createTempDbPath } from '../helpers/db.js';
-import { runLoggedCli } from '../helpers/cli.js';
+import {
+  runLoggedCreateCommand,
+  runLoggedRotateJwksCommand,
+} from '../helpers/cli.js';
 
 describe('cli lifecycle logging', () => {
   it('emits create command and migration lifecycle logs', async () => {
     const dbPath = await createTempDbPath();
 
-    const result = await runLoggedCli(['create', dbPath]);
-
-    expect(result.exitCode).toBe(0);
-    expect(result.stderr).toBe('');
+    const result = await runLoggedCreateCommand({ dbPath });
 
     expect(result.logs).toContainEqual(
       expect.objectContaining({
@@ -50,12 +50,9 @@ describe('cli lifecycle logging', () => {
   it('emits rotate-jwks command and migration lifecycle logs', async () => {
     const dbPath = await createTempDbPath();
 
-    expect((await runLoggedCli(['create', dbPath])).exitCode).toBe(0);
+    await runLoggedCreateCommand({ dbPath });
 
-    const result = await runLoggedCli(['rotate-jwks', dbPath]);
-
-    expect(result.exitCode).toBe(0);
-    expect(result.stderr).toBe('');
+    const result = await runLoggedRotateJwksCommand({ dbPath });
 
     expect(result.logs).toContainEqual(
       expect.objectContaining({
