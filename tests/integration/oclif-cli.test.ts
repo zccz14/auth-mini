@@ -16,6 +16,9 @@ describe('oclif cli contract', () => {
     const createResult = await runBuiltCli(['init', dbPath]);
 
     expect(createResult.exitCode).toBe(0);
+    expect(createResult.stdout).toContain('cli.init.started');
+    expect(createResult.stdout).toContain('cli.init.completed');
+    expect(createResult.stdout).not.toContain('cli.create.');
     expect(await countRows(dbPath, 'jwks_keys')).toBe(1);
     expect(await countActiveKeys(dbPath)).toBe(1);
 
@@ -42,6 +45,18 @@ describe('oclif cli contract', () => {
     expect(await countActiveKeys(dbPath)).toBe(1);
   });
 
+  it('keeps create as a compatibility alias', async () => {
+    const dbPath = await createTempDbPath();
+
+    const result = await runBuiltCli(['create', dbPath]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('cli.init.started');
+    expect(result.stdout).toContain('cli.init.completed');
+    expect(result.stdout).not.toContain('cli.create.');
+    expect(await countRows(dbPath, 'jwks_keys')).toBe(1);
+  });
+
   it('prints unknown command errors to stderr', async () => {
     const result = await runBuiltCli(['wat']);
 
@@ -51,7 +66,7 @@ describe('oclif cli contract', () => {
   });
 
   it('fails with usage when required args are missing', async () => {
-    const result = await runBuiltCli(['create']);
+    const result = await runBuiltCli(['init']);
 
     expect(result.stdout).toBe('');
     expect(result.stderr).toContain('USAGE');
@@ -133,6 +148,10 @@ describe('oclif cli contract', () => {
 
     expect(readme).toContain('auth-mini rotate jwks ./auth-mini.sqlite');
     expect(readme).toContain('npx auth-mini init ./auth-mini.sqlite');
+    expect(readme).toContain('npx auth-mini start ./auth-mini.sqlite \\');
+    expect(readme).toContain('--issuer https://auth.example.com');
+    expect(readme).not.toContain('--origin https://app.example.com');
+    expect(readme).not.toContain('--rp-id example.com');
     expect(readme).toContain(
       'Auth-mini instance (currently a SQLite database path)',
     );
@@ -146,7 +165,7 @@ describe('oclif cli contract', () => {
 
   it('prints concise command errors by default', async () => {
     const result = await runBuiltCli([
-      'create',
+      'init',
       '/tmp/db.sqlite',
       '--smtp-config',
       './missing.json',
@@ -160,7 +179,7 @@ describe('oclif cli contract', () => {
 
   it('prints detailed diagnostics with --verbose', async () => {
     const result = await runBuiltCli([
-      'create',
+      'init',
       '/tmp/db.sqlite',
       '--smtp-config',
       './missing.json',

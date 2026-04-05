@@ -6,15 +6,15 @@ import {
 } from '../helpers/cli.js';
 
 describe('cli lifecycle logging', () => {
-  it('emits create command and migration lifecycle logs', async () => {
+  it('emits init command and migration lifecycle logs', async () => {
     const dbPath = await createTempDbPath();
 
     const result = await runLoggedCreateCommand({ dbPath });
 
     expect(result.logs).toContainEqual(
       expect.objectContaining({
-        event: 'cli.create.started',
-        command: 'create',
+        event: 'cli.init.started',
+        command: 'init',
         db_path: dbPath,
       }),
     );
@@ -33,15 +33,15 @@ describe('cli lifecycle logging', () => {
     expect(result.logs).toContainEqual(
       expect.objectContaining({
         event: 'jwks.bootstrap.created',
-        command: 'create',
+        command: 'init',
         db_path: dbPath,
         kid: expect.any(String),
       }),
     );
     expect(result.logs).toContainEqual(
       expect.objectContaining({
-        event: 'cli.create.completed',
-        command: 'create',
+        event: 'cli.init.completed',
+        command: 'init',
         db_path: dbPath,
       }),
     );

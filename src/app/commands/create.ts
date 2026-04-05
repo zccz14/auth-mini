@@ -9,13 +9,13 @@ type CreateCommandInput = {
 };
 
 export async function runCreateCommand(input: unknown): Promise<void> {
-  const command = parseCreateCommandInput(input);
+  const command = parseCreateCommandInput(toCommandInput(input));
   const logger = createRootLogger({ sink: toLoggerSink(input) }).child({
-    command: 'create',
+    command: 'init',
     db_path: command.dbPath,
   });
 
-  logger.info({ event: 'cli.create.started' }, 'Create command started');
+  logger.info({ event: 'cli.init.started' }, 'Init command started');
 
   await bootstrapDatabase(command.dbPath, { logger });
 
@@ -24,10 +24,20 @@ export async function runCreateCommand(input: unknown): Promise<void> {
   try {
     await bootstrapKeys(db, { logger });
 
-    logger.info({ event: 'cli.create.completed' }, 'Create command completed');
+    logger.info({ event: 'cli.init.completed' }, 'Init command completed');
   } finally {
     db.close();
   }
+}
+
+function toCommandInput(input: unknown): { dbPath?: unknown } {
+  if (!input || typeof input !== 'object') {
+    return {};
+  }
+
+  return {
+    dbPath: (input as { dbPath?: unknown }).dbPath,
+  };
 }
 
 function toLoggerSink(
