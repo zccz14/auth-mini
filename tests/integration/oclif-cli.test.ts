@@ -174,6 +174,24 @@ describe('oclif cli contract', () => {
       'start is not wired to db-backed allowed origins and rp_id yet',
     );
   }, 15000);
+
+  it('rejects removed start origin and rp-id flags during cli parsing', async () => {
+    const result = await runBuiltCli([
+      'start',
+      '/tmp/auth-mini.sqlite',
+      '--issuer',
+      'https://issuer.example',
+      '--origin',
+      'https://app.example',
+      '--rp-id',
+      'example.com',
+    ]);
+
+    expect(result.exitCode).toBeGreaterThan(0);
+    expect(result.stderr).toContain('Nonexistent flags: --origin, --rp-id');
+    expect(result.stderr).toContain('See more help with --help');
+    expect(result.stderr).toContain('USAGE');
+  });
 });
 
 async function countActiveKeys(dbPath: string): Promise<number> {

@@ -7,6 +7,7 @@ import {
   selectSmtpConfig,
 } from '../../src/infra/smtp/mailer.js';
 import {
+  parseCreateCommandInput,
   parseRuntimeConfig,
   type RuntimeConfig,
 } from '../../src/shared/config.js';
@@ -106,6 +107,33 @@ describe('shared runtime defaults', () => {
       port: 7777,
       issuer: 'https://issuer.example',
     });
+  });
+
+  it('rejects legacy runtime config origin and rpId fields', () => {
+    expect(() =>
+      parseRuntimeConfig({
+        dbPath: '/tmp/auth-mini.sqlite',
+        issuer: 'https://issuer.example',
+        origin: ['https://app.example'],
+      }),
+    ).toThrowError(/unrecognized key/i);
+
+    expect(() =>
+      parseRuntimeConfig({
+        dbPath: '/tmp/auth-mini.sqlite',
+        issuer: 'https://issuer.example',
+        rpId: 'example.com',
+      }),
+    ).toThrowError(/unrecognized key/i);
+  });
+
+  it('rejects legacy create smtpConfig input field', () => {
+    expect(() =>
+      parseCreateCommandInput({
+        dbPath: '/tmp/auth-mini.sqlite',
+        smtpConfig: './smtp.json',
+      }),
+    ).toThrowError(/unrecognized key/i);
   });
 
   it('computes jwt expiry timestamps from ttl seconds', () => {

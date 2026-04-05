@@ -1,31 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { normalizeOriginOption } from '../../src/app/commands/options.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
   vi.resetModules();
 });
 
-describe('cli origin normalization', () => {
-  it('wraps a single origin string in an array', () => {
-    expect(normalizeOriginOption('http://localhost:5173')).toEqual([
-      'http://localhost:5173',
-    ]);
-  });
-
-  it('keeps repeated origin values in order', () => {
-    expect(
-      normalizeOriginOption(['https://one.example', 'https://two.example']),
-    ).toEqual(['https://one.example', 'https://two.example']);
-  });
-
-  it('preserves an omitted origin value', () => {
-    expect(normalizeOriginOption(undefined)).toBeUndefined();
-  });
-});
-
 describe('start cli boundary', () => {
-  it('passes repeated --origin values to runStartCommand in order', async () => {
+  it('passes only supported start flags to runStartCommand', async () => {
     const runStartCommand = vi.fn().mockResolvedValue({
       close: vi.fn().mockResolvedValue(undefined),
     });
@@ -33,37 +14,23 @@ describe('start cli boundary', () => {
 
     await runStartCli([
       'db.sqlite',
-      '--origin',
-      'https://one.example',
-      '--origin',
-      'https://two.example',
+      '--host',
+      '127.0.0.1',
+      '--port',
+      '7777',
+      '--issuer',
+      'https://issuer.example',
     ]);
 
-    expect(runStartCommand).toHaveBeenCalledWith(
-      expect.objectContaining({
-        dbPath: 'db.sqlite',
-        origin: ['https://one.example', 'https://two.example'],
-      }),
-    );
-  });
-
-  it('passes a single --origin as a one-item array', async () => {
-    const runStartCommand = vi.fn().mockResolvedValue({
-      close: vi.fn().mockResolvedValue(undefined),
+    expect(runStartCommand).toHaveBeenCalledWith({
+      dbPath: 'db.sqlite',
+      host: '127.0.0.1',
+      port: '7777',
+      issuer: 'https://issuer.example',
     });
-    const runStartCli = await loadRunStartCli(runStartCommand);
-
-    await runStartCli(['db.sqlite', '--origin', 'https://one.example']);
-
-    expect(runStartCommand).toHaveBeenCalledWith(
-      expect.objectContaining({
-        dbPath: 'db.sqlite',
-        origin: ['https://one.example'],
-      }),
-    );
   });
 
-  it('keeps omitted --origin undefined at the app-command boundary', async () => {
+  it('omits removed start flags at the app-command boundary', async () => {
     const runStartCommand = vi.fn().mockResolvedValue({
       close: vi.fn().mockResolvedValue(undefined),
     });
@@ -71,12 +38,12 @@ describe('start cli boundary', () => {
 
     await runStartCli(['db.sqlite']);
 
-    expect(runStartCommand).toHaveBeenCalledWith(
-      expect.objectContaining({
-        dbPath: 'db.sqlite',
-        origin: undefined,
-      }),
-    );
+    expect(runStartCommand).toHaveBeenCalledWith({
+      dbPath: 'db.sqlite',
+      host: undefined,
+      port: undefined,
+      issuer: undefined,
+    });
   });
 });
 

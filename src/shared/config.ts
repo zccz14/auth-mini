@@ -1,15 +1,19 @@
 import { z } from 'zod';
 
-const runtimeConfigSchema = z.object({
-  dbPath: z.string().min(1),
-  host: z.string().min(1).default('127.0.0.1'),
-  port: z.coerce.number().int().positive().default(7777),
-  issuer: z.url(),
-});
+const runtimeConfigSchema = z
+  .object({
+    dbPath: z.string().min(1),
+    host: z.string().min(1).default('127.0.0.1'),
+    port: z.coerce.number().int().positive().default(7777),
+    issuer: z.url(),
+  })
+  .strict();
 
-const createCommandSchema = z.object({
-  dbPath: z.string().min(1),
-});
+const createCommandSchema = z
+  .object({
+    dbPath: z.string().min(1),
+  })
+  .strict();
 
 const rotateJwksCommandSchema = z.object({
   dbPath: z.string().min(1),

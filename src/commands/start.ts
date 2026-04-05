@@ -1,5 +1,4 @@
 import { Args, Flags } from '@oclif/core';
-import { normalizeOriginOption } from '../app/commands/options.js';
 import { runStartCommand } from '../app/commands/start.js';
 import { BaseCommand } from '../oclif/base-command.js';
 
@@ -82,11 +81,6 @@ export default class StartCommand extends BaseCommand {
     host: Flags.string({ description: 'Listen host' }),
     port: Flags.string({ description: 'Listen port' }),
     issuer: Flags.string({ description: 'JWT issuer URL' }),
-    'rp-id': Flags.string({ description: 'WebAuthn relying party ID' }),
-    origin: Flags.string({
-      description: 'Allowed WebAuthn origin',
-      multiple: true,
-    }),
   };
 
   async run(): Promise<void> {
@@ -96,8 +90,6 @@ export default class StartCommand extends BaseCommand {
       host: flags.host,
       port: flags.port,
       issuer: flags.issuer,
-      rpId: flags['rp-id'],
-      origin: normalizeOriginOption(flags.origin),
     });
     const lifecycle = createStartLifecycle({
       close: () => server.close(),
