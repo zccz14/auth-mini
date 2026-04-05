@@ -101,11 +101,15 @@ sequenceDiagram
 
 Requires Node.js 20.10+ (the published CLI uses modern ESM, JSON import attributes, and top-level `await`).
 
-Create a database and optionally import SMTP config rows from a JSON file:
+Initialize an auth-mini instance (currently a SQLite database path):
 
 ```bash
-npx auth-mini create ./auth-mini.sqlite --smtp-config ./smtp.json
+npx auth-mini init ./auth-mini.sqlite
 ```
+
+`<instance>` currently means `Auth-mini instance (currently a SQLite database path)`.
+
+`create` remains available as a compatibility alias during the transition.
 
 Start the server:
 

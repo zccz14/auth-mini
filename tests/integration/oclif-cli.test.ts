@@ -10,10 +10,10 @@ import {
 } from '../helpers/db.js';
 
 describe('oclif cli contract', () => {
-  it('supports rotate jwks as the primary command', async () => {
+  it('supports init as the primary bootstrap command', async () => {
     const dbPath = await createTempDbPath();
 
-    const createResult = await runBuiltCli(['create', dbPath]);
+    const createResult = await runBuiltCli(['init', dbPath]);
 
     expect(createResult.exitCode).toBe(0);
     expect(await countRows(dbPath, 'jwks_keys')).toBe(1);
@@ -75,6 +75,18 @@ describe('oclif cli contract', () => {
     expect(result.stdout).toContain('USAGE');
   }, 30000);
 
+  it('runs init help from a packed install artifact', async () => {
+    const result = await runPackedCli(['init', '--help']);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('USAGE');
+    expect(result.stdout).toContain('auth-mini init INSTANCE');
+    expect(result.stdout).toContain(
+      'Auth-mini instance (currently a SQLite database path)',
+    );
+  }, 30000);
+
   it('discovers nested rotate jwks command from the packed artifact', async () => {
     const result = await runPackedCli(['rotate', 'jwks', '--help']);
 
@@ -120,6 +132,10 @@ describe('oclif cli contract', () => {
     const readme = await readFile(resolve(process.cwd(), 'README.md'), 'utf8');
 
     expect(readme).toContain('auth-mini rotate jwks ./auth-mini.sqlite');
+    expect(readme).toContain('npx auth-mini init ./auth-mini.sqlite');
+    expect(readme).toContain(
+      'Auth-mini instance (currently a SQLite database path)',
+    );
     expect(readme).toContain(
       'By default, CLI errors stay concise; use `--verbose` for detailed diagnostics.',
     );
