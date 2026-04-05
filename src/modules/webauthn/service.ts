@@ -201,7 +201,7 @@ export async function verifyRegistration(
       credential,
       expectedChallenge: challenge.challenge,
       expectedOrigin: input.origins,
-      expectedRPID: challenge.rpId,
+      expectedRPID: input.rpId,
     });
 
     if (!verification.verified || !verification.registrationInfo) {
@@ -343,7 +343,7 @@ export async function verifyAuthentication(
       credential: input.credential,
       expectedChallenge: challenge.challenge,
       expectedOrigin: input.origins,
-      expectedRPID: challenge.rpId,
+      expectedRPID: input.rpId,
       storedCredential,
     });
 

@@ -278,6 +278,50 @@ describe('webauthn routes', () => {
     });
   });
 
+  it('register/verify does not yet trust the stored challenge rp id', async () => {
+    const baseApp = await createTestApp({
+      origins: ['https://app.example.com'],
+    });
+    openApps.push(baseApp);
+    const testApp = await signInOnExistingApp(
+      baseApp,
+      'task9-boundary@example.com',
+    );
+    const passkey = createTestPasskey('task9-boundary@example.com');
+
+    const optionsResponse = await testApp.app.request(
+      '/webauthn/register/options',
+      {
+        method: 'POST',
+        headers: {
+          ...authHeaders(testApp.tokens.access_token),
+          Origin: 'https://app.example.com',
+        },
+        body: json({ rp_id: 'example.com' }),
+      },
+    );
+    const optionsBody = await optionsResponse.json();
+    const credential = passkey.createRegistrationCredential(
+      optionsBody.publicKey,
+      'https://app.example.com',
+    );
+
+    const verifyResponse = await testApp.app.request(
+      '/webauthn/register/verify',
+      {
+        method: 'POST',
+        headers: authHeaders(testApp.tokens.access_token),
+        body: json({ request_id: optionsBody.request_id, credential }),
+      },
+    );
+
+    expect(optionsResponse.status).toBe(200);
+    expect(verifyResponse.status).toBe(400);
+    expect(await verifyResponse.json()).toEqual({
+      error: 'invalid_webauthn_registration',
+    });
+  });
+
   it('authenticate/options rejects an explicit rp id outside the request origin domain chain', async () => {
     const testApp = await createTestApp({
       origins: ['https://app.example.com'],
