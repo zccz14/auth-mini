@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
 import { cac } from 'cac';
-import { runCreateCommand } from './cli/create.js';
-import { normalizeOriginOption } from './cli/options.js';
-import { runStartCommand } from './cli/start.js';
-import { runRotateJwksCommand } from './cli/rotate-jwks.js';
+import { runCreateCommand } from './app/commands/create.js';
+import { normalizeOriginOption } from './app/commands/options.js';
+import { runStartCommand } from './app/commands/start.js';
+import { runRotateJwksCommand } from './app/commands/rotate-jwks.js';
 
 const cli = cac('auth-mini');
 

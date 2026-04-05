@@ -4,11 +4,11 @@ import type {
   IncomingMessage,
   ServerResponse,
 } from 'node:http';
-import { parseRuntimeConfig } from '../shared/config.js';
-import { createDatabaseClient } from '../infra/db/client.js';
-import { bootstrapKeys } from '../modules/jwks/service.js';
-import { createApp } from '../server/app.js';
-import { createRootLogger, withErrorFields } from '../shared/logger.js';
+import { createDatabaseClient } from '../../infra/db/client.js';
+import { bootstrapKeys } from '../../modules/jwks/service.js';
+import { createApp } from '../../server/app.js';
+import { parseRuntimeConfig } from '../../shared/config.js';
+import { createRootLogger, withErrorFields } from '../../shared/logger.js';
 
 type StartCommandInput = {
   loggerSink?: { write(line: string): void };

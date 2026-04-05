@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
-import { runCreateCommand } from '../../src/cli/create.js';
-import { runRotateJwksCommand } from '../../src/cli/rotate-jwks.js';
+import { runCreateCommand } from '../../src/app/commands/create.js';
+import { runRotateJwksCommand } from '../../src/app/commands/rotate-jwks.js';
 import { createMemoryLogCollector, type LogEntry } from './logging.js';
 
 let buildPromise: Promise<void> | null = null;

@@ -1,6 +1,6 @@
 import { createPrivateKey, sign } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { runRotateJwksCommand } from '../../src/cli/rotate-jwks.js';
+import { runRotateJwksCommand } from '../../src/app/commands/rotate-jwks.js';
 import { bootstrapDatabase } from '../../src/infra/db/bootstrap.js';
 import { createDatabaseClient } from '../../src/infra/db/client.js';
 import {
@@ -12,7 +12,7 @@ import {
 } from '../../src/modules/jwks/service.js';
 import { encodeBase64Url, type PrivateJwk } from '../../src/shared/crypto.js';
 import { createTestApp } from '../helpers/app.js';
-import { createTempDbPath } from '../helpers/db.js';
+import { countRows, createTempDbPath } from '../helpers/db.js';
 import { createMemoryLogCollector } from '../helpers/logging.js';
 
 describe('jwks service', () => {
@@ -117,12 +117,20 @@ describe('jwks service', () => {
     const logCollector = createMemoryLogCollector();
 
     await bootstrapDatabase(dbPath);
+    const db = createDatabaseClient(dbPath);
+
+    try {
+      await bootstrapKeys(db);
+    } finally {
+      db.close();
+    }
 
     await runRotateJwksCommand({
       dbPath,
       loggerSink: logCollector.sink,
     });
 
+    expect(await countRows(dbPath, 'jwks_keys')).toBe(2);
     expect(logCollector.entries).toContainEqual(
       expect.objectContaining({
         event: 'jwks.rotated',

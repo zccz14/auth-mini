@@ -1,9 +1,9 @@
-import { bootstrapDatabase } from '../infra/db/bootstrap.js';
-import { createDatabaseClient } from '../infra/db/client.js';
-import { importSmtpConfigs } from '../infra/smtp/config-import.js';
-import { bootstrapKeys } from '../modules/jwks/service.js';
-import { parseCreateCommandInput } from '../shared/config.js';
-import { createRootLogger } from '../shared/logger.js';
+import { bootstrapDatabase } from '../../infra/db/bootstrap.js';
+import { createDatabaseClient } from '../../infra/db/client.js';
+import { importSmtpConfigs } from '../../infra/smtp/config-import.js';
+import { bootstrapKeys } from '../../modules/jwks/service.js';
+import { parseCreateCommandInput } from '../../shared/config.js';
+import { createRootLogger } from '../../shared/logger.js';
 
 type CreateCommandInput = {
   loggerSink?: { write(line: string): void };

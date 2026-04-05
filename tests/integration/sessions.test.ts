@@ -8,7 +8,7 @@ import type { OtpMailSeam } from '../helpers/mock-smtp.js';
 import { bootstrapDatabase } from '../../src/infra/db/bootstrap.js';
 import { createDatabaseClient } from '../../src/infra/db/client.js';
 import { importSmtpConfigs } from '../../src/infra/smtp/config-import.js';
-import { runStartCommand } from '../../src/cli/start.js';
+import { runStartCommand } from '../../src/app/commands/start.js';
 import { hashValue } from '../../src/shared/crypto.js';
 import {
   createSession,

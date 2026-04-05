@@ -46,7 +46,7 @@ vi.mock('../../src/shared/logger.js', () => ({
 
 async function loadRunStartCommand() {
   vi.resetModules();
-  const module = await import('../../src/cli/start.js');
+  const module = await import('../../src/app/commands/start.js');
 
   return module.runStartCommand;
 }
@@ -78,6 +78,8 @@ describe('runStartCommand', () => {
     bootstrapKeys.mockRejectedValue(new Error('bootstrap failed'));
 
     const runStartCommand = await loadRunStartCommand();
+
+    expect(runStartCommand).toBeTypeOf('function');
 
     await expect(
       runStartCommand({ dbPath: '/tmp/auth-mini.db' }),
@@ -118,6 +120,7 @@ describe('runStartCommand', () => {
     });
 
     const runStartCommand = await loadRunStartCommand();
+    expect(runStartCommand).toBeTypeOf('function');
     const server = await runStartCommand({ dbPath: '/tmp/auth-mini.db' });
 
     const response = createResponseRecorder();

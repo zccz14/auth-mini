@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { bootstrapDatabase } from '../../src/infra/db/bootstrap.js';
 import { createDatabaseClient } from '../../src/infra/db/client.js';
-import { runStartCommand } from '../../src/cli/start.js';
+import { runStartCommand } from '../../src/app/commands/start.js';
 import { createApp } from '../../src/server/app.js';
 import { createTestApp } from '../helpers/app.js';
 import { createTempDbPath } from '../helpers/db.js';
