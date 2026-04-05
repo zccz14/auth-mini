@@ -20,8 +20,6 @@ export type RuntimeConfig = {
   host: string;
   port: number;
   issuer: string;
-  rpId?: string;
-  origins?: string[];
 };
 
 export type CreateCommandInput = z.infer<typeof createCommandSchema>;

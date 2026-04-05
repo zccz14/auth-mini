@@ -1,12 +1,15 @@
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   buildSecureSmtpOptions,
   selectSmtpConfig,
 } from '../../src/infra/smtp/mailer.js';
-import { parseRuntimeConfig } from '../../src/shared/config.js';
+import {
+  parseRuntimeConfig,
+  type RuntimeConfig,
+} from '../../src/shared/config.js';
 import { TTLS, getExpiresAtUnixSeconds } from '../../src/shared/time.js';
 import { createTempDbPath } from '../helpers/db.js';
 import { exists } from '../helpers/fs.js';
@@ -31,6 +34,12 @@ describe('test helpers', () => {
 });
 
 describe('shared runtime defaults', () => {
+  it('does not expose legacy origin or rpId runtime config fields in the type', () => {
+    expectTypeOf<
+      Extract<keyof RuntimeConfig, 'origins' | 'rpId'>
+    >().toEqualTypeOf<never>();
+  });
+
   it('selects only active smtp configs and defaults weight to 1', () => {
     const config = selectSmtpConfig(
       [
