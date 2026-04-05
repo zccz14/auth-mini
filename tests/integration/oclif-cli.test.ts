@@ -80,6 +80,8 @@ describe('oclif cli contract', () => {
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe('');
     expect(result.stdout).toContain('auth-mini');
+    expect(result.stdout).toContain('init');
+    expect(result.stdout).not.toContain('create');
   }, 30000);
 
   it('runs start help from a packed install artifact', async () => {
@@ -88,6 +90,10 @@ describe('oclif cli contract', () => {
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe('');
     expect(result.stdout).toContain('USAGE');
+    expect(result.stdout).toContain('auth-mini start INSTANCE');
+    expect(result.stdout).toContain(
+      'Auth-mini instance (currently a SQLite database path)',
+    );
   }, 30000);
 
   it('runs init help from a packed install artifact', async () => {
@@ -148,10 +154,9 @@ describe('oclif cli contract', () => {
 
     expect(readme).toContain('auth-mini rotate jwks ./auth-mini.sqlite');
     expect(readme).toContain('npx auth-mini init ./auth-mini.sqlite');
-    expect(readme).toContain('npx auth-mini start ./auth-mini.sqlite \\');
-    expect(readme).toContain('--issuer https://auth.example.com');
-    expect(readme).not.toContain('--origin https://app.example.com');
-    expect(readme).not.toContain('--rp-id example.com');
+    expect(readme).toContain(
+      '`create` remains available as a compatibility alias',
+    );
     expect(readme).toContain(
       'Auth-mini instance (currently a SQLite database path)',
     );

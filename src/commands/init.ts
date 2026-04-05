@@ -5,6 +5,8 @@ import { BaseCommand, withCliErrorMetadata } from '../oclif/base-command.js';
 export default class InitCommand extends BaseCommand {
   static summary = 'Initialize a new auth-mini instance';
 
+  static aliases = ['create'];
+
   static args = {
     instance: Args.string({
       required: true,

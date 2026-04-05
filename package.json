@@ -21,6 +21,9 @@
   "oclif": {
     "bin": "auth-mini",
     "commands": "./dist/commands",
+    "helpOptions": {
+      "hideAliasesFromRoot": true
+    },
     "topicSeparator": " "
   },
   "publishConfig": {

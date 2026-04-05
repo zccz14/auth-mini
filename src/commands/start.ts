@@ -71,9 +71,9 @@ export default class StartCommand extends BaseCommand {
   static summary = 'Start the auth-mini server';
 
   static args = {
-    dbPath: Args.string({
+    instance: Args.string({
       required: true,
-      description: 'SQLite database path',
+      description: 'Auth-mini instance (currently a SQLite database path)',
     }),
   };
 
@@ -86,7 +86,7 @@ export default class StartCommand extends BaseCommand {
   async run(): Promise<void> {
     const { args, flags } = await this.parse(StartCommand);
     const server = await runStartCommand({
-      dbPath: args.dbPath,
+      dbPath: args.instance,
       host: flags.host,
       port: flags.port,
       issuer: flags.issuer,
