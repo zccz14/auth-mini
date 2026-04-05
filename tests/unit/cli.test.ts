@@ -27,11 +27,18 @@ describe('cli origin normalization', () => {
 describe('start cli boundary', () => {
   it('passes repeated --origin values to runStartCommand in order', async () => {
     const runStartCommand = vi.fn().mockResolvedValue(undefined);
-    const startAction = await loadStartAction(runStartCommand);
+    const runCli = await loadRunCli(runStartCommand);
 
-    await startAction('db.sqlite', {
-      origin: ['https://one.example', 'https://two.example'],
-    });
+    await runCli([
+      'node',
+      'auth-mini',
+      'start',
+      'db.sqlite',
+      '--origin',
+      'https://one.example',
+      '--origin',
+      'https://two.example',
+    ]);
 
     expect(runStartCommand).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -43,11 +50,16 @@ describe('start cli boundary', () => {
 
   it('passes a single --origin as a one-item array', async () => {
     const runStartCommand = vi.fn().mockResolvedValue(undefined);
-    const startAction = await loadStartAction(runStartCommand);
+    const runCli = await loadRunCli(runStartCommand);
 
-    await startAction('db.sqlite', {
-      origin: 'https://one.example',
-    });
+    await runCli([
+      'node',
+      'auth-mini',
+      'start',
+      'db.sqlite',
+      '--origin',
+      'https://one.example',
+    ]);
 
     expect(runStartCommand).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -56,16 +68,24 @@ describe('start cli boundary', () => {
       }),
     );
   });
+
+  it('keeps omitted --origin undefined at the app-command boundary', async () => {
+    const runStartCommand = vi.fn().mockResolvedValue(undefined);
+    const runCli = await loadRunCli(runStartCommand);
+
+    await runCli(['node', 'auth-mini', 'start', 'db.sqlite']);
+
+    expect(runStartCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dbPath: 'db.sqlite',
+        origin: undefined,
+      }),
+    );
+  });
 });
 
-async function loadStartAction(runStartCommand: ReturnType<typeof vi.fn>) {
+async function loadRunCli(runStartCommand: ReturnType<typeof vi.fn>) {
   vi.resetModules();
-  let startAction:
-    | ((
-        dbPath: string,
-        options: { origin?: string | string[] },
-      ) => Promise<void>)
-    | undefined;
 
   vi.doMock('../../src/app/commands/create.js', () => ({
     runCreateCommand: vi.fn().mockResolvedValue(undefined),
@@ -86,35 +106,8 @@ async function loadStartAction(runStartCommand: ReturnType<typeof vi.fn>) {
   vi.doMock('../../src/cli/options.js', () => {
     throw new Error('legacy cli options import should not be used');
   });
-  vi.doMock('cac', () => ({
-    cac: () => {
-      const buildCommand = (name: string) => ({
-        option: vi.fn().mockImplementation(() => buildCommand(name)),
-        action: vi.fn().mockImplementation((callback) => {
-          if (name === 'start <dbPath>') {
-            startAction = callback;
-          }
 
-          return buildCommand(name);
-        }),
-      });
+  const module = await import('../../src/index.ts');
 
-      return {
-        command: vi
-          .fn()
-          .mockImplementation((name: string) => buildCommand(name)),
-        version: vi.fn(),
-        help: vi.fn(),
-        parse: vi.fn(),
-      };
-    },
-  }));
-
-  await import('../../src/index.ts');
-
-  if (!startAction) {
-    throw new Error('start command action was not registered');
-  }
-
-  return startAction;
+  return module.runCli;
 }
