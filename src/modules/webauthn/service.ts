@@ -5,6 +5,7 @@ import {
   verifyRegistrationResponse as verifySimpleWebAuthnRegistrationResponse,
 } from '@simplewebauthn/server';
 import type { DatabaseClient } from '../../infra/db/client.js';
+import { normalizeAllowedOrigin } from '../../infra/origins/repo.js';
 import { decodeBase64Url, encodeBase64Url } from '../../shared/crypto.js';
 import type { AppLogger } from '../../shared/logger.js';
 import { TTLS } from '../../shared/time.js';
@@ -70,7 +71,13 @@ export class WebauthnCredentialNotFoundError extends Error {
 
 export async function generateRegistrationOptions(
   db: DatabaseClient,
-  input: { userId: string; email: string; rpId: string; logger?: AppLogger },
+  input: {
+    userId: string;
+    email: string;
+    rpId?: string;
+    origin?: string;
+    logger?: AppLogger;
+  },
 ): Promise<{
   request_id: string;
   publicKey: {
@@ -85,9 +92,10 @@ export async function generateRegistrationOptions(
     };
   };
 }> {
+  const resolvedOptions = resolveWebauthnOptionsInput(input);
   const options = await generateSimpleWebAuthnRegistrationOptions({
     rpName: 'auth-mini',
-    rpID: input.rpId,
+    rpID: resolvedOptions.rpId,
     userName: input.email,
     userID: Buffer.from(input.userId, 'utf8'),
     userDisplayName: input.email,
@@ -112,6 +120,8 @@ export async function generateRegistrationOptions(
     challenge: options.challenge,
     userId: input.userId,
     expiresAt,
+    rpId: resolvedOptions.rpId,
+    origin: resolvedOptions.origin,
   });
 
   const response: {
@@ -133,7 +143,7 @@ export async function generateRegistrationOptions(
       challenge: options.challenge,
       rp: {
         name: 'auth-mini',
-        id: input.rpId,
+        id: resolvedOptions.rpId,
       },
       user: {
         id: options.user.id,
@@ -191,7 +201,7 @@ export async function verifyRegistration(
       credential,
       expectedChallenge: challenge.challenge,
       expectedOrigin: input.origins,
-      expectedRPID: input.rpId,
+      expectedRPID: challenge.rpId,
     });
 
     if (!verification.verified || !verification.registrationInfo) {
@@ -213,6 +223,7 @@ export async function verifyRegistration(
       publicKey: encodeBase64Url(Buffer.from(registrationCredential.publicKey)),
       counter: registrationCredential.counter,
       transports: registrationCredential.transports ?? [],
+      rpId: challenge.rpId,
     });
     input.logger?.info(
       {
@@ -248,7 +259,7 @@ export async function verifyRegistration(
 
 export async function generateAuthenticationOptions(
   db: DatabaseClient,
-  input: { rpId: string; logger?: AppLogger },
+  input: { rpId?: string; origin?: string; logger?: AppLogger },
 ): Promise<{
   request_id: string;
   publicKey: {
@@ -258,8 +269,9 @@ export async function generateAuthenticationOptions(
     userVerification: 'preferred';
   };
 }> {
+  const resolvedOptions = resolveWebauthnOptionsInput(input);
   const options = await generateSimpleWebAuthnAuthenticationOptions({
-    rpID: input.rpId,
+    rpID: resolvedOptions.rpId,
     timeout: 300000,
     userVerification: 'preferred',
   });
@@ -272,6 +284,8 @@ export async function generateAuthenticationOptions(
     challenge: options.challenge,
     userId: null,
     expiresAt,
+    rpId: resolvedOptions.rpId,
+    origin: resolvedOptions.origin,
   });
 
   const response: {
@@ -286,7 +300,7 @@ export async function generateAuthenticationOptions(
     request_id: record.requestId,
     publicKey: {
       challenge: options.challenge,
-      rpId: input.rpId,
+      rpId: resolvedOptions.rpId,
       timeout: 300000,
       userVerification: 'preferred',
     },
@@ -329,7 +343,7 @@ export async function verifyAuthentication(
       credential: input.credential,
       expectedChallenge: challenge.challenge,
       expectedOrigin: input.origins,
-      expectedRPID: input.rpId,
+      expectedRPID: challenge.rpId,
       storedCredential,
     });
 
@@ -470,6 +484,20 @@ function isSimpleWebAuthnValidationError(error: unknown): error is Error {
       error.message.startsWith(prefix),
     )
   );
+}
+
+function resolveWebauthnOptionsInput(input: {
+  rpId?: string;
+  origin?: string;
+}) {
+  const origin = normalizeAllowedOrigin(
+    input.origin ?? `https://${input.rpId ?? 'example.com'}`,
+  );
+
+  return {
+    origin,
+    rpId: input.rpId ?? new URL(origin).hostname,
+  };
 }
 
 const SIMPLE_WEBAUTHN_VALIDATION_ERROR_PREFIXES = [

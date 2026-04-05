@@ -7,6 +7,8 @@ type ChallengeRow = {
   challenge: string;
   user_id: string | null;
   expires_at: string;
+  rp_id: string;
+  origin: string;
   consumed_at: string | null;
   created_at: string;
 };
@@ -18,6 +20,7 @@ type CredentialRow = {
   public_key: string;
   counter: number;
   transports: string;
+  rp_id: string;
   created_at: string;
 };
 
@@ -27,6 +30,8 @@ export type WebauthnChallenge = {
   challenge: string;
   userId: string | null;
   expiresAt: string;
+  rpId: string;
+  origin: string;
   consumedAt: string | null;
   createdAt: string;
 };
@@ -38,6 +43,7 @@ export type StoredWebauthnCredential = {
   publicKey: string;
   counter: number;
   transports: string[];
+  rpId: string;
   createdAt: string;
 };
 
@@ -48,6 +54,8 @@ export function createChallenge(
     challenge: string;
     userId: string | null;
     expiresAt: string;
+    rpId: string;
+    origin: string;
   },
 ): WebauthnChallenge {
   const requestId = randomUUID();
@@ -55,10 +63,18 @@ export function createChallenge(
   db.prepare(
     [
       'INSERT INTO webauthn_challenges',
-      '(request_id, type, challenge, user_id, expires_at)',
-      'VALUES (?, ?, ?, ?, ?)',
+      '(request_id, type, challenge, user_id, expires_at, rp_id, origin)',
+      'VALUES (?, ?, ?, ?, ?, ?, ?)',
     ].join(' '),
-  ).run(requestId, input.type, input.challenge, input.userId, input.expiresAt);
+  ).run(
+    requestId,
+    input.type,
+    input.challenge,
+    input.userId,
+    input.expiresAt,
+    input.rpId,
+    input.origin,
+  );
 
   return getChallengeByRequestId(db, requestId) as WebauthnChallenge;
 }
@@ -88,7 +104,7 @@ export function getChallengeByRequestId(
   const row = db
     .prepare(
       [
-        'SELECT request_id, type, challenge, user_id, expires_at, consumed_at, created_at',
+        'SELECT request_id, type, challenge, user_id, expires_at, rp_id, origin, consumed_at, created_at',
         'FROM webauthn_challenges',
         'WHERE request_id = ?',
         'LIMIT 1',
@@ -121,6 +137,7 @@ export function createCredential(
     publicKey: string;
     counter: number;
     transports: string[];
+    rpId: string;
   },
 ): StoredWebauthnCredential {
   const id = randomUUID();
@@ -128,8 +145,8 @@ export function createCredential(
   db.prepare(
     [
       'INSERT INTO webauthn_credentials',
-      '(id, user_id, credential_id, public_key, counter, transports)',
-      'VALUES (?, ?, ?, ?, ?, ?)',
+      '(id, user_id, credential_id, public_key, counter, transports, rp_id)',
+      'VALUES (?, ?, ?, ?, ?, ?, ?)',
     ].join(' '),
   ).run(
     id,
@@ -138,6 +155,7 @@ export function createCredential(
     input.publicKey,
     input.counter,
     input.transports.join(','),
+    input.rpId,
   );
 
   return getCredentialById(db, id) as StoredWebauthnCredential;
@@ -150,7 +168,7 @@ export function getCredentialByCredentialId(
   const row = db
     .prepare(
       [
-        'SELECT id, user_id, credential_id, public_key, counter, transports, created_at',
+        'SELECT id, user_id, credential_id, public_key, counter, transports, rp_id, created_at',
         'FROM webauthn_credentials',
         'WHERE credential_id = ?',
         'LIMIT 1',
@@ -168,7 +186,7 @@ export function getCredentialById(
   const row = db
     .prepare(
       [
-        'SELECT id, user_id, credential_id, public_key, counter, transports, created_at',
+        'SELECT id, user_id, credential_id, public_key, counter, transports, rp_id, created_at',
         'FROM webauthn_credentials',
         'WHERE id = ?',
         'LIMIT 1',
@@ -258,6 +276,8 @@ function mapChallenge(row: ChallengeRow): WebauthnChallenge {
     challenge: row.challenge,
     userId: row.user_id,
     expiresAt: row.expires_at,
+    rpId: row.rp_id,
+    origin: row.origin,
     consumedAt: row.consumed_at,
     createdAt: row.created_at,
   };
@@ -271,6 +291,7 @@ function mapCredential(row: CredentialRow): StoredWebauthnCredential {
     publicKey: row.public_key,
     counter: row.counter,
     transports: row.transports ? row.transports.split(',').filter(Boolean) : [],
+    rpId: row.rp_id,
     createdAt: row.created_at,
   };
 }

@@ -94,7 +94,7 @@ describe('webauthn routes', () => {
 
     const storedCredential = testApp.db
       .prepare(
-        'SELECT user_id, credential_id, public_key, transports, counter FROM webauthn_credentials WHERE user_id = ?',
+        'SELECT user_id, credential_id, public_key, transports, counter, rp_id FROM webauthn_credentials WHERE user_id = ?',
       )
       .get(testApp.userId) as
       | {
@@ -103,15 +103,21 @@ describe('webauthn routes', () => {
           public_key: string;
           transports: string;
           counter: number;
+          rp_id: string;
         }
       | undefined;
+    const storedChallenge = testApp.db
+      .prepare(
+        'SELECT rp_id, origin FROM webauthn_challenges WHERE request_id = ?',
+      )
+      .get(optionsBody.request_id) as { rp_id: string; origin: string };
 
     expect(optionsResponse.status).toBe(200);
     expect(optionsBody).toMatchObject({
       request_id: expect.any(String),
       publicKey: {
         challenge: expect.any(String),
-        rp: { id: 'example.com', name: 'auth-mini' },
+        rp: { id: 'app.example.com', name: 'auth-mini' },
         user: {
           id: encodeBase64Url(testApp.userId),
           name: 'register@example.com',
@@ -136,6 +142,11 @@ describe('webauthn routes', () => {
       public_key: expect.any(String),
       transports: 'internal',
       counter: 0,
+      rp_id: 'app.example.com',
+    });
+    expect(storedChallenge).toEqual({
+      rp_id: 'app.example.com',
+      origin: 'https://app.example.com',
     });
     expect(storedCredential?.public_key).not.toMatch(/^\s*\{/);
     expect(storedCredential?.public_key.length).toBeGreaterThan(0);
@@ -297,14 +308,14 @@ describe('webauthn routes', () => {
     });
     expect(body.publicKey).toEqual({
       challenge: expect.any(String),
-      rpId: 'example.com',
+      rpId: 'app.example.com',
       timeout: 300000,
       userVerification: 'preferred',
     });
     expect(body).toMatchObject({
       publicKey: {
         challenge: expect.any(String),
-        rpId: 'example.com',
+        rpId: 'app.example.com',
         timeout: 300000,
         userVerification: 'preferred',
       },
@@ -313,6 +324,33 @@ describe('webauthn routes', () => {
     expectLogEntry(testApp.logs, {
       event: 'webauthn.authenticate.options.created',
       request_id: body.request_id,
+    });
+  });
+
+  it('authenticate/options persists the normalized default rp id and origin', async () => {
+    const testApp = await createTestApp({
+      origins: ['https://APP.example.com:443'],
+    });
+    openApps.push(testApp);
+
+    const response = await testApp.app.request(
+      '/webauthn/authenticate/options',
+      {
+        method: 'POST',
+      },
+    );
+    const body = await response.json();
+    const storedChallenge = testApp.db
+      .prepare(
+        'SELECT rp_id, origin FROM webauthn_challenges WHERE request_id = ?',
+      )
+      .get(body.request_id) as { rp_id: string; origin: string };
+
+    expect(response.status).toBe(200);
+    expect(body.publicKey.rpId).toBe('app.example.com');
+    expect(storedChallenge).toEqual({
+      rp_id: 'app.example.com',
+      origin: 'https://app.example.com',
     });
   });
 
