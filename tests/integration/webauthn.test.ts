@@ -179,7 +179,11 @@ describe('webauthn routes', () => {
     );
     const response = await testApp.app.request('/webauthn/register/verify', {
       method: 'POST',
-      headers: authHeaders(testApp.tokens.access_token),
+      headers: {
+        authorization: `Bearer ${testApp.tokens.access_token}`,
+        'content-type': 'application/json',
+        Origin: origin,
+      },
       body: json({ request_id: options.request_id, credential }),
     });
 
@@ -418,6 +422,33 @@ describe('webauthn routes', () => {
     });
   });
 
+  it('register/verify rejects requests without an Origin header', async () => {
+    const testApp = await createSignedInApp(
+      'register-missing-origin@example.com',
+    );
+    openApps.push(testApp);
+    const passkey = createTestPasskey('register-missing-origin@example.com');
+
+    const options = await getRegisterOptions(testApp);
+    const credential = passkey.createRegistrationCredential(
+      options.publicKey,
+      origin,
+    );
+    const response = await testApp.app.request('/webauthn/register/verify', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${testApp.tokens.access_token}`,
+        'content-type': 'application/json',
+      },
+      body: json({ request_id: options.request_id, credential }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: 'invalid_webauthn_registration',
+    });
+  });
+
   it('authenticate/options rejects an explicit rp id outside the request origin domain chain', async () => {
     const testApp = await createTestApp({
       origins: ['https://app.example.com'],
@@ -614,7 +645,7 @@ describe('webauthn routes', () => {
       '/webauthn/authenticate/verify',
       {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', Origin: origin },
         body: json({ request_id: optionsBody.request_id, credential }),
       },
     );
@@ -670,7 +701,14 @@ describe('webauthn routes', () => {
       options.publicKey,
       origin,
     );
-    const response = await verifyAuth(testApp, options.request_id, credential);
+    const response = await testApp.app.request(
+      '/webauthn/authenticate/verify',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', Origin: origin },
+        body: json({ request_id: options.request_id, credential }),
+      },
+    );
     const storedCredential = testApp.db
       .prepare(
         'SELECT credential_id, public_key, counter FROM webauthn_credentials WHERE user_id = ?',
@@ -757,7 +795,42 @@ describe('webauthn routes', () => {
       options.publicKey,
       origin,
     );
-    const response = await verifyAuth(testApp, options.request_id, credential);
+    const response = await testApp.app.request(
+      '/webauthn/authenticate/verify',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: json({ request_id: options.request_id, credential }),
+      },
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: 'invalid_webauthn_authentication',
+    });
+  });
+
+  it('authenticate/verify rejects requests without an Origin header', async () => {
+    const testApp = await createSignedInApp('auth-missing-origin@example.com');
+    openApps.push(testApp);
+    const passkey = await registerPasskey(
+      testApp,
+      'auth-missing-origin@example.com',
+    );
+
+    const options = await getAuthOptions(testApp);
+    const credential = passkey.createAuthenticationCredential(
+      options.publicKey,
+      origin,
+    );
+    const response = await testApp.app.request(
+      '/webauthn/authenticate/verify',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: json({ request_id: options.request_id, credential }),
+      },
+    );
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
@@ -1080,6 +1153,7 @@ function authHeaders(accessToken: string): Record<string, string> {
   return {
     authorization: `Bearer ${accessToken}`,
     'content-type': 'application/json',
+    Origin: origin,
   };
 }
 
@@ -1137,7 +1211,7 @@ async function verifyAuth(
 ) {
   return testApp.app.request('/webauthn/authenticate/verify', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', Origin: origin },
     body: json({ request_id: requestId, credential }),
   });
 }

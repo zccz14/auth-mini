@@ -3,6 +3,8 @@ import { bootstrapDatabase } from '../../src/infra/db/bootstrap.js';
 import { createDatabaseClient } from '../../src/infra/db/client.js';
 import { bootstrapKeys } from '../../src/modules/jwks/service.js';
 import {
+  InvalidWebauthnAuthenticationError,
+  InvalidWebauthnRegistrationError,
   generateAuthenticationOptions,
   generateRegistrationOptions,
   verifyAuthentication,
@@ -132,6 +134,95 @@ describe('webauthn service error mapping', () => {
         logger: testContext.logger,
       }),
     ).rejects.toThrow('session mint failed');
+
+    testContext.db.close();
+  });
+
+  it('maps invalid registration clientDataJSON origin payloads to invalid_webauthn_registration', async () => {
+    const testContext = await createWebauthnContext(
+      'register-invalid-clientdata@example.com',
+    );
+    const passkey = createTestPasskey(
+      'register-invalid-clientdata@example.com',
+    );
+    const options = await generateRegistrationOptions(testContext.db, {
+      userId: testContext.userId,
+      email: testContext.email,
+      rpId: testContext.rpId,
+      origin: testContext.origin,
+      logger: testContext.logger,
+    });
+    const credential = passkey.createRegistrationCredential(
+      options.publicKey,
+      testContext.origin,
+    );
+
+    credential.response.clientDataJSON = '%%%';
+
+    await expect(
+      verifyRegistration(testContext.db, {
+        userId: testContext.userId,
+        requestId: options.request_id,
+        credential,
+        origin: testContext.origin,
+        logger: testContext.logger,
+      }),
+    ).rejects.toBeInstanceOf(InvalidWebauthnRegistrationError);
+
+    testContext.db.close();
+  });
+
+  it('maps invalid authentication clientDataJSON origin payloads to invalid_webauthn_authentication', async () => {
+    const testContext = await createWebauthnContext(
+      'auth-invalid-clientdata@example.com',
+    );
+    const passkey = createTestPasskey('auth-invalid-clientdata@example.com');
+    const registrationOptions = await generateRegistrationOptions(
+      testContext.db,
+      {
+        userId: testContext.userId,
+        email: testContext.email,
+        rpId: testContext.rpId,
+        origin: testContext.origin,
+        logger: testContext.logger,
+      },
+    );
+
+    await verifyRegistration(testContext.db, {
+      userId: testContext.userId,
+      requestId: registrationOptions.request_id,
+      credential: passkey.createRegistrationCredential(
+        registrationOptions.publicKey,
+        testContext.origin,
+      ),
+      origin: testContext.origin,
+      logger: testContext.logger,
+    });
+
+    const authenticationOptions = await generateAuthenticationOptions(
+      testContext.db,
+      {
+        rpId: testContext.rpId,
+        origin: testContext.origin,
+        logger: testContext.logger,
+      },
+    );
+    const credential = passkey.createAuthenticationCredential(
+      authenticationOptions.publicKey,
+      testContext.origin,
+    );
+
+    credential.response.clientDataJSON = '%%%';
+
+    await expect(
+      verifyAuthentication(testContext.db, {
+        requestId: authenticationOptions.request_id,
+        credential,
+        origin: testContext.origin,
+        issuer: testContext.issuer,
+        logger: testContext.logger,
+      }),
+    ).rejects.toBeInstanceOf(InvalidWebauthnAuthenticationError);
 
     testContext.db.close();
   });

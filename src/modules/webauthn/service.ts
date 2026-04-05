@@ -195,8 +195,9 @@ export async function verifyRegistration(
       ...input.credential,
       clientExtensionResults: input.credential.clientExtensionResults ?? {},
     };
-    const clientDataOrigin = getClientDataOrigin(
+    const clientDataOrigin = getClientDataOriginOrThrow(
       credential.response.clientDataJSON,
+      new InvalidWebauthnRegistrationError(),
     );
 
     assertExpectedOrigin({
@@ -338,8 +339,9 @@ export async function verifyAuthentication(
 ) {
   try {
     const challenge = getValidChallenge(db, input.requestId, 'authenticate');
-    const clientDataOrigin = getClientDataOrigin(
+    const clientDataOrigin = getClientDataOriginOrThrow(
       input.credential.response.clientDataJSON,
+      new InvalidWebauthnAuthenticationError(),
     );
 
     assertExpectedOrigin({
@@ -591,13 +593,18 @@ function isIpAddress(value: string): boolean {
   return value.includes(':') || /^\d+(?:\.\d+){3}$/.test(value);
 }
 
-function getClientDataOrigin(clientDataJSON: string): string {
+function getClientDataOriginOrThrow(
+  clientDataJSON: string,
+  invalidError:
+    | InvalidWebauthnRegistrationError
+    | InvalidWebauthnAuthenticationError,
+): string {
   let parsed: unknown;
 
   try {
     parsed = JSON.parse(decodeBase64Url(clientDataJSON).toString('utf8'));
   } catch {
-    throw new Error('invalid_client_data_json');
+    throw invalidError;
   }
 
   if (
@@ -605,10 +612,14 @@ function getClientDataOrigin(clientDataJSON: string): string {
     typeof parsed !== 'object' ||
     typeof (parsed as { origin?: unknown }).origin !== 'string'
   ) {
-    throw new Error('invalid_client_data_json');
+    throw invalidError;
   }
 
-  return normalizeAllowedOrigin((parsed as { origin: string }).origin);
+  try {
+    return normalizeAllowedOrigin((parsed as { origin: string }).origin);
+  } catch {
+    throw invalidError;
+  }
 }
 
 function assertExpectedOrigin(input: {

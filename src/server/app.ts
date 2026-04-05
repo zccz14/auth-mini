@@ -273,13 +273,18 @@ export function createApp(input: {
 
   app.post('/webauthn/register/verify', requireAccessToken, async (c) => {
     const body = await parseJson(c.req.raw, webauthnRegisterVerifySchema);
+    const origin = c.req.header('Origin');
+
+    if (!origin) {
+      throw new InvalidWebauthnRegistrationError();
+    }
 
     return c.json(
       await verifyRegistration(c.var.db, {
         userId: c.var.auth.sub,
         requestId: body.request_id,
         credential: body.credential,
-        origin: c.req.header('Origin') ?? c.var.origins[0],
+        origin,
         logger: c.var.logger,
       }),
     );
@@ -298,10 +303,16 @@ export function createApp(input: {
 
   app.post('/webauthn/authenticate/verify', async (c) => {
     const body = await parseJson(c.req.raw, webauthnAuthenticateVerifySchema);
+    const origin = c.req.header('Origin');
+
+    if (!origin) {
+      throw new InvalidWebauthnAuthenticationError();
+    }
+
     const result = await verifyAuthentication(c.var.db, {
       requestId: body.request_id,
       credential: body.credential,
-      origin: c.req.header('Origin') ?? c.var.origins[0],
+      origin,
       issuer: c.var.issuer,
       logger: c.var.logger,
     });
