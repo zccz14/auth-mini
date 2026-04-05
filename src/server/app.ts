@@ -264,7 +264,7 @@ export function createApp(input: {
       await generateRegistrationOptions(c.var.db, {
         userId: user.id,
         email: user.email,
-        rpId: body.rp_id ?? c.var.rpId,
+        rpId: body.rp_id,
         origin: c.req.header('Origin') ?? c.var.origins[0],
         logger: c.var.logger,
       }),
@@ -290,7 +290,7 @@ export function createApp(input: {
     const body = await parseJson(c.req.raw, webauthnOptionsSchema);
     return c.json(
       await generateAuthenticationOptions(c.var.db, {
-        rpId: body.rp_id ?? c.var.rpId,
+        rpId: body.rp_id,
         origin: c.req.header('Origin') ?? c.var.origins[0],
         logger: c.var.logger,
       }),

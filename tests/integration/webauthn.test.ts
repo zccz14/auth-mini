@@ -213,6 +213,96 @@ describe('webauthn routes', () => {
     expect(await response.json()).toEqual({ ok: true });
   });
 
+  it('register/options defaults rp id from the current request origin', async () => {
+    const baseApp = await createTestApp({
+      origins: ['https://example.com', 'https://login.example.com'],
+    });
+    openApps.push(baseApp);
+    const testApp = await signInOnExistingApp(
+      baseApp,
+      'request-origin@example.com',
+    );
+
+    const response = await testApp.app.request('/webauthn/register/options', {
+      method: 'POST',
+      headers: {
+        ...authHeaders(testApp.tokens.access_token),
+        Origin: 'https://login.example.com',
+      },
+    });
+    const body = await response.json();
+    const storedChallenge = testApp.db
+      .prepare(
+        'SELECT rp_id, origin FROM webauthn_challenges WHERE request_id = ?',
+      )
+      .get(body.request_id) as { rp_id: string; origin: string };
+
+    expect(response.status).toBe(200);
+    expect(body.publicKey.rp.id).toBe('login.example.com');
+    expect(storedChallenge).toEqual({
+      rp_id: 'login.example.com',
+      origin: 'https://login.example.com',
+    });
+  });
+
+  it('register/options normalizes an explicit parent-domain rp id before persisting it', async () => {
+    const baseApp = await createTestApp({
+      origins: ['https://app.example.com'],
+    });
+    openApps.push(baseApp);
+    const testApp = await signInOnExistingApp(
+      baseApp,
+      'normalized-rpid@example.com',
+    );
+
+    const response = await testApp.app.request('/webauthn/register/options', {
+      method: 'POST',
+      headers: {
+        ...authHeaders(testApp.tokens.access_token),
+        Origin: 'https://app.example.com',
+      },
+      body: json({ rp_id: 'EXAMPLE.COM.' }),
+    });
+    const body = await response.json();
+    const storedChallenge = testApp.db
+      .prepare(
+        'SELECT rp_id, origin FROM webauthn_challenges WHERE request_id = ?',
+      )
+      .get(body.request_id) as { rp_id: string; origin: string };
+
+    expect(response.status).toBe(200);
+    expect(body.publicKey.rp.id).toBe('example.com');
+    expect(storedChallenge).toEqual({
+      rp_id: 'example.com',
+      origin: 'https://app.example.com',
+    });
+  });
+
+  it('authenticate/options rejects an explicit rp id outside the request origin domain chain', async () => {
+    const testApp = await createTestApp({
+      origins: ['https://app.example.com'],
+    });
+    openApps.push(testApp);
+
+    const response = await testApp.app.request(
+      '/webauthn/authenticate/options',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          Origin: 'https://app.example.com',
+        },
+        body: json({ rp_id: 'evil.com' }),
+      },
+    );
+    const challengeCount = testApp.db
+      .prepare('SELECT COUNT(*) as count FROM webauthn_challenges')
+      .get() as { count: number };
+
+    expect(response.status).toBe(400);
+    expect(challengeCount.count).toBe(0);
+  });
+
   it('second register/options invalidates the first unused request id', async () => {
     const testApp = await createSignedInApp('replace-register@example.com');
     openApps.push(testApp);

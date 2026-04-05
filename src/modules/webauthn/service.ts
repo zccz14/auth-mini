@@ -92,7 +92,7 @@ export async function generateRegistrationOptions(
     };
   };
 }> {
-  const resolvedOptions = resolveWebauthnOptionsInput(input);
+  const resolvedOptions = resolveWebauthnRegistrationOptionsInput(input);
   const options = await generateSimpleWebAuthnRegistrationOptions({
     rpName: 'auth-mini',
     rpID: resolvedOptions.rpId,
@@ -269,7 +269,7 @@ export async function generateAuthenticationOptions(
     userVerification: 'preferred';
   };
 }> {
-  const resolvedOptions = resolveWebauthnOptionsInput(input);
+  const resolvedOptions = resolveWebauthnAuthenticationOptionsInput(input);
   const options = await generateSimpleWebAuthnAuthenticationOptions({
     rpID: resolvedOptions.rpId,
     timeout: 300000,
@@ -486,18 +486,83 @@ function isSimpleWebAuthnValidationError(error: unknown): error is Error {
   );
 }
 
+function resolveWebauthnRegistrationOptionsInput(input: {
+  rpId?: string;
+  origin?: string;
+}) {
+  try {
+    return resolveWebauthnOptionsInput(input);
+  } catch {
+    throw new InvalidWebauthnRegistrationError();
+  }
+}
+
+function resolveWebauthnAuthenticationOptionsInput(input: {
+  rpId?: string;
+  origin?: string;
+}) {
+  try {
+    return resolveWebauthnOptionsInput(input);
+  } catch {
+    throw new InvalidWebauthnAuthenticationError();
+  }
+}
+
 function resolveWebauthnOptionsInput(input: {
   rpId?: string;
   origin?: string;
 }) {
-  const origin = normalizeAllowedOrigin(
-    input.origin ?? `https://${input.rpId ?? 'example.com'}`,
-  );
+  const origin = normalizeAllowedOrigin(input.origin ?? 'https://example.com');
+  const originHostname = new URL(origin).hostname;
+  const rpId = normalizeRpId(input.rpId ?? originHostname);
+
+  if (!isRpIdAllowedForOrigin(originHostname, rpId)) {
+    throw new Error('invalid_rp_id');
+  }
 
   return {
     origin,
-    rpId: input.rpId ?? new URL(origin).hostname,
+    rpId,
   };
+}
+
+function normalizeRpId(input: string): string {
+  const trimmed = input.trim().toLowerCase().replace(/\.+$/, '');
+
+  if (!trimmed) {
+    throw new Error('invalid_rp_id');
+  }
+
+  const hostname = new URL(`https://${trimmed}`).hostname
+    .toLowerCase()
+    .replace(/\.+$/, '');
+
+  if (hostname !== trimmed) {
+    throw new Error('invalid_rp_id');
+  }
+
+  return hostname;
+}
+
+function isRpIdAllowedForOrigin(originHostname: string, rpId: string): boolean {
+  if (originHostname === rpId) {
+    return true;
+  }
+
+  if (
+    isIpAddress(originHostname) ||
+    isIpAddress(rpId) ||
+    originHostname === 'localhost' ||
+    rpId === 'localhost'
+  ) {
+    return false;
+  }
+
+  return originHostname.endsWith(`.${rpId}`);
+}
+
+function isIpAddress(value: string): boolean {
+  return value.includes(':') || /^\d+(?:\.\d+){3}$/.test(value);
 }
 
 const SIMPLE_WEBAUTHN_VALIDATION_ERROR_PREFIXES = [
