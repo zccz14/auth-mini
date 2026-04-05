@@ -53,7 +53,7 @@ async function loadRunStartCommand() {
 
 async function loadStartCommandModule() {
   vi.resetModules();
-  return import('../../src/commands/start.ts');
+  return import('../../src/commands/start.js');
 }
 
 describe('runStartCommand', () => {

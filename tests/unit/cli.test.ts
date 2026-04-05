@@ -84,7 +84,7 @@ async function loadRunStartCli(runStartCommand: ReturnType<typeof vi.fn>) {
   vi.resetModules();
 
   vi.doMock('../../src/app/commands/start.js', () => ({ runStartCommand }));
-  const module = await import('../../src/commands/start.ts');
+  const module = await import('../../src/commands/start.js');
 
   return async (argv: string[]) => {
     const handlers = new Map<NodeJS.Signals, () => void>();
