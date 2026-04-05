@@ -111,6 +111,24 @@ npx auth-mini init ./auth-mini.sqlite
 
 `create` remains available as a compatibility alias during the transition.
 
+Manage allowed browser origins with the `origin` topic:
+
+```bash
+auth-mini origin add ./auth-mini.sqlite --value https://app.example.com
+auth-mini origin list ./auth-mini.sqlite
+auth-mini origin update ./auth-mini.sqlite --id 1 --value https://admin.example.com
+auth-mini origin delete ./auth-mini.sqlite --id 1
+```
+
+Manage SMTP configs with the `smtp` topic:
+
+```bash
+auth-mini smtp add ./auth-mini.sqlite --host smtp.example.com --port 587 --username mailer --password secret --from-email noreply@example.com
+auth-mini smtp list ./auth-mini.sqlite
+auth-mini smtp update ./auth-mini.sqlite --id 1 --secure true
+auth-mini smtp delete ./auth-mini.sqlite --id 1
+```
+
 Start the server:
 
 ```bash
@@ -139,25 +157,6 @@ npx auth-mini start ./auth-mini.sqlite --issuer https://auth.example.com >> auth
 ```
 
 In the current version, logs may contain plaintext email addresses and client IPs. Logs intentionally exclude OTP values, tokens, and SMTP passwords.
-
-## SMTP import format
-
-`--smtp-config` expects a JSON array. Every row must be valid or the whole import is rejected.
-
-```json
-[
-  {
-    "host": "smtp.example.com",
-    "port": 587,
-    "username": "mailer",
-    "password": "secret",
-    "from_email": "noreply@example.com",
-    "from_name": "auth-mini",
-    "secure": false,
-    "weight": 1
-  }
-]
-```
 
 ## HTTP API
 
@@ -203,7 +202,7 @@ Load the script from the auth server origin. The singleton SDK still infers its 
 </script>
 ```
 
-v1 is intentionally zero-config: the script infers its API base URL from its own `src`, persists session state in `localStorage`, and automatically refreshes access tokens. Browser pages may be hosted on a different origin than the auth server as long as the page origin is explicitly allowed with `--origin` when you start auth-mini.
+v1 is intentionally zero-config: the script infers its API base URL from its own `src`, persists session state in `localStorage`, and automatically refreshes access tokens. Browser pages may be hosted on a different origin than the auth server as long as the page origin is explicitly stored in the instance with `auth-mini origin add <instance> --value <page-origin>`.
 
 Same-origin proxy deployment is still supported if you prefer to front auth-mini through your app origin, but direct cross-origin loading is now the primary browser SDK path.
 
@@ -212,7 +211,7 @@ For example, this page:
 - page origin: `http://localhost:3000`
 - auth server origin: `http://127.0.0.1:7777`
 
-works when auth-mini is started with `--origin http://localhost:3000` and the page loads the SDK from the auth server:
+works when `http://localhost:3000` has been added with `auth-mini origin add ./auth-mini.sqlite --value http://localhost:3000` and the page loads the SDK from the auth server:
 
 ```html
 <script src="http://127.0.0.1:7777/sdk/singleton-iife.js"></script>
@@ -227,9 +226,9 @@ The static site lives in `demo/`.
 - Publish the **contents of `demo/`** so `index.html`, `./style.css`, and `./main.js` stay at the final URL you want browsers to open.
 - For GitHub Pages, that means publishing `demo/` as the Pages artifact (for example via a Pages Action that uploads `demo/`, or by copying `demo/` into the branch/folder Pages serves).
 - Project Pages subpaths such as `https://<user>.github.io/auth-mini/` are fine because the demo uses relative local assets.
-- `auth-mini --origin ...` must match the final **page origin** (`window.location.origin`), not the auth server origin. Path changes like `/auth-mini/` vs `/demo/` do not change `--origin`, but moving between `https://docs.example.com` and `https://example.github.io` does.
+- `auth-mini origin add <instance> --value ...` must use the final **page origin** (`window.location.origin`), not the auth server origin. Path changes like `/auth-mini/` vs `/demo/` do not change that origin value, but moving between `https://docs.example.com` and `https://example.github.io` does.
 - If the docs page and auth server live on different origins, keep the docs page on its static host and append `?sdk-origin=https://your-auth-origin` so the page loads `/sdk/singleton-iife.js` from the auth server.
-- If you attach a custom GitHub Pages domain, publish a matching `CNAME` file in the Pages artifact/root so GitHub serves that domain consistently; then start auth-mini with `--origin https://your-domain.example`.
+- If you attach a custom GitHub Pages domain, publish a matching `CNAME` file in the Pages artifact/root so GitHub serves that domain consistently; then store `https://your-domain.example` with `auth-mini origin add <instance> --value https://your-domain.example`.
 
 Example:
 
@@ -242,10 +241,11 @@ Open:
 https://example.github.io/auth-mini/?sdk-origin=https://auth.example.com
 ```
 
-Start auth-mini with:
+Configure the published docs origin, then start auth-mini with:
 
 ```bash
-auth-mini start ./auth-mini.sqlite --issuer https://auth.example.com --origin https://example.github.io --rp-id auth.example.com
+auth-mini origin add ./auth-mini.sqlite --value https://example.github.io
+auth-mini start ./auth-mini.sqlite --issuer https://auth.example.com
 ```
 
 ### Startup state model
@@ -278,7 +278,7 @@ If a refresh token is already stored, startup enters `recovering` first and then
 ### Operational limits
 
 - The SDK script origin must match the auth API origin because the singleton client derives its base URL from the script `src`.
-- Cross-origin browser pages are supported only when the page origin is included in `--origin`.
+- Cross-origin browser pages are supported only when the page origin is stored via the `origin` topic commands.
 - Multiple tabs sharing one session can currently race during refresh-token rotation and invalidate one another. This is a known SDK bug, not a product contract.
 
 ## WebAuthn flow

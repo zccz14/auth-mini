@@ -191,6 +191,58 @@ describe('oclif cli contract', () => {
     );
   });
 
+  it('documents the current CLI workflow in README', async () => {
+    const readme = await readFile(resolve(process.cwd(), 'README.md'), 'utf8');
+
+    expect(readme).toContain('npx auth-mini init ./auth-mini.sqlite');
+    expect(readme).toContain('npx auth-mini start ./auth-mini.sqlite \\');
+    expect(readme).toContain('--host 127.0.0.1');
+    expect(readme).toContain('--port 7777');
+    expect(readme).toContain('--issuer https://auth.example.com');
+    expect(readme).toContain(
+      'auth-mini origin add ./auth-mini.sqlite --value https://app.example.com',
+    );
+    expect(readme).toContain('auth-mini origin list ./auth-mini.sqlite');
+    expect(readme).toContain(
+      'auth-mini origin update ./auth-mini.sqlite --id 1 --value https://admin.example.com',
+    );
+    expect(readme).toContain(
+      'auth-mini origin delete ./auth-mini.sqlite --id 1',
+    );
+    expect(readme).toContain(
+      'auth-mini smtp add ./auth-mini.sqlite --host smtp.example.com --port 587',
+    );
+    expect(readme).toContain('auth-mini smtp list ./auth-mini.sqlite');
+    expect(readme).toContain(
+      'auth-mini smtp update ./auth-mini.sqlite --id 1 --secure true',
+    );
+    expect(readme).toContain('auth-mini smtp delete ./auth-mini.sqlite --id 1');
+    expect(readme).not.toContain('--smtp-config');
+    expect(readme).not.toContain(
+      'auth-mini start ./auth-mini.sqlite --issuer https://auth.example.com --origin',
+    );
+    expect(readme).not.toContain('--rp-id');
+  });
+
+  it('prints origin and smtp topic help with the instance contract', async () => {
+    const originHelp = await runPackedCli(['origin', '--help']);
+    const smtpHelp = await runPackedCli(['smtp', '--help']);
+
+    expect(originHelp.exitCode).toBe(0);
+    expect(originHelp.stderr).toBe('');
+    expect(originHelp.stdout).toContain('add');
+    expect(originHelp.stdout).toContain('list');
+    expect(originHelp.stdout).toContain('update');
+    expect(originHelp.stdout).toContain('delete');
+
+    expect(smtpHelp.exitCode).toBe(0);
+    expect(smtpHelp.stderr).toBe('');
+    expect(smtpHelp.stdout).toContain('add');
+    expect(smtpHelp.stdout).toContain('list');
+    expect(smtpHelp.stdout).toContain('update');
+    expect(smtpHelp.stdout).toContain('delete');
+  }, 30000);
+
   it('prints concise command errors by default', async () => {
     const result = await runBuiltCli([
       'init',
