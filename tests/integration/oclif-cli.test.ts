@@ -3,7 +3,11 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createDatabaseClient } from '../../src/infra/db/client.js';
 import { ensureCliIsBuilt, runBuiltCli, runPackedCli } from '../helpers/cli.js';
-import { countRows, createTempDbPath } from '../helpers/db.js';
+import {
+  countRows,
+  createLegacySchemaDbPath,
+  createTempDbPath,
+} from '../helpers/db.js';
 
 describe('oclif cli contract', () => {
   it('supports rotate jwks as the primary command', async () => {
@@ -173,6 +177,25 @@ describe('oclif cli contract', () => {
     expect(result.stderr).toContain(
       'start is not wired to db-backed allowed origins and rp_id yet',
     );
+  }, 15000);
+
+  it('fails fast with a schema upgrade error when starting against a legacy database', async () => {
+    await ensureCliIsBuilt();
+    const dbPath = await createLegacySchemaDbPath();
+
+    const result = await runBuiltCli([
+      'start',
+      dbPath,
+      '--issuer',
+      'https://issuer.example',
+    ]);
+
+    expect(result.exitCode).toBeGreaterThan(0);
+    expect(result.stdout).toContain('cli.start.started');
+    expect(result.stdout).not.toContain('server.listening');
+    expect(result.stderr).toContain('schema');
+    expect(result.stderr).toContain('rebuild or migrate');
+    expect(result.stderr).toContain('allowed_origins');
   }, 15000);
 
   it('rejects removed start origin and rp-id flags during cli parsing', async () => {

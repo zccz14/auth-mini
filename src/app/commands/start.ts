@@ -4,7 +4,10 @@ import type {
   IncomingMessage,
   ServerResponse,
 } from 'node:http';
-import { createDatabaseClient } from '../../infra/db/client.js';
+import {
+  assertRequiredTablesAndColumns,
+  createDatabaseClient,
+} from '../../infra/db/client.js';
 import { bootstrapKeys } from '../../modules/jwks/service.js';
 import { createApp } from '../../server/app.js';
 import { parseRuntimeConfig } from '../../shared/config.js';
@@ -13,6 +16,12 @@ import { createRootLogger, withErrorFields } from '../../shared/logger.js';
 type StartCommandInput = {
   loggerSink?: { write(line: string): void };
 };
+
+const requiredRuntimeSchema = {
+  allowed_origins: ['origin'],
+  webauthn_challenges: ['rp_id', 'origin'],
+  webauthn_credentials: ['rp_id'],
+} as const;
 
 export async function runStartCommand(
   input: unknown,
@@ -25,6 +34,8 @@ export async function runStartCommand(
   const db = createDatabaseClient(config.dbPath);
   try {
     logger.info({ event: 'cli.start.started' }, 'Starting auth-mini server');
+
+    assertRequiredTablesAndColumns(db, requiredRuntimeSchema);
 
     await bootstrapKeys(db, { logger });
 

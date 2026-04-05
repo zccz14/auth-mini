@@ -2,8 +2,17 @@ import { access } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRootLogger, type AppLogger } from '../../shared/logger.js';
-import { createDatabaseClient } from './client.js';
+import {
+  assertRequiredTablesAndColumns,
+  createDatabaseClient,
+} from './client.js';
 import { runSqlFile } from './migrations.js';
+
+const requiredRuntimeSchema = {
+  allowed_origins: ['origin'],
+  webauthn_challenges: ['rp_id', 'origin'],
+  webauthn_credentials: ['rp_id'],
+} as const;
 
 const currentFilePath = fileURLToPath(import.meta.url);
 const currentDirectoryPath = dirname(currentFilePath);
@@ -47,6 +56,7 @@ export async function bootstrapDatabase(
       { event: 'db.migration.completed' },
       'Database migration completed',
     );
+    assertRequiredTablesAndColumns(db, requiredRuntimeSchema);
   } finally {
     db.close();
   }

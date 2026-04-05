@@ -4,7 +4,11 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createDatabaseClient } from '../../src/infra/db/client.js';
 import { ensureCliIsBuilt, runBuiltCli } from '../helpers/cli.js';
-import { countRows, createTempDbPath } from '../helpers/db.js';
+import {
+  countRows,
+  createLegacySchemaDbPath,
+  createTempDbPath,
+} from '../helpers/db.js';
 import { exists } from '../helpers/fs.js';
 
 describe('workspace bootstrap', () => {
@@ -187,6 +191,36 @@ describe('workspace bootstrap', () => {
       );
     } finally {
       db.close();
+    }
+  });
+
+  it('fails bootstrap on a legacy database with an incompatible schema error', async () => {
+    const { bootstrapDatabase } =
+      await import('../../src/infra/db/bootstrap.js');
+    const dbPath = await createLegacySchemaDbPath();
+    const bootstrap = bootstrapDatabase(dbPath);
+
+    await expect(bootstrap).rejects.toThrow(/schema/i);
+    await expect(bootstrap).rejects.toThrow(/rebuild or migrate/i);
+  });
+
+  it('seeds allowed origins through the test app helper', async () => {
+    const { createTestApp } = await import('../helpers/app.js');
+    const testApp = await createTestApp({
+      origins: ['https://app.example.com', 'https://admin.example.com'],
+    });
+
+    try {
+      const allowedOrigins = testApp.db
+        .prepare('SELECT origin FROM allowed_origins ORDER BY origin ASC')
+        .all() as Array<{ origin: string }>;
+
+      expect(allowedOrigins).toEqual([
+        { origin: 'https://admin.example.com' },
+        { origin: 'https://app.example.com' },
+      ]);
+    } finally {
+      testApp.close();
     }
   });
 

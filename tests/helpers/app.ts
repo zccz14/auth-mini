@@ -26,8 +26,13 @@ export async function createTestApp(options: CreateTestAppOptions = {}) {
   await bootstrapDatabase(dbPath);
   const db = createDatabaseClient(dbPath);
   const logCollector = createMemoryLogCollector();
+  const allowedOrigins = options.origins ?? ['https://app.example.com'];
 
   await bootstrapKeys(db);
+
+  for (const origin of allowedOrigins) {
+    db.prepare('INSERT INTO allowed_origins (origin) VALUES (?)').run(origin);
+  }
 
   const smtpConfigs = options.smtpConfigs ?? [
     {
@@ -70,8 +75,8 @@ export async function createTestApp(options: CreateTestAppOptions = {}) {
       return clientIps.get(request) ?? null;
     },
     issuer: 'https://issuer.example',
-    origins: options.origins ?? ['https://app.example.com'],
-    rpId: 'example.com',
+    origins: loadAllowedOrigins(db),
+    rpId: deriveRpId(allowedOrigins),
     logger: logCollector.logger,
   });
 
@@ -93,4 +98,22 @@ export async function createTestApp(options: CreateTestAppOptions = {}) {
       db.close();
     },
   };
+}
+
+function loadAllowedOrigins(
+  db: ReturnType<typeof createDatabaseClient>,
+): string[] {
+  return (
+    db
+      .prepare('SELECT origin FROM allowed_origins ORDER BY id ASC')
+      .all() as Array<{
+      origin: string;
+    }>
+  ).map((row) => row.origin);
+}
+
+function deriveRpId(origins: string[]): string {
+  const primaryOrigin = origins[0];
+
+  return primaryOrigin ? new URL(primaryOrigin).hostname : 'example.com';
 }
