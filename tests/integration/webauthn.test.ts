@@ -449,6 +449,33 @@ describe('webauthn routes', () => {
     });
   });
 
+  it('register/verify rejects an origin that was removed from the allowlist after options creation', async () => {
+    const testApp = await createSignedInApp(
+      'register-origin-removed@example.com',
+    );
+    openApps.push(testApp);
+    const passkey = createTestPasskey('register-origin-removed@example.com');
+
+    const options = await getRegisterOptions(testApp);
+    testApp.db
+      .prepare('DELETE FROM allowed_origins WHERE origin = ?')
+      .run(origin);
+    const credential = passkey.createRegistrationCredential(
+      options.publicKey,
+      origin,
+    );
+    const response = await testApp.app.request('/webauthn/register/verify', {
+      method: 'POST',
+      headers: authHeaders(testApp.tokens.access_token),
+      body: json({ request_id: options.request_id, credential }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: 'invalid_webauthn_registration',
+    });
+  });
+
   it('authenticate/options rejects an explicit rp id outside the request origin domain chain', async () => {
     const testApp = await createTestApp({
       origins: ['https://app.example.com'],
@@ -834,6 +861,30 @@ describe('webauthn routes', () => {
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
+      error: 'invalid_webauthn_authentication',
+    });
+  });
+
+  it('authenticate/verify rejects an origin that was removed from the allowlist after options creation', async () => {
+    const testApp = await createSignedInApp('auth-origin-removed@example.com');
+    openApps.push(testApp);
+    const passkey = await registerPasskey(
+      testApp,
+      'auth-origin-removed@example.com',
+    );
+
+    const options = await getAuthOptions(testApp);
+    testApp.db
+      .prepare('DELETE FROM allowed_origins WHERE origin = ?')
+      .run(origin);
+    const credential = passkey.createAuthenticationCredential(
+      options.publicKey,
+      origin,
+    );
+    const response = verifyAuth(testApp, options.request_id, credential);
+
+    await expect(response).resolves.toHaveProperty('status', 400);
+    await expect((await response).json()).resolves.toEqual({
       error: 'invalid_webauthn_authentication',
     });
   });

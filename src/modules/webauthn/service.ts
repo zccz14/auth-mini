@@ -5,7 +5,10 @@ import {
   verifyRegistrationResponse as verifySimpleWebAuthnRegistrationResponse,
 } from '@simplewebauthn/server';
 import type { DatabaseClient } from '../../infra/db/client.js';
-import { normalizeAllowedOrigin } from '../../infra/origins/repo.js';
+import {
+  listAllowedOrigins,
+  normalizeAllowedOrigin,
+} from '../../infra/origins/repo.js';
 import { decodeBase64Url, encodeBase64Url } from '../../shared/crypto.js';
 import type { AppLogger } from '../../shared/logger.js';
 import { TTLS } from '../../shared/time.js';
@@ -206,6 +209,11 @@ export async function verifyRegistration(
       clientDataOrigin,
       invalidError: new InvalidWebauthnRegistrationError(),
     });
+    assertOriginStillAllowed(
+      db,
+      input.origin,
+      new InvalidWebauthnRegistrationError(),
+    );
 
     const verification = await verifyRegistrationResponse({
       credential,
@@ -350,6 +358,11 @@ export async function verifyAuthentication(
       clientDataOrigin,
       invalidError: new InvalidWebauthnAuthenticationError(),
     });
+    assertOriginStillAllowed(
+      db,
+      input.origin,
+      new InvalidWebauthnAuthenticationError(),
+    );
 
     const storedCredential = getCredentialByCredentialIdAndRpId(
       db,
@@ -637,6 +650,28 @@ function assertExpectedOrigin(input: {
     input.clientDataOrigin !== input.challengeOrigin
   ) {
     throw input.invalidError;
+  }
+}
+
+function assertOriginStillAllowed(
+  db: DatabaseClient,
+  origin: string,
+  invalidError:
+    | InvalidWebauthnRegistrationError
+    | InvalidWebauthnAuthenticationError,
+) {
+  let normalizedOrigin: string;
+
+  try {
+    normalizedOrigin = normalizeAllowedOrigin(origin);
+  } catch {
+    throw invalidError;
+  }
+
+  const allowedOrigins = listAllowedOrigins(db).map((entry) => entry.origin);
+
+  if (!allowedOrigins.includes(normalizedOrigin)) {
+    throw invalidError;
   }
 }
 

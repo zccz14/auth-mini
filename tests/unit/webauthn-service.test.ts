@@ -239,6 +239,9 @@ async function createWebauthnContext(email: string) {
   db.prepare(
     'INSERT INTO users (id, email, email_verified_at) VALUES (?, ?, ?)',
   ).run(userId, email, new Date().toISOString());
+  db.prepare('INSERT INTO allowed_origins (origin) VALUES (?)').run(
+    'https://app.example.com',
+  );
 
   return {
     db,
