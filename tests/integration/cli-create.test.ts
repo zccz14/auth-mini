@@ -126,6 +126,38 @@ describe('workspace bootstrap', () => {
     expect(await exists(dbPath)).toBe(false);
   }, 30000);
 
+  it('rejects init smtp-config flag in the new contract', async () => {
+    await ensureCliIsBuilt();
+    const dbPath = await createTempDbPath();
+    const tempDir = await mkdtemp(join(tmpdir(), 'auth-mini-smtp-'));
+    const smtpJsonPath = join(tempDir, 'smtp.json');
+
+    await writeFile(
+      smtpJsonPath,
+      JSON.stringify([
+        {
+          host: 'smtp.example.com',
+          port: 587,
+          username: 'mailer',
+          password: 'secret',
+          from_email: 'noreply@example.com',
+        },
+      ]),
+      'utf8',
+    );
+
+    const result = await runBuiltCli([
+      'init',
+      dbPath,
+      '--smtp-config',
+      smtpJsonPath,
+    ]);
+
+    expect(result.exitCode).toBeGreaterThan(0);
+    expect(result.stderr).toContain('Nonexistent flag: --smtp-config');
+    expect(await exists(dbPath)).toBe(false);
+  }, 30000);
+
   it('rotate-jwks generates a new active key and keeps older keys', async () => {
     await ensureCliIsBuilt();
     const dbPath = await createTempDbPath();
