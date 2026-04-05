@@ -166,6 +166,15 @@ describe('oclif cli contract', () => {
     expect(readme).toContain(
       '`rotate-jwks` remains available only as a transition/compatibility alias during the migration release.',
     );
+    expect(readme).not.toContain(
+      'once allowed-origin runtime configuration is wired back into the CLI/runtime contract',
+    );
+    expect(readme).not.toContain(
+      'When allowed-origin runtime configuration returns',
+    );
+    expect(readme).not.toContain(
+      'current `start` CLI contract does not expose that setup yet',
+    );
   });
 
   it('prints concise command errors by default', async () => {
