@@ -57,6 +57,7 @@ describe('webauthn service error mapping', () => {
       userId: testContext.userId,
       email: testContext.email,
       rpId: testContext.rpId,
+      origin: testContext.origin,
       logger: testContext.logger,
     });
     const credential = passkey.createRegistrationCredential(
@@ -73,8 +74,7 @@ describe('webauthn service error mapping', () => {
         userId: testContext.userId,
         requestId: options.request_id,
         credential,
-        rpId: testContext.rpId,
-        origins: [testContext.origin],
+        origin: testContext.origin,
         logger: testContext.logger,
       }),
     ).rejects.toThrow('credential write failed');
@@ -91,6 +91,7 @@ describe('webauthn service error mapping', () => {
         userId: testContext.userId,
         email: testContext.email,
         rpId: testContext.rpId,
+        origin: testContext.origin,
         logger: testContext.logger,
       },
     );
@@ -102,8 +103,7 @@ describe('webauthn service error mapping', () => {
         registrationOptions.publicKey,
         testContext.origin,
       ),
-      rpId: testContext.rpId,
-      origins: [testContext.origin],
+      origin: testContext.origin,
       logger: testContext.logger,
     });
 
@@ -111,6 +111,7 @@ describe('webauthn service error mapping', () => {
       testContext.db,
       {
         rpId: testContext.rpId,
+        origin: testContext.origin,
         logger: testContext.logger,
       },
     );
@@ -126,8 +127,7 @@ describe('webauthn service error mapping', () => {
           authenticationOptions.publicKey,
           testContext.origin,
         ),
-        rpId: testContext.rpId,
-        origins: [testContext.origin],
+        origin: testContext.origin,
         issuer: testContext.issuer,
         logger: testContext.logger,
       }),

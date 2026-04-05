@@ -18,7 +18,7 @@ import {
   createCredential,
   deleteCredentialById,
   getChallengeByRequestId,
-  getCredentialByCredentialId,
+  getCredentialByCredentialIdAndRpId,
 } from './repo.js';
 
 type ParsedCredential = {
@@ -180,8 +180,7 @@ export async function verifyRegistration(
     userId: string;
     requestId: string;
     credential: RegistrationCredential;
-    rpId: string;
-    origins: string[];
+    origin: string;
     logger?: AppLogger;
   },
 ): Promise<{ ok: true }> {
@@ -196,11 +195,21 @@ export async function verifyRegistration(
       ...input.credential,
       clientExtensionResults: input.credential.clientExtensionResults ?? {},
     };
+    const clientDataOrigin = getClientDataOrigin(
+      credential.response.clientDataJSON,
+    );
+
+    assertExpectedOrigin({
+      requestOrigin: input.origin,
+      challengeOrigin: challenge.origin,
+      clientDataOrigin,
+      invalidError: new InvalidWebauthnRegistrationError(),
+    });
 
     const verification = await verifyRegistrationResponse({
       credential,
       expectedChallenge: challenge.challenge,
-      expectedOrigin: input.origins,
+      expectedOrigin: [challenge.origin],
       expectedRPID: challenge.rpId,
     });
 
@@ -322,27 +331,42 @@ export async function verifyAuthentication(
   input: {
     requestId: string;
     credential: AuthenticationCredential;
-    rpId: string;
-    origins: string[];
+    origin: string;
     issuer: string;
     logger?: AppLogger;
   },
 ) {
   try {
     const challenge = getValidChallenge(db, input.requestId, 'authenticate');
-    const storedCredential = getCredentialByCredentialId(
+    const clientDataOrigin = getClientDataOrigin(
+      input.credential.response.clientDataJSON,
+    );
+
+    assertExpectedOrigin({
+      requestOrigin: input.origin,
+      challengeOrigin: challenge.origin,
+      clientDataOrigin,
+      invalidError: new InvalidWebauthnAuthenticationError(),
+    });
+
+    const storedCredential = getCredentialByCredentialIdAndRpId(
       db,
       input.credential.id,
+      challenge.rpId,
     );
 
     if (!storedCredential) {
       throw new InvalidWebauthnAuthenticationError();
     }
 
+    if (storedCredential.rpId !== challenge.rpId) {
+      throw new InvalidWebauthnAuthenticationError();
+    }
+
     const verification = await verifyAuthenticationResponse({
       credential: input.credential,
       expectedChallenge: challenge.challenge,
-      expectedOrigin: input.origins,
+      expectedOrigin: [challenge.origin],
       expectedRPID: challenge.rpId,
       storedCredential,
     });
@@ -431,7 +455,9 @@ async function verifyAuthenticationResponse(input: {
   expectedChallenge: string;
   expectedOrigin: string[];
   expectedRPID: string;
-  storedCredential: NonNullable<ReturnType<typeof getCredentialByCredentialId>>;
+  storedCredential: NonNullable<
+    ReturnType<typeof getCredentialByCredentialIdAndRpId>
+  >;
 }) {
   const response = {
     ...input.credential,
@@ -563,6 +589,44 @@ function isRpIdAllowedForOrigin(originHostname: string, rpId: string): boolean {
 
 function isIpAddress(value: string): boolean {
   return value.includes(':') || /^\d+(?:\.\d+){3}$/.test(value);
+}
+
+function getClientDataOrigin(clientDataJSON: string): string {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(decodeBase64Url(clientDataJSON).toString('utf8'));
+  } catch {
+    throw new Error('invalid_client_data_json');
+  }
+
+  if (
+    !parsed ||
+    typeof parsed !== 'object' ||
+    typeof (parsed as { origin?: unknown }).origin !== 'string'
+  ) {
+    throw new Error('invalid_client_data_json');
+  }
+
+  return normalizeAllowedOrigin((parsed as { origin: string }).origin);
+}
+
+function assertExpectedOrigin(input: {
+  requestOrigin: string;
+  challengeOrigin: string;
+  clientDataOrigin: string;
+  invalidError:
+    | InvalidWebauthnRegistrationError
+    | InvalidWebauthnAuthenticationError;
+}) {
+  const requestOrigin = normalizeAllowedOrigin(input.requestOrigin);
+
+  if (
+    requestOrigin !== input.challengeOrigin ||
+    input.clientDataOrigin !== input.challengeOrigin
+  ) {
+    throw input.invalidError;
+  }
 }
 
 const SIMPLE_WEBAUTHN_VALIDATION_ERROR_PREFIXES = [

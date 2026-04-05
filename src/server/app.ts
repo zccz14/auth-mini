@@ -279,8 +279,7 @@ export function createApp(input: {
         userId: c.var.auth.sub,
         requestId: body.request_id,
         credential: body.credential,
-        rpId: c.var.rpId,
-        origins: c.var.origins,
+        origin: c.req.header('Origin') ?? c.var.origins[0],
         logger: c.var.logger,
       }),
     );
@@ -302,8 +301,7 @@ export function createApp(input: {
     const result = await verifyAuthentication(c.var.db, {
       requestId: body.request_id,
       credential: body.credential,
-      rpId: c.var.rpId,
-      origins: c.var.origins,
+      origin: c.req.header('Origin') ?? c.var.origins[0],
       issuer: c.var.issuer,
       logger: c.var.logger,
     });

@@ -179,6 +179,25 @@ export function getCredentialByCredentialId(
   return row ? mapCredential(row) : null;
 }
 
+export function getCredentialByCredentialIdAndRpId(
+  db: DatabaseClient,
+  credentialId: string,
+  rpId: string,
+): StoredWebauthnCredential | null {
+  const row = db
+    .prepare(
+      [
+        'SELECT id, user_id, credential_id, public_key, counter, transports, rp_id, created_at',
+        'FROM webauthn_credentials',
+        'WHERE credential_id = ? AND rp_id = ?',
+        'LIMIT 1',
+      ].join(' '),
+    )
+    .get(credentialId, rpId) as CredentialRow | undefined;
+
+  return row ? mapCredential(row) : null;
+}
+
 export function getCredentialById(
   db: DatabaseClient,
   id: string,

@@ -326,6 +326,98 @@ describe('webauthn routes', () => {
     });
   });
 
+  it('register/verify rejects a request Origin that differs from the stored challenge origin', async () => {
+    const baseApp = await createTestApp({
+      origins: ['https://app.example.com', 'https://login.example.com'],
+    });
+    openApps.push(baseApp);
+    const testApp = await signInOnExistingApp(
+      baseApp,
+      'register-origin-header@example.com',
+    );
+    const passkey = createTestPasskey('register-origin-header@example.com');
+
+    const optionsResponse = await testApp.app.request(
+      '/webauthn/register/options',
+      {
+        method: 'POST',
+        headers: {
+          ...authHeaders(testApp.tokens.access_token),
+          Origin: 'https://app.example.com',
+        },
+      },
+    );
+    const optionsBody = await optionsResponse.json();
+    const credential = passkey.createRegistrationCredential(
+      optionsBody.publicKey,
+      'https://app.example.com',
+    );
+
+    const verifyResponse = await testApp.app.request(
+      '/webauthn/register/verify',
+      {
+        method: 'POST',
+        headers: {
+          ...authHeaders(testApp.tokens.access_token),
+          Origin: 'https://login.example.com',
+        },
+        body: json({ request_id: optionsBody.request_id, credential }),
+      },
+    );
+
+    expect(optionsResponse.status).toBe(200);
+    expect(verifyResponse.status).toBe(400);
+    expect(await verifyResponse.json()).toEqual({
+      error: 'invalid_webauthn_registration',
+    });
+  });
+
+  it('register/verify rejects a clientDataJSON origin that differs from the stored challenge origin', async () => {
+    const baseApp = await createTestApp({
+      origins: ['https://app.example.com', 'https://login.example.com'],
+    });
+    openApps.push(baseApp);
+    const testApp = await signInOnExistingApp(
+      baseApp,
+      'register-client-origin@example.com',
+    );
+    const passkey = createTestPasskey('register-client-origin@example.com');
+
+    const optionsResponse = await testApp.app.request(
+      '/webauthn/register/options',
+      {
+        method: 'POST',
+        headers: {
+          ...authHeaders(testApp.tokens.access_token),
+          Origin: 'https://app.example.com',
+        },
+      },
+    );
+    const optionsBody = await optionsResponse.json();
+    const credential = passkey.createRegistrationCredential(
+      optionsBody.publicKey,
+      'https://login.example.com',
+    );
+
+    const verifyResponse = await testApp.app.request(
+      '/webauthn/register/verify',
+      {
+        method: 'POST',
+        headers: {
+          ...authHeaders(testApp.tokens.access_token),
+          Origin: 'https://app.example.com',
+        },
+        body: json({ request_id: optionsBody.request_id, credential }),
+      },
+    );
+
+    expect(optionsResponse.status).toBe(200);
+    expect(verifyResponse.status).toBe(400);
+    expect(await verifyResponse.json()).toEqual({
+      error: 'invalid_webauthn_registration',
+    });
+  });
+
   it('authenticate/options rejects an explicit rp id outside the request origin domain chain', async () => {
     const testApp = await createTestApp({
       origins: ['https://app.example.com'],
@@ -639,6 +731,37 @@ describe('webauthn routes', () => {
       event: 'webauthn.authenticate.verify.succeeded',
       user_id: testApp.userId,
       credential_id: passkey.credentialId,
+    });
+  });
+
+  it('authenticate/verify rejects a credential stored under a different rp id namespace', async () => {
+    const baseApp = await createTestApp({
+      origins: ['https://app.example.com'],
+    });
+    openApps.push(baseApp);
+    const testApp = await signInOnExistingApp(
+      baseApp,
+      'signin-rp-namespace@example.com',
+    );
+    const passkey = await registerPasskey(
+      testApp,
+      'signin-rp-namespace@example.com',
+    );
+
+    testApp.db
+      .prepare('UPDATE webauthn_credentials SET rp_id = ? WHERE user_id = ?')
+      .run('example.com', testApp.userId);
+
+    const options = await getAuthOptions(testApp);
+    const credential = passkey.createAuthenticationCredential(
+      options.publicKey,
+      origin,
+    );
+    const response = await verifyAuth(testApp, options.request_id, credential);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: 'invalid_webauthn_authentication',
     });
   });
 
