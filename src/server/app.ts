@@ -34,6 +34,7 @@ import {
   emailStartSchema,
   emailVerifySchema,
   refreshSchema,
+  webauthnOptionsSchema,
   webauthnAuthenticateVerifySchema,
   webauthnRegisterVerifySchema,
 } from '../shared/http-schemas.js';
@@ -252,6 +253,7 @@ export function createApp(input: {
   });
 
   app.post('/webauthn/register/options', requireAccessToken, async (c) => {
+    const body = await parseJson(c.req.raw, webauthnOptionsSchema);
     const user = getUserById(c.var.db, c.var.auth.sub);
 
     if (!user) {
@@ -262,7 +264,7 @@ export function createApp(input: {
       await generateRegistrationOptions(c.var.db, {
         userId: user.id,
         email: user.email,
-        rpId: c.var.rpId,
+        rpId: body.rp_id ?? c.var.rpId,
         logger: c.var.logger,
       }),
     );
@@ -284,9 +286,10 @@ export function createApp(input: {
   });
 
   app.post('/webauthn/authenticate/options', async (c) => {
+    const body = await parseJson(c.req.raw, webauthnOptionsSchema);
     return c.json(
       await generateAuthenticationOptions(c.var.db, {
-        rpId: c.var.rpId,
+        rpId: body.rp_id ?? c.var.rpId,
         logger: c.var.logger,
       }),
     );
@@ -330,9 +333,10 @@ export function createApp(input: {
 
 async function parseJson<T>(request: Request, schema: ZodType<T>): Promise<T> {
   let body: unknown;
+  const text = await request.text();
 
   try {
-    body = await request.json();
+    body = text.trim() === '' ? {} : JSON.parse(text);
   } catch {
     throw invalidRequestError();
   }

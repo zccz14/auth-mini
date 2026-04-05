@@ -13,6 +13,10 @@ export const refreshSchema = z.object({
   refresh_token: z.string().min(1),
 });
 
+export const webauthnOptionsSchema = z.object({
+  rp_id: z.string().min(1).optional(),
+});
+
 const baseCredentialSchema = z.object({
   id: z.string().min(1),
   rawId: z.string().min(1),

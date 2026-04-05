@@ -473,11 +473,11 @@ function createRuntime() {
 
   function createWebauthnModule(input) {
     return {
-      async authenticate() {
+      async authenticate(payload = {}) {
         ensureWebauthnSupport('authenticate');
         const options = await input.http.postJson(
           '/webauthn/authenticate/options',
-          {},
+          createOptionsPayload(payload),
         );
         const credential = await requestCredential(
           'authenticate',
@@ -495,12 +495,12 @@ function createRuntime() {
         );
         return await input.session.acceptSessionResponse(response);
       },
-      async register() {
+      async register(payload = {}) {
         ensureWebauthnSupport('register');
         const optionsAccessToken = await requireAccessToken();
         const options = await input.http.postJson(
           '/webauthn/register/options',
-          {},
+          createOptionsPayload(payload),
           { accessToken: optionsAccessToken },
         );
         const credential = await requestCredential(
@@ -573,6 +573,12 @@ function createRuntime() {
       }
       return snapshot.accessToken;
     }
+
+    function createOptionsPayload(payload) {
+      return typeof payload?.rpId === 'string' && payload.rpId.length > 0
+        ? { rp_id: payload.rpId }
+        : {};
+    }
   }
 
   function createMiniAuthInternal(input) {
@@ -587,6 +593,14 @@ function createRuntime() {
       state,
     });
     const now = input.now ?? (() => Date.now());
+    const passkey = createWebauthnModule({
+      http,
+      navigatorCredentials: input.navigatorCredentials,
+      now,
+      publicKeyCredential: input.publicKeyCredential,
+      session,
+      state,
+    });
     const api = {
       email: createEmailModule({ http, session }),
       me: {
@@ -611,14 +625,8 @@ function createRuntime() {
           return session.logout();
         },
       },
-      webauthn: createWebauthnModule({
-        http,
-        navigatorCredentials: input.navigatorCredentials,
-        now,
-        publicKeyCredential: input.publicKeyCredential,
-        session,
-        state,
-      }),
+      passkey,
+      webauthn: passkey,
     };
     const ready =
       input.autoRecover !== false && state.getState().status === 'recovering'

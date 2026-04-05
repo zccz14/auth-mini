@@ -11,6 +11,35 @@ import {
 } from '../helpers/sdk.js';
 
 describe('sdk webauthn flows', () => {
+  it('passes optional rpId through the passkey authenticate options call', async () => {
+    const fetch = createWebauthnRequestRecorder();
+    const sdk = createMiniAuthForTest({
+      fetch,
+      navigatorCredentials: fakeNavigatorCredentials(),
+    });
+
+    await sdk.passkey.authenticate({ rpId: 'example.com' });
+
+    expect(readJsonBody(fetch, '/webauthn/authenticate/options')).toEqual({
+      rp_id: 'example.com',
+    });
+  });
+
+  it('passes optional rpId through the passkey register options call', async () => {
+    const fetch = createWebauthnRequestRecorder();
+    const sdk = createMiniAuthForTest({
+      fetch,
+      storage: fakeAuthenticatedStorageWithMe(),
+      navigatorCredentials: fakeNavigatorCredentials(),
+    });
+
+    await sdk.passkey.register({ rpId: 'example.com' });
+
+    expect(readJsonBody(fetch, '/webauthn/register/options')).toEqual({
+      rp_id: 'example.com',
+    });
+  });
+
   it('throws webauthn_unsupported when browser webauthn apis are unavailable', async () => {
     const sdk = createMiniAuthForTest({
       publicKeyCredential: undefined,
