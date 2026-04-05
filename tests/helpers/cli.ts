@@ -18,12 +18,26 @@ export async function ensureCliIsBuilt(): Promise<void> {
   await buildPromise;
 }
 
-export async function runCli(
+export async function runSourceCli(
+  args: string[],
+): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  const cliEntrypoint = resolve(process.cwd(), 'src/index.ts');
+
+  return runCommand('npx', ['vite-node', cliEntrypoint, ...args]);
+}
+
+export async function runBuiltCli(
   args: string[],
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   const cliEntrypoint = resolve(process.cwd(), 'dist/index.js');
 
   return runCommand(process.execPath, [cliEntrypoint, ...args]);
+}
+
+export async function runCli(
+  args: string[],
+): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  return runSourceCli(args);
 }
 
 export async function runLoggedCli(args: string[]): Promise<{
