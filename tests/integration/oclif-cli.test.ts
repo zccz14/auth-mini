@@ -116,6 +116,18 @@ describe('oclif cli contract', () => {
     expect(result.stdout).toContain('USAGE');
   }, 30000);
 
+  it('discovers nested origin add command from the packed artifact', async () => {
+    const result = await runPackedCli(['origin', 'add', '--help']);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('USAGE');
+    expect(result.stdout).toContain('auth-mini origin add INSTANCE');
+    expect(result.stdout).toContain(
+      'Auth-mini instance (currently a SQLite database path)',
+    );
+  }, 30000);
+
   it('routes rotate-jwks alias from the packed artifact', async () => {
     const result = await runPackedCli(['rotate-jwks', '--help']);
 
