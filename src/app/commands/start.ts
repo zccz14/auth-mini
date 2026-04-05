@@ -28,6 +28,8 @@ export async function runStartCommand(
 
     await bootstrapKeys(db, { logger });
 
+    const runtimeResources = unsupportedStartRuntimeResources();
+
     const clientIps = new WeakMap<Request, string | null>();
 
     const app = createApp({
@@ -37,8 +39,8 @@ export async function runStartCommand(
       },
       issuer: config.issuer,
       logger,
-      origins: config.origins ?? [],
-      rpId: config.rpId ?? '',
+      origins: runtimeResources.origins,
+      rpId: runtimeResources.rpId,
     });
 
     const server = createServer((req, res) => {
@@ -189,4 +191,13 @@ function toLoggerSink(
   }
 
   return (input as StartCommandInput).loggerSink;
+}
+
+function unsupportedStartRuntimeResources(): {
+  origins: string[];
+  rpId: string;
+} {
+  throw new Error(
+    'start is not wired to db-backed allowed origins and rp_id yet',
+  );
 }

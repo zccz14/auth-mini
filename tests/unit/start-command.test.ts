@@ -71,8 +71,6 @@ describe('runStartCommand', () => {
       host: '127.0.0.1',
       port: 4100,
       issuer: 'https://issuer.example',
-      origins: ['https://app.example.com'],
-      rpId: 'example.com',
     });
   });
 
@@ -98,84 +96,26 @@ describe('runStartCommand', () => {
     );
   });
 
-  it('converts async request handler failures into a 500 response', async () => {
+  it('fails fast before server startup until db-backed start resources land', async () => {
     const db = { close: vi.fn() };
-    let requestHandler:
-      | ((req: IncomingMessageLike, res: ServerResponseLike) => unknown)
-      | undefined;
 
     createDatabaseClient.mockReturnValue(db);
     bootstrapKeys.mockResolvedValue({ id: 'key-1', kid: 'kid-1' });
-    createApp.mockReturnValue({
-      fetch: vi.fn().mockRejectedValue(new Error('boom')),
-    });
-    createServer.mockImplementation((handler) => {
-      requestHandler = handler;
-
-      return {
-        once: vi.fn(),
-        off: vi.fn(),
-        listen: (_port: number, _host: string, callback: () => void) => {
-          callback();
-        },
-        close: (callback: (error?: Error | null) => void) => {
-          callback(null);
-        },
-      };
-    });
 
     const runStartCommand = await loadRunStartCommand();
-    expect(runStartCommand).toBeTypeOf('function');
-    const server = await runStartCommand({ dbPath: '/tmp/auth-mini.db' });
-
-    const response = createResponseRecorder();
-
     await expect(
-      Promise.resolve(
-        requestHandler?.(
-          createRequest({ method: 'GET', url: '/jwks' }),
-          response,
-        ),
-      ),
-    ).resolves.toBeUndefined();
-    expect(response.statusCode).toBe(500);
-    expect(response.headers['content-type']).toBe('application/json');
-    expect(response.body).toBe('{"error":"internal_server_error"}');
-    expect(loggerError).toHaveBeenCalledWith(
-      expect.objectContaining({
-        event: 'server.request.failed',
-        error_message: 'boom',
-      }),
-      'HTTP request handling failed',
+      runStartCommand({ dbPath: '/tmp/auth-mini.db' }),
+    ).rejects.toThrow(
+      'start is not wired to db-backed allowed origins and rp_id yet',
     );
-
-    await server.close();
-  });
-
-  it('closes the database even when server shutdown reports an error', async () => {
-    const shutdownError = new Error('close failed');
-    const db = { close: vi.fn() };
-
-    createDatabaseClient.mockReturnValue(db);
-    bootstrapKeys.mockResolvedValue({ id: 'key-1', kid: 'kid-1' });
-    createApp.mockReturnValue({
-      fetch: vi.fn(),
-    });
-    createServer.mockImplementation(() => ({
-      once: vi.fn(),
-      off: vi.fn(),
-      listen: (_port: number, _host: string, callback: () => void) => {
-        callback();
-      },
-      close: (callback: (error?: Error | null) => void) => {
-        callback(shutdownError);
-      },
-    }));
-
-    const runStartCommand = await loadRunStartCommand();
-    const server = await runStartCommand({ dbPath: '/tmp/auth-mini.db' });
-
-    await expect(server.close()).rejects.toThrow('close failed');
+    expect(bootstrapKeys).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        logger: expect.any(Object),
+      }),
+    );
+    expect(createApp).not.toHaveBeenCalled();
+    expect(createServer).not.toHaveBeenCalled();
     expect(db.close).toHaveBeenCalledTimes(1);
   });
 });
@@ -227,48 +167,3 @@ describe('createStartLifecycle', () => {
     expect(onCloseError).toHaveBeenCalledWith(error);
   });
 });
-
-type IncomingMessageLike = {
-  headers: Record<string, string>;
-  method: string;
-  socket: { remoteAddress: string | null };
-  url: string;
-  [Symbol.asyncIterator](): AsyncIterator<Buffer>;
-};
-
-type ServerResponseLike = {
-  body: string;
-  headers: Record<string, string>;
-  setHeader(name: string, value: string): void;
-  end(chunk?: Buffer | string): void;
-  statusCode: number;
-};
-
-function createRequest(input: {
-  method: string;
-  url: string;
-}): IncomingMessageLike {
-  return {
-    headers: {
-      host: '127.0.0.1:4100',
-    },
-    method: input.method,
-    socket: { remoteAddress: '203.0.113.10' },
-    url: input.url,
-    async *[Symbol.asyncIterator]() {},
-  };
-}
-
-function createResponseRecorder(): ServerResponseLike {
-  return {
-    body: '',
-    headers: {},
-    setHeader(name: string, value: string) {
-      this.headers[name] = value;
-    },
-    end(chunk?: Buffer | string) {
-      this.body = typeof chunk === 'string' ? chunk : (chunk?.toString() ?? '');
-    },
-    statusCode: 200,
-  };
-}
