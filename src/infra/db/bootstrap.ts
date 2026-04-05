@@ -14,6 +14,17 @@ const requiredRuntimeSchema = {
   webauthn_credentials: ['rp_id'],
 } as const;
 
+const knownAppTables = [
+  'users',
+  'email_otps',
+  'sessions',
+  'jwks_keys',
+  'smtp_configs',
+  'allowed_origins',
+  'webauthn_credentials',
+  'webauthn_challenges',
+] as const;
+
 const currentFilePath = fileURLToPath(import.meta.url);
 const currentDirectoryPath = dirname(currentFilePath);
 
@@ -50,6 +61,11 @@ export async function bootstrapDatabase(
       { event: 'db.migration.started' },
       'Database migration started',
     );
+
+    if (hasExistingAppSchema(db)) {
+      assertRequiredTablesAndColumns(db, requiredRuntimeSchema);
+    }
+
     const schemaFilePath = await resolveSchemaFilePath();
     await runSqlFile(db, schemaFilePath);
     logger.info(
@@ -60,4 +76,22 @@ export async function bootstrapDatabase(
   } finally {
     db.close();
   }
+}
+
+function hasExistingAppSchema(
+  db: ReturnType<typeof createDatabaseClient>,
+): boolean {
+  const rows = db
+    .prepare(
+      [
+        'SELECT name',
+        'FROM sqlite_master',
+        "WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+      ].join(' '),
+    )
+    .all() as Array<{ name: string }>;
+
+  const tableNames = new Set(rows.map((row) => row.name));
+
+  return knownAppTables.some((tableName) => tableNames.has(tableName));
 }

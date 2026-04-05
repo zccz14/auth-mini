@@ -8,6 +8,7 @@ import {
   countRows,
   createLegacySchemaDbPath,
   createTempDbPath,
+  listTables,
 } from '../helpers/db.js';
 import { exists } from '../helpers/fs.js';
 
@@ -202,6 +203,15 @@ describe('workspace bootstrap', () => {
 
     await expect(bootstrap).rejects.toThrow(/schema/i);
     await expect(bootstrap).rejects.toThrow(/rebuild or migrate/i);
+    await expect(listTables(dbPath)).resolves.toEqual([
+      'email_otps',
+      'jwks_keys',
+      'sessions',
+      'smtp_configs',
+      'users',
+      'webauthn_challenges',
+      'webauthn_credentials',
+    ]);
   });
 
   it('seeds allowed origins through the test app helper', async () => {
