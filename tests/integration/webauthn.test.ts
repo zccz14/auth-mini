@@ -278,7 +278,7 @@ describe('webauthn routes', () => {
     });
   });
 
-  it('register/verify does not yet trust the stored challenge rp id', async () => {
+  it('register/verify accepts a ceremony using a stored parent-domain rp id', async () => {
     const baseApp = await createTestApp({
       origins: ['https://app.example.com'],
     });
@@ -314,11 +314,15 @@ describe('webauthn routes', () => {
         body: json({ request_id: optionsBody.request_id, credential }),
       },
     );
+    const storedCredential = testApp.db
+      .prepare('SELECT rp_id FROM webauthn_credentials WHERE user_id = ?')
+      .get(testApp.userId) as { rp_id: string } | undefined;
 
     expect(optionsResponse.status).toBe(200);
-    expect(verifyResponse.status).toBe(400);
-    expect(await verifyResponse.json()).toEqual({
-      error: 'invalid_webauthn_registration',
+    expect(verifyResponse.status).toBe(200);
+    expect(await verifyResponse.json()).toEqual({ ok: true });
+    expect(storedCredential).toEqual({
+      rp_id: 'example.com',
     });
   });
 
