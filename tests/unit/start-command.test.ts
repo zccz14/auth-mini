@@ -151,6 +151,33 @@ describe('runStartCommand', () => {
 
     await server.close();
   });
+
+  it('closes the database even when server shutdown reports an error', async () => {
+    const shutdownError = new Error('close failed');
+    const db = { close: vi.fn() };
+
+    createDatabaseClient.mockReturnValue(db);
+    bootstrapKeys.mockResolvedValue({ id: 'key-1', kid: 'kid-1' });
+    createApp.mockReturnValue({
+      fetch: vi.fn(),
+    });
+    createServer.mockImplementation(() => ({
+      once: vi.fn(),
+      off: vi.fn(),
+      listen: (_port: number, _host: string, callback: () => void) => {
+        callback();
+      },
+      close: (callback: (error?: Error | null) => void) => {
+        callback(shutdownError);
+      },
+    }));
+
+    const runStartCommand = await loadRunStartCommand();
+    const server = await runStartCommand({ dbPath: '/tmp/auth-mini.db' });
+
+    await expect(server.close()).rejects.toThrow('close failed');
+    expect(db.close).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('createStartLifecycle', () => {
@@ -171,16 +198,17 @@ describe('createStartLifecycle', () => {
     const off = vi.fn();
     const { createStartLifecycle } = await loadStartCommandModule();
 
-    createStartLifecycle({ close, on, off });
-    const shutdown = on.mock.calls[0]?.[1] as (() => Promise<void>) | undefined;
+    const lifecycle = createStartLifecycle({ close, on, off });
+    const shutdown = on.mock.calls[0]?.[1] as (() => void) | undefined;
 
-    await shutdown?.();
-    await shutdown?.();
+    shutdown?.();
+    shutdown?.();
+    await lifecycle.waitForShutdown();
 
     expect(close).toHaveBeenCalledTimes(1);
   });
 
-  it('removes listeners after shutdown and forwards close errors', async () => {
+  it('removes listeners after shutdown, forwards close errors, and does not return a rejecting promise from signal handlers', async () => {
     const error = new Error('close failed');
     const close = vi.fn().mockRejectedValue(error);
     const on = vi.fn();
@@ -188,10 +216,11 @@ describe('createStartLifecycle', () => {
     const onCloseError = vi.fn();
     const { createStartLifecycle } = await loadStartCommandModule();
 
-    createStartLifecycle({ close, on, off, onCloseError });
-    const shutdown = on.mock.calls[0]?.[1] as (() => Promise<void>) | undefined;
+    const lifecycle = createStartLifecycle({ close, on, off, onCloseError });
+    const shutdown = on.mock.calls[0]?.[1] as (() => void) | undefined;
 
-    await shutdown?.();
+    expect(shutdown?.()).toBeUndefined();
+    await expect(lifecycle.waitForShutdown()).rejects.toThrow('close failed');
 
     expect(off).toHaveBeenCalledWith('SIGINT', shutdown);
     expect(off).toHaveBeenCalledWith('SIGTERM', shutdown);

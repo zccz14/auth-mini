@@ -99,6 +99,14 @@ describe('oclif cli contract', () => {
     expect(result.exitCode).toBe(0);
   }, 30000);
 
+  it('documents the supported Node.js runtime floor for the CLI', async () => {
+    const { default: pkg } = await import('../../package.json');
+    const readme = await readFile(resolve(process.cwd(), 'README.md'), 'utf8');
+
+    expect(pkg.engines?.node).toBe('>=20.10.0');
+    expect(readme).toContain('Node.js 20.10+');
+  });
+
   it('prints help to stdout only', async () => {
     const result = await runBuiltCli(['start', '--help']);
 

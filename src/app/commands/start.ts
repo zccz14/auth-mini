@@ -63,21 +63,38 @@ export async function runStartCommand(
 
     return {
       async close() {
-        await new Promise<void>((resolve, reject) => {
-          server.close((error) => {
-            if (error) {
-              reject(error);
-              return;
-            }
+        let shutdownError: unknown;
 
-            db.close();
-            logger.info(
-              { event: 'server.shutdown.completed' },
-              'auth-mini server shutdown complete',
-            );
-            resolve();
+        try {
+          await new Promise<void>((resolve, reject) => {
+            server.close((error) => {
+              if (error) {
+                reject(error);
+                return;
+              }
+
+              logger.info(
+                { event: 'server.shutdown.completed' },
+                'auth-mini server shutdown complete',
+              );
+              resolve();
+            });
           });
-        });
+        } catch (error) {
+          shutdownError = error;
+        }
+
+        try {
+          db.close();
+        } catch (error) {
+          if (!shutdownError) {
+            throw error;
+          }
+        }
+
+        if (shutdownError) {
+          throw shutdownError;
+        }
       },
     };
   } catch (error) {

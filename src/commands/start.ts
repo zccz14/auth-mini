@@ -21,13 +21,17 @@ export function createStartLifecycle(input: {
   });
   void completed.catch(() => undefined);
 
+  const onSignal = () => {
+    void shutdown();
+  };
+
   const removeListeners = () => {
     for (const signal of START_SIGNALS) {
-      input.off(signal, shutdown);
+      input.off(signal, onSignal);
     }
   };
 
-  const shutdown = async (): Promise<void> => {
+  const shutdown = (): Promise<void> => {
     if (shutdownPromise) {
       return shutdownPromise;
     }
@@ -39,16 +43,22 @@ export function createStartLifecycle(input: {
         await input.close();
         resolveShutdown();
       } catch (error) {
-        await input.onCloseError?.(error);
-        rejectShutdown(error);
+        try {
+          await input.onCloseError?.(error);
+        } finally {
+          rejectShutdown(error);
+        }
+
+        throw error;
       }
     })();
+    void shutdownPromise.catch(() => undefined);
 
     return shutdownPromise;
   };
 
   for (const signal of START_SIGNALS) {
-    input.on(signal, shutdown);
+    input.on(signal, onSignal);
   }
 
   return {

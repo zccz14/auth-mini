@@ -99,6 +99,8 @@ sequenceDiagram
 
 ## CLI
 
+Requires Node.js 20.10+ (the published CLI uses modern ESM, JSON import attributes, and top-level `await`).
+
 Create a database and optionally import SMTP config rows from a JSON file:
 
 ```bash
