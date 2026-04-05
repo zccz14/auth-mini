@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const createServer = vi.fn();
 const parseRuntimeConfig = vi.fn();
 const createDatabaseClient = vi.fn();
+const assertRequiredTablesAndColumns = vi.fn();
 const bootstrapKeys = vi.fn();
 const createApp = vi.fn();
 const createRootLogger = vi.fn();
@@ -19,6 +20,7 @@ vi.mock('../../src/shared/config.js', () => ({
 }));
 
 vi.mock('../../src/infra/db/client.js', () => ({
+  assertRequiredTablesAndColumns,
   createDatabaseClient,
 }));
 
@@ -96,17 +98,57 @@ describe('runStartCommand', () => {
     );
   });
 
-  it('fails fast before server startup until db-backed start resources land', async () => {
-    const db = { close: vi.fn() };
+  it('loads allowed origins from the database and derives a temporary rp id from the first row', async () => {
+    const closeServer = vi.fn((callback?: (error?: Error) => void) =>
+      callback?.(),
+    );
+    const listen = vi.fn(
+      (_port: number, _host: string, callback?: () => void) => callback?.(),
+    );
+    const server = {
+      close: closeServer,
+      listen,
+      off: vi.fn(),
+      once: vi.fn(),
+    };
+    const db = {
+      close: vi.fn(),
+      prepare: vi.fn().mockReturnValue({
+        all: vi
+          .fn()
+          .mockReturnValue([
+            { origin: 'https://app.example.com' },
+            { origin: 'https://admin.example.com' },
+          ]),
+      }),
+    };
 
     createDatabaseClient.mockReturnValue(db);
     bootstrapKeys.mockResolvedValue({ id: 'key-1', kid: 'kid-1' });
+    createServer.mockReturnValue(server);
+    createApp.mockReturnValue({ fetch: vi.fn() });
 
     const runStartCommand = await loadRunStartCommand();
-    await expect(
-      runStartCommand({ dbPath: '/tmp/auth-mini.db' }),
-    ).rejects.toThrow(
-      'start is not wired to db-backed allowed origins and rp_id yet',
+    const runningServer = await runStartCommand({
+      dbPath: '/tmp/auth-mini.db',
+    });
+
+    expect(assertRequiredTablesAndColumns).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        allowed_origins: ['origin'],
+      }),
+    );
+    expect(db.prepare).toHaveBeenCalledWith(
+      'SELECT id, origin, created_at FROM allowed_origins ORDER BY id ASC',
+    );
+    expect(createApp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        db,
+        issuer: 'https://issuer.example',
+        origins: ['https://app.example.com', 'https://admin.example.com'],
+        rpId: 'app.example.com',
+      }),
     );
     expect(bootstrapKeys).toHaveBeenCalledWith(
       db,
@@ -114,8 +156,15 @@ describe('runStartCommand', () => {
         logger: expect.any(Object),
       }),
     );
-    expect(createApp).not.toHaveBeenCalled();
-    expect(createServer).not.toHaveBeenCalled();
+    expect(listen).toHaveBeenCalledWith(
+      4100,
+      '127.0.0.1',
+      expect.any(Function),
+    );
+
+    await runningServer.close();
+
+    expect(closeServer).toHaveBeenCalledTimes(1);
     expect(db.close).toHaveBeenCalledTimes(1);
   });
 });

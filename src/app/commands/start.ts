@@ -8,6 +8,7 @@ import {
   assertRequiredTablesAndColumns,
   createDatabaseClient,
 } from '../../infra/db/client.js';
+import { listAllowedOrigins } from '../../infra/origins/repo.js';
 import { bootstrapKeys } from '../../modules/jwks/service.js';
 import { createApp } from '../../server/app.js';
 import { parseRuntimeConfig } from '../../shared/config.js';
@@ -39,7 +40,7 @@ export async function runStartCommand(
 
     await bootstrapKeys(db, { logger });
 
-    const runtimeResources = unsupportedStartRuntimeResources();
+    const runtimeResources = loadStartRuntimeResources(db);
 
     const clientIps = new WeakMap<Request, string | null>();
 
@@ -204,11 +205,23 @@ function toLoggerSink(
   return (input as StartCommandInput).loggerSink;
 }
 
-function unsupportedStartRuntimeResources(): {
+function loadStartRuntimeResources(
+  db: ReturnType<typeof createDatabaseClient>,
+): {
   origins: string[];
   rpId: string;
 } {
-  throw new Error(
-    'start is not wired to db-backed allowed origins and rp_id yet',
-  );
+  const origins = listAllowedOrigins(db).map((origin) => origin.origin);
+  const primaryOrigin = origins[0];
+
+  if (!primaryOrigin) {
+    throw new Error(
+      'start requires at least one allowed origin stored in the instance database',
+    );
+  }
+
+  return {
+    origins,
+    rpId: new URL(primaryOrigin).hostname,
+  };
 }

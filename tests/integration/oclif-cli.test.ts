@@ -1,4 +1,6 @@
+import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
+import { createServer } from 'node:net';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createDatabaseClient } from '../../src/infra/db/client.js';
@@ -218,26 +220,37 @@ describe('oclif cli contract', () => {
     expect(result.stderr).not.toContain('Stack:');
   });
 
-  it('fails start fast until db-backed runtime resources are wired', async () => {
+  it('starts by loading allowed origins from the instance database', async () => {
     await ensureCliIsBuilt();
     const dbPath = await createTempDbPath();
     const createResult = await runBuiltCli(['create', dbPath]);
 
     expect(createResult.exitCode).toBe(0);
 
-    const result = await runBuiltCli([
+    const db = createDatabaseClient(dbPath);
+
+    try {
+      db.prepare('INSERT INTO allowed_origins (origin) VALUES (?)').run(
+        'https://app.example.com',
+      );
+    } finally {
+      db.close();
+    }
+
+    const result = await startBuiltCliAndWaitForListening([
       'start',
       dbPath,
       '--issuer',
       'https://issuer.example',
+      '--port',
+      String(await getAvailablePort()),
     ]);
 
-    expect(result.exitCode).toBeGreaterThan(0);
+    expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain('cli.start.started');
-    expect(result.stdout).not.toContain('server.listening');
-    expect(result.stderr).toContain(
-      'start is not wired to db-backed allowed origins and rp_id yet',
-    );
+    expect(result.stdout).toContain('server.listening');
+    expect(result.stdout).toContain('server.shutdown.completed');
+    expect(result.stderr).toBe('');
   }, 15000);
 
   it('fails fast with a schema upgrade error when starting against a legacy database', async () => {
@@ -290,4 +303,70 @@ async function countActiveKeys(dbPath: string): Promise<number> {
   } finally {
     db.close();
   }
+}
+
+async function getAvailablePort(): Promise<number> {
+  return new Promise((resolvePort, reject) => {
+    const server = createServer();
+
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+
+      if (!address || typeof address === 'string') {
+        reject(
+          new Error('failed to allocate a TCP port for CLI integration test'),
+        );
+        return;
+      }
+
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolvePort(address.port);
+      });
+    });
+  });
+}
+
+async function startBuiltCliAndWaitForListening(
+  args: string[],
+): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  const cliEntrypoint = resolve(process.cwd(), 'dist/index.js');
+
+  return new Promise((resolveRun, reject) => {
+    const child = spawn(process.execPath, [cliEntrypoint, ...args], {
+      cwd: process.cwd(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let shuttingDown = false;
+
+    const finish = (exitCode: number | null) => {
+      resolveRun({
+        exitCode: exitCode ?? 1,
+        stdout,
+        stderr,
+      });
+    };
+
+    child.once('error', reject);
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+
+      if (!shuttingDown && stdout.includes('server.listening')) {
+        shuttingDown = true;
+        child.kill('SIGTERM');
+      }
+    });
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    child.once('close', finish);
+  });
 }
