@@ -37,8 +37,8 @@ export async function runStartCommand(
       },
       issuer: config.issuer,
       logger,
-      origins: config.origins,
-      rpId: config.rpId,
+      origins: config.origins ?? [],
+      rpId: config.rpId ?? '',
     });
 
     const server = createServer((req, res) => {

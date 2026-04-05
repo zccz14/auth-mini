@@ -89,7 +89,7 @@ describe('workspace bootstrap', () => {
     }
   }, 30000);
 
-  it('create imports valid smtp json', async () => {
+  it('rejects create smtp-config flag in the new contract', async () => {
     await ensureCliIsBuilt();
     const dbPath = await createTempDbPath();
     const tempDir = await mkdtemp(join(tmpdir(), 'auth-mini-smtp-'));
@@ -116,99 +116,9 @@ describe('workspace bootstrap', () => {
       smtpJsonPath,
     ]);
 
-    expect(result.exitCode).toBe(0);
-    expect(await countRows(dbPath, 'smtp_configs')).toBe(1);
-
-    const db = createDatabaseClient(dbPath);
-
-    try {
-      const smtpRow = db
-        .prepare(
-          [
-            'SELECT host, port, username, from_email, from_name, secure, weight',
-            'FROM smtp_configs',
-          ].join(' '),
-        )
-        .get() as {
-        host: string;
-        port: number;
-        username: string;
-        from_email: string;
-        from_name: string;
-        secure: number;
-        weight: number;
-      };
-
-      expect(smtpRow).toEqual({
-        host: 'smtp.example.com',
-        port: 587,
-        username: 'mailer',
-        from_email: 'noreply@example.com',
-        from_name: '',
-        secure: 0,
-        weight: 1,
-      });
-    } finally {
-      db.close();
-    }
-  }, 30000);
-
-  it('create rejects invalid smtp json and imports nothing', async () => {
-    await ensureCliIsBuilt();
-    const dbPath = await createTempDbPath();
-    const tempDir = await mkdtemp(join(tmpdir(), 'auth-mini-smtp-'));
-    const smtpJsonPath = join(tempDir, 'smtp.json');
-
-    await writeFile(smtpJsonPath, '{"host":"broken"}', 'utf8');
-
-    const result = await runBuiltCli([
-      'create',
-      dbPath,
-      '--smtp-config',
-      smtpJsonPath,
-    ]);
-
-    expect(result.exitCode).toBe(1);
-    expect(result.stderr).toContain('Invalid SMTP config');
-    expect(await countRows(dbPath, 'smtp_configs')).toBe(0);
-  }, 30000);
-
-  it('create rejects smtp rows missing host, port, username, password, or from_email', async () => {
-    await ensureCliIsBuilt();
-    const dbPath = await createTempDbPath();
-    const tempDir = await mkdtemp(join(tmpdir(), 'auth-mini-smtp-'));
-    const smtpJsonPath = join(tempDir, 'smtp.json');
-
-    await writeFile(
-      smtpJsonPath,
-      JSON.stringify([
-        {
-          host: 'smtp.example.com',
-          port: 587,
-          username: 'mailer',
-          password: 'secret',
-          from_email: 'noreply@example.com',
-        },
-        {
-          host: 'smtp-backup.example.com',
-          port: 2525,
-          username: 'backup',
-          password: 'secret',
-        },
-      ]),
-      'utf8',
-    );
-
-    const result = await runBuiltCli([
-      'create',
-      dbPath,
-      '--smtp-config',
-      smtpJsonPath,
-    ]);
-
-    expect(result.exitCode).toBe(1);
-    expect(result.stderr).toContain('Invalid SMTP config');
-    expect(await countRows(dbPath, 'smtp_configs')).toBe(0);
+    expect(result.exitCode).toBeGreaterThan(0);
+    expect(result.stderr).toContain('Nonexistent flag: --smtp-config');
+    expect(await exists(dbPath)).toBe(false);
   }, 30000);
 
   it('rotate-jwks generates a new active key and keeps older keys', async () => {
@@ -235,7 +145,7 @@ describe('workspace bootstrap', () => {
     }
   }, 30000);
 
-  it('creates all v1 tables', async () => {
+  it('creates the breaking schema tables and columns', async () => {
     const { bootstrapDatabase } =
       await import('../../src/infra/db/bootstrap.js');
     const { countRows, createTempDbPath, listTables } =
@@ -245,6 +155,7 @@ describe('workspace bootstrap', () => {
     await bootstrapDatabase(tempDbPath);
 
     expect(await listTables(tempDbPath)).toEqual([
+      'allowed_origins',
       'email_otps',
       'jwks_keys',
       'sessions',
@@ -254,6 +165,29 @@ describe('workspace bootstrap', () => {
       'webauthn_credentials',
     ]);
     expect(await countRows(tempDbPath, 'users')).toBe(0);
+
+    const db = createDatabaseClient(tempDbPath);
+
+    try {
+      const credentialColumns = db
+        .prepare("PRAGMA table_info('webauthn_credentials')")
+        .all() as Array<{ name: string; notnull: number }>;
+      const challengeColumns = db
+        .prepare("PRAGMA table_info('webauthn_challenges')")
+        .all() as Array<{ name: string; notnull: number }>;
+
+      expect(credentialColumns).toContainEqual(
+        expect.objectContaining({ name: 'rp_id', notnull: 1 }),
+      );
+      expect(challengeColumns).toContainEqual(
+        expect.objectContaining({ name: 'rp_id', notnull: 1 }),
+      );
+      expect(challengeColumns).toContainEqual(
+        expect.objectContaining({ name: 'origin', notnull: 1 }),
+      );
+    } finally {
+      db.close();
+    }
   });
 
   it('enforces a globally unique webauthn credential id', async () => {
@@ -279,19 +213,35 @@ describe('workspace bootstrap', () => {
       db.prepare(
         [
           'INSERT INTO webauthn_credentials',
-          '(id, user_id, credential_id, public_key, counter, transports)',
-          'VALUES (?, ?, ?, ?, ?, ?)',
+          '(id, user_id, credential_id, public_key, counter, transports, rp_id)',
+          'VALUES (?, ?, ?, ?, ?, ?, ?)',
         ].join(' '),
-      ).run('cred-1', 'user-1', 'shared-credential', 'pk-1', 0, 'internal');
+      ).run(
+        'cred-1',
+        'user-1',
+        'shared-credential',
+        'pk-1',
+        0,
+        'internal',
+        'example.com',
+      );
 
       expect(() => {
         db.prepare(
           [
             'INSERT INTO webauthn_credentials',
-            '(id, user_id, credential_id, public_key, counter, transports)',
-            'VALUES (?, ?, ?, ?, ?, ?)',
+            '(id, user_id, credential_id, public_key, counter, transports, rp_id)',
+            'VALUES (?, ?, ?, ?, ?, ?, ?)',
           ].join(' '),
-        ).run('cred-2', 'user-2', 'shared-credential', 'pk-2', 0, 'usb');
+        ).run(
+          'cred-2',
+          'user-2',
+          'shared-credential',
+          'pk-2',
+          0,
+          'usb',
+          'example.com',
+        );
       }).toThrowError(
         /UNIQUE constraint failed: webauthn_credentials.credential_id/,
       );
@@ -321,8 +271,8 @@ describe('workspace bootstrap', () => {
         db.prepare(
           [
             'INSERT INTO webauthn_challenges',
-            '(request_id, type, challenge, user_id, expires_at)',
-            'VALUES (?, ?, ?, ?, ?)',
+            '(request_id, type, challenge, user_id, expires_at, rp_id, origin)',
+            'VALUES (?, ?, ?, ?, ?, ?, ?)',
           ].join(' '),
         ).run(
           'register-missing-user',
@@ -330,6 +280,8 @@ describe('workspace bootstrap', () => {
           'challenge',
           null,
           '2030-01-01T00:00:00.000Z',
+          'example.com',
+          'https://app.example.com',
         );
       }).toThrowError(/CHECK constraint failed/);
 
@@ -337,8 +289,8 @@ describe('workspace bootstrap', () => {
         db.prepare(
           [
             'INSERT INTO webauthn_challenges',
-            '(request_id, type, challenge, user_id, expires_at)',
-            'VALUES (?, ?, ?, ?, ?)',
+            '(request_id, type, challenge, user_id, expires_at, rp_id, origin)',
+            'VALUES (?, ?, ?, ?, ?, ?, ?)',
           ].join(' '),
         ).run(
           'authenticate-without-user',
@@ -346,6 +298,8 @@ describe('workspace bootstrap', () => {
           'challenge',
           null,
           '2030-01-01T00:00:00.000Z',
+          'example.com',
+          'https://app.example.com',
         );
       }).not.toThrow();
 
@@ -353,8 +307,8 @@ describe('workspace bootstrap', () => {
         db.prepare(
           [
             'INSERT INTO webauthn_challenges',
-            '(request_id, type, challenge, user_id, expires_at)',
-            'VALUES (?, ?, ?, ?, ?)',
+            '(request_id, type, challenge, user_id, expires_at, rp_id, origin)',
+            'VALUES (?, ?, ?, ?, ?, ?, ?)',
           ].join(' '),
         ).run(
           'authenticate-with-user',
@@ -362,6 +316,8 @@ describe('workspace bootstrap', () => {
           'challenge',
           'user-1',
           '2030-01-01T00:00:00.000Z',
+          'example.com',
+          'https://app.example.com',
         );
       }).toThrowError(/CHECK constraint failed/);
     } finally {

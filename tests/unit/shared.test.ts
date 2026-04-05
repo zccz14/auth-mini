@@ -85,21 +85,17 @@ describe('shared runtime defaults', () => {
     expect(TTLS.refreshTokenSeconds).toBe(604800);
   });
 
-  it('parses runtime config with cli defaults and ordered origins', () => {
+  it('parses runtime config with only issuer and db path requirements', () => {
     expect(
       parseRuntimeConfig({
         dbPath: '/tmp/auth-mini.sqlite',
         issuer: 'https://issuer.example',
-        rpId: 'example.com',
-        origin: ['https://one.example', 'https://two.example'],
       }),
     ).toEqual({
       dbPath: '/tmp/auth-mini.sqlite',
       host: '127.0.0.1',
       port: 7777,
       issuer: 'https://issuer.example',
-      rpId: 'example.com',
-      origins: ['https://one.example', 'https://two.example'],
     });
   });
 

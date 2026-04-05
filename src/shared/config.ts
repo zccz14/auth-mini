@@ -5,13 +5,10 @@ const runtimeConfigSchema = z.object({
   host: z.string().min(1).default('127.0.0.1'),
   port: z.coerce.number().int().positive().default(7777),
   issuer: z.url(),
-  rpId: z.string().min(1),
-  origin: z.array(z.string().min(1)).min(1),
 });
 
 const createCommandSchema = z.object({
   dbPath: z.string().min(1),
-  smtpConfig: z.string().min(1).optional(),
 });
 
 const rotateJwksCommandSchema = z.object({
@@ -23,8 +20,8 @@ export type RuntimeConfig = {
   host: string;
   port: number;
   issuer: string;
-  rpId: string;
-  origins: string[];
+  rpId?: string;
+  origins?: string[];
 };
 
 export type CreateCommandInput = z.infer<typeof createCommandSchema>;
@@ -38,8 +35,6 @@ export function parseRuntimeConfig(input: unknown): RuntimeConfig {
     host: parsed.host,
     port: parsed.port,
     issuer: parsed.issuer,
-    rpId: parsed.rpId,
-    origins: parsed.origin,
   };
 }
 

@@ -1,6 +1,5 @@
 import { bootstrapDatabase } from '../../infra/db/bootstrap.js';
 import { createDatabaseClient } from '../../infra/db/client.js';
-import { importSmtpConfigs } from '../../infra/smtp/config-import.js';
 import { bootstrapKeys } from '../../modules/jwks/service.js';
 import { parseCreateCommandInput } from '../../shared/config.js';
 import { createRootLogger } from '../../shared/logger.js';
@@ -24,10 +23,6 @@ export async function runCreateCommand(input: unknown): Promise<void> {
 
   try {
     await bootstrapKeys(db, { logger });
-
-    if (command.smtpConfig) {
-      await importSmtpConfigs(db, command.smtpConfig);
-    }
 
     logger.info({ event: 'cli.create.completed' }, 'Create command completed');
   } finally {

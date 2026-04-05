@@ -52,6 +52,12 @@ CREATE TABLE IF NOT EXISTS smtp_configs (
   weight INTEGER NOT NULL DEFAULT 1 CHECK (weight > 0)
 );
 
+CREATE TABLE IF NOT EXISTS allowed_origins (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  origin TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS webauthn_credentials (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
@@ -59,6 +65,7 @@ CREATE TABLE IF NOT EXISTS webauthn_credentials (
   public_key TEXT NOT NULL,
   counter INTEGER NOT NULL DEFAULT 0,
   transports TEXT NOT NULL DEFAULT '',
+  rp_id TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
@@ -69,6 +76,8 @@ CREATE TABLE IF NOT EXISTS webauthn_challenges (
   challenge TEXT NOT NULL,
   user_id TEXT,
   expires_at TEXT NOT NULL,
+  rp_id TEXT NOT NULL,
+  origin TEXT NOT NULL,
   consumed_at TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CHECK (
