@@ -116,6 +116,7 @@ describe('smtp cli', () => {
         '--from-name',
         'Ops',
         '--secure',
+        'true',
         '--weight',
         '9',
       ]);
@@ -152,6 +153,24 @@ describe('smtp cli', () => {
         is_active: 1,
         weight: 9,
       });
+
+      const disableSecureResult = await runBuiltCli([
+        'smtp',
+        'update',
+        dbPath,
+        '--id',
+        String(row.id),
+        '--secure',
+        'false',
+      ]);
+
+      expect(disableSecureResult.exitCode).toBe(0);
+
+      const secureDisabledRow = db
+        .prepare('SELECT secure FROM smtp_configs WHERE id = ?')
+        .get(row.id) as { secure: number };
+
+      expect(secureDisabledRow.secure).toBe(0);
 
       const deleteResult = await runBuiltCli([
         'smtp',

@@ -20,7 +20,10 @@ export default class SmtpUpdateCommand extends BaseCommand {
     password: Flags.string({ description: 'SMTP password' }),
     'from-email': Flags.string({ description: 'Sender email address' }),
     'from-name': Flags.string({ description: 'Sender display name' }),
-    secure: Flags.boolean({ description: 'Use SMTPS / secure transport' }),
+    secure: Flags.string({
+      options: ['true', 'false'],
+      description: 'Set SMTPS / secure transport on or off',
+    }),
     weight: Flags.integer({ description: 'Selection weight' }),
   };
 
@@ -37,7 +40,7 @@ export default class SmtpUpdateCommand extends BaseCommand {
         password: flags.password,
         fromEmail: flags['from-email'],
         fromName: flags['from-name'],
-        secure: flags.secure,
+        secure: parseSecureFlag(flags.secure),
         weight: flags.weight,
       });
 
@@ -72,4 +75,12 @@ function formatSmtpConfig(config: {
     config.isActive ? 1 : 0,
     config.weight,
   ].join('\t');
+}
+
+function parseSecureFlag(value: string | undefined): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  return value === 'true';
 }
