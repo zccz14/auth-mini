@@ -10,6 +10,84 @@ It uses email OTP for first login, discoverable WebAuthn credentials for usernam
 
 See `demo/` for the single-page static demo/docs site that doubles as the browser integration guide, API reference, deployment walkthrough, and JWT verification reference.
 
+## Interaction flow
+
+### Email OTP sign-in
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Frontend
+    participant Auth as Auth Mini Server
+
+    User->>Frontend: Enter email and request sign-in
+    Frontend->>Auth: POST /email/start
+    Auth-->>User: Send OTP email
+    User->>Frontend: Enter OTP
+    Frontend->>Auth: POST /email/verify
+    Auth-->>Frontend: Access token + refresh token
+
+    Frontend->>Auth: GET /me (Bearer access token)
+    Auth-->>Frontend: Current user + active credentials/sessions
+```
+
+### Passkey flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Frontend
+    participant Auth as Auth Mini Server
+
+    Note over User,Auth: Register passkey after email sign-in
+    Frontend->>Auth: POST /webauthn/register/options
+    Auth-->>Frontend: request_id + publicKey
+    Frontend->>User: Browser shows passkey creation prompt
+    User-->>Frontend: Approve with authenticator
+    Frontend->>Auth: POST /webauthn/register/verify
+    Auth-->>Frontend: Credential saved
+
+    Note over User,Auth: Later sign in with a discoverable passkey
+    Frontend->>Auth: POST /webauthn/authenticate/options
+    Auth-->>Frontend: request_id + publicKey
+    Frontend->>User: Browser/OS shows available passkeys
+    User-->>Frontend: Choose passkey and approve
+    Frontend->>Auth: POST /webauthn/authenticate/verify
+    Auth-->>Frontend: Access token + refresh token
+    Frontend->>Auth: GET /me (Bearer access token)
+    Auth-->>Frontend: Current user + active credentials/sessions
+```
+
+### Full auth and backend verification
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Frontend
+    participant Auth as Auth Mini Server
+    participant Backend
+
+    User->>Frontend: Complete sign-in (email OTP or passkey)
+    Frontend->>Auth: Login / verify request
+    Auth-->>Frontend: Access token + refresh token
+
+    Frontend->>Backend: App API request (Bearer access token)
+    Backend->>Auth: GET /jwks
+    Auth-->>Backend: Public signing keys
+    Backend->>Backend: Verify JWT signature and claims
+    Backend-->>Frontend: Protected resource
+
+    opt Access token expired
+        Frontend->>Auth: POST /session/refresh (refresh token)
+        Auth-->>Frontend: New access token + refresh token
+        Frontend->>Backend: Retry API request (new access token)
+        Backend-->>Frontend: Protected resource
+    end
+```
+
 ## Features
 
 - Email sign-in with one-time passwords
