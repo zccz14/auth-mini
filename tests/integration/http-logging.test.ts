@@ -180,14 +180,18 @@ async function startLoggedServer() {
   const logCollector = createMemoryLogCollector();
 
   await bootstrapDatabase(dbPath);
+  const db = createDatabaseClient(dbPath);
+
+  db.prepare('INSERT INTO allowed_origins (origin) VALUES (?)').run(
+    'https://app.example.com',
+  );
+  db.close();
 
   const server = await runStartCommand({
     dbPath,
     host: '127.0.0.1',
     port,
     issuer: 'https://issuer.example',
-    rpId: 'example.com',
-    origin: ['https://app.example.com'],
     loggerSink: logCollector.sink,
   });
 

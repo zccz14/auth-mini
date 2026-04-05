@@ -371,6 +371,9 @@ describe('session routes', () => {
         from_name: 'auth-mini',
       }),
     );
+    db.prepare('INSERT INTO allowed_origins (origin) VALUES (?)').run(
+      'https://app.example.com',
+    );
     db.close();
 
     const server = await runStartCommand({
@@ -378,8 +381,6 @@ describe('session routes', () => {
       host: '127.0.0.1',
       port,
       issuer: 'https://issuer.example',
-      rpId: 'example.com',
-      origin: ['https://app.example.com'],
     });
 
     const response = await fetch(`http://127.0.0.1:${port}/email/start`, {
@@ -418,6 +419,9 @@ describe('session routes', () => {
         from_name: 'auth-mini',
       }),
     );
+    db.prepare('INSERT INTO allowed_origins (origin) VALUES (?)').run(
+      'https://app.example.com',
+    );
     db.close();
 
     const server = await runStartCommand({
@@ -425,8 +429,6 @@ describe('session routes', () => {
       host: '127.0.0.1',
       port,
       issuer: 'https://issuer.example',
-      rpId: 'example.com',
-      origin: ['https://app.example.com'],
     });
 
     const response = await fetch(`http://127.0.0.1:${port}/email/start`, {

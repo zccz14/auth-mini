@@ -27,7 +27,7 @@ const requiredRuntimeSchema = {
 export async function runStartCommand(
   input: unknown,
 ): Promise<{ close(): Promise<void> }> {
-  const config = parseRuntimeConfig(input);
+  const config = parseRuntimeConfig(toRuntimeConfigInput(input));
   const logger = createRootLogger({ sink: toLoggerSink(input) }).child({
     command: 'start',
     db_path: config.dbPath,
@@ -203,6 +203,31 @@ function toLoggerSink(
   }
 
   return (input as StartCommandInput).loggerSink;
+}
+
+function toRuntimeConfigInput(input: unknown): {
+  dbPath?: unknown;
+  host?: unknown;
+  port?: unknown;
+  issuer?: unknown;
+} {
+  if (!input || typeof input !== 'object') {
+    return {};
+  }
+
+  const runtimeInput = input as {
+    dbPath?: unknown;
+    host?: unknown;
+    port?: unknown;
+    issuer?: unknown;
+  };
+
+  return {
+    dbPath: runtimeInput.dbPath,
+    host: runtimeInput.host,
+    port: runtimeInput.port,
+    issuer: runtimeInput.issuer,
+  };
 }
 
 function loadStartRuntimeResources(
