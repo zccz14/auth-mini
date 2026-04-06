@@ -98,7 +98,7 @@ describe('runStartCommand', () => {
     );
   });
 
-  it('loads allowed origins from the database and derives a temporary rp id from the first row', async () => {
+  it('loads allowed origins from the database without passing a startup rp id', async () => {
     const closeServer = vi.fn((callback?: (error?: Error) => void) =>
       callback?.(),
     );
@@ -147,14 +147,66 @@ describe('runStartCommand', () => {
         db,
         issuer: 'https://issuer.example',
         origins: ['https://app.example.com', 'https://admin.example.com'],
-        rpId: 'app.example.com',
       }),
+    );
+    expect(createApp).not.toHaveBeenCalledWith(
+      expect.objectContaining({ rpId: expect.anything() }),
     );
     expect(bootstrapKeys).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
         logger: expect.any(Object),
       }),
+    );
+    expect(listen).toHaveBeenCalledWith(
+      4100,
+      '127.0.0.1',
+      expect.any(Function),
+    );
+
+    await runningServer.close();
+
+    expect(closeServer).toHaveBeenCalledTimes(1);
+    expect(db.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts successfully when no allowed origins are configured', async () => {
+    const closeServer = vi.fn((callback?: (error?: Error) => void) =>
+      callback?.(),
+    );
+    const listen = vi.fn(
+      (_port: number, _host: string, callback?: () => void) => callback?.(),
+    );
+    const server = {
+      close: closeServer,
+      listen,
+      off: vi.fn(),
+      once: vi.fn(),
+    };
+    const db = {
+      close: vi.fn(),
+      prepare: vi.fn().mockReturnValue({
+        all: vi.fn().mockReturnValue([]),
+      }),
+    };
+
+    createDatabaseClient.mockReturnValue(db);
+    bootstrapKeys.mockResolvedValue({ id: 'key-1', kid: 'kid-1' });
+    createServer.mockReturnValue(server);
+    createApp.mockReturnValue({ fetch: vi.fn() });
+
+    const runStartCommand = await loadRunStartCommand();
+    const runningServer = await runStartCommand({
+      dbPath: '/tmp/auth-mini.db',
+    });
+
+    expect(createApp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        origins: [],
+      }),
+    );
+    expect(createApp).not.toHaveBeenCalledWith(
+      expect.objectContaining({ rpId: expect.anything() }),
     );
     expect(listen).toHaveBeenCalledWith(
       4100,

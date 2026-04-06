@@ -65,7 +65,6 @@ type AppVariables = AuthVariables & {
   logger: AppLogger;
   origins: string[];
   requestId: string;
-  rpId: string;
 };
 
 export function createApp(input: {
@@ -74,7 +73,6 @@ export function createApp(input: {
   issuer: string;
   logger: AppLogger;
   origins: string[];
-  rpId: string;
 }) {
   const app = new Hono<{ Variables: AppVariables }>();
 
@@ -89,7 +87,6 @@ export function createApp(input: {
     c.set('logger', input.logger.child({ request_id: requestId }));
     c.set('origins', input.origins);
     c.set('requestId', requestId);
-    c.set('rpId', input.rpId);
     c.set('clientIp', input.getClientIp?.(c.req.raw) ?? null);
 
     await next();

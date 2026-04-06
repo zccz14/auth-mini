@@ -52,7 +52,6 @@ export async function runStartCommand(
       issuer: config.issuer,
       logger,
       origins: runtimeResources.origins,
-      rpId: runtimeResources.rpId,
     });
 
     const server = createServer((req, res) => {
@@ -234,19 +233,8 @@ function loadStartRuntimeResources(
   db: ReturnType<typeof createDatabaseClient>,
 ): {
   origins: string[];
-  rpId: string;
 } {
-  const origins = listAllowedOrigins(db).map((origin) => origin.origin);
-  const primaryOrigin = origins[0];
-
-  if (!primaryOrigin) {
-    throw new Error(
-      'start requires at least one allowed origin stored in the instance database',
-    );
-  }
-
   return {
-    origins,
-    rpId: new URL(primaryOrigin).hostname,
+    origins: listAllowedOrigins(db).map((origin) => origin.origin),
   };
 }

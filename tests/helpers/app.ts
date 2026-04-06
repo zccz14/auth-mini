@@ -76,7 +76,6 @@ export async function createTestApp(options: CreateTestAppOptions = {}) {
     },
     issuer: 'https://issuer.example',
     origins: loadAllowedOrigins(db),
-    rpId: deriveRpId(allowedOrigins),
     logger: logCollector.logger,
   });
 
@@ -110,10 +109,4 @@ function loadAllowedOrigins(
       origin: string;
     }>
   ).map((row) => row.origin);
-}
-
-function deriveRpId(origins: string[]): string {
-  const primaryOrigin = origins[0];
-
-  return primaryOrigin ? new URL(primaryOrigin).hostname : 'example.com';
 }
