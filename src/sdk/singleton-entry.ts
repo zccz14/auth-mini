@@ -575,9 +575,12 @@ function createRuntime() {
     }
 
     function createOptionsPayload(payload) {
-      return typeof payload?.rpId === 'string' && payload.rpId.length > 0
-        ? { rp_id: payload.rpId }
-        : {};
+      const rpId =
+        typeof payload?.rpId === 'string' && payload.rpId.length > 0
+          ? payload.rpId
+          : globalThis.location?.hostname;
+
+      return { rp_id: rpId };
     }
   }
 

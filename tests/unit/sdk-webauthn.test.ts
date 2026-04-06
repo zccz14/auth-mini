@@ -11,7 +11,22 @@ import {
 } from '../helpers/sdk.js';
 
 describe('sdk webauthn flows', () => {
-  it('passes optional rpId through the passkey authenticate options call', async () => {
+  it('defaults passkey authenticate rp_id to the current page hostname', async () => {
+    vi.stubGlobal('location', new URL('https://app.example.com/account'));
+    const fetch = createWebauthnRequestRecorder();
+    const sdk = createAuthMiniForTest({
+      fetch,
+      navigatorCredentials: fakeNavigatorCredentials(),
+    });
+
+    await sdk.passkey.authenticate();
+
+    expect(readJsonBody(fetch, '/webauthn/authenticate/options')).toEqual({
+      rp_id: 'app.example.com',
+    });
+  });
+
+  it('passes explicit rpId override through the passkey authenticate options call', async () => {
     const fetch = createWebauthnRequestRecorder();
     const sdk = createAuthMiniForTest({
       fetch,
@@ -25,7 +40,23 @@ describe('sdk webauthn flows', () => {
     });
   });
 
-  it('passes optional rpId through the passkey register options call', async () => {
+  it('defaults passkey register rp_id to the current page hostname', async () => {
+    vi.stubGlobal('location', new URL('https://app.example.com/settings'));
+    const fetch = createWebauthnRequestRecorder();
+    const sdk = createAuthMiniForTest({
+      fetch,
+      storage: fakeAuthenticatedStorageWithMe(),
+      navigatorCredentials: fakeNavigatorCredentials(),
+    });
+
+    await sdk.passkey.register();
+
+    expect(readJsonBody(fetch, '/webauthn/register/options')).toEqual({
+      rp_id: 'app.example.com',
+    });
+  });
+
+  it('passes explicit rpId override through the passkey register options call', async () => {
     const fetch = createWebauthnRequestRecorder();
     const sdk = createAuthMiniForTest({
       fetch,
