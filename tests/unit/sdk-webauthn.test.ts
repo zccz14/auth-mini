@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   cancelledNavigatorCredentials,
   countRefreshCalls,
@@ -10,7 +10,13 @@ import {
   readJsonBody,
 } from '../helpers/sdk.js';
 
+const originalLocation = globalThis.location;
+
 describe('sdk webauthn flows', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('defaults passkey authenticate rp_id to the current page hostname', async () => {
     vi.stubGlobal('location', new URL('https://app.example.com/account'));
     const fetch = createWebauthnRequestRecorder();
@@ -24,6 +30,10 @@ describe('sdk webauthn flows', () => {
     expect(readJsonBody(fetch, '/webauthn/authenticate/options')).toEqual({
       rp_id: 'app.example.com',
     });
+  });
+
+  it('restores the original global location after each test', () => {
+    expect(globalThis.location).toBe(originalLocation);
   });
 
   it('passes explicit rpId override through the passkey authenticate options call', async () => {
