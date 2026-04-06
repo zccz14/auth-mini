@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   countLogoutCalls,
   countRefreshCalls,
-  createMiniAuthForTest,
+  createAuthMiniForTest,
   fakeAlmostExpiredStorage,
   fakeAuthenticatedStorage,
   fakeAuthenticatedStorageWithMe,
@@ -11,7 +11,7 @@ import {
 
 describe('sdk session flows', () => {
   it('starts in recovering and settles authenticated after boot recovery', async () => {
-    const sdk = createMiniAuthForTest({
+    const sdk = createAuthMiniForTest({
       autoRecover: true,
       storage: fakeAuthenticatedStorage({
         accessToken: null,
@@ -60,7 +60,7 @@ describe('sdk session flows', () => {
           active_sessions: [],
         }),
       );
-    const sdk = createMiniAuthForTest({
+    const sdk = createAuthMiniForTest({
       fetch,
       now: () => Date.parse('2026-04-03T00:02:00.000Z'),
       storage: fakeAuthenticatedStorage({
@@ -74,7 +74,7 @@ describe('sdk session flows', () => {
   });
 
   it('refresh success also reloads me', async () => {
-    const sdk = createMiniAuthForTest({
+    const sdk = createAuthMiniForTest({
       storage: fakeAuthenticatedStorage(),
       fetch: vi
         .fn()
@@ -101,7 +101,7 @@ describe('sdk session flows', () => {
   });
 
   it('preserves authenticated state when refresh fails with a transient 5xx error', async () => {
-    const sdk = createMiniAuthForTest({
+    const sdk = createAuthMiniForTest({
       storage: fakeAuthenticatedStorageWithMe(),
       fetch: vi
         .fn()
@@ -120,7 +120,7 @@ describe('sdk session flows', () => {
   });
 
   it('me.get returns cached state synchronously', () => {
-    const sdk = createMiniAuthForTest({
+    const sdk = createAuthMiniForTest({
       storage: fakeAuthenticatedStorageWithMe(),
     });
 
@@ -128,7 +128,7 @@ describe('sdk session flows', () => {
   });
 
   it('me.reload fetches and updates cached me', async () => {
-    const sdk = createMiniAuthForTest({
+    const sdk = createAuthMiniForTest({
       storage: fakeAuthenticatedStorageWithMe(),
       fetch: vi.fn().mockResolvedValueOnce(
         jsonResponse({
@@ -146,7 +146,7 @@ describe('sdk session flows', () => {
   });
 
   it('preserves recoverable state when refresh succeeds but me reload fails transiently', async () => {
-    const sdk = createMiniAuthForTest({
+    const sdk = createAuthMiniForTest({
       storage: fakeAuthenticatedStorage(),
       fetch: vi
         .fn()
@@ -172,7 +172,7 @@ describe('sdk session flows', () => {
   });
 
   it('clears state and emits anonymous when refresh token is rejected', async () => {
-    const sdk = createMiniAuthForTest({
+    const sdk = createAuthMiniForTest({
       storage: fakeAuthenticatedStorage(),
       fetch: vi
         .fn()
@@ -193,7 +193,7 @@ describe('sdk session flows', () => {
   });
 
   it('preserves recoverable state when boot me reload fails transiently', async () => {
-    const sdk = createMiniAuthForTest({
+    const sdk = createAuthMiniForTest({
       autoRecover: true,
       storage: fakeAuthenticatedStorageWithMe(),
       fetch: vi
@@ -229,7 +229,7 @@ describe('sdk session flows', () => {
           active_sessions: [],
         }),
       );
-    const sdk = createMiniAuthForTest({
+    const sdk = createAuthMiniForTest({
       autoRecover: true,
       fetch,
       storage: fakeAuthenticatedStorageWithMe(undefined, {
@@ -248,7 +248,7 @@ describe('sdk session flows', () => {
   });
 
   it('logout clears local state even when remote logout fails', async () => {
-    const sdk = createMiniAuthForTest({
+    const sdk = createAuthMiniForTest({
       storage: fakeAuthenticatedStorage(),
       fetch: vi.fn().mockRejectedValueOnce(new Error('network down')),
     });
@@ -277,7 +277,7 @@ describe('sdk session flows', () => {
         }),
       )
       .mockResolvedValueOnce(jsonResponse({ ok: true }));
-    const sdk = createMiniAuthForTest({
+    const sdk = createAuthMiniForTest({
       storage: fakeAlmostExpiredStorage(),
       fetch,
       now: () => Date.parse('2026-04-03T00:02:00.000Z'),

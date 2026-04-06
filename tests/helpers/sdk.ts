@@ -86,7 +86,7 @@ export function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-export function createMiniAuthForTest(options: Partial<InternalSdkDeps> = {}) {
+export function createAuthMiniForTest(options: Partial<InternalSdkDeps> = {}) {
   return createAuthMiniInternal({
     autoRecover: false,
     baseUrl: 'https://auth.example.com',

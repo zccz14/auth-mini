@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createMiniAuthForTest, jsonResponse } from '../helpers/sdk.js';
+import { createAuthMiniForTest, jsonResponse } from '../helpers/sdk.js';
 
 describe('sdk login contract', () => {
   it('email.verify resolves only after /me is loaded', async () => {
-    const sdk = createMiniAuthForTest({
+    const sdk = createAuthMiniForTest({
       fetch: vi
         .fn()
         .mockResolvedValueOnce(
@@ -35,7 +35,7 @@ describe('sdk login contract', () => {
   });
 
   it('email.verify rolls back auth state when /me fails', async () => {
-    const sdk = createMiniAuthForTest({
+    const sdk = createAuthMiniForTest({
       fetch: vi
         .fn()
         .mockResolvedValueOnce(
@@ -56,7 +56,7 @@ describe('sdk login contract', () => {
   });
 
   it('preserves server error payloads from failed json responses', async () => {
-    const sdk = createMiniAuthForTest({
+    const sdk = createAuthMiniForTest({
       fetch: vi
         .fn()
         .mockResolvedValueOnce(

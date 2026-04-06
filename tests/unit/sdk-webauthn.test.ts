@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   cancelledNavigatorCredentials,
   countRefreshCalls,
-  createMiniAuthForTest,
+  createAuthMiniForTest,
   createWebauthnRequestRecorder,
   fakeAuthenticatedStorageWithMe,
   fakeNavigatorCredentials,
@@ -13,7 +13,7 @@ import {
 describe('sdk webauthn flows', () => {
   it('passes optional rpId through the passkey authenticate options call', async () => {
     const fetch = createWebauthnRequestRecorder();
-    const sdk = createMiniAuthForTest({
+    const sdk = createAuthMiniForTest({
       fetch,
       navigatorCredentials: fakeNavigatorCredentials(),
     });
@@ -27,7 +27,7 @@ describe('sdk webauthn flows', () => {
 
   it('passes optional rpId through the passkey register options call', async () => {
     const fetch = createWebauthnRequestRecorder();
-    const sdk = createMiniAuthForTest({
+    const sdk = createAuthMiniForTest({
       fetch,
       storage: fakeAuthenticatedStorageWithMe(),
       navigatorCredentials: fakeNavigatorCredentials(),
@@ -41,7 +41,7 @@ describe('sdk webauthn flows', () => {
   });
 
   it('throws webauthn_unsupported when browser webauthn apis are unavailable', async () => {
-    const sdk = createMiniAuthForTest({
+    const sdk = createAuthMiniForTest({
       publicKeyCredential: undefined,
     });
 
@@ -51,7 +51,7 @@ describe('sdk webauthn flows', () => {
   });
 
   it('throws webauthn_cancelled when the user cancels passkey auth', async () => {
-    const sdk = createMiniAuthForTest({
+    const sdk = createAuthMiniForTest({
       fetch: createWebauthnRequestRecorder(),
       navigatorCredentials: cancelledNavigatorCredentials(),
     });
@@ -63,7 +63,7 @@ describe('sdk webauthn flows', () => {
 
   it('authenticates, stores session, and makes me available synchronously', async () => {
     const fetch = createWebauthnRequestRecorder();
-    const sdk = createMiniAuthForTest({
+    const sdk = createAuthMiniForTest({
       fetch,
       navigatorCredentials: fakeNavigatorCredentials(),
     });
@@ -111,7 +111,7 @@ describe('sdk webauthn flows', () => {
       .mockImplementationOnce(async () =>
         jsonResponse({ error: 'internal_error' }, 500),
       );
-    const sdk = createMiniAuthForTest({
+    const sdk = createAuthMiniForTest({
       fetch,
       navigatorCredentials: fakeNavigatorCredentials(),
     });
@@ -124,7 +124,7 @@ describe('sdk webauthn flows', () => {
   });
 
   it('requires an authenticated session before passkey registration', async () => {
-    const sdk = createMiniAuthForTest();
+    const sdk = createAuthMiniForTest();
 
     await expect(sdk.webauthn.register()).rejects.toMatchObject({
       code: 'missing_session',
@@ -132,7 +132,7 @@ describe('sdk webauthn flows', () => {
   });
 
   it('register throws webauthn_unsupported when browser apis are unavailable', async () => {
-    const sdk = createMiniAuthForTest({
+    const sdk = createAuthMiniForTest({
       storage: fakeAuthenticatedStorageWithMe(),
       publicKeyCredential: undefined,
     });
@@ -144,7 +144,7 @@ describe('sdk webauthn flows', () => {
 
   it('registers a passkey and serializes the browser credential', async () => {
     const fetch = createWebauthnRequestRecorder();
-    const sdk = createMiniAuthForTest({
+    const sdk = createAuthMiniForTest({
       fetch,
       storage: fakeAuthenticatedStorageWithMe(),
       navigatorCredentials: fakeNavigatorCredentials(),
@@ -222,7 +222,7 @@ describe('sdk webauthn flows', () => {
         `Unhandled fetch path: ${path} ${JSON.stringify(init ?? {})}`,
       );
     });
-    const sdk = createMiniAuthForTest({
+    const sdk = createAuthMiniForTest({
       fetch,
       now: () => currentTime,
       navigatorCredentials: {
