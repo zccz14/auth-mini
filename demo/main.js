@@ -296,7 +296,7 @@ export function createDemoRuntime({
     handleSdkLoadFailure(error) {
       sdkInteractive = false;
       state.latestAction = 'SDK bootstrap';
-      state.latestResult = `MiniAuth SDK did not load: ${formatError(error)}`;
+      state.latestResult = `AuthMini SDK did not load: ${formatError(error)}`;
       if (elements.statusConfig) {
         elements.statusConfig.textContent = 'SDK missing';
       }
@@ -409,7 +409,7 @@ async function handleEmailStart({
 
   state.email = email;
   persistState(localStorage, state.email);
-  state.latestAction = 'MiniAuth.email.start()';
+  state.latestAction = 'AuthMini.email.start()';
   setSectionLoading(sectionViews, 'email-start', 'Sending OTP...');
   renderState();
 
@@ -459,7 +459,7 @@ async function handleEmailVerify({
 
   state.email = email;
   persistState(localStorage, state.email);
-  state.latestAction = 'MiniAuth.email.verify()';
+  state.latestAction = 'AuthMini.email.verify()';
   setSectionLoading(sectionViews, 'email-verify', 'Verifying OTP...');
   renderState();
 
@@ -488,7 +488,7 @@ async function handleRegisterPasskey({
     return;
   }
 
-  state.latestAction = 'MiniAuth.webauthn.register()';
+  state.latestAction = 'AuthMini.webauthn.register()';
   setSectionLoading(sectionViews, 'register', 'Creating passkey...');
   renderState();
 
@@ -518,7 +518,7 @@ async function handleAuthenticatePasskey({
     return;
   }
 
-  state.latestAction = 'MiniAuth.webauthn.authenticate()';
+  state.latestAction = 'AuthMini.webauthn.authenticate()';
   setSectionLoading(sectionViews, 'authenticate', 'Signing in with passkey...');
   renderState();
 
@@ -545,8 +545,8 @@ async function clearState({
   localStorage,
 }) {
   if (!sdk || !sdkInteractive) {
-    state.latestAction = 'MiniAuth.session.logout()';
-    state.latestResult = 'MiniAuth SDK is not ready yet.';
+    state.latestAction = 'AuthMini.session.logout()';
+    state.latestResult = 'AuthMini SDK is not ready yet.';
     renderState();
     return;
   }
@@ -560,7 +560,7 @@ async function clearState({
   }
 
   state.email = '';
-  state.latestAction = 'MiniAuth.session.logout()';
+  state.latestAction = 'AuthMini.session.logout()';
   state.latestResult = logoutError
     ? `Local demo state cleared. SDK logout failed: ${formatError(logoutError)}`
     : 'Local demo state cleared.';
@@ -790,14 +790,14 @@ function formatError(error) {
 
 function renderMissingSdkState({ renderState, state }) {
   state.latestAction = 'SDK bootstrap';
-  state.latestResult = 'MiniAuth SDK is not ready yet.';
+  state.latestResult = 'AuthMini SDK is not ready yet.';
   renderState();
 }
 
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   const hooks =
-    window.__MINI_AUTH_TEST_HOOKS__ ||
-    globalThis.__MINI_AUTH_TEST_HOOKS__ ||
+    window.__AUTH_MINI_TEST_HOOKS__ ||
+    globalThis.__AUTH_MINI_TEST_HOOKS__ ||
     {};
   void bootstrapDemoPage({ loadSdkScript: hooks.loadSdkScript }).catch(
     () => {},

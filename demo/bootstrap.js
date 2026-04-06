@@ -45,7 +45,7 @@ export async function bootstrapDemoPage({
 
   try {
     await loadSdkScript(setupState, { document });
-    runtime.attachSdk(windowObject.MiniAuth);
+    runtime.attachSdk(windowObject.AuthMini);
     await runtime.completeStartup();
   } catch (error) {
     disableFlowButtons(document);
@@ -70,6 +70,6 @@ function readLocationInputs({ document, location, windowObject }) {
     sdkOriginInput,
     sdkUrl:
       document?.querySelector?.('script[data-auth-mini-sdk]')?.src ||
-      windowObject?.__MINI_AUTH_SDK_URL__,
+      windowObject?.__AUTH_MINI_SDK_URL__,
   };
 }

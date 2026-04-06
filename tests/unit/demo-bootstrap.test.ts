@@ -66,11 +66,11 @@ type FakeSdk = {
 };
 
 type FakeWindow = {
-  MiniAuth?: FakeSdk;
-  __MINI_AUTH_TEST_HOOKS__?: {
+  AuthMini?: FakeSdk;
+  __AUTH_MINI_TEST_HOOKS__?: {
     loadSdkScript?: () => Promise<void>;
   };
-  __MINI_AUTH_SDK_URL__?: string;
+  __AUTH_MINI_SDK_URL__?: string;
   PublicKeyCredential?: unknown;
   location: FakeLocation;
   history: FakeHistory;
@@ -101,8 +101,8 @@ type TestGlobals = {
   localStorage?: unknown;
   location?: unknown;
   Event?: unknown;
-  __MINI_AUTH_TEST_HOOKS__?: FakeWindow['__MINI_AUTH_TEST_HOOKS__'];
-  MiniAuth?: FakeSdk;
+  __AUTH_MINI_TEST_HOOKS__?: FakeWindow['__AUTH_MINI_TEST_HOOKS__'];
+  AuthMini?: FakeSdk;
 };
 
 const testGlobals = globalThis as unknown as TestGlobals;
@@ -137,8 +137,8 @@ describe('demo bootstrap', () => {
     restoreGlobal('localStorage', previousLocalStorage);
     restoreGlobal('location', previousLocation);
     restoreGlobal('Event', previousEvent);
-    Reflect.deleteProperty(testGlobals, '__MINI_AUTH_TEST_HOOKS__');
-    Reflect.deleteProperty(testGlobals, 'MiniAuth');
+    Reflect.deleteProperty(testGlobals, '__AUTH_MINI_TEST_HOOKS__');
+    Reflect.deleteProperty(testGlobals, 'AuthMini');
   });
 
   it('boots the page from window.location and renders docs even when sdk loading fails', async () => {
@@ -168,7 +168,7 @@ describe('demo bootstrap', () => {
     ).toBe('SUMMARY');
     expect(
       env.document.querySelector('#latest-response')?.textContent,
-    ).toContain('MiniAuth SDK did not load');
+    ).toContain('AuthMini SDK did not load');
   });
 
   it('shows docs and disables actions when the default script element fails to load', async () => {
@@ -185,7 +185,7 @@ describe('demo bootstrap', () => {
     ).toContain('/jwks');
     expect(
       env.document.querySelector('#latest-response')?.textContent,
-    ).toContain('MiniAuth SDK did not load');
+    ).toContain('AuthMini SDK did not load');
     expect(env.document.querySelector('#email-start-button')?.disabled).toBe(
       true,
     );
@@ -228,12 +228,12 @@ describe('demo bootstrap', () => {
       location: Object.assign(new URL('https://global.example.com/demo/'), {
         reload: vi.fn(),
       }),
-      __MINI_AUTH_SDK_URL__: 'https://global.example.com/sdk/singleton-iife.js',
+      __AUTH_MINI_SDK_URL__: 'https://global.example.com/sdk/singleton-iife.js',
       history: env.history,
       localStorage: env.localStorage,
     } as FakeWindow);
 
-    env.window.__MINI_AUTH_SDK_URL__ =
+    env.window.__AUTH_MINI_SDK_URL__ =
       'https://injected-window.example.com/sdk/singleton-iife.js';
 
     await runBootstrap(bootstrapDemoPage, env, {
@@ -280,7 +280,7 @@ describe('demo bootstrap', () => {
     );
     const { bootstrapDemoPage } = await import('../../demo/bootstrap.js');
     const ready = createDeferred();
-    env.window.MiniAuth = createFakeSdk({ ready: ready.promise });
+    env.window.AuthMini = createFakeSdk({ ready: ready.promise });
 
     const startup = runBootstrap(bootstrapDemoPage, env, {
       loadSdkScript: async () => {},
@@ -312,7 +312,7 @@ describe('demo bootstrap', () => {
       'https://docs.example.com/demo/?sdk-origin=https://auth.example.com',
     );
     const { bootstrapDemoPage } = await import('../../demo/bootstrap.js');
-    env.window.MiniAuth = createFakeSdk();
+    env.window.AuthMini = createFakeSdk();
 
     await runBootstrap(bootstrapDemoPage, env, {
       loadSdkScript: async () => {},
@@ -332,7 +332,7 @@ describe('demo bootstrap', () => {
     );
     const { bootstrapDemoPage } = await import('../../demo/bootstrap.js');
 
-    env.window.MiniAuth = createFakeSdk({
+    env.window.AuthMini = createFakeSdk({
       email: {
         start: async () => {
           throw new TypeError('Failed to fetch');
@@ -361,7 +361,7 @@ describe('demo bootstrap', () => {
       { publicKeyCredential: undefined },
     );
     const { bootstrapDemoPage } = await import('../../demo/bootstrap.js');
-    env.window.MiniAuth = createFakeSdk();
+    env.window.AuthMini = createFakeSdk();
 
     await runBootstrap(bootstrapDemoPage, env, {
       loadSdkScript: async () => {},
@@ -380,7 +380,7 @@ describe('demo bootstrap', () => {
       'http://127.0.0.1:8080/demo/?sdk-origin=http://127.0.0.1:7777',
     );
     const { bootstrapDemoPage } = await import('../../demo/bootstrap.js');
-    env.window.MiniAuth = createFakeSdk();
+    env.window.AuthMini = createFakeSdk();
 
     await runBootstrap(bootstrapDemoPage, env, {
       loadSdkScript: async () => {},
@@ -405,9 +405,9 @@ describe('demo bootstrap', () => {
       'http://localhost/demo/?sdk-origin=https://auth.example.com',
     );
     applyGlobals(env);
-    env.window.__MINI_AUTH_TEST_HOOKS__ = {
+    env.window.__AUTH_MINI_TEST_HOOKS__ = {
       loadSdkScript: async () => {
-        env.window.MiniAuth = createFakeSdk();
+        env.window.AuthMini = createFakeSdk();
       },
     };
 
@@ -430,7 +430,7 @@ describe('demo bootstrap', () => {
       'https://docs.example.com/demo/index.html?sdk-origin=https://auth-a.example.com#playground',
     );
     const { bootstrapDemoPage } = await import('../../demo/bootstrap.js');
-    env.window.MiniAuth = createFakeSdk();
+    env.window.AuthMini = createFakeSdk();
 
     await runBootstrap(bootstrapDemoPage, env, {
       loadSdkScript: async () => {},
@@ -525,8 +525,8 @@ function applyGlobals(env: TestEnvironment) {
   setTestGlobal('localStorage', env.localStorage);
   setTestGlobal('location', env.location);
   setTestGlobal(
-    '__MINI_AUTH_TEST_HOOKS__',
-    env.window.__MINI_AUTH_TEST_HOOKS__,
+    '__AUTH_MINI_TEST_HOOKS__',
+    env.window.__AUTH_MINI_TEST_HOOKS__,
   );
 }
 
