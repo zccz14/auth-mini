@@ -196,7 +196,7 @@ Load the script from the auth server origin. The singleton SDK still infers its 
 ```html
 <script src="https://auth.example.com/sdk/singleton-iife.js"></script>
 <script>
-  window.MiniAuth.session.onChange((state) => {
+  window.AuthMini.session.onChange((state) => {
     console.log('auth status:', state.status);
   });
 </script>
@@ -250,12 +250,12 @@ auth-mini start ./auth-mini.sqlite --issuer https://auth.example.com
 
 ### Startup state model
 
-If a refresh token is already stored, startup enters `recovering` first and then settles to `authenticated` or `anonymous` after recovery completes. During recovery, `MiniAuth.me.get()` may return the last cached snapshot while `MiniAuth.session.getState().status` still reports `recovering`.
+If a refresh token is already stored, startup enters `recovering` first and then settles to `authenticated` or `anonymous` after recovery completes. During recovery, `AuthMini.me.get()` may return the last cached snapshot while `AuthMini.session.getState().status` still reports `recovering`.
 
 ### `me.get()` vs `me.reload()`
 
-- `MiniAuth.me.get()` returns the current cached `/me` snapshot synchronously.
-- `MiniAuth.me.reload()` performs authenticated network I/O, follows the SDK refresh rules, updates cached state, and resolves with the fresh `/me` payload.
+- `AuthMini.me.get()` returns the current cached `/me` snapshot synchronously.
+- `AuthMini.me.reload()` performs authenticated network I/O, follows the SDK refresh rules, updates cached state, and resolves with the fresh `/me` payload.
 
 ### Passkey example
 
@@ -263,14 +263,14 @@ If a refresh token is already stored, startup enters `recovering` first and then
 <script src="https://auth.example.com/sdk/singleton-iife.js"></script>
 <script>
   async function signIn(email, code) {
-    await window.MiniAuth.email.start({ email });
-    await window.MiniAuth.email.verify({ email, code });
-    console.log(window.MiniAuth.me.get());
+    await window.AuthMini.email.start({ email });
+    await window.AuthMini.email.verify({ email, code });
+    console.log(window.AuthMini.me.get());
   }
 
   async function signInWithPasskey() {
-    await window.MiniAuth.webauthn.authenticate();
-    console.log(window.MiniAuth.me.get());
+    await window.AuthMini.webauthn.authenticate();
+    console.log(window.AuthMini.me.get());
   }
 </script>
 ```
