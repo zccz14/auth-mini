@@ -77,8 +77,8 @@ export async function generateRegistrationOptions(
   input: {
     userId: string;
     email: string;
-    rpId?: string;
-    origin?: string;
+    rpId: string;
+    origin: string;
     logger?: AppLogger;
   },
 ): Promise<{
@@ -95,7 +95,7 @@ export async function generateRegistrationOptions(
     };
   };
 }> {
-  const resolvedOptions = resolveWebauthnRegistrationOptionsInput(input);
+  const resolvedOptions = resolveWebauthnRegistrationOptionsInput(db, input);
   const options = await generateSimpleWebAuthnRegistrationOptions({
     rpName: 'auth-mini',
     rpID: resolvedOptions.rpId,
@@ -277,7 +277,7 @@ export async function verifyRegistration(
 
 export async function generateAuthenticationOptions(
   db: DatabaseClient,
-  input: { rpId?: string; origin?: string; logger?: AppLogger },
+  input: { rpId: string; origin: string; logger?: AppLogger },
 ): Promise<{
   request_id: string;
   publicKey: {
@@ -287,7 +287,7 @@ export async function generateAuthenticationOptions(
     userVerification: 'preferred';
   };
 }> {
-  const resolvedOptions = resolveWebauthnAuthenticationOptionsInput(input);
+  const resolvedOptions = resolveWebauthnAuthenticationOptionsInput(db, input);
   const options = await generateSimpleWebAuthnAuthenticationOptions({
     rpID: resolvedOptions.rpId,
     timeout: 300000,
@@ -527,37 +527,57 @@ function isSimpleWebAuthnValidationError(error: unknown): error is Error {
   );
 }
 
-function resolveWebauthnRegistrationOptionsInput(input: {
-  rpId?: string;
-  origin?: string;
-}) {
+function resolveWebauthnRegistrationOptionsInput(
+  db: DatabaseClient,
+  input: {
+    rpId: string;
+    origin: string;
+  },
+) {
   try {
-    return resolveWebauthnOptionsInput(input);
+    return resolveWebauthnOptionsInput(db, input);
   } catch {
     throw new InvalidWebauthnRegistrationError();
   }
 }
 
-function resolveWebauthnAuthenticationOptionsInput(input: {
-  rpId?: string;
-  origin?: string;
-}) {
+function resolveWebauthnAuthenticationOptionsInput(
+  db: DatabaseClient,
+  input: {
+    rpId: string;
+    origin: string;
+  },
+) {
   try {
-    return resolveWebauthnOptionsInput(input);
+    return resolveWebauthnOptionsInput(db, input);
   } catch {
     throw new InvalidWebauthnAuthenticationError();
   }
 }
 
-function resolveWebauthnOptionsInput(input: {
-  rpId?: string;
-  origin?: string;
-}) {
-  const origin = normalizeAllowedOrigin(input.origin ?? 'https://example.com');
+function resolveWebauthnOptionsInput(
+  db: DatabaseClient,
+  input: {
+    rpId: string;
+    origin: string;
+  },
+) {
+  const origin = normalizeAllowedOrigin(input.origin);
   const originHostname = new URL(origin).hostname;
-  const rpId = normalizeRpId(input.rpId ?? originHostname);
+  const rpId = normalizeRpId(input.rpId);
+  const allowedOrigins = listAllowedOrigins(db).map((entry) =>
+    normalizeAllowedOrigin(entry.origin),
+  );
+
+  if (!allowedOrigins.includes(origin)) {
+    throw new Error('invalid_origin');
+  }
 
   if (!isRpIdAllowedForOrigin(originHostname, rpId)) {
+    throw new Error('invalid_rp_id');
+  }
+
+  if (!isRpIdCoveredByAllowedOrigins(allowedOrigins, rpId)) {
     throw new Error('invalid_rp_id');
   }
 
@@ -565,6 +585,17 @@ function resolveWebauthnOptionsInput(input: {
     origin,
     rpId,
   };
+}
+
+function isRpIdCoveredByAllowedOrigins(
+  allowedOrigins: string[],
+  rpId: string,
+): boolean {
+  return allowedOrigins.some((allowedOrigin) => {
+    const allowedOriginHostname = new URL(allowedOrigin).hostname;
+
+    return isRpIdAllowedForOrigin(allowedOriginHostname, rpId);
+  });
 }
 
 function normalizeRpId(input: string): string {
@@ -668,7 +699,9 @@ function assertOriginStillAllowed(
     throw invalidError;
   }
 
-  const allowedOrigins = listAllowedOrigins(db).map((entry) => entry.origin);
+  const allowedOrigins = listAllowedOrigins(db).map((entry) =>
+    normalizeAllowedOrigin(entry.origin),
+  );
 
   if (!allowedOrigins.includes(normalizedOrigin)) {
     throw invalidError;

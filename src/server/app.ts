@@ -262,7 +262,7 @@ export function createApp(input: {
         userId: user.id,
         email: user.email,
         rpId: body.rp_id,
-        origin: c.req.header('Origin') ?? c.var.origins[0],
+        origin: resolveOptionsRequestOrigin(c.req.raw),
         logger: c.var.logger,
       }),
     );
@@ -292,7 +292,7 @@ export function createApp(input: {
     return c.json(
       await generateAuthenticationOptions(c.var.db, {
         rpId: body.rp_id,
-        origin: c.req.header('Origin') ?? c.var.origins[0],
+        origin: resolveOptionsRequestOrigin(c.req.raw),
         logger: c.var.logger,
       }),
     );
@@ -337,6 +337,10 @@ export function createApp(input: {
   });
 
   return app;
+}
+
+function resolveOptionsRequestOrigin(request: Request): string {
+  return request.headers.get('Origin') ?? new URL(request.url).origin;
 }
 
 async function parseJson<T>(request: Request, schema: ZodType<T>): Promise<T> {

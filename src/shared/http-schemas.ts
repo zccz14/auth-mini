@@ -14,7 +14,7 @@ export const refreshSchema = z.object({
 });
 
 export const webauthnOptionsSchema = z.object({
-  rp_id: z.string().min(1).optional(),
+  rp_id: z.string().min(1),
 });
 
 const baseCredentialSchema = z.object({

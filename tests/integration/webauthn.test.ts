@@ -75,6 +75,7 @@ describe('webauthn routes', () => {
       {
         method: 'POST',
         headers: authHeaders(testApp.tokens.access_token),
+        body: json({ rp_id: 'app.example.com' }),
       },
     );
     const optionsBody = await optionsResponse.json();
@@ -217,7 +218,7 @@ describe('webauthn routes', () => {
     expect(await response.json()).toEqual({ ok: true });
   });
 
-  it('register/options defaults rp id from the current request origin', async () => {
+  it('register/options rejects requests without rp_id', async () => {
     const baseApp = await createTestApp({
       origins: ['https://example.com', 'https://login.example.com'],
     });
@@ -234,19 +235,9 @@ describe('webauthn routes', () => {
         Origin: 'https://login.example.com',
       },
     });
-    const body = await response.json();
-    const storedChallenge = testApp.db
-      .prepare(
-        'SELECT rp_id, origin FROM webauthn_challenges WHERE request_id = ?',
-      )
-      .get(body.request_id) as { rp_id: string; origin: string };
 
-    expect(response.status).toBe(200);
-    expect(body.publicKey.rp.id).toBe('login.example.com');
-    expect(storedChallenge).toEqual({
-      rp_id: 'login.example.com',
-      origin: 'https://login.example.com',
-    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'invalid_request' });
   });
 
   it('register/options normalizes an explicit parent-domain rp id before persisting it', async () => {
@@ -349,6 +340,7 @@ describe('webauthn routes', () => {
           ...authHeaders(testApp.tokens.access_token),
           Origin: 'https://app.example.com',
         },
+        body: json({ rp_id: 'app.example.com' }),
       },
     );
     const optionsBody = await optionsResponse.json();
@@ -395,6 +387,7 @@ describe('webauthn routes', () => {
           ...authHeaders(testApp.tokens.access_token),
           Origin: 'https://app.example.com',
         },
+        body: json({ rp_id: 'app.example.com' }),
       },
     );
     const optionsBody = await optionsResponse.json();
@@ -501,6 +494,27 @@ describe('webauthn routes', () => {
     expect(challengeCount.count).toBe(0);
   });
 
+  it('authenticate/options rejects requests without rp_id', async () => {
+    const testApp = await createTestApp({
+      origins: ['https://app.example.com'],
+    });
+    openApps.push(testApp);
+
+    const response = await testApp.app.request(
+      '/webauthn/authenticate/options',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          Origin: 'https://app.example.com',
+        },
+      },
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'invalid_request' });
+  });
+
   it('second register/options invalidates the first unused request id', async () => {
     const testApp = await createSignedInApp('replace-register@example.com');
     openApps.push(testApp);
@@ -564,8 +578,16 @@ describe('webauthn routes', () => {
     openApps.push(testApp);
 
     const [firstResponse, secondResponse] = await Promise.all([
-      testApp.app.request('/webauthn/authenticate/options', { method: 'POST' }),
-      testApp.app.request('/webauthn/authenticate/options', { method: 'POST' }),
+      testApp.app.request('/webauthn/authenticate/options', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', Origin: origin },
+        body: json({ rp_id: 'app.example.com' }),
+      }),
+      testApp.app.request('/webauthn/authenticate/options', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', Origin: origin },
+        body: json({ rp_id: 'app.example.com' }),
+      }),
     ]);
     const firstBody = await firstResponse.json();
     const secondBody = await secondResponse.json();
@@ -578,6 +600,141 @@ describe('webauthn routes', () => {
     );
   });
 
+  it('authenticate/options falls back to the current request URL origin when Origin is missing', async () => {
+    const testApp = await createTestApp({
+      origins: ['https://login.example.com', 'https://app.example.com'],
+    });
+    openApps.push(testApp);
+
+    const response = await testApp.app.request(
+      'https://login.example.com/webauthn/authenticate/options',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: json({ rp_id: 'login.example.com' }),
+      },
+    );
+    const body = await response.json();
+    const storedChallenge = testApp.db
+      .prepare(
+        'SELECT rp_id, origin FROM webauthn_challenges WHERE request_id = ?',
+      )
+      .get(body.request_id) as { rp_id: string; origin: string };
+
+    expect(response.status).toBe(200);
+    expect(body.publicKey.rpId).toBe('login.example.com');
+    expect(storedChallenge).toEqual({
+      rp_id: 'login.example.com',
+      origin: 'https://login.example.com',
+    });
+  });
+
+  it('authenticate/options rejects request URL origins that are not allowlisted even when rp_id is covered elsewhere', async () => {
+    const testApp = await createTestApp({
+      origins: ['https://app.example.com'],
+    });
+    openApps.push(testApp);
+
+    const response = await testApp.app.request(
+      'https://evil.example.com/webauthn/authenticate/options',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: json({ rp_id: 'example.com' }),
+      },
+    );
+    const challengeCount = testApp.db
+      .prepare('SELECT COUNT(*) as count FROM webauthn_challenges')
+      .get() as { count: number };
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: 'invalid_webauthn_authentication',
+    });
+    expect(challengeCount.count).toBe(0);
+  });
+
+  it('authenticate/options rejects a request origin that is not allowlisted even when rp_id is covered by another allowed origin', async () => {
+    const testApp = await createTestApp({
+      origins: ['https://app.example.com', 'https://login.example.com'],
+    });
+    openApps.push(testApp);
+
+    const response = await testApp.app.request(
+      '/webauthn/authenticate/options',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          Origin: 'https://evil.example.com',
+        },
+        body: json({ rp_id: 'example.com' }),
+      },
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: 'invalid_webauthn_authentication',
+    });
+  });
+
+  it('authenticate/options rejects a sibling-host rp id even when the request origin is allowlisted', async () => {
+    const testApp = await createTestApp({
+      origins: ['https://login.example.com', 'https://app.example.com'],
+    });
+    openApps.push(testApp);
+
+    const response = await testApp.app.request(
+      '/webauthn/authenticate/options',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          Origin: 'https://login.example.com',
+        },
+        body: json({ rp_id: 'app.example.com' }),
+      },
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: 'invalid_webauthn_authentication',
+    });
+  });
+
+  it('authenticate/options accepts an explicit parent-domain rp id', async () => {
+    const testApp = await createTestApp({
+      origins: ['https://app.example.com'],
+    });
+    openApps.push(testApp);
+
+    const response = await testApp.app.request(
+      '/webauthn/authenticate/options',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          Origin: 'https://app.example.com',
+        },
+        body: json({ rp_id: 'example.com' }),
+      },
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.publicKey).toEqual({
+      challenge: expect.any(String),
+      rpId: 'example.com',
+      timeout: 300000,
+      userVerification: 'preferred',
+    });
+    expect(body.publicKey.allowCredentials).toBeUndefined();
+    expectLogEntry(testApp.logs, {
+      event: 'webauthn.authenticate.options.created',
+      request_id: body.request_id,
+    });
+  });
+
   it('authenticate/options omits allowCredentials', async () => {
     const testApp = await createTestApp();
     openApps.push(testApp);
@@ -586,6 +743,8 @@ describe('webauthn routes', () => {
       '/webauthn/authenticate/options',
       {
         method: 'POST',
+        headers: { 'content-type': 'application/json', Origin: origin },
+        body: json({ rp_id: 'app.example.com' }),
       },
     );
     const body = await response.json();
@@ -615,7 +774,7 @@ describe('webauthn routes', () => {
     });
   });
 
-  it('authenticate/options persists the normalized default rp id and origin', async () => {
+  it('authenticate/options persists the normalized rp id and request origin', async () => {
     const testApp = await createTestApp({
       origins: ['https://APP.example.com:443'],
     });
@@ -625,6 +784,11 @@ describe('webauthn routes', () => {
       '/webauthn/authenticate/options',
       {
         method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          Origin: 'https://APP.example.com:443',
+        },
+        body: json({ rp_id: 'APP.example.com.' }),
       },
     );
     const body = await response.json();
@@ -639,6 +803,50 @@ describe('webauthn routes', () => {
     expect(storedChallenge).toEqual({
       rp_id: 'app.example.com',
       origin: 'https://app.example.com',
+    });
+  });
+
+  it('app construction still works without allowed origins, but webauthn options fail', async () => {
+    const testApp = await createTestApp({ origins: [] });
+    openApps.push(testApp);
+    const signedInApp = await signInOnExistingApp(
+      testApp,
+      'no-origins@example.com',
+    );
+
+    const meResponse = await signedInApp.app.request('/me', {
+      headers: {
+        authorization: `Bearer ${signedInApp.tokens.access_token}`,
+      },
+    });
+    const registerResponse = await signedInApp.app.request(
+      '/webauthn/register/options',
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${signedInApp.tokens.access_token}`,
+          'content-type': 'application/json',
+        },
+        body: json({ rp_id: 'app.example.com' }),
+      },
+    );
+    const authenticateResponse = await signedInApp.app.request(
+      '/webauthn/authenticate/options',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: json({ rp_id: 'app.example.com' }),
+      },
+    );
+
+    expect(meResponse.status).toBe(200);
+    expect(registerResponse.status).toBe(400);
+    expect(await registerResponse.json()).toEqual({
+      error: 'invalid_webauthn_registration',
+    });
+    expect(authenticateResponse.status).toBe(400);
+    expect(await authenticateResponse.json()).toEqual({
+      error: 'invalid_webauthn_authentication',
     });
   });
 
@@ -660,6 +868,8 @@ describe('webauthn routes', () => {
       '/webauthn/authenticate/options',
       {
         method: 'POST',
+        headers: { 'content-type': 'application/json', Origin: origin },
+        body: json({ rp_id: 'app.example.com' }),
       },
     );
     const optionsBody = await optionsResponse.json();
@@ -1214,6 +1424,7 @@ async function getRegisterOptions(
   const response = await testApp.app.request('/webauthn/register/options', {
     method: 'POST',
     headers: authHeaders(testApp.tokens.access_token),
+    body: json({ rp_id: 'app.example.com' }),
   });
 
   return response.json();
@@ -1224,6 +1435,8 @@ async function getAuthOptions(
 ) {
   const response = await testApp.app.request('/webauthn/authenticate/options', {
     method: 'POST',
+    headers: { 'content-type': 'application/json', Origin: origin },
+    body: json({ rp_id: 'app.example.com' }),
   });
 
   return response.json();
