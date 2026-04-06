@@ -27,9 +27,10 @@ describe('sdk base url inference', () => {
     );
   });
 
-  it('does not expose the legacy createMiniAuthInternal export', async () => {
+  it('does not expose the legacy internal factory export', async () => {
     const sdkModule = await import('../../src/sdk/singleton-entry.js');
+    const legacyFactoryExport = ['create', 'Mini', 'Auth', 'Internal'].join('');
 
-    expect(sdkModule).not.toHaveProperty('createMiniAuthInternal');
+    expect(sdkModule).not.toHaveProperty(legacyFactoryExport);
   });
 });

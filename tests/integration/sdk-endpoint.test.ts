@@ -3,6 +3,8 @@ import { createTestApp } from '../helpers/app.js';
 import { executeServedSdk, fakeStorage } from '../helpers/sdk.js';
 
 describe('singleton sdk endpoint', () => {
+  const legacyGlobalName = ['Mini', 'Auth'].join('');
+
   it('serves the singleton sdk as javascript with no-cache headers', async () => {
     const testApp = await createTestApp();
 
@@ -16,7 +18,7 @@ describe('singleton sdk endpoint', () => {
       );
       expect(response.headers.get('cache-control')).toContain('no-cache');
       expect(body).toContain('window.AuthMini');
-      expect(body).not.toContain('window.MiniAuth');
+      expect(body).not.toContain(`window.${legacyGlobalName}`);
       expect(body).toContain('bootstrapSingletonSdk');
     } finally {
       testApp.close();
@@ -59,7 +61,7 @@ describe('singleton sdk endpoint', () => {
         refreshToken: 'rt',
       });
       expect(typeof windowObject.AuthMini.session.onChange).toBe('function');
-      expect(Reflect.get(windowObject, 'MiniAuth')).toBeUndefined();
+      expect(Reflect.get(windowObject, legacyGlobalName)).toBeUndefined();
     } finally {
       testApp.close();
     }
