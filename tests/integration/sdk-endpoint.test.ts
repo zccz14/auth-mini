@@ -59,7 +59,7 @@ describe('singleton sdk endpoint', () => {
         refreshToken: 'rt',
       });
       expect(typeof windowObject.AuthMini.session.onChange).toBe('function');
-      expect(windowObject.MiniAuth).toBeUndefined();
+      expect(Reflect.get(windowObject, 'MiniAuth')).toBeUndefined();
     } finally {
       testApp.close();
     }

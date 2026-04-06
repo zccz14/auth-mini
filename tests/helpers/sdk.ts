@@ -1,4 +1,4 @@
-import { createMiniAuthInternal } from '../../src/sdk/singleton-entry.js';
+import { createAuthMiniInternal } from '../../src/sdk/singleton-entry.js';
 import type {
   InternalSdkDeps,
   MeResponse,
@@ -87,7 +87,7 @@ export function jsonResponse(body: unknown, status = 200): Response {
 }
 
 export function createMiniAuthForTest(options: Partial<InternalSdkDeps> = {}) {
-  return createMiniAuthInternal({
+  return createAuthMiniInternal({
     autoRecover: false,
     baseUrl: 'https://auth.example.com',
     fetch: async () => jsonResponse({ ok: true }),

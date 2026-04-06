@@ -35,8 +35,6 @@ export function createAuthMiniInternal(
   return getRuntime().createAuthMiniInternal(input) as AuthMiniInternal;
 }
 
-export const createMiniAuthInternal = createAuthMiniInternal;
-
 export function createSingletonSdk(
   input: SingletonInput = {},
 ): AuthMiniInternal {

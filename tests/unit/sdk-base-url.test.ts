@@ -26,4 +26,10 @@ describe('sdk base url inference', () => {
       'sdk_init_failed',
     );
   });
+
+  it('does not expose the legacy createMiniAuthInternal export', async () => {
+    const sdkModule = await import('../../src/sdk/singleton-entry.js');
+
+    expect(sdkModule).not.toHaveProperty('createMiniAuthInternal');
+  });
 });

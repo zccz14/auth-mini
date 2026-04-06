@@ -98,9 +98,6 @@ export type AuthMiniInternal = AuthMiniApi & {
   ready: Promise<void>;
 };
 
-export type MiniAuthApi = AuthMiniApi;
-export type MiniAuthInternal = AuthMiniInternal;
-
 export type InternalSdkDeps = {
   autoRecover?: boolean;
   baseUrl: string;
