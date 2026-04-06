@@ -101,7 +101,6 @@ describe('http request logging', () => {
       },
       issuer: 'https://issuer.example',
       origins: ['https://app.example.com'],
-      rpId: 'example.com',
       logger: logCollector.logger,
     });
 
