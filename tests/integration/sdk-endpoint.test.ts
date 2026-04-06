@@ -15,7 +15,8 @@ describe('singleton sdk endpoint', () => {
         'application/javascript',
       );
       expect(response.headers.get('cache-control')).toContain('no-cache');
-      expect(body).toContain('window.MiniAuth');
+      expect(body).toContain('window.AuthMini');
+      expect(body).not.toContain('window.MiniAuth');
       expect(body).toContain('bootstrapSingletonSdk');
     } finally {
       testApp.close();
@@ -40,7 +41,7 @@ describe('singleton sdk endpoint', () => {
     }
   });
 
-  it('bootstraps window.MiniAuth from the served source', async () => {
+  it('bootstraps window.AuthMini from the served source', async () => {
     const testApp = await createTestApp();
 
     try {
@@ -53,11 +54,12 @@ describe('singleton sdk endpoint', () => {
 
       const windowObject = executeServedSdk(body, { storage });
 
-      expect(windowObject.MiniAuth.session.getState()).toMatchObject({
+      expect(windowObject.AuthMini.session.getState()).toMatchObject({
         status: 'recovering',
         refreshToken: 'rt',
       });
-      expect(typeof windowObject.MiniAuth.session.onChange).toBe('function');
+      expect(typeof windowObject.AuthMini.session.onChange).toBe('function');
+      expect(windowObject.MiniAuth).toBeUndefined();
     } finally {
       testApp.close();
     }

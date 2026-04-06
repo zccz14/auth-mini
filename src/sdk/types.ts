@@ -69,7 +69,7 @@ export type NavigatorCredentialsLike = {
 
 export type Listener = (state: SessionSnapshot) => void;
 
-export type MiniAuthApi = {
+export type AuthMiniApi = {
   email: {
     start(input: EmailStartInput): Promise<EmailStartResponse>;
     verify(input: EmailVerifyInput): Promise<SessionResult>;
@@ -94,9 +94,12 @@ export type MiniAuthApi = {
   };
 };
 
-export type MiniAuthInternal = MiniAuthApi & {
+export type AuthMiniInternal = AuthMiniApi & {
   ready: Promise<void>;
 };
+
+export type MiniAuthApi = AuthMiniApi;
+export type MiniAuthInternal = AuthMiniInternal;
 
 export type InternalSdkDeps = {
   autoRecover?: boolean;

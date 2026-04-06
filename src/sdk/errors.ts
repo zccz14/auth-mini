@@ -13,7 +13,7 @@ export type SdkError = Error & {
 
 export function createSdkError(code: SdkErrorCode, message: string): SdkError {
   const error = new Error(`${code}: ${message}`) as SdkError;
-  error.name = 'MiniAuthSdkError';
+  error.name = 'AuthMiniSdkError';
   error.code = code;
   return error;
 }

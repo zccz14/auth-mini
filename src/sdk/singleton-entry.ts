@@ -1,10 +1,10 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
 import type {
+  AuthMiniApi,
+  AuthMiniInternal,
   FetchLike,
   InternalSdkDeps,
-  MiniAuthApi,
-  MiniAuthInternal,
 } from './types.js';
 
 type BootstrapInput = {
@@ -23,28 +23,30 @@ type SingletonInput = {
 
 declare global {
   interface Window {
-    MiniAuth: MiniAuthApi;
+    AuthMini: AuthMiniApi;
   }
 }
 
 let runtimeCache: ReturnType<typeof createRuntime> | null = null;
 
-export function createMiniAuthInternal(
+export function createAuthMiniInternal(
   input: InternalSdkDeps,
-): MiniAuthInternal {
-  return getRuntime().createMiniAuthInternal(input) as MiniAuthInternal;
+): AuthMiniInternal {
+  return getRuntime().createAuthMiniInternal(input) as AuthMiniInternal;
 }
+
+export const createMiniAuthInternal = createAuthMiniInternal;
 
 export function createSingletonSdk(
   input: SingletonInput = {},
-): MiniAuthInternal {
-  return getRuntime().createSingletonSdk(input) as MiniAuthInternal;
+): AuthMiniInternal {
+  return getRuntime().createSingletonSdk(input) as AuthMiniInternal;
 }
 
 export function bootstrapSingletonSdk(input: BootstrapInput) {
   return getRuntime().bootstrapSingletonSdk(input) as {
     baseUrl: string;
-    sdk: MiniAuthInternal;
+    sdk: AuthMiniInternal;
   };
 }
 
@@ -63,7 +65,7 @@ function createRuntime() {
 
   function createSdkError(code, message) {
     const error = new Error(`${code}: ${message}`);
-    error.name = 'MiniAuthSdkError';
+    error.name = 'AuthMiniSdkError';
     error.code = code;
     return error;
   }
@@ -581,7 +583,7 @@ function createRuntime() {
     }
   }
 
-  function createMiniAuthInternal(input) {
+  function createAuthMiniInternal(input) {
     const state = createStateStore(input.storage);
     const http = createHttpClient({
       baseUrl: input.baseUrl,
@@ -637,7 +639,7 @@ function createRuntime() {
 
   function createSingletonSdk(input = {}) {
     const browser = typeof window === 'undefined' ? globalThis : window;
-    return createMiniAuthInternal({
+    return createAuthMiniInternal({
       baseUrl: input.baseUrl ?? 'https://auth-mini.local',
       fetch: resolveFetch(input.fetch),
       navigatorCredentials: browser.navigator?.credentials,
@@ -671,7 +673,7 @@ function createRuntime() {
   }
 
   function installOnWindow(window, document) {
-    window.MiniAuth = bootstrapSingletonSdk({
+    window.AuthMini = bootstrapSingletonSdk({
       currentScript: document.currentScript,
       fetch: resolveFetch(window.fetch?.bind(window)),
     }).sdk;
@@ -868,7 +870,7 @@ function createRuntime() {
   }
 
   return {
-    createMiniAuthInternal,
+    createAuthMiniInternal,
     createSingletonSdk,
     bootstrapSingletonSdk,
     installOnWindow,
