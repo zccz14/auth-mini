@@ -11,6 +11,48 @@ REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 BASE_IMAGE="node:20-slim"
 RUN_CONTAINERS=()
 RUN_DIRS=()
+CURRENT_CASE=''
+
+print_file_if_present() {
+  local file="$1"
+  [[ -f "$file" ]] || return 0
+  printf '\n--- %s ---\n' "$file" >&2
+  while IFS= read -r line; do
+    printf '%s\n' "$line" >&2
+  done <"$file"
+}
+
+dump_failure_diagnostics() {
+  local status="$1"
+  local cid dir
+  [[ "$status" -ne 0 ]] || return 0
+
+  printf '\n=== docker/test-entrypoint.sh diagnostics ===\n' >&2
+  printf 'mode=%s\n' "$MODE" >&2
+  printf 'case=%s\n' "${CURRENT_CASE:-unknown}" >&2
+
+  for dir in "${RUN_DIRS[@]:-}"; do
+    [[ -n "$dir" ]] || continue
+    printf '\n--- run dir: %s ---\n' "$dir" >&2
+    if [[ -d "$dir/logs" ]]; then
+      ls -la "$dir/logs" >&2 || true
+      print_file_if_present "$dir/logs/events.log"
+      print_file_if_present "$dir/logs/auth-mini.argv"
+      print_file_if_present "$dir/logs/auth-mini.start.argv"
+      print_file_if_present "$dir/logs/cloudflared.argv"
+      print_file_if_present "$dir/logs/curl-count"
+      print_file_if_present "$dir/logs/curl-seq"
+    fi
+  done
+
+  for cid in "${RUN_CONTAINERS[@]:-}"; do
+    [[ -n "$cid" ]] || continue
+    printf '\n--- docker ps for %s ---\n' "$cid" >&2
+    docker ps -a --filter "name=$cid" >&2 || true
+    printf '\n--- docker logs %s ---\n' "$cid" >&2
+    docker logs "$cid" >&2 || true
+  done
+}
 
 cleanup() {
   local cid dir
@@ -23,7 +65,14 @@ cleanup() {
     rm -rf "$dir"
   done
 }
-trap cleanup EXIT
+
+on_exit() {
+  local status=$?
+  dump_failure_diagnostics "$status"
+  cleanup
+  exit "$status"
+}
+trap on_exit EXIT
 
 ensure_base_image() {
   docker image inspect "$BASE_IMAGE" >/dev/null 2>&1 || docker pull "$BASE_IMAGE" >/dev/null
@@ -225,6 +274,7 @@ run_validation() {
 
   local dir out status cid preserved
 
+  CURRENT_CASE='validation missing token'
   dir=$(new_dir)
   write_stubs "$dir/stubbin"
   set +e
@@ -235,6 +285,7 @@ run_validation() {
   assert_contains "$out" "Cloudflare"
   assert_contains "$out" "token"
 
+  CURRENT_CASE='validation missing issuer'
   dir=$(new_dir)
   write_stubs "$dir/stubbin"
   set +e
@@ -244,6 +295,7 @@ run_validation() {
   [[ $status -ne 0 ]]
   assert_contains "$out" "https://auth.example.com"
 
+  CURRENT_CASE='validation issuer has path'
   dir=$(new_dir)
   write_stubs "$dir/stubbin"
   set +e
@@ -253,6 +305,7 @@ run_validation() {
   [[ $status -ne 0 ]]
   assert_contains "$out" "pure origin"
 
+  CURRENT_CASE='validation fresh data initializes and starts tunnel'
   dir=$(new_dir)
   write_stubs "$dir/stubbin"
   printf '200\n' >"$dir/logs/curl-seq"
@@ -264,6 +317,7 @@ run_validation() {
   assert_file_contains "$dir/logs/cloudflared.argv" "tunnel run --token token"
   remove_container "$cid"
 
+  CURRENT_CASE='validation existing data skips init'
   dir=$(new_dir)
   write_stubs "$dir/stubbin"
   printf '200\n' >"$dir/logs/curl-seq"
@@ -288,6 +342,7 @@ run_supervision() {
 
   local dir out status cid logs curl_count
 
+  CURRENT_CASE='supervision readiness retries before tunnel starts'
   dir=$(new_dir)
   write_stubs "$dir/stubbin"
   printf '503\n200\n' >"$dir/logs/curl-seq"
@@ -304,6 +359,7 @@ run_supervision() {
   assert_contains "$logs" 'JWT `iss`, WebAuthn, and SDK usage'
   remove_container "$cid"
 
+  CURRENT_CASE='supervision readiness timeout blocks tunnel'
   dir=$(new_dir)
   write_stubs "$dir/stubbin"
   set +e
@@ -314,6 +370,7 @@ run_supervision() {
   assert_contains "$out" "timed out waiting for auth-mini readiness"
   assert_file_absent "$dir/logs/cloudflared.argv"
 
+  CURRENT_CASE='supervision auth exits before readiness'
   dir=$(new_dir)
   write_stubs "$dir/stubbin"
   set +e
@@ -324,6 +381,7 @@ run_supervision() {
   assert_contains "$out" 'auth-mini exited before readiness; inspect auth-mini config/log output'
   assert_file_absent "$dir/logs/cloudflared.argv"
 
+  CURRENT_CASE='supervision cloudflared exit stops auth-mini'
   dir=$(new_dir)
   write_stubs "$dir/stubbin"
   set +e
@@ -332,8 +390,9 @@ run_supervision() {
   set -e
   [[ $status -eq 23 ]]
   assert_contains "$out" 'cloudflared exited; stopping auth-mini'
-  assert_file_contains "$dir/logs/events.log" 'auth-mini TERM'
+  wait_for_file_contains "$dir/logs/events.log" 'auth-mini TERM'
 
+  CURRENT_CASE='supervision term signal stops both processes'
   dir=$(new_dir)
   write_stubs "$dir/stubbin"
   printf '200\n' >"$dir/logs/curl-seq"
@@ -344,8 +403,8 @@ run_supervision() {
   status=$(docker wait "$cid")
   set -e
   [[ "$status" -ne 0 ]]
-  assert_file_contains "$dir/logs/events.log" 'auth-mini TERM'
-  assert_file_contains "$dir/logs/events.log" 'cloudflared TERM'
+  wait_for_file_contains "$dir/logs/events.log" 'auth-mini TERM'
+  wait_for_file_contains "$dir/logs/events.log" 'cloudflared TERM'
   remove_container "$cid"
 
   printf 'supervision ok\n'
