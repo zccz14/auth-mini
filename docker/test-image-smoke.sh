@@ -236,8 +236,12 @@ printf 'keep-state' >"$local_dir/data/auth.sqlite"
 printf '200\n' >"$local_dir/logs/curl-seq"
 container=$(start_image "$local_dir" -e TUNNEL_TOKEN=token -e AUTH_ISSUER=https://auth.example.com)
 wait_for_file "$local_dir/logs/cloudflared.argv"
+wait_for_file "$local_dir/logs/auth-mini.start.argv"
 [[ $(cat "$local_dir/data/auth.sqlite") == 'keep-state' ]]
-[[ ! -e "$local_dir/logs/auth-mini.argv" ]]
+if [[ -e "$local_dir/logs/auth-mini.argv" ]]; then
+  ! grep -Fq 'init /data/auth.sqlite' "$local_dir/logs/auth-mini.argv"
+fi
+grep -Fq '/data/auth.sqlite --issuer https://auth.example.com --host 127.0.0.1 --port 7777' "$local_dir/logs/auth-mini.start.argv"
 docker rm -f "$container" >/dev/null 2>&1 || true
 
 CURRENT_CASE='image smoke cloudflared exit stops auth-mini'
