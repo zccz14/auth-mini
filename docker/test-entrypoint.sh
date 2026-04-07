@@ -232,6 +232,14 @@ wait_for_container_logs_contains() {
   exit 1
 }
 
+assert_status_eq() {
+  local actual="$1" expected="$2"
+  if [[ "$actual" -ne "$expected" ]]; then
+    printf 'expected exit status %s, got %s\n' "$expected" "$actual" >&2
+    exit 1
+  fi
+}
+
 start_stub_container() {
   local dir="$1"
   shift
@@ -385,10 +393,10 @@ run_supervision() {
   dir=$(new_dir)
   write_stubs "$dir/stubbin"
   set +e
-  out=$(run_stub_once "$dir" -e TUNNEL_TOKEN=token -e AUTH_ISSUER=https://auth.example.com -e CLOUDFLARED_STUB_EXIT_EARLY=1 -e CLOUDFLARED_STUB_EXIT_CODE=23 -e CURL_DEFAULT_CODE=200 2>&1)
+  out=$(run_stub_once "$dir" -e TUNNEL_TOKEN=token -e AUTH_ISSUER=https://auth.example.com -e CLOUDFLARED_STUB_EXIT_EARLY=1 -e CLOUDFLARED_STUB_EXIT_CODE=23 -e CURL_DEFAULT_CODE=200 -e STUB_REAL_SLEEP=1 2>&1)
   status=$?
   set -e
-  [[ $status -eq 23 ]]
+  assert_status_eq "$status" 23
   assert_contains "$out" 'cloudflared exited; stopping auth-mini'
   wait_for_file_contains "$dir/logs/events.log" 'auth-mini TERM'
 

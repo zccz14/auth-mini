@@ -29,9 +29,14 @@ capture_wait_status() {
 
 terminate_child() {
   pid=${1:-}
+  preserve_status=${2:-0}
+  original_status=$WAIT_STATUS
   if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
     kill "$pid" 2>/dev/null || true
     capture_wait_status "$pid"
+    if [ "$preserve_status" = '1' ]; then
+      WAIT_STATUS=$original_status
+    fi
   fi
 }
 
@@ -95,13 +100,13 @@ CLOUDFLARED_PID=$!
 while :; do
   if ! kill -0 "$AUTH_PID" 2>/dev/null; then
     capture_wait_status "$AUTH_PID"
-    terminate_child "$CLOUDFLARED_PID"
+    terminate_child "$CLOUDFLARED_PID" 1
     exit "$WAIT_STATUS"
   fi
   if ! kill -0 "$CLOUDFLARED_PID" 2>/dev/null; then
     capture_wait_status "$CLOUDFLARED_PID"
     log 'cloudflared exited; stopping auth-mini'
-    terminate_child "$AUTH_PID"
+    terminate_child "$AUTH_PID" 1
     exit "$WAIT_STATUS"
   fi
   sleep 1
