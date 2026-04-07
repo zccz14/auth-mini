@@ -62,6 +62,7 @@ describe('sdk state store', () => {
 
   it('exposes session.getState and session.onChange on the public singleton api', () => {
     const sdk = createSingletonSdk({
+      baseUrl: 'https://auth.example.com',
       storage: fakeStorage({
         refreshToken: 'rt',
         expiresAt: '2026-04-03T00:00:00.000Z',

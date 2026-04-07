@@ -640,8 +640,14 @@ function createRuntime() {
 
   function createSingletonSdk(input = {}) {
     const browser = typeof window === 'undefined' ? globalThis : window;
+    const baseUrl = input.baseUrl;
+
+    if (!baseUrl) {
+      throw createSdkError('sdk_init_failed', 'Cannot determine SDK base URL');
+    }
+
     return createAuthMiniInternal({
-      baseUrl: input.baseUrl ?? 'https://auth-mini.local',
+      baseUrl,
       fetch: resolveFetch(input.fetch),
       navigatorCredentials: browser.navigator?.credentials,
       now: input.now,

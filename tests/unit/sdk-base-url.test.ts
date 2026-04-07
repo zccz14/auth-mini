@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { inferBaseUrl } from '../../src/sdk/base-url.js';
-import { bootstrapSingletonSdk } from '../../src/sdk/singleton-entry.js';
+import {
+  bootstrapSingletonSdk,
+  createSingletonSdk,
+} from '../../src/sdk/singleton-entry.js';
+import { fakeStorage } from '../helpers/sdk.js';
 
 describe('sdk base url inference', () => {
   it('infers origin base path from /sdk/singleton-iife.js', () => {
@@ -24,6 +28,12 @@ describe('sdk base url inference', () => {
   it('fails bootstrap clearly when the current script url cannot be determined', () => {
     expect(() => bootstrapSingletonSdk({ currentScript: null })).toThrow(
       'sdk_init_failed',
+    );
+  });
+
+  it('fails direct singleton creation when baseUrl is omitted', () => {
+    expect(() => createSingletonSdk({ storage: fakeStorage() })).toThrow(
+      'sdk_init_failed: Cannot determine SDK base URL',
     );
   });
 
