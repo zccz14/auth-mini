@@ -5,6 +5,52 @@ REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 IMAGE_TAG="auth-mini:test"
 RUN_CONTAINERS=()
 RUN_DIRS=()
+CURRENT_CASE=''
+
+print_file_if_present() {
+  local file="$1"
+  [[ -f "$file" ]] || return 0
+  printf '\n--- %s ---\n' "$file" >&2
+  while IFS= read -r line; do
+    printf '%s\n' "$line" >&2
+  done <"$file"
+}
+
+dump_failure_diagnostics() {
+  local exit_code="$1"
+  local cid dir
+  [[ "$exit_code" -ne 0 ]] || return 0
+
+  printf '\n=== docker/test-image-smoke.sh diagnostics ===\n' >&2
+  printf 'case=%s\n' "${CURRENT_CASE:-unknown}" >&2
+
+  for dir in "${RUN_DIRS[@]:-}"; do
+    [[ -n "$dir" ]] || continue
+    printf '\n--- run dir: %s ---\n' "$dir" >&2
+    if [[ -d "$dir/logs" ]]; then
+      ls -la "$dir/logs" >&2 || true
+      print_file_if_present "$dir/logs/events.log"
+      print_file_if_present "$dir/logs/auth-mini.argv"
+      print_file_if_present "$dir/logs/auth-mini.start.argv"
+      print_file_if_present "$dir/logs/cloudflared.argv"
+      print_file_if_present "$dir/logs/curl-count"
+      print_file_if_present "$dir/logs/curl-seq"
+    fi
+    if [[ -d "$dir/data" ]]; then
+      printf '\n--- data dir: %s ---\n' "$dir/data" >&2
+      ls -la "$dir/data" >&2 || true
+      print_file_if_present "$dir/data/auth.sqlite"
+    fi
+  done
+
+  for cid in "${RUN_CONTAINERS[@]:-}"; do
+    [[ -n "$cid" ]] || continue
+    printf '\n--- docker ps for %s ---\n' "$cid" >&2
+    docker ps -a --filter "name=$cid" >&2 || true
+    printf '\n--- docker logs %s ---\n' "$cid" >&2
+    docker logs "$cid" >&2 || true
+  done
+}
 
 cleanup() {
   local cid dir
@@ -17,7 +63,14 @@ cleanup() {
     rm -rf "$dir"
   done
 }
-trap cleanup EXIT
+
+on_exit() {
+  local exit_code=$?
+  dump_failure_diagnostics "$exit_code"
+  cleanup
+  exit "$exit_code"
+}
+trap on_exit EXIT
 
 new_dir() {
   local dir
@@ -130,6 +183,14 @@ wait_for_container_logs_contains() {
   exit 1
 }
 
+assert_status_eq() {
+  local actual="$1" expected="$2"
+  if [[ "$actual" -ne "$expected" ]]; then
+    printf 'expected exit status %s, got %s\n' "$expected" "$actual" >&2
+    exit 1
+  fi
+}
+
 start_image() {
   local dir="$1"
   shift
@@ -153,6 +214,7 @@ try:
 except subprocess.TimeoutExpired:
  print("docker build timed out; check Docker Hub connectivity for node:20-slim and cloudflared download access", file=sys.stderr); raise SystemExit(1)' "$REPO_ROOT"
 
+CURRENT_CASE='image smoke fresh data initializes and becomes ready'
 local_dir=$(new_dir)
 write_stubs "$local_dir/stubbin"
 printf '503\n200\n' >"$local_dir/logs/curl-seq"
@@ -167,6 +229,7 @@ grep -Fq 'tunnel run --token token' "$local_dir/logs/cloudflared.argv"
 wait_for_container_logs_contains "$container" 'AUTH_ISSUER must match the Cloudflare Dashboard hostname'
 docker rm -f "$container" >/dev/null 2>&1 || true
 
+CURRENT_CASE='image smoke existing data skips init'
 local_dir=$(new_dir)
 write_stubs "$local_dir/stubbin"
 printf 'keep-state' >"$local_dir/data/auth.sqlite"
@@ -177,6 +240,7 @@ wait_for_file "$local_dir/logs/cloudflared.argv"
 [[ ! -e "$local_dir/logs/auth-mini.argv" ]]
 docker rm -f "$container" >/dev/null 2>&1 || true
 
+CURRENT_CASE='image smoke cloudflared exit stops auth-mini'
 local_dir=$(new_dir)
 write_stubs "$local_dir/stubbin"
 printf '200\n' >"$local_dir/logs/curl-seq"
@@ -194,7 +258,7 @@ out=$(docker run --rm \
   "$IMAGE_TAG" 2>&1)
 status=$?
 set -e
-[[ $status -eq 23 ]]
+assert_status_eq "$status" 23
 [[ -f "$local_dir/data/auth.sqlite" ]]
 grep -Fq 'cloudflared exited; stopping auth-mini' <<<"$out"
 grep -Fq 'auth-mini TERM' "$local_dir/logs/events.log"
