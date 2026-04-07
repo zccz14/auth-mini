@@ -170,7 +170,7 @@ describe('oclif cli contract', () => {
   it('documents rotate jwks migration semantics in README', async () => {
     const readme = await readFile(resolve(process.cwd(), 'README.md'), 'utf8');
 
-    expect(readme).toContain('auth-mini rotate jwks ./auth-mini.sqlite');
+    expect(readme).toContain('npx auth-mini rotate jwks ./auth-mini.sqlite');
     expect(readme).toContain('npx auth-mini init ./auth-mini.sqlite');
     expect(readme).toContain(
       '`create` remains available as a compatibility alias',
@@ -197,35 +197,49 @@ describe('oclif cli contract', () => {
 
   it('documents the current CLI workflow in README', async () => {
     const readme = await readFile(resolve(process.cwd(), 'README.md'), 'utf8');
+    const deployDoc = await readFile(
+      resolve(process.cwd(), 'docs/deploy/docker-cloudflared.md'),
+      'utf8',
+    );
 
     expect(readme).toContain('npx auth-mini init ./auth-mini.sqlite');
     expect(readme).toContain('npx auth-mini start ./auth-mini.sqlite \\');
     expect(readme).toContain('--host 127.0.0.1');
     expect(readme).toContain('--port 7777');
-    expect(readme).toContain('--issuer https://auth.example.com');
+    expect(readme).toContain('--issuer https://auth.zccz14.com');
     expect(readme).toContain(
-      'auth-mini origin add ./auth-mini.sqlite --value https://app.example.com',
+      'npx auth-mini origin add ./auth-mini.sqlite --value https://app.example.com',
     );
-    expect(readme).toContain('auth-mini origin list ./auth-mini.sqlite');
+    expect(readme).toContain('npx auth-mini origin list ./auth-mini.sqlite');
     expect(readme).toContain(
-      'auth-mini origin update ./auth-mini.sqlite --id 1 --value https://admin.example.com',
-    );
-    expect(readme).toContain(
-      'auth-mini origin delete ./auth-mini.sqlite --id 1',
+      'npx auth-mini origin update ./auth-mini.sqlite --id 1 --value https://admin.example.com',
     );
     expect(readme).toContain(
-      'auth-mini smtp add ./auth-mini.sqlite --host smtp.example.com --port 587',
+      'npx auth-mini origin delete ./auth-mini.sqlite --id 1',
     );
-    expect(readme).toContain('auth-mini smtp list ./auth-mini.sqlite');
     expect(readme).toContain(
-      'auth-mini smtp update ./auth-mini.sqlite --id 1 --secure true',
+      'npx auth-mini smtp add ./auth-mini.sqlite --host smtp.example.com --port 587',
     );
-    expect(readme).toContain('auth-mini smtp delete ./auth-mini.sqlite --id 1');
+    expect(readme).toContain('npx auth-mini smtp list ./auth-mini.sqlite');
+    expect(readme).toContain(
+      'npx auth-mini smtp update ./auth-mini.sqlite --id 1 --secure true',
+    );
+    expect(readme).toContain(
+      'npx auth-mini smtp delete ./auth-mini.sqlite --id 1',
+    );
+    expect(readme).not.toContain('https://auth.example.com');
     expect(readme).not.toContain('--smtp-config');
     expect(readme).not.toContain(
-      'auth-mini start ./auth-mini.sqlite --issuer https://auth.example.com --origin',
+      'auth-mini start ./auth-mini.sqlite --issuer https://auth.zccz14.com --origin',
     );
+    expect(readme).not.toContain('authenticate/options` with an empty body');
     expect(readme).not.toContain('--rp-id');
+
+    expect(deployDoc).toContain(
+      'npx auth-mini origin add /data/auth.sqlite --value https://app.example.com',
+    );
+    expect(deployDoc).toContain('AUTH_ISSUER=https://auth.zccz14.com');
+    expect(deployDoc).not.toContain('https://auth.example.com');
   });
 
   it('prints origin and smtp topic help with the instance contract', async () => {

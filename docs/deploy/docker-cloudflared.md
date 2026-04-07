@@ -15,7 +15,7 @@ Docker files in this repo are for GHCR/container distribution. They are separate
 You need:
 
 - a Cloudflare Zero Trust account
-- a public hostname such as `auth.example.com`
+- a public hostname such as `auth.zccz14.com`
 - `AUTH_ISSUER` set to that exact `https://` origin
 - a persistent Docker volume for `/data`
 
@@ -26,7 +26,7 @@ You need:
 3. Click **Add a tunnel**.
 4. Choose **Cloudflared**.
 5. Name the tunnel.
-6. In the tunnel's **Public Hostname** section, add the hostname you want users to reach, for example `auth.example.com`.
+6. In the tunnel's **Public Hostname** section, add the hostname you want users to reach, for example `auth.zccz14.com`.
 7. Set the service type to **HTTP**.
 8. Set the Dashboard service URL to exactly `http://127.0.0.1:7777`.
 
@@ -52,7 +52,7 @@ Use one `docker run` command:
 docker run --name auth-mini \
   --restart unless-stopped \
   -e TUNNEL_TOKEN=cf_tunnel_token_here \
-  -e AUTH_ISSUER=https://auth.example.com \
+  -e AUTH_ISSUER=https://auth.zccz14.com \
   -v auth-mini-data:/data \
   ghcr.io/<owner>/auth-mini:latest
 ```
@@ -75,7 +75,7 @@ On first start, the entrypoint auto-initializes the instance when `/data/auth.sq
 
 After the container is healthy, complete normal instance setup inside the persisted database:
 
-- add allowed browser origins with `auth-mini origin add /data/auth.sqlite --value https://app.example.com`
+- add allowed browser origins with `npx auth-mini origin add /data/auth.sqlite --value https://app.example.com`
 - add SMTP config so email OTP can be delivered
 - apply any other instance setup your deployment needs
 
@@ -87,7 +87,7 @@ If `AUTH_ISSUER` does not equal the Cloudflare Dashboard hostname, JWT `iss`, We
 
 ### Malformed `AUTH_ISSUER`
 
-Startup validation rejects malformed `AUTH_ISSUER` values. non-https values, or values with a path, query, or hash, fail startup validation because the issuer must be a pure origin such as `https://auth.example.com`.
+Startup validation rejects malformed `AUTH_ISSUER` values. non-https values, or values with a path, query, or hash, fail startup validation because the issuer must be a pure origin such as `https://auth.zccz14.com`.
 
 ### Invalid tunnel token
 

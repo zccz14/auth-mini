@@ -114,19 +114,19 @@ npx auth-mini init ./auth-mini.sqlite
 Manage allowed browser origins with the `origin` topic:
 
 ```bash
-auth-mini origin add ./auth-mini.sqlite --value https://app.example.com
-auth-mini origin list ./auth-mini.sqlite
-auth-mini origin update ./auth-mini.sqlite --id 1 --value https://admin.example.com
-auth-mini origin delete ./auth-mini.sqlite --id 1
+npx auth-mini origin add ./auth-mini.sqlite --value https://app.example.com
+npx auth-mini origin list ./auth-mini.sqlite
+npx auth-mini origin update ./auth-mini.sqlite --id 1 --value https://admin.example.com
+npx auth-mini origin delete ./auth-mini.sqlite --id 1
 ```
 
 Manage SMTP configs with the `smtp` topic:
 
 ```bash
-auth-mini smtp add ./auth-mini.sqlite --host smtp.example.com --port 587 --username mailer --password secret --from-email noreply@example.com
-auth-mini smtp list ./auth-mini.sqlite
-auth-mini smtp update ./auth-mini.sqlite --id 1 --secure true
-auth-mini smtp delete ./auth-mini.sqlite --id 1
+npx auth-mini smtp add ./auth-mini.sqlite --host smtp.example.com --port 587 --username mailer --password secret --from-email noreply@example.com
+npx auth-mini smtp list ./auth-mini.sqlite
+npx auth-mini smtp update ./auth-mini.sqlite --id 1 --secure true
+npx auth-mini smtp delete ./auth-mini.sqlite --id 1
 ```
 
 Start the server:
@@ -135,7 +135,7 @@ Start the server:
 npx auth-mini start ./auth-mini.sqlite \
   --host 127.0.0.1 \
   --port 7777 \
-  --issuer https://auth.example.com
+  --issuer https://auth.zccz14.com
 ```
 
 Rotate JWKS keys:
@@ -153,7 +153,7 @@ By default, CLI errors stay concise; use `--verbose` for detailed diagnostics.
 auth-mini writes structured JSON logs by default. The logs are suitable for redirection to a file:
 
 ```bash
-npx auth-mini start ./auth-mini.sqlite --issuer https://auth.example.com >> auth-mini.log
+npx auth-mini start ./auth-mini.sqlite --issuer https://auth.zccz14.com >> auth-mini.log
 ```
 
 In the current version, logs may contain plaintext email addresses and client IPs. Logs intentionally exclude OTP values, tokens, and SMTP passwords.
@@ -166,7 +166,7 @@ For the one-container Cloudflare Tunnel path, see [docs/deploy/docker-cloudflare
 docker run --name auth-mini \
   --restart unless-stopped \
   -e TUNNEL_TOKEN=cf_tunnel_token_here \
-  -e AUTH_ISSUER=https://auth.example.com \
+  -e AUTH_ISSUER=https://auth.zccz14.com \
   -v auth-mini-data:/data \
   ghcr.io/<owner>/auth-mini:latest
 ```
@@ -213,7 +213,7 @@ auth-mini also serves a singleton browser SDK at `GET /sdk/singleton-iife.js`.
 Load the script from the auth server origin. The singleton SDK still infers its API base URL from its own `src`, so the script origin and API origin must match:
 
 ```html
-<script src="https://auth.example.com/sdk/singleton-iife.js"></script>
+<script src="https://auth.zccz14.com/sdk/singleton-iife.js"></script>
 <script>
   window.AuthMini.session.onChange((state) => {
     console.log('auth status:', state.status);
@@ -221,7 +221,7 @@ Load the script from the auth server origin. The singleton SDK still infers its 
 </script>
 ```
 
-v1 is intentionally zero-config: the script infers its API base URL from its own `src`, persists session state in `localStorage`, and automatically refreshes access tokens. Browser pages may be hosted on a different origin than the auth server as long as the page origin is explicitly stored in the instance with `auth-mini origin add <instance> --value <page-origin>`.
+v1 is intentionally zero-config: the script infers its API base URL from its own `src`, persists session state in `localStorage`, and automatically refreshes access tokens. Browser pages may be hosted on a different origin than the auth server as long as the page origin is explicitly stored in the instance with `npx auth-mini origin add <instance> --value <page-origin>`.
 
 Same-origin proxy deployment is still supported if you prefer to front auth-mini through your app origin, but direct cross-origin loading is now the primary browser SDK path.
 
@@ -230,7 +230,7 @@ For example, this page:
 - page origin: `http://localhost:3000`
 - auth server origin: `http://127.0.0.1:7777`
 
-works when `http://localhost:3000` has been added with `auth-mini origin add ./auth-mini.sqlite --value http://localhost:3000` and the page loads the SDK from the auth server:
+works when `http://localhost:3000` has been added with `npx auth-mini origin add ./auth-mini.sqlite --value http://localhost:3000` and the page loads the SDK from the auth server:
 
 ```html
 <script src="http://127.0.0.1:7777/sdk/singleton-iife.js"></script>
@@ -245,26 +245,26 @@ The static site lives in `demo/`.
 - Publish the **contents of `demo/`** so `index.html`, `./style.css`, and `./main.js` stay at the final URL you want browsers to open.
 - For GitHub Pages, that means publishing `demo/` as the Pages artifact (for example via a Pages Action that uploads `demo/`, or by copying `demo/` into the branch/folder Pages serves).
 - Project Pages subpaths such as `https://<user>.github.io/auth-mini/` are fine because the demo uses relative local assets.
-- `auth-mini origin add <instance> --value ...` must use the final **page origin** (`window.location.origin`), not the auth server origin. Path changes like `/auth-mini/` vs `/demo/` do not change that origin value, but moving between `https://docs.example.com` and `https://example.github.io` does.
+- `npx auth-mini origin add <instance> --value ...` must use the final **page origin** (`window.location.origin`), not the auth server origin. Path changes like `/auth-mini/` vs `/demo/` do not change that origin value, but moving between `https://docs.example.com` and `https://example.github.io` does.
 - If the docs page and auth server live on different origins, keep the docs page on its static host and append `?sdk-origin=https://your-auth-origin` so the page loads `/sdk/singleton-iife.js` from the auth server.
-- If you attach a custom GitHub Pages domain, publish a matching `CNAME` file in the Pages artifact/root so GitHub serves that domain consistently; then store `https://your-domain.example` with `auth-mini origin add <instance> --value https://your-domain.example`.
+- If you attach a custom GitHub Pages domain, publish a matching `CNAME` file in the Pages artifact/root so GitHub serves that domain consistently; then store `https://your-domain.example` with `npx auth-mini origin add <instance> --value https://your-domain.example`.
 
 Example:
 
 - published docs origin: `https://example.github.io`
-- auth server origin: `https://auth.example.com`
+- auth server origin: `https://auth.zccz14.com`
 
 Open:
 
 ```text
-https://example.github.io/auth-mini/?sdk-origin=https://auth.example.com
+https://example.github.io/auth-mini/?sdk-origin=https://auth.zccz14.com
 ```
 
 Configure the published docs origin, then start auth-mini with:
 
 ```bash
-auth-mini origin add ./auth-mini.sqlite --value https://example.github.io
-auth-mini start ./auth-mini.sqlite --issuer https://auth.example.com
+npx auth-mini origin add ./auth-mini.sqlite --value https://example.github.io
+npx auth-mini start ./auth-mini.sqlite --issuer https://auth.zccz14.com
 ```
 
 ### Startup state model
@@ -279,7 +279,7 @@ If a refresh token is already stored, startup enters `recovering` first and then
 ### Passkey example
 
 ```html
-<script src="https://auth.example.com/sdk/singleton-iife.js"></script>
+<script src="https://auth.zccz14.com/sdk/singleton-iife.js"></script>
 <script>
   async function signIn(email, code) {
     await window.AuthMini.email.start({ email });
@@ -303,10 +303,10 @@ If a refresh token is already stored, startup enters `recovering` first and then
 ## WebAuthn flow
 
 1. Sign in with email OTP.
-2. Call `POST /webauthn/register/options` while authenticated.
+2. Call `POST /webauthn/register/options` while authenticated with `{ "rp_id": "example.com" }`.
 3. Pass `publicKey` into `navigator.credentials.create()`.
 4. Send `{ request_id, credential }` to `POST /webauthn/register/verify`.
-5. Later, call `POST /webauthn/authenticate/options` with an empty body.
+5. Later, call `POST /webauthn/authenticate/options` with `{ "rp_id": "example.com" }`.
 6. Pass `publicKey` into `navigator.credentials.get()`.
 7. Send `{ request_id, credential }` to `POST /webauthn/authenticate/verify`.
 
