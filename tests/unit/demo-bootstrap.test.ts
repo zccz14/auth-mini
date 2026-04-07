@@ -159,8 +159,14 @@ describe('demo bootstrap', () => {
       'npx auth-mini origin add ./auth-mini.sqlite --value https://docs.example.com',
     );
     expect(
+      env.document.querySelector('#origin-command')?.textContent,
+    ).not.toContain('--origin https://docs.example.com');
+    expect(
       env.document.querySelector('#api-reference-list')?.textContent,
     ).toContain('/email/start');
+    expect(
+      env.document.querySelector('#api-reference-list')?.textContent,
+    ).toContain('rp_id');
     expect(
       env.document.querySelector('#api-reference-list article h3')?.tagName,
     ).toBe('H3');
@@ -185,6 +191,9 @@ describe('demo bootstrap', () => {
     expect(
       env.document.querySelector('#api-reference-list')?.textContent,
     ).toContain('/jwks');
+    expect(
+      env.document.querySelector('#api-reference-list')?.textContent,
+    ).toContain('rp_id');
     expect(
       env.document.querySelector('#latest-response')?.textContent,
     ).toContain('AuthMini SDK did not load');

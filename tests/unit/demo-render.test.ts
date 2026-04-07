@@ -55,6 +55,9 @@ describe('demo render helpers', () => {
     expect(root.querySelector('#origin-command')?.textContent).toContain(
       'npx auth-mini origin add ./auth-mini.sqlite --value https://docs.example.com',
     );
+    expect(root.querySelector('#origin-command')?.textContent).not.toContain(
+      '--origin https://docs.example.com',
+    );
     expect(root.querySelector('#sdk-script-snippet')?.textContent).toContain(
       'https://auth.zccz14.com/sdk/singleton-iife.js',
     );
@@ -93,6 +96,9 @@ describe('demo render helpers', () => {
       root.querySelector('#api-reference-list article details pre')
         ?.textContent,
     ).toContain('https://auth.zccz14.com/email/start');
+    expect(root.querySelector('#api-reference-list')?.textContent).toContain(
+      'rp_id',
+    );
     expect(
       root.querySelector('#api-reference-list article details pre:last-of-type')
         ?.textContent,

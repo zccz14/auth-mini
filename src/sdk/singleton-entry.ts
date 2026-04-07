@@ -15,7 +15,7 @@ type BootstrapInput = {
 };
 
 type SingletonInput = {
-  baseUrl?: string;
+  baseUrl: string;
   fetch?: FetchLike;
   now?: () => number;
   storage?: Storage;
@@ -35,9 +35,7 @@ export function createAuthMiniInternal(
   return getRuntime().createAuthMiniInternal(input) as AuthMiniInternal;
 }
 
-export function createSingletonSdk(
-  input: SingletonInput = {},
-): AuthMiniInternal {
+export function createSingletonSdk(input: SingletonInput): AuthMiniInternal {
   return getRuntime().createSingletonSdk(input) as AuthMiniInternal;
 }
 

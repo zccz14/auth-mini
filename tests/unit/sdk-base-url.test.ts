@@ -32,9 +32,9 @@ describe('sdk base url inference', () => {
   });
 
   it('fails direct singleton creation when baseUrl is omitted', () => {
-    expect(() => createSingletonSdk({ storage: fakeStorage() })).toThrow(
-      'sdk_init_failed: Cannot determine SDK base URL',
-    );
+    expect(() =>
+      createSingletonSdk({ storage: fakeStorage() } as never),
+    ).toThrow('sdk_init_failed: Cannot determine SDK base URL');
   });
 
   it('does not expose the legacy internal factory export', async () => {

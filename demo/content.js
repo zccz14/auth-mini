@@ -9,7 +9,7 @@ export function buildDemoContent(setupState) {
     sdkScriptUrl,
     startupCommand,
   } = setupState;
-  const placeholderOrigin = 'https://your-auth-origin';
+  const placeholderOrigin = 'https://auth.zccz14.com';
   const resolvedSdkOrigin = sdkOrigin || placeholderOrigin;
   const resolvedIssuer = issuer || placeholderOrigin;
   const resolvedJwksUrl = jwksUrl || `${placeholderOrigin}/jwks`;
@@ -100,7 +100,7 @@ export function buildDemoContent(setupState) {
         headers: { authorization: 'Bearer <access_token>' },
         body: { rp_id: 'example.com' },
         response:
-          '{ "request_id": "request-register", "publicKey": { "challenge": "...", "rp": { "id": "auth.example.com", "name": "auth-mini" }, "user": { "id": "<base64url>", "name": "user@example.com", "displayName": "user@example.com" }, "pubKeyCredParams": [{ "type": "public-key", "alg": -7 }, { "type": "public-key", "alg": -257 }], "timeout": 300000, "authenticatorSelection": { "residentKey": "required", "userVerification": "preferred" } } }',
+          '{ "request_id": "request-register", "publicKey": { "challenge": "...", "rp": { "id": "example.com", "name": "auth-mini" }, "user": { "id": "<base64url>", "name": "user@example.com", "displayName": "user@example.com" }, "pubKeyCredParams": [{ "type": "public-key", "alg": -7 }, { "type": "public-key", "alg": -257 }], "timeout": 300000, "authenticatorSelection": { "residentKey": "required", "userVerification": "preferred" } } }',
       }),
       makeApiEntry({
         sdkOrigin: resolvedSdkOrigin,
@@ -121,7 +121,7 @@ export function buildDemoContent(setupState) {
         when: 'Request authentication options for username-less passkey sign-in.',
         body: { rp_id: 'example.com' },
         response:
-          '{ "request_id": "request-authenticate", "publicKey": { "challenge": "...", "rpId": "auth.example.com", "timeout": 300000, "userVerification": "preferred" } }',
+          '{ "request_id": "request-authenticate", "publicKey": { "challenge": "...", "rpId": "example.com", "timeout": 300000, "userVerification": "preferred" } }',
       }),
       makeApiEntry({
         sdkOrigin: resolvedSdkOrigin,

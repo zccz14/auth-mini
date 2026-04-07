@@ -26,6 +26,23 @@ describe('demo content builders', () => {
     );
   });
 
+  it('uses the default auth origin example when sdk-origin is unresolved', () => {
+    const content = buildDemoContent({
+      ...sampleState,
+      sdkOrigin: '',
+      sdkScriptUrl: '',
+      issuer: '',
+      jwksUrl: '',
+    });
+
+    expect(content.joseSnippet).toContain(
+      "const issuer = 'https://auth.zccz14.com'",
+    );
+    expect(content.apiReference[0]?.request).toContain(
+      'https://auth.zccz14.com/email/start',
+    );
+  });
+
   it('lists the required api reference endpoints', () => {
     const content = buildDemoContent(sampleState);
 
@@ -114,6 +131,9 @@ describe('demo content builders', () => {
       'request_id',
     );
     expect(byPath.get('/webauthn/register/options')?.response).toContain(
+      '"id": "example.com"',
+    );
+    expect(byPath.get('/webauthn/register/options')?.response).toContain(
       'publicKey',
     );
     expect(byPath.get('/webauthn/register/options')?.response).toContain(
@@ -136,6 +156,9 @@ describe('demo content builders', () => {
     );
     expect(byPath.get('/webauthn/authenticate/options')?.response).toContain(
       'publicKey',
+    );
+    expect(byPath.get('/webauthn/authenticate/options')?.response).toContain(
+      '"rpId": "example.com"',
     );
     expect(byPath.get('/webauthn/authenticate/options')?.response).toContain(
       'rpId',
