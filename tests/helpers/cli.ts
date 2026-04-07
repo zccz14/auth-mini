@@ -1,33 +1,15 @@
 import { spawn } from 'node:child_process';
-import { cp, mkdtemp, rm, symlink, unlink } from 'node:fs/promises';
+import { cp, mkdtemp, rm, stat, symlink, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { runCreateCommand } from '../../src/app/commands/create.js';
 import { runRotateJwksCommand } from '../../src/app/commands/rotate-jwks.js';
 import { createMemoryLogCollector, type LogEntry } from './logging.js';
 
-let buildPromise: Promise<void> | null = null;
 let packedInstallPromise: Promise<string> | null = null;
 
 const npmCommand = resolveShellCommand('npm');
 const npxCommand = resolveShellCommand('npx');
-
-export async function ensureCliIsBuilt(): Promise<void> {
-  if (!buildPromise) {
-    buildPromise = rm(resolve(process.cwd(), 'dist'), {
-      force: true,
-      recursive: true,
-    })
-      .then(() => runCommand(npmCommand, ['run', 'build']))
-      .then((result) => {
-        if (result.exitCode !== 0) {
-          throw new Error(result.stderr || result.stdout || 'CLI build failed');
-        }
-      });
-  }
-
-  await buildPromise;
-}
 
 export async function runSourceCli(
   args: string[],
@@ -40,7 +22,7 @@ export async function runSourceCli(
 export async function runBuiltCli(
   args: string[],
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  await ensureCliIsBuilt();
+  await assertBuiltCliArtifacts();
   const cliEntrypoint = resolve(process.cwd(), 'dist/index.js');
 
   return runCommand(process.execPath, [cliEntrypoint, ...args]);
@@ -148,8 +130,6 @@ export async function runLoggedCli(args: string[]): Promise<{
   stderr: string;
   logs: LogEntry[];
 }> {
-  await ensureCliIsBuilt();
-
   const result = await runCli(args);
 
   return {
@@ -191,6 +171,36 @@ export async function runLoggedRotateJwksCommand(input: {
   return {
     logs: logCollector.entries,
   };
+}
+
+async function hasBuiltCliArtifacts(): Promise<boolean> {
+  return (
+    (await exists(resolve(process.cwd(), 'dist/index.js'))) &&
+    (await exists(resolve(process.cwd(), 'dist/commands')))
+  );
+}
+
+async function assertBuiltCliArtifacts(): Promise<void> {
+  if (await hasBuiltCliArtifacts()) {
+    return;
+  }
+
+  throw new Error(
+    'Built CLI artifacts are missing. Run `npm run build` before invoking built CLI tests.',
+  );
+}
+
+async function exists(filePath: string): Promise<boolean> {
+  try {
+    await stat(filePath);
+    return true;
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      return false;
+    }
+
+    throw error;
+  }
 }
 
 async function runCommand(

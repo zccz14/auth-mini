@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createDatabaseClient } from '../../src/infra/db/client.js';
-import { ensureCliIsBuilt, runBuiltCli } from '../helpers/cli.js';
+import { runBuiltCli } from '../helpers/cli.js';
 import {
   countRows,
   createLegacySchemaDbPath,
@@ -56,8 +56,6 @@ describe('workspace bootstrap', () => {
   });
 
   it('runs the built cli help smoke path', async () => {
-    await ensureCliIsBuilt();
-
     expect(await exists('dist/index.js')).toBe(true);
 
     const result = await runBuiltCli(['--help']);
@@ -70,7 +68,6 @@ describe('workspace bootstrap', () => {
   }, 30000);
 
   it('create initializes schema and seeds an active jwks key', async () => {
-    await ensureCliIsBuilt();
     const dbPath = await createTempDbPath();
 
     const result = await runBuiltCli(['create', dbPath]);
@@ -95,7 +92,6 @@ describe('workspace bootstrap', () => {
   }, 30000);
 
   it('rejects create smtp-config flag in the new contract', async () => {
-    await ensureCliIsBuilt();
     const dbPath = await createTempDbPath();
     const tempDir = await mkdtemp(join(tmpdir(), 'auth-mini-smtp-'));
     const smtpJsonPath = join(tempDir, 'smtp.json');
@@ -127,7 +123,6 @@ describe('workspace bootstrap', () => {
   }, 30000);
 
   it('rejects init smtp-config flag in the new contract', async () => {
-    await ensureCliIsBuilt();
     const dbPath = await createTempDbPath();
     const tempDir = await mkdtemp(join(tmpdir(), 'auth-mini-smtp-'));
     const smtpJsonPath = join(tempDir, 'smtp.json');
@@ -159,7 +154,6 @@ describe('workspace bootstrap', () => {
   }, 30000);
 
   it('rotate-jwks generates a new active key and keeps older keys', async () => {
-    await ensureCliIsBuilt();
     const dbPath = await createTempDbPath();
 
     const createResult = await runBuiltCli(['create', dbPath]);

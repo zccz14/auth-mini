@@ -34,8 +34,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node dist/sdk/build-singleton-iife.js",
-    "test": "vitest run tests",
-    "test:integration": "vitest run tests/integration",
+    "test": "npm run build && vitest run tests --maxWorkers=1",
+    "test:integration": "npm run build && vitest run tests/integration",
     "lint": "eslint .",
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit",

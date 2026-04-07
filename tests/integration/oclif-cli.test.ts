@@ -4,7 +4,7 @@ import { createServer } from 'node:net';
 import { resolve } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createDatabaseClient } from '../../src/infra/db/client.js';
-import { ensureCliIsBuilt, runBuiltCli, runPackedCli } from '../helpers/cli.js';
+import { runBuiltCli, runPackedCli } from '../helpers/cli.js';
 import {
   countRows,
   createLegacySchemaDbPath,
@@ -277,7 +277,6 @@ describe('oclif cli contract', () => {
   });
 
   it('starts by loading allowed origins from the instance database', async () => {
-    await ensureCliIsBuilt();
     const dbPath = await createTempDbPath();
     const createResult = await runBuiltCli(['create', dbPath]);
 
@@ -310,7 +309,6 @@ describe('oclif cli contract', () => {
   }, 15000);
 
   it('fails fast with a schema upgrade error when starting against a legacy database', async () => {
-    await ensureCliIsBuilt();
     const dbPath = await createLegacySchemaDbPath();
 
     const result = await runBuiltCli([
