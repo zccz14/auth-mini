@@ -7,6 +7,7 @@ import { runRotateJwksCommand } from '../../src/app/commands/rotate-jwks.js';
 import { createMemoryLogCollector, type LogEntry } from './logging.js';
 
 let buildPromise: Promise<void> | null = null;
+let packedInstallPromise: Promise<string> | null = null;
 
 const npmCommand = resolveShellCommand('npm');
 const npxCommand = resolveShellCommand('npx');
@@ -48,6 +49,37 @@ export async function runBuiltCli(
 export async function runPackedCli(
   args: string[],
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  const installDir = await ensurePackedCliInstall();
+  const binPath = resolve(
+    installDir,
+    'node_modules',
+    '.bin',
+    process.platform === 'win32' ? 'auth-mini.cmd' : 'auth-mini',
+  );
+
+  const result = await runCommand(binPath, args, {
+    cwd: installDir,
+    env: { NODE_ENV: 'production' },
+  });
+
+  if (result.exitCode !== 0) {
+    throw new Error(
+      result.stderr || result.stdout || 'packed CLI execution failed',
+    );
+  }
+
+  return result;
+}
+
+async function ensurePackedCliInstall(): Promise<string> {
+  if (!packedInstallPromise) {
+    packedInstallPromise = preparePackedCliInstall();
+  }
+
+  return packedInstallPromise;
+}
+
+async function preparePackedCliInstall(): Promise<string> {
   const stageDir = await mkdtemp(join(tmpdir(), 'auth-mini-stage-'));
   const installDir = await mkdtemp(join(tmpdir(), 'auth-mini-pack-'));
 
@@ -91,32 +123,16 @@ export async function runPackedCli(
           installResult.stderr || installResult.stdout || 'npm install failed',
         );
       }
-
-      const binPath = resolve(
-        installDir,
-        'node_modules',
-        '.bin',
-        process.platform === 'win32' ? 'auth-mini.cmd' : 'auth-mini',
-      );
-
-      const result = await runCommand(binPath, args, {
-        cwd: installDir,
-        env: { NODE_ENV: 'production' },
-      });
-
-      if (result.exitCode !== 0) {
-        throw new Error(
-          result.stderr || result.stdout || 'packed CLI execution failed',
-        );
-      }
-
-      return result;
     } finally {
       await unlink(tarball).catch(() => undefined);
     }
-  } finally {
+
+    return installDir;
+  } catch (error) {
+    packedInstallPromise = null;
     await rm(stageDir, { force: true, recursive: true });
     await rm(installDir, { force: true, recursive: true });
+    throw error;
   }
 }
 

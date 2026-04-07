@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { createDatabaseClient } from '../../src/infra/db/client.js';
 import { ensureCliIsBuilt, runBuiltCli, runPackedCli } from '../helpers/cli.js';
 import {
@@ -12,6 +12,10 @@ import {
 } from '../helpers/db.js';
 
 describe('oclif cli contract', () => {
+  beforeAll(async () => {
+    await runPackedCli(['--version']);
+  }, 60000);
+
   it('supports init as the primary bootstrap command', async () => {
     const dbPath = await createTempDbPath();
 
