@@ -3,7 +3,8 @@ FROM node:20-slim AS builder
 # Image contract for v1 (linux/amd64 only):
 # - final image contains node, dist/index.js, dist/sdk/singleton-iife.js,
 #   cloudflared, and /app/docker/entrypoint.sh
-# - final image does not depend on checked-out repo source files at runtime
+# - final image does not depend on checked-out repo source files at runtime,
+#   but it does include runtime SQL assets required by auth-mini init
 # - runtime image exposes /data and provides auth-mini on PATH
 WORKDIR /app
 
@@ -34,6 +35,7 @@ RUN curl -fsSL -o /usr/local/bin/cloudflared "https://github.com/cloudflare/clou
 COPY package.json package-lock.json ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
+COPY sql ./sql
 COPY docker/entrypoint.sh ./docker/entrypoint.sh
 
 RUN chmod 0755 /app/docker/entrypoint.sh /app/dist/index.js \
