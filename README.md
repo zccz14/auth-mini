@@ -158,6 +158,25 @@ npx auth-mini start ./auth-mini.sqlite --issuer https://auth.example.com >> auth
 
 In the current version, logs may contain plaintext email addresses and client IPs. Logs intentionally exclude OTP values, tokens, and SMTP passwords.
 
+## Docker deployment
+
+For the one-container Cloudflare Tunnel path, see [docs/deploy/docker-cloudflared.md](docs/deploy/docker-cloudflared.md).
+
+```bash
+docker run --name auth-mini \
+  --restart unless-stopped \
+  -e TUNNEL_TOKEN=cf_tunnel_token_here \
+  -e AUTH_ISSUER=https://auth.example.com \
+  -v auth-mini-data:/data \
+  ghcr.io/<owner>/auth-mini:latest
+```
+
+- `TUNNEL_TOKEN` and `AUTH_ISSUER` are required.
+- `/data` persists the default instance at `/data/auth.sqlite`.
+- Set the Cloudflare Dashboard service URL to exactly `http://127.0.0.1:7777`.
+- GHCR/container assets are separate from the npm package contents.
+- v1 container images target `linux/amd64` only.
+
 ## HTTP API
 
 ### Public endpoints
