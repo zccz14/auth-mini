@@ -26,15 +26,16 @@ type FakeRenderRoot = {
 const sampleSetupState = {
   currentOrigin: 'https://docs.example.com',
   suggestedOrigin: 'https://docs.example.com',
-  sdkOrigin: 'https://auth.example.com',
-  sdkScriptUrl: 'https://auth.example.com/sdk/singleton-iife.js',
-  issuer: 'https://auth.example.com',
-  jwksUrl: 'https://auth.example.com/jwks',
+  sdkOrigin: 'https://auth.zccz14.com',
+  sdkScriptUrl: 'https://auth.zccz14.com/sdk/singleton-iife.js',
+  issuer: 'https://auth.zccz14.com',
+  jwksUrl: 'https://auth.zccz14.com/jwks',
   configError: '',
   corsWarning:
-    'Start auth-mini with --origin set to this page origin so the browser can call the auth server cross-origin.',
+    'Run npx auth-mini origin add with this page origin before browser calls to the auth server will succeed cross-origin.',
   startupCommand:
-    'auth-mini start ./auth-mini.sqlite --issuer https://auth.example.com --origin https://docs.example.com',
+    'npx auth-mini origin add ./auth-mini.sqlite --value https://docs.example.com\n' +
+    'npx auth-mini start ./auth-mini.sqlite --issuer https://auth.zccz14.com',
 };
 
 describe('demo render helpers', () => {
@@ -52,13 +53,13 @@ describe('demo render helpers', () => {
     renderContentState(root, sampleSetupState, content);
 
     expect(root.querySelector('#origin-command')?.textContent).toContain(
-      '--origin https://docs.example.com',
+      'npx auth-mini origin add ./auth-mini.sqlite --value https://docs.example.com',
     );
     expect(root.querySelector('#sdk-script-snippet')?.textContent).toContain(
-      'https://auth.example.com/sdk/singleton-iife.js',
+      'https://auth.zccz14.com/sdk/singleton-iife.js',
     );
     expect(root.querySelector('#jose-snippet')?.textContent).toContain(
-      "const issuer = 'https://auth.example.com'",
+      "const issuer = 'https://auth.zccz14.com'",
     );
     expect(root.querySelector('#config-error')?.hidden).toBe(true);
   });
@@ -91,7 +92,7 @@ describe('demo render helpers', () => {
     expect(
       root.querySelector('#api-reference-list article details pre')
         ?.textContent,
-    ).toContain('https://auth.example.com/email/start');
+    ).toContain('https://auth.zccz14.com/email/start');
     expect(
       root.querySelector('#api-reference-list article details pre:last-of-type')
         ?.textContent,
@@ -181,7 +182,7 @@ describe('demo render helpers', () => {
     renderContentState(root, sampleSetupState, content);
 
     expect(root.querySelector('#setup-warning')?.textContent).toContain(
-      '--origin',
+      'origin add',
     );
     expect(root.querySelector('#register-output')?.textContent).not.toContain(
       'localhost',
@@ -240,7 +241,7 @@ describe('demo render helpers', () => {
     runtime.hydrateState();
 
     expect(root.querySelector('#sdk-origin-input')?.value).toBe(
-      'https://auth.example.com',
+      'https://auth.zccz14.com',
     );
   });
 });

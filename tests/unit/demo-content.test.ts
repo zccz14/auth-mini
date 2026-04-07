@@ -3,13 +3,14 @@ import { buildDemoContent } from '../../demo/content.js';
 
 const sampleState = {
   currentOrigin: 'https://docs.example.com',
-  sdkOrigin: 'https://auth.example.com',
-  sdkScriptUrl: 'https://auth.example.com/sdk/singleton-iife.js',
-  issuer: 'https://auth.example.com',
-  jwksUrl: 'https://auth.example.com/jwks',
+  sdkOrigin: 'https://auth.zccz14.com',
+  sdkScriptUrl: 'https://auth.zccz14.com/sdk/singleton-iife.js',
+  issuer: 'https://auth.zccz14.com',
+  jwksUrl: 'https://auth.zccz14.com/jwks',
   suggestedOrigin: 'https://docs.example.com',
   startupCommand:
-    'auth-mini start ./auth-mini.sqlite --issuer https://auth.example.com --origin https://docs.example.com',
+    'npx auth-mini origin add ./auth-mini.sqlite --value https://docs.example.com\n' +
+    'npx auth-mini start ./auth-mini.sqlite --issuer https://auth.zccz14.com',
 };
 
 describe('demo content builders', () => {
@@ -17,11 +18,11 @@ describe('demo content builders', () => {
     const content = buildDemoContent(sampleState);
 
     expect(content.sdkScriptTag).toContain(
-      'https://auth.example.com/sdk/singleton-iife.js',
+      'https://auth.zccz14.com/sdk/singleton-iife.js',
     );
     expect(content.joseSnippet).toContain("new URL('/jwks', issuer)");
     expect(content.joseSnippet).toContain(
-      "const issuer = 'https://auth.example.com'",
+      "const issuer = 'https://auth.zccz14.com'",
     );
   });
 
@@ -79,7 +80,7 @@ describe('demo content builders', () => {
     expect(deploymentText).toContain('GitHub Pages');
     expect(deploymentText).toContain('publish the contents of demo/');
     expect(deploymentText).toContain('CNAME');
-    expect(deploymentText).toContain('--origin');
+    expect(deploymentText).toContain('origin add');
     expect(deploymentText).toContain('?sdk-origin=https://your-auth-origin');
   });
 
@@ -102,6 +103,9 @@ describe('demo content builders', () => {
     );
     expect(byPath.get('/webauthn/register/options')?.request).toContain(
       'authorization',
+    );
+    expect(byPath.get('/webauthn/register/options')?.request).toContain(
+      'rp_id',
     );
     expect(byPath.get('/webauthn/register/options')?.request).not.toContain(
       'user@example.com',
@@ -126,6 +130,9 @@ describe('demo content builders', () => {
     );
     expect(byPath.get('/webauthn/authenticate/options')?.response).toContain(
       'request_id',
+    );
+    expect(byPath.get('/webauthn/authenticate/options')?.request).toContain(
+      'rp_id',
     );
     expect(byPath.get('/webauthn/authenticate/options')?.response).toContain(
       'publicKey',
@@ -184,7 +191,7 @@ describe('demo content builders', () => {
       ]),
     );
     expect(content.howItWorks.join('\n')).toContain('script origin');
-    expect(content.howItWorks.join('\n')).toContain('--origin');
+    expect(content.howItWorks.join('\n')).toContain('origin add');
     expect(content.howItWorks.join('\n')).toContain('WebAuthn');
   });
 
@@ -202,7 +209,7 @@ describe('demo content builders', () => {
     const knownIssues = content.knownIssues.join('\n');
 
     expect(knownIssues).toContain('browser');
-    expect(knownIssues).toContain('--origin');
+    expect(knownIssues).toContain('origin add');
     expect(knownIssues).toContain('known SDK bug');
   });
 });

@@ -33,8 +33,8 @@
           <p class="step-label">Shortest path</p>
           <h2>Bring your own auth origin</h2>
           <p>
-            Point this page at your auth-mini server, keep the page origin in
-            <code>--origin</code>, then verify email OTP and passkeys from the
+            Point this page at your auth-mini server, store the page origin with
+            <code>origin add</code>, then verify email OTP and passkeys from the
             same page.
           </p>
 
@@ -44,7 +44,7 @@
               id="sdk-origin-input"
               type="url"
               spellcheck="false"
-              placeholder="https://auth.example.com"
+              placeholder="https://auth.zccz14.com"
             />
           </label>
 
@@ -74,7 +74,7 @@
       <section class="quick-start panel section-grid">
         <div class="doc-prose">
           <p class="eyebrow">Quick start</p>
-          <h2>Start auth-mini with this page origin</h2>
+          <h2>Allowlist this page origin, then start auth-mini</h2>
           <p>
             The command below stays aligned with this page and your chosen auth
             origin. Copy it first, then come back to the playground.
@@ -91,13 +91,16 @@
               </div>
             </div>
             <pre id="origin-command" class="doc-code">
-auth-mini start ... --origin http://127.0.0.1:8080</pre
+ npx auth-mini origin add ... --value http://127.0.0.1:8080
+npx auth-mini start ... --issuer https://auth.zccz14.com</pre
             >
           </article>
 
           <details class="doc-details panel inset-panel">
             <summary>Show browser script snippet</summary>
-            <pre id="sdk-script-snippet" class="doc-code">Runtime snippet target: Task 4 renders the config-derived script tag here.</pre>
+            <pre id="sdk-script-snippet" class="doc-code">
+Runtime snippet target: Task 4 renders the config-derived script tag here.</pre
+            >
           </details>
         </div>
       </section>
@@ -218,7 +221,9 @@ No request yet.</pre
                 Create and bind passkey
               </button>
 
-              <pre class="mini-output" id="register-output">No request yet.</pre>
+              <pre class="mini-output" id="register-output">
+No request yet.</pre
+              >
             </article>
 
             <article class="panel inset-panel card">
@@ -256,7 +261,11 @@ No request yet.</pre
                 <p class="step-label">State</p>
                 <h3>Session / output</h3>
               </div>
-              <button id="clear-state-button" class="ghost-button" type="button">
+              <button
+                id="clear-state-button"
+                class="ghost-button"
+                type="button"
+              >
                 Logout
               </button>
             </div>
@@ -316,12 +325,16 @@ No request yet.</pre
 
         <div class="panel inset-panel">
           <ul id="how-it-works-list" class="doc-list">
-            <li>The page origin becomes the recommended <code>--origin</code>.</li>
+            <li>
+              The page origin becomes the recommended
+              <code>origin add</code> value.
+            </li>
             <li>
               The auth origin becomes the SDK script origin and the API origin.
             </li>
             <li>
-              WebAuthn and CORS depend on those values being configured together.
+              WebAuthn and CORS depend on those values being configured
+              together.
             </li>
           </ul>
         </div>
@@ -332,8 +345,8 @@ No request yet.</pre
           <p class="eyebrow">API reference</p>
           <h2>Minimal calls for the common path</h2>
           <p>
-            Keep the shortest request path visible first, then expand details per
-            endpoint only when needed.
+            Keep the shortest request path visible first, then expand details
+            per endpoint only when needed.
           </p>
         </div>
 
@@ -351,7 +364,9 @@ No request yet.</pre
             </p>
             <details class="doc-details">
               <summary>Show request and response</summary>
-              <pre class="doc-code">Placeholder only: request/response examples render here after runtime content wiring.</pre>
+              <pre class="doc-code">
+Placeholder only: request/response examples render here after runtime content wiring.</pre
+              >
             </details>
           </article>
         </div>
@@ -375,13 +390,21 @@ No request yet.</pre
                 <h3>Node / TypeScript snippet</h3>
               </div>
             </div>
-            <pre id="jose-snippet" class="doc-code">Runtime snippet target: Task 4 renders the jose JWT verification example here.</pre>
+            <pre id="jose-snippet" class="doc-code">
+Runtime snippet target: Task 4 renders the jose JWT verification example here.</pre
+            >
           </article>
 
-          <details id="backend-notes-disclosure" class="doc-details panel inset-panel">
+          <details
+            id="backend-notes-disclosure"
+            class="doc-details panel inset-panel"
+          >
             <summary>More backend JWT notes</summary>
             <ul id="backend-notes-list" class="doc-list">
-              <li>Placeholder only: backend JWT notes render here from shared page state.</li>
+              <li>
+                Placeholder only: backend JWT notes render here from shared page
+                state.
+              </li>
             </ul>
           </details>
         </div>
@@ -399,9 +422,22 @@ No request yet.</pre
 
         <div class="panel inset-panel">
           <ul id="deployment-notes-list" class="doc-list">
-            <li>Publish the contents of <code>demo/</code> so <code>index.html</code>, <code>./style.css</code>, and <code>./main.js</code> stay path-safe on GitHub Pages.</li>
-            <li>Set auth-mini <code>--origin</code> to the final browser page origin, then use <code>?sdk-origin=</code> when the docs page and auth server are on different origins.</li>
-            <li>Custom GitHub Pages domains should ship a matching <code>CNAME</code> file so the browser origin stays stable for WebAuthn and CORS.</li>
+            <li>
+              Publish the contents of <code>demo/</code> so
+              <code>index.html</code>, <code>./style.css</code>, and
+              <code>./main.js</code> stay path-safe on GitHub Pages.
+            </li>
+            <li>
+              Store the final browser page origin with
+              <code>npx auth-mini origin add</code>, then use
+              <code>?sdk-origin=</code> when the docs page and auth server are
+              on different origins.
+            </li>
+            <li>
+              Custom GitHub Pages domains should ship a matching
+              <code>CNAME</code> file so the browser origin stays stable for
+              WebAuthn and CORS.
+            </li>
           </ul>
         </div>
       </section>
@@ -419,7 +455,10 @@ No request yet.</pre
         <div class="panel inset-panel">
           <ul id="known-issues-list" class="doc-list">
             <li>Passkeys require a browser context that supports WebAuthn.</li>
-            <li>Cross-origin pages must be listed in <code>--origin</code>.</li>
+            <li>
+              Cross-origin pages must be allowlisted with
+              <code>npx auth-mini origin add</code>.
+            </li>
             <li>Multi-tab refresh races are a current SDK bug.</li>
           </ul>
         </div>

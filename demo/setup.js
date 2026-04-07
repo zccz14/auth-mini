@@ -5,7 +5,7 @@ export function getDemoSetupState(locationLike) {
   const origin = locationLike.origin;
   const normalizedSdkOrigin = resolveSdkOrigin(locationLike);
   const corsWarning =
-    'Start auth-mini with --origin set to this page origin so the browser can call the auth server cross-origin.';
+    'Run npx auth-mini origin add with this page origin before browser calls to the auth server will succeed cross-origin.';
 
   if (!normalizedSdkOrigin.ok) {
     return {
@@ -35,7 +35,10 @@ export function getDemoSetupState(locationLike) {
     configStatus: 'ready',
     configError: '',
     corsWarning,
-    startupCommand: `auth-mini start ./auth-mini.sqlite --issuer ${issuer} --origin ${origin}`,
+    startupCommand: [
+      `npx auth-mini origin add ./auth-mini.sqlite --value ${origin}`,
+      `npx auth-mini start ./auth-mini.sqlite --issuer ${issuer}`,
+    ].join('\n'),
   };
 }
 

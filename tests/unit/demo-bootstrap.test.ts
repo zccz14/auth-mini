@@ -155,7 +155,9 @@ describe('demo bootstrap', () => {
 
     expect(
       env.document.querySelector('#origin-command')?.textContent,
-    ).toContain('--origin https://docs.example.com');
+    ).toContain(
+      'npx auth-mini origin add ./auth-mini.sqlite --value https://docs.example.com',
+    );
     expect(
       env.document.querySelector('#api-reference-list')?.textContent,
     ).toContain('/email/start');
@@ -248,7 +250,9 @@ describe('demo bootstrap', () => {
     ).toContain('https://injected-window.example.com/sdk/singleton-iife.js');
     expect(
       env.document.querySelector('#origin-command')?.textContent,
-    ).toContain('--origin https://docs.example.com');
+    ).toContain(
+      'npx auth-mini origin add ./auth-mini.sqlite --value https://docs.example.com',
+    );
   });
 
   it('stays neutral when no sdk-origin is configured', async () => {
@@ -351,7 +355,7 @@ describe('demo bootstrap', () => {
       env.document.querySelector('#latest-response')?.textContent,
     ).toContain('Failed to fetch');
     expect(env.document.querySelector('#setup-warning')?.textContent).toContain(
-      '--origin',
+      'origin add',
     );
   });
 
@@ -416,7 +420,9 @@ describe('demo bootstrap', () => {
 
     expect(
       env.document.querySelector('#origin-command')?.textContent,
-    ).toContain('--origin http://localhost');
+    ).toContain(
+      'npx auth-mini origin add ./auth-mini.sqlite --value http://localhost',
+    );
     expect(
       env.document.querySelector('#sdk-script-snippet')?.textContent,
     ).toContain('https://auth.example.com/sdk/singleton-iife.js');

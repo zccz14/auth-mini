@@ -26,19 +26,20 @@ describe('demo WebAuthn setup guidance', () => {
       origin: 'https://docs.example.com',
       protocol: 'https:',
       hostname: 'docs.example.com',
-      sdkOriginInput: 'https://auth.example.com',
+      sdkOriginInput: 'https://auth.zccz14.com',
     });
 
     expect(state).toEqual(
       expect.objectContaining({
         currentOrigin: 'https://docs.example.com',
         suggestedOrigin: 'https://docs.example.com',
-        sdkOrigin: 'https://auth.example.com',
-        sdkScriptUrl: 'https://auth.example.com/sdk/singleton-iife.js',
-        issuer: 'https://auth.example.com',
-        jwksUrl: 'https://auth.example.com/jwks',
+        sdkOrigin: 'https://auth.zccz14.com',
+        sdkScriptUrl: 'https://auth.zccz14.com/sdk/singleton-iife.js',
+        issuer: 'https://auth.zccz14.com',
+        jwksUrl: 'https://auth.zccz14.com/jwks',
         startupCommand:
-          'auth-mini start ./auth-mini.sqlite --issuer https://auth.example.com --origin https://docs.example.com',
+          'npx auth-mini origin add ./auth-mini.sqlite --value https://docs.example.com\n' +
+          'npx auth-mini start ./auth-mini.sqlite --issuer https://auth.zccz14.com',
       }),
     );
     expect(state).not.toHaveProperty('currentRpId');
@@ -148,7 +149,7 @@ describe('demo WebAuthn setup guidance', () => {
         currentOrigin: 'http://localhost:8080',
         suggestedOrigin: 'http://localhost:8080',
         corsWarning:
-          'Start auth-mini with --origin set to this page origin so the browser can call the auth server cross-origin.',
+          'Run npx auth-mini origin add with this page origin before browser calls to the auth server will succeed cross-origin.',
       }),
     );
     expect(
@@ -171,7 +172,8 @@ describe('demo WebAuthn setup guidance', () => {
     ).toEqual(
       expect.objectContaining({
         startupCommand:
-          'auth-mini start ./auth-mini.sqlite --issuer http://127.0.0.1:7777 --origin http://localhost:8080',
+          'npx auth-mini origin add ./auth-mini.sqlite --value http://localhost:8080\n' +
+          'npx auth-mini start ./auth-mini.sqlite --issuer http://127.0.0.1:7777',
       }),
     );
   });
@@ -231,7 +233,7 @@ describe('demo WebAuthn setup guidance', () => {
         configStatus: 'waiting',
         configError: expect.stringContaining('Add ?sdk-origin='),
         corsWarning:
-          'Start auth-mini with --origin set to this page origin so the browser can call the auth server cross-origin.',
+          'Run npx auth-mini origin add with this page origin before browser calls to the auth server will succeed cross-origin.',
       }),
     );
   });

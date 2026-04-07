@@ -35,10 +35,10 @@ export function buildDemoContent(setupState) {
       ],
     },
     howItWorks: [
-      'The page origin is the value you pass to auth-mini --origin.',
+      'The page origin is the value you store with npx auth-mini origin add.',
       'The sdk-origin is where the browser loads /sdk/singleton-iife.js.',
       'script origin == api origin: the singleton SDK always talks back to the auth server that served the script.',
-      'WebAuthn and CORS both depend on the auth server being started with the right origin settings.',
+      'WebAuthn and CORS both depend on the page origin being allowlisted and the auth server issuer matching the auth origin.',
     ],
     joseSnippet: [
       "import { createRemoteJWKSet, jwtVerify } from 'jose';",
@@ -98,6 +98,7 @@ export function buildDemoContent(setupState) {
         path: '/webauthn/register/options',
         when: 'Request registration options before creating a passkey.',
         headers: { authorization: 'Bearer <access_token>' },
+        body: { rp_id: 'example.com' },
         response:
           '{ "request_id": "request-register", "publicKey": { "challenge": "...", "rp": { "id": "auth.example.com", "name": "auth-mini" }, "user": { "id": "<base64url>", "name": "user@example.com", "displayName": "user@example.com" }, "pubKeyCredParams": [{ "type": "public-key", "alg": -7 }, { "type": "public-key", "alg": -257 }], "timeout": 300000, "authenticatorSelection": { "residentKey": "required", "userVerification": "preferred" } } }',
       }),
@@ -118,6 +119,7 @@ export function buildDemoContent(setupState) {
         method: 'POST',
         path: '/webauthn/authenticate/options',
         when: 'Request authentication options for username-less passkey sign-in.',
+        body: { rp_id: 'example.com' },
         response:
           '{ "request_id": "request-authenticate", "publicKey": { "challenge": "...", "rpId": "auth.example.com", "timeout": 300000, "userVerification": "preferred" } }',
       }),
@@ -158,13 +160,13 @@ export function buildDemoContent(setupState) {
     backendNotesDisclosureLabel: 'More backend JWT notes',
     deploymentNotes: [
       'For GitHub Pages, publish the contents of demo/ so index.html stays at the final page URL and its relative ./style.css + ./main.js assets keep working on project subpaths.',
-      `After publish, start auth-mini with --origin ${currentOrigin} (or whatever final page origin you actually deployed) because --origin must match the browser page origin, not the auth server origin.`,
+      `After publish, run npx auth-mini origin add ./auth-mini.sqlite --value ${currentOrigin} (or whatever final page origin you actually deployed) because the stored origin must match the browser page origin, not the auth server origin.`,
       'If docs and auth live on different origins, keep the page URL on the docs host and append ?sdk-origin=https://your-auth-origin so the browser loads the SDK from the auth host.',
-      'If you use a custom GitHub Pages domain, publish a matching CNAME file and keep that domain stable; change auth-mini --origin whenever the docs URL path/domain changes enough to alter window.location.origin.',
+      'If you use a custom GitHub Pages domain, publish a matching CNAME file and keep that domain stable; update the stored allowed origin whenever the docs host changes enough to alter window.location.origin.',
     ],
     knownIssues: [
       'Passkeys require a browser environment that supports WebAuthn.',
-      'Cross-origin pages must start auth-mini with --origin set to the page origin before browser calls will succeed.',
+      'Cross-origin pages must be allowlisted with npx auth-mini origin add before browser calls will succeed.',
       'Multiple tabs can currently race during session refresh. This is a known SDK bug, not a product contract.',
     ],
   };
