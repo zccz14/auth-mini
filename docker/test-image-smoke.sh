@@ -104,6 +104,32 @@ wait_for_file() {
   exit 1
 }
 
+wait_for_file_contains() {
+  local file="$1" needle="$2" attempts="${3:-80}"
+  local i
+  for ((i = 0; i < attempts; i++)); do
+    if [[ -e "$file" ]] && grep -Fq -- "$needle" "$file"; then
+      return 0
+    fi
+    /bin/sleep 0.05
+  done
+  printf 'timed out waiting for %s to contain [%s]\n' "$file" "$needle" >&2
+  exit 1
+}
+
+wait_for_container_logs_contains() {
+  local cid="$1" needle="$2" attempts="${3:-80}"
+  local i
+  for ((i = 0; i < attempts; i++)); do
+    if docker logs "$cid" 2>&1 | grep -Fq -- "$needle"; then
+      return 0
+    fi
+    /bin/sleep 0.05
+  done
+  printf 'timed out waiting for docker logs from %s to contain [%s]\n' "$cid" "$needle" >&2
+  exit 1
+}
+
 start_image() {
   local dir="$1"
   shift
@@ -132,12 +158,13 @@ write_stubs "$local_dir/stubbin"
 printf '503\n200\n' >"$local_dir/logs/curl-seq"
 container=$(start_image "$local_dir" -e TUNNEL_TOKEN=token -e AUTH_ISSUER=https://auth.example.com)
 wait_for_file "$local_dir/logs/cloudflared.argv"
+wait_for_file_contains "$local_dir/logs/events.log" 'curl 2 200'
 [[ -f "$local_dir/data/auth.sqlite" ]]
 grep -Fq 'auth-mini init /data/auth.sqlite' "$local_dir/logs/events.log"
 grep -Fq 'curl 1 503' "$local_dir/logs/events.log"
 grep -Fq 'curl 2 200' "$local_dir/logs/events.log"
 grep -Fq 'tunnel run --token token' "$local_dir/logs/cloudflared.argv"
-docker logs "$container" 2>&1 | grep -F 'AUTH_ISSUER must match the Cloudflare Dashboard hostname'
+wait_for_container_logs_contains "$container" 'AUTH_ISSUER must match the Cloudflare Dashboard hostname'
 docker rm -f "$container" >/dev/null 2>&1 || true
 
 local_dir=$(new_dir)

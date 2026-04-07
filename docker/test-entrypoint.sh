@@ -156,6 +156,33 @@ wait_for_file() {
   exit 1
 }
 
+wait_for_file_contains() {
+  local file="$1" needle="$2" attempts="${3:-80}"
+  local i
+  for ((i = 0; i < attempts; i++)); do
+    if [[ -e "$file" ]] && grep -Fq -- "$needle" "$file"; then
+      return 0
+    fi
+    /bin/sleep 0.05
+  done
+  printf 'timed out waiting for %s to contain [%s]\n' "$file" "$needle" >&2
+  exit 1
+}
+
+wait_for_container_logs_contains() {
+  local cid="$1" needle="$2" attempts="${3:-80}"
+  local i logs
+  for ((i = 0; i < attempts; i++)); do
+    logs=$(docker logs "$cid" 2>&1 || true)
+    if [[ "$logs" == *"$needle"* ]]; then
+      return 0
+    fi
+    /bin/sleep 0.05
+  done
+  printf 'timed out waiting for docker logs from %s to contain [%s]\n' "$cid" "$needle" >&2
+  exit 1
+}
+
 start_stub_container() {
   local dir="$1"
   shift
@@ -266,10 +293,12 @@ run_supervision() {
   printf '503\n200\n' >"$dir/logs/curl-seq"
   cid=$(start_stub_container "$dir" -e TUNNEL_TOKEN=token -e AUTH_ISSUER=https://auth.example.com)
   wait_for_file "$dir/logs/cloudflared.argv"
+  wait_for_file_contains "$dir/logs/events.log" 'curl 2 200'
   curl_count=$(cat "$dir/logs/curl-count")
   [[ "$curl_count" -ge 2 ]]
   assert_file_contains "$dir/logs/events.log" "curl 1 503"
   assert_file_contains "$dir/logs/events.log" "curl 2 200"
+  wait_for_container_logs_contains "$cid" 'AUTH_ISSUER must match the Cloudflare Dashboard hostname'
   logs=$(docker logs "$cid" 2>&1)
   assert_contains "$logs" 'AUTH_ISSUER must match the Cloudflare Dashboard hostname'
   assert_contains "$logs" 'JWT `iss`, WebAuthn, and SDK usage'

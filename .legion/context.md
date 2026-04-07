@@ -2,6 +2,7 @@
 
 ## Progress
 
+- 2026-04-07: 针对用户给出的 `release-image` 失败 job `70236397258` 做了 root-cause 排查。GH log 显示失败发生在 `bash docker/test-entrypoint.sh supervision`；本地脚本和镜像 smoke 可通过，说明更像 CI 时序竞态而非 entrypoint 逻辑回归。已将 `docker/test-entrypoint.sh` 与 `docker/test-image-smoke.sh` 中“看到 `cloudflared.argv` 后立刻断言 curl 计数/容器日志”的检查改为条件等待，避免日志与挂载文件尚未刷出时偶发误判。随后 fresh 验证 `bash docker/test-entrypoint.sh validation`、`bash docker/test-entrypoint.sh supervision`、`bash docker/test-image-smoke.sh` 全部通过。
 - 2026-04-07: 为推进 Task 5，运行了非网络 final verification：`npm test` 在默认并行模式下失败于 `tests/integration/oclif-cli.test.ts` 中两个 packed-install help tests（各 30s timeout）；进一步排查显示 `npm pack --json --dry-run` 实际包含 `dist/`，且手工 instrument 的 packed CLI 路径很快（build ~1.4s / pack ~0.6s / install ~2.1s / `--help` ~3.3s），对应两个测试单独运行通过，`npx vitest run tests --maxWorkers=1` 全量 249 tests 也通过。当前判断为并行模式下的 suite-level contention / flaky timeout，而非本轮 docs 变更回归。
 - 2026-04-07: Task 4 已完成实现、通过 spec review / code quality review，并在本地重新验证 `bash docker/check-docs.sh post` 通过；已提交 `acc140f docs: add cloudflared docker deployment guide`。Task 3 仍仅剩 `actionlint` 受环境镜像拉取超时阻塞。
 - 2026-04-07: Task 3 当前已生成 `.github/workflows/release-image.yml` 与 `docker/check-release-workflow.sh`，并经过多轮 spec/code review 修正 recovery path、owner lowercase、publish.yml drift guard、rerun gating、manual recovery ancestry、GHCR dual-tag skip 逻辑；本地 `bash docker/check-release-workflow.sh` 已通过，但 `docker run --rm -v "$PWD":/repo -w /repo rhysd/actionlint:1.7.7 -color` 仍因镜像拉取超时受阻，暂未宣告该 task 最终完成或提交。
