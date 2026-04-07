@@ -1,0 +1,9 @@
+.git
+node_modules
+dist
+.legion
+test.sqlite
+server.log
+.tmp-pack-debug
+docs/superpowers/plans
+docs/superpowers/specs
