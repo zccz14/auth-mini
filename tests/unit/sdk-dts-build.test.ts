@@ -44,6 +44,9 @@ const getWindowAuthMiniType = (source: string) => {
 const getTypeLiteralMemberNames = (typeLiteral: ts.TypeLiteralNode) =>
   typeLiteral.members.map((member) => member.name?.getText() ?? '<anonymous>');
 
+const loadTestRunnerModule = async () =>
+  import(resolve(process.cwd(), 'scripts/run-tests.js'));
+
 describe('sdk d.ts build artifact', () => {
   it('is enforced by the automated repo test command', () => {
     const packageJson = JSON.parse(
@@ -62,7 +65,21 @@ describe('sdk d.ts build artifact', () => {
       "'tests/fixtures/sdk-dts-consumer/tsconfig.json'",
     );
     expect(testRunnerSource).toContain('process.argv.slice(2)');
-    expect(testRunnerSource).toContain('if (vitestArgs.length > 0)');
+    expect(testRunnerSource).toContain('isTargetedVitestRun');
+    expect(testRunnerSource).toContain('fileURLToPath(import.meta.url)');
+  });
+
+  it('keeps fixture enforcement for full-run vitest options only', async () => {
+    const { isTargetedVitestRun } = await loadTestRunnerModule();
+
+    expect(isTargetedVitestRun(['--maxWorkers=1'])).toBe(false);
+    expect(isTargetedVitestRun(['tests/unit/sdk-dts-build.test.ts'])).toBe(
+      true,
+    );
+    expect(isTargetedVitestRun(['-t', 'sdk d.ts build artifact'])).toBe(true);
+    expect(
+      isTargetedVitestRun(['--testNamePattern', 'sdk d.ts build artifact']),
+    ).toBe(true);
   });
 
   it('contains only a global Window.AuthMini declaration surface', () => {
