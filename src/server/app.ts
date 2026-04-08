@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { Hono, type Context } from 'hono';
 import type { ZodType } from 'zod';
 import type { DatabaseClient } from '../infra/db/client.js';
@@ -71,10 +71,20 @@ type AppVariables = AuthVariables & {
   requestId: string;
 };
 
-const singletonIifeDtsSource = readFileSync(
-  resolve(process.cwd(), 'dist/sdk/singleton-iife.d.ts'),
-  'utf8',
+const singletonIifeDtsPathCandidates = [
+  fileURLToPath(new URL('../sdk/singleton-iife.d.ts', import.meta.url)),
+  fileURLToPath(new URL('../../dist/sdk/singleton-iife.d.ts', import.meta.url)),
+];
+
+const singletonIifeDtsPath = singletonIifeDtsPathCandidates.find((path) =>
+  existsSync(path),
 );
+
+if (!singletonIifeDtsPath) {
+  throw new Error('sdk declaration artifact not found');
+}
+
+const singletonIifeDtsSource = readFileSync(singletonIifeDtsPath, 'utf8');
 
 export function createApp(input: {
   db: DatabaseClient;

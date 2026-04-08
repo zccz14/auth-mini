@@ -1,5 +1,8 @@
 import { readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { createTestApp } from '../helpers/app.js';
 import { executeServedSdk, fakeStorage } from '../helpers/sdk.js';
@@ -84,6 +87,44 @@ describe('singleton sdk endpoint', () => {
       expect(response.headers.get('vary')).toBe('Origin');
     } finally {
       testApp.close();
+    }
+  });
+
+  it('serves the singleton sdk declaration when imported from a different working directory', () => {
+    const tempCwd = mkdtempSync(resolve(tmpdir(), 'auth-mini-sdk-cwd-'));
+
+    try {
+      const builtDtsPath = resolve(
+        process.cwd(),
+        'dist/sdk/singleton-iife.d.ts',
+      );
+      const appModuleUrl = new URL('../../dist/server/app.js', import.meta.url);
+      const script = [
+        "import { readFileSync } from 'node:fs';",
+        `process.chdir(${JSON.stringify(tempCwd)});`,
+        `const { createApp } = await import(${JSON.stringify(appModuleUrl.href)});`,
+        'const logger = { child() { return this; }, info() {}, warn() {}, error() {} };',
+        "const app = createApp({ db: {}, issuer: 'https://issuer.example', logger, origins: ['https://app.example.com'] });",
+        "const response = await app.request('/sdk/singleton-iife.d.ts');",
+        'const body = await response.text();',
+        `const built = readFileSync(${JSON.stringify(builtDtsPath)}, 'utf8');`,
+        'if (response.status !== 200) throw new Error(`unexpected status ${response.status}`);',
+        "if (response.headers.get('content-type') !== 'text/plain; charset=utf-8') throw new Error('unexpected content-type');",
+        "if (body !== built) throw new Error('unexpected body');",
+      ].join(' ');
+
+      expect(() =>
+        execFileSync(
+          process.execPath,
+          ['--input-type=module', '--eval', script],
+          {
+            cwd: tempCwd,
+            stdio: 'pipe',
+          },
+        ),
+      ).not.toThrow();
+    } finally {
+      rmSync(tempCwd, { recursive: true, force: true });
     }
   });
 
