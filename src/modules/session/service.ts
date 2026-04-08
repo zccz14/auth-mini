@@ -110,6 +110,7 @@ export async function refreshSessionTokens(
     sessionId: input.sessionId,
     currentRefreshTokenHash: submittedRefreshTokenHash,
     nextRefreshTokenHash: hashValue(refreshToken),
+    now,
   });
 
   if (!rotatedSession) {

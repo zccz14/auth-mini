@@ -9,12 +9,15 @@ import { bootstrapDatabase } from '../../src/infra/db/bootstrap.js';
 import { createDatabaseClient } from '../../src/infra/db/client.js';
 import { importSmtpConfigs } from '../../src/infra/smtp/config-import.js';
 import { runStartCommand } from '../../src/app/commands/start.js';
+import { bootstrapKeys } from '../../src/modules/jwks/service.js';
 import { hashValue } from '../../src/shared/crypto.js';
 import {
   createSession,
   rotateRefreshToken,
 } from '../../src/modules/session/repo.js';
+import { refreshSessionTokens } from '../../src/modules/session/service.js';
 import { createTempDbPath } from '../helpers/db.js';
+import { createMemoryLogCollector } from '../helpers/logging.js';
 import {
   createOtpMailSeam,
   extractOtpCode,
@@ -31,6 +34,7 @@ const openApps: Array<{ close(): void }> = [];
 afterEach(() => {
   vi.doUnmock('../../src/infra/smtp/mailer.js');
   vi.resetModules();
+  vi.unstubAllGlobals();
   otpSeam.current = null;
 
   while (openApps.length > 0) {
@@ -137,6 +141,66 @@ describe('session routes', () => {
       reason: 'session_invalidated',
       session_id: testApp.sessionId,
     });
+  });
+
+  it('refresh does not misclassify mid-flight expiry as superseded', async () => {
+    const dbPath = await createTempDbPath();
+    await bootstrapDatabase(dbPath);
+    const db = createDatabaseClient(dbPath);
+    const logs = createMemoryLogCollector();
+
+    try {
+      await bootstrapKeys(db);
+      db.prepare(
+        'INSERT INTO users (id, email, email_verified_at) VALUES (?, ?, ?)',
+      ).run('user-1', 'user-1@example.com', '2030-01-01T00:00:00.000Z');
+
+      const session = createSession(db, {
+        userId: 'user-1',
+        refreshTokenHash: hashValue('refresh-token'),
+        expiresAt: '2030-01-01T00:00:01.000Z',
+      });
+
+      const RealDate = Date;
+      const timestamps = [
+        '2030-01-01T00:00:00.000Z',
+        '2030-01-01T00:00:02.000Z',
+      ];
+      let index = 0;
+
+      class SequencedDate extends RealDate {
+        constructor(value?: string | number | Date) {
+          super(value ?? timestamps[Math.min(index++, timestamps.length - 1)]);
+        }
+
+        static now() {
+          return new RealDate(
+            timestamps[Math.min(index, timestamps.length - 1)],
+          ).getTime();
+        }
+
+        static parse = RealDate.parse;
+        static UTC = RealDate.UTC;
+      }
+
+      vi.stubGlobal('Date', SequencedDate);
+
+      const result = await refreshSessionTokens(db, {
+        sessionId: session.id,
+        refreshToken: 'refresh-token',
+        issuer: 'https://issuer.example',
+        logger: logs.logger,
+      });
+
+      expect(result.session_id).toBe(session.id);
+      expectLogEntry(logs.entries, {
+        event: 'session.refresh.succeeded',
+        session_id: session.id,
+        user_id: 'user-1',
+      });
+    } finally {
+      db.close();
+    }
   });
 
   it('refresh token claim only succeeds once across database clients', async () => {

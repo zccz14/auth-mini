@@ -64,9 +64,10 @@ export function rotateRefreshToken(
     sessionId: string;
     currentRefreshTokenHash: string;
     nextRefreshTokenHash: string;
+    now?: string;
   },
 ): Session | null {
-  const now = new Date().toISOString();
+  const now = input.now ?? new Date().toISOString();
   const update = db.prepare(
     [
       'UPDATE sessions',
