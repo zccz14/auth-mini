@@ -7,7 +7,6 @@ const knownNonTargetValueOptions = new Set([
   '--config',
   '--project',
   '--reporter',
-  '--coverage',
   '--shard',
   '--maxWorkers',
 ]);

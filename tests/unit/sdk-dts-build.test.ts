@@ -69,7 +69,7 @@ describe('sdk d.ts build artifact', () => {
     expect(testRunnerSource).toContain('fileURLToPath(import.meta.url)');
   });
 
-  it('treats known option values as non-targeted and only bare positional test paths as explicit targets', async () => {
+  it('keeps explicit targeted signals while allowing bare coverage-following test paths', async () => {
     const { isTargetedVitestRun } = await loadTestRunnerModule();
 
     expect(isTargetedVitestRun(['--maxWorkers=1'])).toBe(false);
@@ -80,17 +80,11 @@ describe('sdk d.ts build artifact', () => {
       false,
     );
     expect(isTargetedVitestRun(['--config', 'vitest.config.ts'])).toBe(false);
+    expect(isTargetedVitestRun(['--coverage=text'])).toBe(false);
     expect(isTargetedVitestRun(['--coverage', 'text'])).toBe(false);
     expect(isTargetedVitestRun(['--reporter', 'dot'])).toBe(false);
     expect(
       isTargetedVitestRun(['--coverage', 'tests/unit/sdk-dts-build.test.ts']),
-    ).toBe(false);
-    expect(
-      isTargetedVitestRun([
-        '--coverage',
-        'text',
-        'tests/unit/sdk-dts-build.test.ts',
-      ]),
     ).toBe(true);
     expect(isTargetedVitestRun(['tests/unit/sdk-dts-build.test.ts'])).toBe(
       true,
