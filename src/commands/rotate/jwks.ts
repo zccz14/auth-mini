@@ -9,15 +9,15 @@ export default class RotateJwksCommand extends BaseCommand {
   static aliases = ['rotate-jwks'];
 
   static args = {
-    dbPath: Args.string({
+    instance: Args.string({
       required: true,
-      description: 'SQLite database path',
+      description: 'Auth-mini instance (currently a SQLite database path)',
     }),
   };
 
   async run(): Promise<void> {
     const { args } = await this.parse(RotateJwksCommand);
 
-    await runRotateJwksCommand({ dbPath: args.dbPath });
+    await runRotateJwksCommand({ dbPath: args.instance });
   }
 }

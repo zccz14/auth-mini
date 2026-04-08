@@ -144,6 +144,10 @@ describe('oclif cli contract', () => {
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe('');
     expect(result.stdout).toContain('USAGE');
+    expect(result.stdout).toContain('auth-mini rotate jwks INSTANCE');
+    expect(result.stdout).toContain(
+      'Auth-mini instance (currently a SQLite database path)',
+    );
     expect(result.stdout).toContain(
       'Promote the standby JWKS signing key and generate a new standby key',
     );
@@ -168,6 +172,10 @@ describe('oclif cli contract', () => {
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe('');
     expect(result.stdout).toContain('USAGE');
+    expect(result.stdout).toContain('auth-mini rotate-jwks INSTANCE');
+    expect(result.stdout).toContain(
+      'Auth-mini instance (currently a SQLite database path)',
+    );
     expect(result.stdout).toContain(
       'Promote the standby JWKS signing key and generate a new standby key',
     );
