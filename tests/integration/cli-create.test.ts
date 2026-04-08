@@ -6,6 +6,7 @@ import { createDatabaseClient } from '../../src/infra/db/client.js';
 import { runBuiltCli } from '../helpers/cli.js';
 import {
   countRows,
+  createMalformedJwksSlotDbPath,
   createLegacySchemaDbPath,
   createTempDbPath,
   listTables,
@@ -67,29 +68,56 @@ describe('workspace bootstrap', () => {
     expect(result.stdout).not.toContain('\n  base\n');
   }, 30000);
 
-  it('create initializes schema and seeds an active jwks key', async () => {
+  it('create initializes schema and seeds current and standby jwks slots', async () => {
     const dbPath = await createTempDbPath();
 
     const result = await runBuiltCli(['create', dbPath]);
 
     expect(result.exitCode).toBe(0);
-    expect(await countRows(dbPath, 'jwks_keys')).toBe(1);
+    expect(await countRows(dbPath, 'jwks_keys')).toBe(2);
 
     const db = createDatabaseClient(dbPath);
 
     try {
-      const activeRow = db
-        .prepare(
-          'SELECT kid, alg, is_active FROM jwks_keys WHERE is_active = 1',
-        )
-        .get() as { kid: string; alg: string; is_active: number } | undefined;
+      const rows = db
+        .prepare('SELECT id, kid, alg FROM jwks_keys ORDER BY id ASC')
+        .all() as Array<{ id: string; kid: string; alg: string }>;
 
-      expect(activeRow).toMatchObject({ alg: 'EdDSA', is_active: 1 });
-      expect(activeRow?.kid).toBeTruthy();
+      expect(rows).toHaveLength(2);
+      expect(rows.map((row) => row.id)).toEqual(['CURRENT', 'STANDBY']);
+      expect(rows[0]).toMatchObject({ id: 'CURRENT', alg: 'EdDSA' });
+      expect(rows[1]).toMatchObject({ id: 'STANDBY', alg: 'EdDSA' });
+      expect(rows[0]?.kid).toBeTruthy();
+      expect(rows[1]?.kid).toBeTruthy();
+      expect(rows[0]?.kid).not.toBe(rows[1]?.kid);
     } finally {
       db.close();
     }
   }, 30000);
+
+  it('bootstrap fills a missing jwks slot in an otherwise valid slot schema', async () => {
+    const { bootstrapKeys } = await import('../../src/modules/jwks/service.js');
+    const dbPath = await createMalformedJwksSlotDbPath({
+      rows: [{ id: 'CURRENT', kid: 'kid-current' }],
+    });
+    const db = createDatabaseClient(dbPath);
+
+    try {
+      await bootstrapKeys(db);
+
+      const rows = db
+        .prepare('SELECT id, kid FROM jwks_keys ORDER BY id ASC')
+        .all() as Array<{ id: string; kid: string }>;
+
+      expect(rows).toHaveLength(2);
+      expect(rows.map((row) => row.id)).toEqual(['CURRENT', 'STANDBY']);
+      expect(rows[0]).toEqual({ id: 'CURRENT', kid: 'kid-current' });
+      expect(rows[1]?.kid).toBeTruthy();
+      expect(rows[1]?.kid).not.toBe('kid-current');
+    } finally {
+      db.close();
+    }
+  });
 
   it('rejects create smtp-config flag in the new contract', async () => {
     const dbPath = await createTempDbPath();
@@ -153,24 +181,38 @@ describe('workspace bootstrap', () => {
     expect(await exists(dbPath)).toBe(false);
   }, 30000);
 
-  it('rotate-jwks generates a new active key and keeps older keys', async () => {
+  it('rotate-jwks promotes standby and keeps exactly two jwks slots', async () => {
     const dbPath = await createTempDbPath();
 
     const createResult = await runBuiltCli(['create', dbPath]);
-    const rotateResult = await runBuiltCli(['rotate-jwks', dbPath]);
 
     expect(createResult.exitCode).toBe(0);
+
+    const beforeDb = createDatabaseClient(dbPath);
+    const beforeRows = beforeDb
+      .prepare('SELECT id, kid FROM jwks_keys ORDER BY id ASC')
+      .all() as Array<{ id: string; kid: string }>;
+
+    beforeDb.close();
+
+    const rotateResult = await runBuiltCli(['rotate-jwks', dbPath]);
+
     expect(rotateResult.exitCode).toBe(0);
     expect(await countRows(dbPath, 'jwks_keys')).toBe(2);
 
     const db = createDatabaseClient(dbPath);
 
     try {
-      const activeCount = db
-        .prepare('SELECT COUNT(*) AS count FROM jwks_keys WHERE is_active = 1')
-        .get() as { count: number };
+      const rows = db
+        .prepare('SELECT id, kid FROM jwks_keys ORDER BY id ASC')
+        .all() as Array<{ id: string; kid: string }>;
 
-      expect(activeCount.count).toBe(1);
+      expect(beforeRows.map((row) => row.id)).toEqual(['CURRENT', 'STANDBY']);
+      expect(rows.map((row) => row.id)).toEqual(['CURRENT', 'STANDBY']);
+      expect(rows[0]?.kid).toBe(beforeRows[1]?.kid);
+      expect(rows[1]?.kid).toBeTruthy();
+      expect(rows[1]?.kid).not.toBe(beforeRows[0]?.kid);
+      expect(rows[1]?.kid).not.toBe(beforeRows[1]?.kid);
     } finally {
       db.close();
     }
@@ -238,6 +280,80 @@ describe('workspace bootstrap', () => {
       'webauthn_challenges',
       'webauthn_credentials',
     ]);
+  });
+
+  it('fails bootstrap when a new-schema jwks table contains an extra row', async () => {
+    const { bootstrapKeys } = await import('../../src/modules/jwks/service.js');
+    const dbPath = await createMalformedJwksSlotDbPath({
+      rows: [
+        { id: 'CURRENT', kid: 'kid-current' },
+        { id: 'STANDBY', kid: 'kid-standby' },
+        { id: 'NEXT', kid: 'kid-next' },
+      ],
+      includeIdSlotCheck: false,
+    });
+    const db = createDatabaseClient(dbPath);
+
+    try {
+      await expect(bootstrapKeys(db)).rejects.toThrow(/schema/i);
+      await expect(bootstrapKeys(db)).rejects.toThrow(/rebuild or migrate/i);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('fails bootstrap when a new-schema jwks table contains an invalid slot id', async () => {
+    const { bootstrapKeys } = await import('../../src/modules/jwks/service.js');
+    const dbPath = await createMalformedJwksSlotDbPath({
+      rows: [{ id: 'BROKEN', kid: 'kid-broken' }],
+      includeIdSlotCheck: false,
+    });
+    const db = createDatabaseClient(dbPath);
+
+    try {
+      await expect(bootstrapKeys(db)).rejects.toThrow(/schema/i);
+      await expect(bootstrapKeys(db)).rejects.toThrow(/rebuild or migrate/i);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('fails bootstrap when a new-schema jwks table duplicates a slot id', async () => {
+    const { bootstrapKeys } = await import('../../src/modules/jwks/service.js');
+    const dbPath = await createMalformedJwksSlotDbPath({
+      rows: [
+        { id: 'CURRENT', kid: 'kid-current-1' },
+        { id: 'CURRENT', kid: 'kid-current-2' },
+      ],
+      includeIdPrimaryKey: false,
+      includeIdSlotCheck: false,
+    });
+    const db = createDatabaseClient(dbPath);
+
+    try {
+      await expect(bootstrapKeys(db)).rejects.toThrow(/schema/i);
+      await expect(bootstrapKeys(db)).rejects.toThrow(/rebuild or migrate/i);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('fails bootstrap when jwks columns exist without slot schema constraints', async () => {
+    const { bootstrapDatabase } =
+      await import('../../src/infra/db/bootstrap.js');
+    const dbPath = await createMalformedJwksSlotDbPath({
+      rows: [
+        { id: 'CURRENT', kid: 'kid-current' },
+        { id: 'STANDBY', kid: 'kid-standby' },
+      ],
+      includeIdPrimaryKey: false,
+      includeIdSlotCheck: false,
+    });
+
+    await expect(bootstrapDatabase(dbPath)).rejects.toThrow(/schema/i);
+    await expect(bootstrapDatabase(dbPath)).rejects.toThrow(
+      /rebuild or migrate/i,
+    );
   });
 
   it('seeds allowed origins through the test app helper', async () => {
@@ -395,7 +511,7 @@ describe('workspace bootstrap', () => {
     }
   });
 
-  it('allows at most one active jwks key', async () => {
+  it('restricts jwks slot ids to CURRENT and STANDBY', async () => {
     const { bootstrapDatabase } =
       await import('../../src/infra/db/bootstrap.js');
     const { createDatabaseClient } =
@@ -411,30 +527,32 @@ describe('workspace bootstrap', () => {
       db.prepare(
         [
           'INSERT INTO jwks_keys',
-          '(id, kid, alg, public_jwk, private_jwk, is_active)',
-          'VALUES (?, ?, ?, ?, ?, ?)',
+          '(id, kid, alg, public_jwk, private_jwk)',
+          'VALUES (?, ?, ?, ?, ?)',
         ].join(' '),
-      ).run('key-1', 'kid-1', 'EdDSA', '{}', '{}', 1);
+      ).run('CURRENT', 'kid-current', 'EdDSA', '{}', '{}');
 
       expect(() => {
         db.prepare(
           [
             'INSERT INTO jwks_keys',
-            '(id, kid, alg, public_jwk, private_jwk, is_active)',
-            'VALUES (?, ?, ?, ?, ?, ?)',
+            '(id, kid, alg, public_jwk, private_jwk)',
+            'VALUES (?, ?, ?, ?, ?)',
           ].join(' '),
-        ).run('key-2', 'kid-2', 'EdDSA', '{}', '{}', 1);
-      }).toThrowError(/UNIQUE constraint failed/);
+        ).run('INVALID', 'kid-invalid', 'EdDSA', '{}', '{}');
+      }).toThrowError(/CHECK constraint failed/);
 
-      expect(() => {
-        db.prepare(
-          [
-            'INSERT INTO jwks_keys',
-            '(id, kid, alg, public_jwk, private_jwk, is_active)',
-            'VALUES (?, ?, ?, ?, ?, ?)',
-          ].join(' '),
-        ).run('key-3', 'kid-3', 'EdDSA', '{}', '{}', 0);
-      }).not.toThrow();
+      expect(() =>
+        db
+          .prepare(
+            [
+              'INSERT INTO jwks_keys',
+              '(id, kid, alg, public_jwk, private_jwk)',
+              'VALUES (?, ?, ?, ?, ?)',
+            ].join(' '),
+          )
+          .run('STANDBY', 'kid-standby', 'EdDSA', '{}', '{}'),
+      ).not.toThrow();
     } finally {
       db.close();
     }

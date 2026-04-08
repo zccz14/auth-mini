@@ -26,18 +26,12 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 
 CREATE TABLE IF NOT EXISTS jwks_keys (
-  id TEXT PRIMARY KEY,
+  id TEXT PRIMARY KEY CHECK (id IN ('CURRENT', 'STANDBY')),
   kid TEXT NOT NULL UNIQUE,
   alg TEXT NOT NULL,
   public_jwk TEXT NOT NULL,
-  private_jwk TEXT NOT NULL,
-  is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  private_jwk TEXT NOT NULL
 );
-
-CREATE UNIQUE INDEX IF NOT EXISTS jwks_keys_one_active_idx
-  ON jwks_keys (is_active)
-  WHERE is_active = 1;
 
 CREATE TABLE IF NOT EXISTS smtp_configs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

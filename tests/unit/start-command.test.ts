@@ -4,6 +4,7 @@ const createServer = vi.fn();
 const parseRuntimeConfig = vi.fn();
 const createDatabaseClient = vi.fn();
 const assertRequiredTablesAndColumns = vi.fn();
+const bootstrapDatabase = vi.fn();
 const bootstrapKeys = vi.fn();
 const createApp = vi.fn();
 const createRootLogger = vi.fn();
@@ -22,6 +23,10 @@ vi.mock('../../src/shared/config.js', () => ({
 vi.mock('../../src/infra/db/client.js', () => ({
   assertRequiredTablesAndColumns,
   createDatabaseClient,
+}));
+
+vi.mock('../../src/infra/db/bootstrap.js', () => ({
+  bootstrapDatabase,
 }));
 
 vi.mock('../../src/modules/jwks/service.js', () => ({
@@ -62,6 +67,7 @@ describe('runStartCommand', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
+    bootstrapDatabase.mockResolvedValue(undefined);
     loggerChild.mockReturnValue({
       child: loggerChild,
       info: loggerInfo,
@@ -89,6 +95,9 @@ describe('runStartCommand', () => {
     await expect(
       runStartCommand({ dbPath: '/tmp/auth-mini.db' }),
     ).rejects.toThrow('bootstrap failed');
+    expect(bootstrapDatabase).toHaveBeenCalledWith('/tmp/auth-mini.db', {
+      logger: expect.any(Object),
+    });
     expect(db.close).toHaveBeenCalledTimes(1);
     expect(bootstrapKeys).toHaveBeenCalledWith(
       db,
@@ -139,6 +148,9 @@ describe('runStartCommand', () => {
         allowed_origins: ['origin'],
       }),
     );
+    expect(bootstrapDatabase).toHaveBeenCalledWith('/tmp/auth-mini.db', {
+      logger: expect.any(Object),
+    });
     expect(db.prepare).toHaveBeenCalledWith(
       'SELECT id, origin, created_at FROM allowed_origins ORDER BY id ASC',
     );
@@ -205,6 +217,9 @@ describe('runStartCommand', () => {
         origins: [],
       }),
     );
+    expect(bootstrapDatabase).toHaveBeenCalledWith('/tmp/auth-mini.db', {
+      logger: expect.any(Object),
+    });
     expect(createApp).not.toHaveBeenCalledWith(
       expect.objectContaining({ rpId: expect.anything() }),
     );
@@ -218,6 +233,20 @@ describe('runStartCommand', () => {
 
     expect(closeServer).toHaveBeenCalledTimes(1);
     expect(db.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails startup before opening the runtime database when schema bootstrap rejects', async () => {
+    const bootstrapError = new Error('schema incompatible');
+
+    bootstrapDatabase.mockRejectedValue(bootstrapError);
+
+    const runStartCommand = await loadRunStartCommand();
+
+    await expect(
+      runStartCommand({ dbPath: '/tmp/auth-mini.db' }),
+    ).rejects.toThrow('schema incompatible');
+    expect(createDatabaseClient).not.toHaveBeenCalled();
+    expect(bootstrapKeys).not.toHaveBeenCalled();
   });
 });
 

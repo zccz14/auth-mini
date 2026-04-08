@@ -14,10 +14,13 @@ import {
   getUnixTimeSeconds,
 } from '../../shared/time.js';
 import {
-  getActiveKey,
+  assertValidJwksSlotState,
+  createJwksSlotContractError,
+  getJwksSlot,
   getKeyByKid,
-  insertActiveKey,
-  listKeys,
+  insertJwksSlot,
+  listJwksSlots,
+  rotateJwksSlots,
 } from './repo.js';
 
 export async function bootstrapKeys(
@@ -27,21 +30,46 @@ export async function bootstrapKeys(
   id: string;
   kid: string;
 }> {
-  const activeKey = getActiveKey(db);
+  assertValidJwksSlotState(db);
 
-  if (activeKey) {
-    return { id: activeKey.id, kid: activeKey.kid };
+  let currentKey = getJwksSlot(db, 'CURRENT');
+  let standbyKey = getJwksSlot(db, 'STANDBY');
+
+  if (!currentKey) {
+    const currentRecord = generateEd25519KeyRecord();
+    insertJwksSlot(db, 'CURRENT', currentRecord);
+    currentKey = getJwksSlot(db, 'CURRENT');
+
+    input?.logger?.info(
+      {
+        event: 'jwks.bootstrap.created',
+        kid: currentRecord.kid,
+        slot: 'CURRENT',
+      },
+      'Initial JWKS signing key created',
+    );
   }
 
-  const keyRecord = generateEd25519KeyRecord();
-  insertActiveKey(db, keyRecord);
+  if (!standbyKey) {
+    const standbyRecord = generateEd25519KeyRecord();
+    insertJwksSlot(db, 'STANDBY', standbyRecord);
+    standbyKey = getJwksSlot(db, 'STANDBY');
 
-  input?.logger?.info(
-    { event: 'jwks.bootstrap.created', kid: keyRecord.kid },
-    'Initial JWKS signing key created',
-  );
+    input?.logger?.info(
+      {
+        event: 'jwks.bootstrap.created',
+        kid: standbyRecord.kid,
+        slot: 'STANDBY',
+      },
+      'Initial JWKS signing key created',
+    );
+  }
 
-  return { id: keyRecord.id, kid: keyRecord.kid };
+  if (!currentKey || !standbyKey) {
+    throw createJwksSlotContractError();
+  }
+
+  return { id: currentKey.id, kid: currentKey.kid };
 }
 
 export async function rotateKeys(
@@ -51,22 +79,37 @@ export async function rotateKeys(
   id: string;
   kid: string;
 }> {
+  assertValidJwksSlotState(db);
+  const currentKey = getJwksSlot(db, 'CURRENT');
+  const standbyKey = getJwksSlot(db, 'STANDBY');
+
+  if (!currentKey || !standbyKey) {
+    throw createJwksSlotContractError();
+  }
+
   const keyRecord = generateEd25519KeyRecord();
-  insertActiveKey(db, keyRecord);
+  rotateJwksSlots(db, keyRecord);
+
+  const nextCurrentKey = getJwksSlot(db, 'CURRENT');
+
+  if (!nextCurrentKey) {
+    throw createJwksSlotContractError();
+  }
 
   input.logger.info(
-    { event: 'jwks.rotated', kid: keyRecord.kid },
+    { event: 'jwks.rotated', kid: nextCurrentKey.kid },
     'JWKS rotated',
   );
 
-  return { id: keyRecord.id, kid: keyRecord.kid };
+  return { id: nextCurrentKey.id, kid: nextCurrentKey.kid };
 }
 
 export async function listPublicKeys(
   db: DatabaseClient,
   input: { logger: AppLogger },
 ): Promise<PublicJwk[]> {
-  const keys = listKeys(db).map((key) => toPublicJwk(key.privateJwk));
+  assertValidJwksSlotState(db);
+  const keys = listJwksSlots(db).map((key) => toPublicJwk(key.privateJwk));
   input.logger.info(
     { event: 'jwks.read', key_count: keys.length },
     'JWKS read',
@@ -79,10 +122,10 @@ export async function signJwt(
   db: DatabaseClient,
   payload: JwtPayload,
 ): Promise<string> {
-  const activeKey = getActiveKey(db);
+  const currentKey = getJwksSlot(db, 'CURRENT');
 
-  if (!activeKey) {
-    throw new Error('No active JWKS signing key');
+  if (!currentKey) {
+    throw new Error('No current JWKS signing key');
   }
 
   const iat = getUnixTimeSeconds();
@@ -92,7 +135,7 @@ export async function signJwt(
     exp: getExpiresAtUnixSeconds(iat, TTLS.accessTokenSeconds),
   };
 
-  return signCompactJwt(claims, activeKey.privateJwk, activeKey.kid);
+  return signCompactJwt(claims, currentKey.privateJwk, currentKey.kid);
 }
 
 export async function verifyJwt(

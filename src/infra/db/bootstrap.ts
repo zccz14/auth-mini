@@ -10,9 +10,12 @@ import { runSqlFile } from './migrations.js';
 
 const requiredRuntimeSchema = {
   allowed_origins: ['origin'],
+  jwks_keys: ['id', 'kid', 'alg', 'public_jwk', 'private_jwk'],
   webauthn_challenges: ['rp_id', 'origin'],
   webauthn_credentials: ['rp_id'],
 } as const;
+
+const expectedJwksColumns = ['id', 'kid', 'alg', 'public_jwk', 'private_jwk'];
 
 const knownAppTables = [
   'users',
@@ -64,6 +67,7 @@ export async function bootstrapDatabase(
 
     if (hasExistingAppSchema(db)) {
       assertRequiredTablesAndColumns(db, requiredRuntimeSchema);
+      assertJwksSlotSchema(db);
     }
 
     const schemaFilePath = await resolveSchemaFilePath();
@@ -73,9 +77,58 @@ export async function bootstrapDatabase(
       'Database migration completed',
     );
     assertRequiredTablesAndColumns(db, requiredRuntimeSchema);
+    assertJwksSlotSchema(db);
   } finally {
     db.close();
   }
+}
+
+function assertJwksSlotSchema(
+  db: ReturnType<typeof createDatabaseClient>,
+): void {
+  const tableDefinition = db
+    .prepare(
+      [
+        'SELECT sql',
+        'FROM sqlite_master',
+        "WHERE type = 'table' AND name = 'jwks_keys'",
+      ].join(' '),
+    )
+    .get() as { sql: string | null } | undefined;
+
+  if (!tableDefinition) {
+    return;
+  }
+
+  const columns = db.prepare("PRAGMA table_info('jwks_keys')").all() as Array<{
+    name: string;
+    pk: number;
+  }>;
+  const normalizedSql = normalizeSql(tableDefinition.sql ?? '');
+  const primaryKeyColumns = columns.filter((column) => column.pk > 0);
+
+  if (
+    columns.length !== expectedJwksColumns.length ||
+    columns.some(
+      (column, index) => column.name !== expectedJwksColumns[index],
+    ) ||
+    primaryKeyColumns.length !== 1 ||
+    primaryKeyColumns[0]?.name !== 'id' ||
+    !normalizedSql.includes(
+      "id text primary key check (id in ('current', 'standby'))",
+    )
+  ) {
+    throw new Error(
+      [
+        'Database schema is incompatible with this auth-mini version; rebuild or migrate the instance.',
+        'Missing required schema entries: jwks_keys slot contract',
+      ].join(' '),
+    );
+  }
+}
+
+function normalizeSql(sql: string): string {
+  return sql.trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
 function hasExistingAppSchema(

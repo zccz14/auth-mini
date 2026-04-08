@@ -101,6 +101,96 @@ export async function createLegacySchemaDbPath(): Promise<string> {
   return dbPath;
 }
 
+type SlotFixtureRow = {
+  id: string;
+  kid: string;
+  alg?: string;
+  publicJwk?: string;
+  privateJwk?: string;
+};
+
+export async function createMalformedJwksSlotDbPath(input: {
+  rows: SlotFixtureRow[];
+  includeIdPrimaryKey?: boolean;
+  includeIdSlotCheck?: boolean;
+}): Promise<string> {
+  const dbPath = await createTempDbPath();
+  const db = new Database(dbPath);
+  const idDefinition = [
+    'id TEXT',
+    input.includeIdPrimaryKey === false ? '' : 'PRIMARY KEY',
+    input.includeIdSlotCheck === false
+      ? ''
+      : "CHECK (id IN ('CURRENT', 'STANDBY'))",
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  try {
+    db.exec(`
+      PRAGMA foreign_keys = ON;
+
+      CREATE TABLE allowed_origins (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        origin TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE webauthn_credentials (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        credential_id TEXT NOT NULL UNIQUE,
+        public_key TEXT NOT NULL,
+        counter INTEGER NOT NULL DEFAULT 0,
+        transports TEXT NOT NULL DEFAULT '',
+        rp_id TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE webauthn_challenges (
+        request_id TEXT PRIMARY KEY,
+        type TEXT NOT NULL CHECK (type IN ('register', 'authenticate')),
+        challenge TEXT NOT NULL,
+        user_id TEXT,
+        expires_at TEXT NOT NULL,
+        rp_id TEXT NOT NULL,
+        origin TEXT NOT NULL,
+        consumed_at TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE jwks_keys (
+        ${idDefinition},
+        kid TEXT NOT NULL UNIQUE,
+        alg TEXT NOT NULL,
+        public_jwk TEXT NOT NULL,
+        private_jwk TEXT NOT NULL
+      );
+    `);
+
+    const insert = db.prepare(
+      [
+        'INSERT INTO jwks_keys (id, kid, alg, public_jwk, private_jwk)',
+        'VALUES (?, ?, ?, ?, ?)',
+      ].join(' '),
+    );
+
+    for (const row of input.rows) {
+      insert.run(
+        row.id,
+        row.kid,
+        row.alg ?? 'EdDSA',
+        row.publicJwk ?? '{}',
+        row.privateJwk ?? '{}',
+      );
+    }
+  } finally {
+    db.close();
+  }
+
+  return dbPath;
+}
+
 export async function listTables(dbPath: string): Promise<string[]> {
   const db = new Database(dbPath);
 
