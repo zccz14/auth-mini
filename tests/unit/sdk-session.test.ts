@@ -20,6 +20,7 @@ describe('sdk session flows', () => {
         .fn()
         .mockResolvedValueOnce(
           jsonResponse({
+            session_id: 's2',
             access_token: 'a2',
             refresh_token: 'r2',
             expires_in: 900,
@@ -46,6 +47,7 @@ describe('sdk session flows', () => {
       .fn()
       .mockResolvedValueOnce(
         jsonResponse({
+          session_id: 's2',
           access_token: 'a2',
           refresh_token: 'r2',
           expires_in: 900,
@@ -80,6 +82,7 @@ describe('sdk session flows', () => {
         .fn()
         .mockResolvedValueOnce(
           jsonResponse({
+            session_id: 's2',
             access_token: 'a2',
             refresh_token: 'r2',
             expires_in: 900,
@@ -152,6 +155,7 @@ describe('sdk session flows', () => {
         .fn()
         .mockResolvedValueOnce(
           jsonResponse({
+            session_id: 's2',
             access_token: 'a2',
             refresh_token: 'r2',
             expires_in: 900,
@@ -213,7 +217,7 @@ describe('sdk session flows', () => {
   it('keeps legacy persisted sessions usable while the access token is still valid', async () => {
     const sdk = createAuthMiniForTest({
       autoRecover: true,
-      storage: fakeAuthenticatedStorageWithMe(),
+      storage: fakeAuthenticatedStorageWithMe(undefined, { sessionId: null }),
       fetch: vi.fn().mockResolvedValueOnce(
         jsonResponse({
           user_id: 'u1',
@@ -239,6 +243,7 @@ describe('sdk session flows', () => {
       .fn()
       .mockResolvedValueOnce(
         jsonResponse({
+          session_id: 's2',
           access_token: 'a2',
           refresh_token: 'r2',
           expires_in: 900,
@@ -286,6 +291,7 @@ describe('sdk session flows', () => {
       .fn()
       .mockResolvedValueOnce(
         jsonResponse({
+          session_id: 's2',
           access_token: 'a2',
           refresh_token: 'r2',
           expires_in: 900,

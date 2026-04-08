@@ -15,6 +15,7 @@ export function fakeStorage(seed: StorageSeed = {}): Storage {
     data.set(
       'auth-mini.sdk',
       JSON.stringify({
+        sessionId: null,
         accessToken: null,
         refreshToken: null,
         receivedAt: null,
@@ -51,6 +52,7 @@ export function fakeAuthenticatedStorage(
   seed: Partial<PersistedSdkState> = {},
 ): Storage {
   return fakeStorage({
+    sessionId: 'session-1',
     accessToken: 'access-token',
     refreshToken: 'refresh-token',
     receivedAt: '2026-04-03T00:00:00.000Z',

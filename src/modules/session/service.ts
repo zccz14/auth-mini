@@ -114,7 +114,6 @@ export async function refreshSessionTokens(
   const accessToken = await signJwt(db, {
     sub: rotation.session.userId,
     sid: rotation.session.id,
-    issuer: input.issuer,
     iss: input.issuer,
     typ: 'access',
   });
