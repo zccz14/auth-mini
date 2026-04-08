@@ -214,28 +214,20 @@ describe('sdk session flows', () => {
     expect(sdk.me.get()?.email).toBe('u@example.com');
   });
 
-  it('keeps legacy persisted sessions usable while the access token is still valid', async () => {
+  it('drops legacy persisted sessions without sessionId during boot recovery', async () => {
     const sdk = createAuthMiniForTest({
       autoRecover: true,
       storage: fakeAuthenticatedStorageWithMe(undefined, { sessionId: null }),
-      fetch: vi.fn().mockResolvedValueOnce(
-        jsonResponse({
-          user_id: 'u1',
-          email: 'u@example.com',
-          webauthn_credentials: [],
-          active_sessions: [],
-        }),
-      ),
     });
 
     await expect(sdk.ready).resolves.toBeUndefined();
     expect(sdk.session.getState()).toMatchObject({
-      status: 'recovering',
+      status: 'anonymous',
       sessionId: null,
-      accessToken: 'access-token',
-      refreshToken: 'refresh-token',
+      accessToken: null,
+      refreshToken: null,
     });
-    expect(sdk.me.get()?.email).toBe('u@example.com');
+    expect(sdk.me.get()).toBeNull();
   });
 
   it('treats invalid persisted timestamps as needing refresh during recovery', async () => {

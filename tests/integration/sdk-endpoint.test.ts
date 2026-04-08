@@ -50,6 +50,7 @@ describe('singleton sdk endpoint', () => {
       const response = await testApp.app.request('/sdk/singleton-iife.js');
       const body = await response.text();
       const storage = fakeStorage({
+        sessionId: 'session-1',
         refreshToken: 'rt',
         expiresAt: '2026-04-03T00:00:00.000Z',
       });
@@ -62,6 +63,30 @@ describe('singleton sdk endpoint', () => {
       });
       expect(typeof windowObject.AuthMini.session.onChange).toBe('function');
       expect(Reflect.get(windowObject, legacyGlobalName)).toBeUndefined();
+    } finally {
+      testApp.close();
+    }
+  });
+
+  it('treats persisted singleton snapshots without sessionId as anonymous', async () => {
+    const testApp = await createTestApp();
+
+    try {
+      const response = await testApp.app.request('/sdk/singleton-iife.js');
+      const body = await response.text();
+      const storage = fakeStorage({
+        sessionId: null,
+        refreshToken: 'rt',
+        expiresAt: '2026-04-03T00:00:00.000Z',
+      });
+
+      const windowObject = executeServedSdk(body, { storage });
+
+      expect(windowObject.AuthMini.session.getState()).toMatchObject({
+        status: 'anonymous',
+        sessionId: null,
+        refreshToken: null,
+      });
     } finally {
       testApp.close();
     }

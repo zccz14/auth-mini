@@ -107,23 +107,7 @@ export function createSessionController(input: {
 
       try {
         if (!snapshot.sessionId) {
-          if (!snapshot.accessToken || needsRefresh(snapshot, input.now())) {
-            input.state.setAnonymous();
-            return;
-          }
-
-          const me = await fetchMe(snapshot.accessToken);
-
-          input.state.setRecovering({
-            sessionId: null,
-            accessToken: snapshot.accessToken,
-            refreshToken: snapshot.refreshToken,
-            receivedAt:
-              snapshot.receivedAt ?? new Date(input.now()).toISOString(),
-            expiresAt:
-              snapshot.expiresAt ?? new Date(input.now()).toISOString(),
-            me,
-          });
+          input.state.setAnonymous();
           return;
         }
 
