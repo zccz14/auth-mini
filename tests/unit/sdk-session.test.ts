@@ -210,6 +210,30 @@ describe('sdk session flows', () => {
     expect(sdk.me.get()?.email).toBe('u@example.com');
   });
 
+  it('keeps legacy persisted sessions usable while the access token is still valid', async () => {
+    const sdk = createAuthMiniForTest({
+      autoRecover: true,
+      storage: fakeAuthenticatedStorageWithMe(),
+      fetch: vi.fn().mockResolvedValueOnce(
+        jsonResponse({
+          user_id: 'u1',
+          email: 'u@example.com',
+          webauthn_credentials: [],
+          active_sessions: [],
+        }),
+      ),
+    });
+
+    await expect(sdk.ready).resolves.toBeUndefined();
+    expect(sdk.session.getState()).toMatchObject({
+      status: 'recovering',
+      sessionId: null,
+      accessToken: 'access-token',
+      refreshToken: 'refresh-token',
+    });
+    expect(sdk.me.get()?.email).toBe('u@example.com');
+  });
+
   it('treats invalid persisted timestamps as needing refresh during recovery', async () => {
     const fetch = vi
       .fn()

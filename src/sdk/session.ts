@@ -7,7 +7,7 @@ type StateStore = {
   onChange(listener: (state: SessionSnapshot) => void): () => void;
   setAuthenticated(next: SessionResult): void;
   setRecovering(next: {
-    sessionId: string;
+    sessionId: string | null;
     accessToken: string | null;
     refreshToken: string;
     receivedAt: string;
@@ -107,7 +107,23 @@ export function createSessionController(input: {
 
       try {
         if (!snapshot.sessionId) {
-          input.state.setAnonymous();
+          if (!snapshot.accessToken || needsRefresh(snapshot, input.now())) {
+            input.state.setAnonymous();
+            return;
+          }
+
+          const me = await fetchMe(snapshot.accessToken);
+
+          input.state.setRecovering({
+            sessionId: null,
+            accessToken: snapshot.accessToken,
+            refreshToken: snapshot.refreshToken,
+            receivedAt:
+              snapshot.receivedAt ?? new Date(input.now()).toISOString(),
+            expiresAt:
+              snapshot.expiresAt ?? new Date(input.now()).toISOString(),
+            me,
+          });
           return;
         }
 
