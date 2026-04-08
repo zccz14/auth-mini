@@ -3,6 +3,7 @@ import {
   countLogoutCalls,
   countRefreshCalls,
   createAuthMiniForTest,
+  createSharedStorageHarness,
   fakeAlmostExpiredStorage,
   fakeAuthenticatedStorage,
   fakeAuthenticatedStorageWithMe,
@@ -194,6 +195,105 @@ describe('sdk session flows', () => {
     expect(listener).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'anonymous' }),
     );
+  });
+
+  it('keeps the loser recovering until shared storage adopts the winner refresh', async () => {
+    const shared = createSharedStorageHarness({
+      sessionId: 'session-1',
+      accessToken: 'access-1',
+      refreshToken: 'refresh-1',
+      receivedAt: '2026-04-03T00:00:00.000Z',
+      expiresAt: '2026-04-03T00:03:00.000Z',
+      me: null,
+    });
+    const loser = shared.createSdk({
+      recoveryTimeoutMs: 100,
+      fetch: vi
+        .fn()
+        .mockResolvedValueOnce(
+          jsonResponse({ error: 'session_superseded' }, 401),
+        ),
+    });
+    const winner = shared.createSdk({
+      fetch: vi
+        .fn()
+        .mockResolvedValueOnce(
+          jsonResponse({
+            session_id: 'session-1',
+            access_token: 'access-2',
+            refresh_token: 'refresh-2',
+            expires_in: 900,
+            token_type: 'Bearer',
+          }),
+        )
+        .mockResolvedValueOnce(
+          jsonResponse({
+            user_id: 'u1',
+            email: 'u@example.com',
+            webauthn_credentials: [],
+            active_sessions: [],
+          }),
+        ),
+      now: () => Date.parse('2026-04-03T00:02:00.000Z'),
+    });
+
+    await expect(loser.session.refresh()).rejects.toMatchObject({
+      error: 'session_superseded',
+    });
+    expect(loser.session.getState()).toMatchObject({
+      status: 'recovering',
+      sessionId: 'session-1',
+      refreshToken: 'refresh-1',
+    });
+
+    await winner.session.refresh();
+    shared.dispatchStorageUpdate();
+
+    expect(loser.session.getState()).toMatchObject({
+      status: 'authenticated',
+      sessionId: 'session-1',
+      refreshToken: 'refresh-2',
+    });
+  });
+
+  it('timeout path clears only the loser in-memory state after superseded refresh', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const shared = createSharedStorageHarness({
+        sessionId: 'session-1',
+        accessToken: 'access-1',
+        refreshToken: 'refresh-1',
+        receivedAt: '2026-04-03T00:00:00.000Z',
+        expiresAt: '2026-04-03T00:03:00.000Z',
+        me: null,
+      });
+      const loser = shared.createSdk({
+        recoveryTimeoutMs: 25,
+        fetch: vi
+          .fn()
+          .mockResolvedValueOnce(
+            jsonResponse({ error: 'session_superseded' }, 401),
+          ),
+      });
+
+      await expect(loser.session.refresh()).rejects.toMatchObject({
+        error: 'session_superseded',
+      });
+      await vi.advanceTimersByTimeAsync(25);
+
+      expect(loser.session.getState()).toMatchObject({
+        status: 'anonymous',
+        sessionId: null,
+        refreshToken: null,
+      });
+      expect(shared.read()).toMatchObject({
+        sessionId: 'session-1',
+        refreshToken: 'refresh-1',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('preserves recoverable state when boot me reload fails transiently', async () => {

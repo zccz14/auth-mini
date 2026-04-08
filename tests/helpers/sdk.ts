@@ -12,6 +12,14 @@ import type {
 import { vi } from 'vitest';
 
 type StorageSeed = Partial<PersistedSdkState>;
+type TestStorageSync = {
+  getSnapshot: () => PersistedSdkState | null;
+  subscribe: (listener: (next: PersistedSdkState | null) => void) => () => void;
+};
+type TestSdkOptions = Partial<InternalSdkDeps> & {
+  recoveryTimeoutMs?: number;
+  storageSync?: TestStorageSync;
+};
 
 export function fakeStorage(seed: StorageSeed = {}): Storage {
   const data = new Map<string, string>();
@@ -93,7 +101,7 @@ export function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-export function createAuthMiniForTest(options: Partial<InternalSdkDeps> = {}) {
+export function createAuthMiniForTest(options: TestSdkOptions = {}) {
   return createAuthMiniInternal({
     autoRecover: false,
     baseUrl: 'https://auth.example.com',
@@ -103,7 +111,7 @@ export function createAuthMiniForTest(options: Partial<InternalSdkDeps> = {}) {
     navigatorCredentials: fakeNavigatorCredentials(),
     storage: fakeStorage(),
     ...options,
-  });
+  } as InternalSdkDeps);
 }
 
 export function createSharedStorageHarness(seed: StorageSeed = {}) {
@@ -115,11 +123,20 @@ export function createSharedStorageHarness(seed: StorageSeed = {}) {
     clear() {
       clearPersistedSdkState(storage);
     },
-    createSdk(options: Partial<InternalSdkDeps> = {}) {
+    createSdk(options: TestSdkOptions = {}) {
       return createAuthMiniForTest({
         storage,
+        storageSync: {
+          getSnapshot: () => readPersistedSdkState(storage),
+          subscribe(listener: (next: PersistedSdkState | null) => void) {
+            listeners.add(listener);
+            return () => {
+              listeners.delete(listener);
+            };
+          },
+        },
         ...options,
-      });
+      } as Partial<InternalSdkDeps>);
     },
     dispatchStorageUpdate() {
       const snapshot = readPersistedSdkState(storage);
@@ -139,6 +156,9 @@ export function createSharedStorageHarness(seed: StorageSeed = {}) {
     },
     write(next: PersistedSdkState) {
       writePersistedSdkState(storage, next);
+    },
+    remove() {
+      clearPersistedSdkState(storage);
     },
   };
 }
@@ -359,6 +379,7 @@ export function executeServedSdk(
   } = {},
 ): Window & typeof globalThis {
   const windowObject = {} as Window & typeof globalThis;
+  const storageListeners = new Set<(event: StorageEvent) => void>();
   const document = {
     currentScript:
       options.currentScriptSrc === undefined
@@ -380,6 +401,29 @@ export function executeServedSdk(
       value: options.storage ?? fakeStorage(),
     });
   }
+
+  windowObject.addEventListener = ((type: string, listener: EventListener) => {
+    if (type === 'storage') {
+      storageListeners.add(listener as (event: StorageEvent) => void);
+    }
+  }) as Window['addEventListener'];
+  windowObject.removeEventListener = ((
+    type: string,
+    listener: EventListener,
+  ) => {
+    if (type === 'storage') {
+      storageListeners.delete(listener as (event: StorageEvent) => void);
+    }
+  }) as Window['removeEventListener'];
+  (
+    windowObject as typeof windowObject & {
+      dispatchStorageEvent: (event: StorageEvent) => void;
+    }
+  ).dispatchStorageEvent = (event: StorageEvent) => {
+    for (const listener of storageListeners) {
+      listener(event);
+    }
+  };
 
   const run = new Function('window', 'document', source);
   run(windowObject, document);

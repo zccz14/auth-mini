@@ -92,6 +92,53 @@ describe('singleton sdk endpoint', () => {
     }
   });
 
+  it('reacts to storage events in the served singleton source', async () => {
+    const testApp = await createTestApp();
+
+    try {
+      const response = await testApp.app.request('/sdk/singleton-iife.js');
+      const body = await response.text();
+      const storage = fakeStorage({
+        sessionId: 'session-1',
+        accessToken: 'access-1',
+        refreshToken: 'refresh-1',
+        receivedAt: '2026-04-03T00:00:00.000Z',
+        expiresAt: '2026-04-03T00:03:00.000Z',
+      });
+
+      const windowObject = executeServedSdk(body, { storage });
+
+      storage.setItem(
+        'auth-mini.sdk',
+        JSON.stringify({
+          sessionId: 'session-1',
+          accessToken: 'access-2',
+          refreshToken: 'refresh-2',
+          receivedAt: '2026-04-03T00:02:00.000Z',
+          expiresAt: '2026-04-03T00:17:00.000Z',
+          me: null,
+        }),
+      );
+      (
+        windowObject as unknown as Window & {
+          dispatchStorageEvent: (event: StorageEvent) => void;
+        }
+      ).dispatchStorageEvent({
+        key: 'auth-mini.sdk',
+        storageArea: storage,
+      } as StorageEvent);
+
+      expect(windowObject.AuthMini.session.getState()).toMatchObject({
+        status: 'recovering',
+        sessionId: 'session-1',
+        accessToken: 'access-2',
+        refreshToken: 'refresh-2',
+      });
+    } finally {
+      testApp.close();
+    }
+  });
+
   it('surfaces sdk init failure from the served source when currentScript is unavailable', async () => {
     const testApp = await createTestApp();
 

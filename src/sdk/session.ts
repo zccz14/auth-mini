@@ -1,10 +1,16 @@
 import { createSdkError } from './errors.js';
 import type { HttpClient } from './http.js';
-import type { SessionSnapshot, SessionResult, SessionTokens } from './types.js';
+import type {
+  PersistedSdkState,
+  SessionSnapshot,
+  SessionResult,
+  SessionTokens,
+} from './types.js';
 
 type StateStore = {
   getState(): SessionSnapshot;
   onChange(listener: (state: SessionSnapshot) => void): () => void;
+  applyPersistedState(next: PersistedSdkState | null): void;
   setAuthenticated(next: SessionResult): void;
   setRecovering(next: {
     sessionId: string | null;
@@ -15,12 +21,16 @@ type StateStore = {
     me: SessionSnapshot['me'];
   }): void;
   setAnonymous(): void;
+  setAnonymousLocal(): void;
 };
 
 export function createSessionController(input: {
   http: HttpClient;
   now: () => number;
+  readSharedState?: () => PersistedSdkState | null;
+  recoveryTimeoutMs?: number;
   state: StateStore;
+  waitForExternalStorage?: (timeoutMs: number) => Promise<void>;
 }) {
   let refreshPromise: Promise<SessionResult> | null = null;
 
@@ -86,7 +96,9 @@ export function createSessionController(input: {
             clearOnMeFailure: 'auth-invalidating',
           });
         } catch (error) {
-          if (isAuthInvalidatingError(error)) {
+          if (isSessionSupersededError(error)) {
+            void startSupersededRecovery(snapshot);
+          } else if (isAuthInvalidatingError(error)) {
             input.state.setAnonymous();
           }
           throw error;
@@ -204,6 +216,74 @@ export function createSessionController(input: {
       accessToken,
     });
   }
+
+  async function startSupersededRecovery(snapshot: SessionSnapshot) {
+    input.state.setRecovering({
+      sessionId: snapshot.sessionId,
+      accessToken: snapshot.accessToken,
+      refreshToken: snapshot.refreshToken ?? '',
+      receivedAt: snapshot.receivedAt ?? new Date(input.now()).toISOString(),
+      expiresAt: snapshot.expiresAt ?? new Date(input.now()).toISOString(),
+      me: snapshot.me,
+    });
+
+    await input.waitForExternalStorage?.(input.recoveryTimeoutMs ?? 50);
+
+    const current = input.state.getState();
+
+    if (!isSameRecoveringSession(current, snapshot)) {
+      return;
+    }
+
+    if (adoptRecoveredSharedState(snapshot)) {
+      return;
+    }
+
+    input.state.setAnonymousLocal();
+  }
+
+  function adoptRecoveredSharedState(snapshot: SessionSnapshot): boolean {
+    const shared = input.readSharedState?.();
+
+    if (!shared?.sessionId || !shared.refreshToken) {
+      return false;
+    }
+
+    if (!hasSharedSessionChanged(snapshot, shared)) {
+      return false;
+    }
+
+    if (
+      shared.accessToken &&
+      shared.me &&
+      !needsRefresh(
+        {
+          status: 'recovering',
+          authenticated: false,
+          sessionId: shared.sessionId,
+          accessToken: shared.accessToken,
+          refreshToken: shared.refreshToken,
+          receivedAt: shared.receivedAt,
+          expiresAt: shared.expiresAt,
+          me: shared.me,
+        },
+        input.now(),
+      )
+    ) {
+      input.state.setAuthenticated({
+        sessionId: shared.sessionId,
+        accessToken: shared.accessToken,
+        refreshToken: shared.refreshToken,
+        receivedAt: shared.receivedAt ?? new Date(input.now()).toISOString(),
+        expiresAt: shared.expiresAt ?? new Date(input.now()).toISOString(),
+        me: shared.me,
+      });
+      return true;
+    }
+
+    input.state.applyPersistedState(shared);
+    return true;
+  }
 }
 
 export function normalizeTokenResponse(
@@ -275,11 +355,42 @@ function isAuthInvalidatingError(error: unknown): boolean {
   };
 
   return (
-    candidate.status === 401 ||
     candidate.error === 'invalid_refresh_token' ||
     candidate.error === 'session_invalidated' ||
-    candidate.error === 'session_superseded' ||
+    (candidate.status === 401 && candidate.error !== 'session_superseded') ||
     (candidate.code === 'request_failed' &&
       candidate.message === 'request_failed: Invalid session payload')
+  );
+}
+
+function isSessionSupersededError(error: unknown): boolean {
+  return (
+    !!error &&
+    typeof error === 'object' &&
+    (error as { error?: unknown }).error === 'session_superseded'
+  );
+}
+
+function hasSharedSessionChanged(
+  snapshot: SessionSnapshot,
+  shared: PersistedSdkState,
+): boolean {
+  return (
+    snapshot.sessionId !== shared.sessionId ||
+    snapshot.accessToken !== shared.accessToken ||
+    snapshot.refreshToken !== shared.refreshToken ||
+    snapshot.receivedAt !== shared.receivedAt ||
+    snapshot.expiresAt !== shared.expiresAt
+  );
+}
+
+function isSameRecoveringSession(
+  current: SessionSnapshot,
+  snapshot: SessionSnapshot,
+): boolean {
+  return (
+    current.status === 'recovering' &&
+    current.sessionId === snapshot.sessionId &&
+    current.refreshToken === snapshot.refreshToken
   );
 }

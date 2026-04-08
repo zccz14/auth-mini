@@ -381,7 +381,9 @@ function createRuntime() {
               clearOnMeFailure: 'auth-invalidating',
             });
           } catch (error) {
-            if (isAuthInvalidatingError(error)) {
+            if (isSessionSupersededError(error)) {
+              void startSupersededRecovery(snapshot);
+            } else if (isAuthInvalidatingError(error)) {
               input.state.setAnonymous();
             }
             throw error;
@@ -480,6 +482,74 @@ function createRuntime() {
         throw createSdkError('missing_session', 'Missing access token');
       }
       return await input.http.getJson('/me', { accessToken });
+    }
+
+    async function startSupersededRecovery(snapshot) {
+      input.state.setRecovering({
+        sessionId: snapshot.sessionId,
+        accessToken: snapshot.accessToken,
+        refreshToken: snapshot.refreshToken ?? '',
+        receivedAt: snapshot.receivedAt ?? new Date(input.now()).toISOString(),
+        expiresAt: snapshot.expiresAt ?? new Date(input.now()).toISOString(),
+        me: snapshot.me,
+      });
+
+      await input.waitForExternalStorage?.(input.recoveryTimeoutMs ?? 50);
+
+      const current = input.state.getState();
+
+      if (!isSameRecoveringSession(current, snapshot)) {
+        return;
+      }
+
+      if (adoptRecoveredSharedState(snapshot)) {
+        return;
+      }
+
+      input.state.setAnonymousLocal();
+    }
+
+    function adoptRecoveredSharedState(snapshot) {
+      const shared = input.readSharedState?.();
+
+      if (!shared?.sessionId || !shared.refreshToken) {
+        return false;
+      }
+
+      if (!hasSharedSessionChanged(snapshot, shared)) {
+        return false;
+      }
+
+      if (
+        shared.accessToken &&
+        shared.me &&
+        !needsRefresh(
+          {
+            status: 'recovering',
+            authenticated: false,
+            sessionId: shared.sessionId,
+            accessToken: shared.accessToken,
+            refreshToken: shared.refreshToken,
+            receivedAt: shared.receivedAt,
+            expiresAt: shared.expiresAt,
+            me: shared.me,
+          },
+          input.now(),
+        )
+      ) {
+        input.state.setAuthenticated({
+          sessionId: shared.sessionId,
+          accessToken: shared.accessToken,
+          refreshToken: shared.refreshToken,
+          receivedAt: shared.receivedAt ?? new Date(input.now()).toISOString(),
+          expiresAt: shared.expiresAt ?? new Date(input.now()).toISOString(),
+          me: shared.me,
+        });
+        return true;
+      }
+
+      input.state.applyPersistedState(shared);
+      return true;
     }
   }
 
@@ -610,14 +680,77 @@ function createRuntime() {
 
   function createAuthMiniInternal(input) {
     const state = createStateStore(input.storage);
+    const externalStorageListeners = new Set();
     const http = createHttpClient({
       baseUrl: input.baseUrl,
       fetch: input.fetch,
     });
+    const adoptExternalState = (next) => {
+      if (
+        next?.sessionId &&
+        next.refreshToken &&
+        next.accessToken &&
+        next.me &&
+        !needsRefresh(
+          {
+            status: 'recovering',
+            authenticated: false,
+            sessionId: next.sessionId,
+            accessToken: next.accessToken,
+            refreshToken: next.refreshToken,
+            receivedAt: next.receivedAt,
+            expiresAt: next.expiresAt,
+            me: next.me,
+          },
+          input.now ?? (() => Date.now())(),
+        )
+      ) {
+        state.setAuthenticated({
+          sessionId: next.sessionId,
+          accessToken: next.accessToken,
+          refreshToken: next.refreshToken,
+          receivedAt:
+            next.receivedAt ??
+            new Date((input.now ?? (() => Date.now()))()).toISOString(),
+          expiresAt:
+            next.expiresAt ??
+            new Date((input.now ?? (() => Date.now()))()).toISOString(),
+          me: next.me,
+        });
+      } else {
+        state.applyPersistedState(next);
+      }
+      for (const listener of externalStorageListeners) {
+        listener();
+      }
+    };
+
+    input.storageSync?.subscribe(adoptExternalState);
+
     const session = createSessionController({
       http,
       now: input.now ?? (() => Date.now()),
+      readSharedState: () =>
+        input.storageSync?.getSnapshot?.() ??
+        readPersistedSdkState(input.storage),
+      recoveryTimeoutMs: input.recoveryTimeoutMs,
       state,
+      waitForExternalStorage(timeoutMs) {
+        return new Promise((resolve) => {
+          let settled = false;
+          const done = () => {
+            if (settled) {
+              return;
+            }
+            settled = true;
+            clearTimeout(timer);
+            externalStorageListeners.delete(done);
+            resolve();
+          };
+          const timer = setTimeout(done, timeoutMs);
+          externalStorageListeners.add(done);
+        });
+      },
     });
     const now = input.now ?? (() => Date.now());
     const passkey = createWebauthnModule({
@@ -670,17 +803,47 @@ function createRuntime() {
       throw createSdkError('sdk_init_failed', 'Cannot determine SDK base URL');
     }
 
+    const storage = resolveSdkStorage({
+      storage: input.storage,
+      getDefaultStorage: () => browser.localStorage,
+    });
+
     return createAuthMiniInternal({
       baseUrl,
       fetch: resolveFetch(input.fetch),
       navigatorCredentials: browser.navigator?.credentials,
       now: input.now,
       publicKeyCredential: browser.PublicKeyCredential,
-      storage: resolveSdkStorage({
-        storage: input.storage,
-        getDefaultStorage: () => browser.localStorage,
-      }),
+      recoveryTimeoutMs: input.recoveryTimeoutMs,
+      storage,
+      storageSync: createBrowserStorageSync(browser, storage),
     });
+  }
+
+  function createBrowserStorageSync(browser, storage) {
+    if (typeof browser?.addEventListener !== 'function') {
+      return null;
+    }
+
+    return {
+      getSnapshot() {
+        return readPersistedSdkState(storage);
+      },
+      subscribe(listener) {
+        const handleStorage = (event) => {
+          if (event.key !== SDK_STORAGE_KEY || event.storageArea !== storage) {
+            return;
+          }
+
+          listener(readPersistedSdkState(storage));
+        };
+
+        browser.addEventListener('storage', handleStorage);
+        return () => {
+          browser.removeEventListener('storage', handleStorage);
+        };
+      },
+    };
   }
 
   function bootstrapSingletonSdk(input) {
@@ -798,12 +961,33 @@ function createRuntime() {
 
   function isAuthInvalidatingError(error) {
     return (
-      error?.status === 401 ||
       error?.error === 'invalid_refresh_token' ||
       error?.error === 'session_invalidated' ||
-      error?.error === 'session_superseded' ||
+      (error?.status === 401 && error?.error !== 'session_superseded') ||
       (error?.code === 'request_failed' &&
         error?.message === 'request_failed: Invalid session payload')
+    );
+  }
+
+  function isSessionSupersededError(error) {
+    return error?.error === 'session_superseded';
+  }
+
+  function hasSharedSessionChanged(snapshot, shared) {
+    return (
+      snapshot.sessionId !== shared.sessionId ||
+      snapshot.accessToken !== shared.accessToken ||
+      snapshot.refreshToken !== shared.refreshToken ||
+      snapshot.receivedAt !== shared.receivedAt ||
+      snapshot.expiresAt !== shared.expiresAt
+    );
+  }
+
+  function isSameRecoveringSession(current, snapshot) {
+    return (
+      current.status === 'recovering' &&
+      current.sessionId === snapshot.sessionId &&
+      current.refreshToken === snapshot.refreshToken
     );
   }
 
