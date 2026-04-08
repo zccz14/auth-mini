@@ -10,7 +10,11 @@ import {
   signJwt,
   verifyJwt,
 } from '../../src/modules/jwks/service.js';
-import { encodeBase64Url, type PrivateJwk } from '../../src/shared/crypto.js';
+import {
+  encodeBase64Url,
+  generateEd25519KeyRecord,
+  type PrivateJwk,
+} from '../../src/shared/crypto.js';
 import { createTestApp } from '../helpers/app.js';
 import { countRows, createTempDbPath } from '../helpers/db.js';
 import { createMemoryLogCollector } from '../helpers/logging.js';
@@ -105,6 +109,52 @@ describe('jwks service', () => {
         }),
       );
     } finally {
+      db.close();
+    }
+  });
+
+  it('promotes the standby key visible at transaction time and signs new tokens with the promoted CURRENT', async () => {
+    const dbPath = await createTempDbPath();
+    await bootstrapDatabase(dbPath);
+    const db = createDatabaseClient(dbPath);
+    const logCollector = createMemoryLogCollector();
+    const originalTransaction = db.transaction.bind(db);
+
+    try {
+      await bootstrapKeys(db);
+      const initialStandbyKid = getStandbyKid(db);
+      const transactionalStandby = generateEd25519KeyRecord();
+
+      db.transaction = ((fn) =>
+        originalTransaction(() => {
+          db.prepare(
+            "UPDATE jwks_keys SET kid = ?, alg = ?, public_jwk = ?, private_jwk = ? WHERE id = 'STANDBY'",
+          ).run(
+            transactionalStandby.kid,
+            transactionalStandby.alg,
+            JSON.stringify(transactionalStandby.publicJwk),
+            JSON.stringify(transactionalStandby.privateJwk),
+          );
+
+          return fn();
+        })) as typeof db.transaction;
+
+      const rotatedKey = await rotateKeys(db, { logger: logCollector.logger });
+      const nextToken = await signJwt(db, {
+        sub: 'user-2',
+        typ: 'access',
+        sid: 'session-2',
+      });
+      const nextTokenHeader = decodeJwtHeader(nextToken);
+      const rows = getSlotRows(db);
+
+      expect(initialStandbyKid).not.toBe(transactionalStandby.kid);
+      expect(rotatedKey.kid).toBe(transactionalStandby.kid);
+      expect(rows[0]?.kid).toBe(transactionalStandby.kid);
+      expect(rows[1]?.kid).not.toBe(transactionalStandby.kid);
+      expect(nextTokenHeader.kid).toBe(transactionalStandby.kid);
+    } finally {
+      db.transaction = originalTransaction;
       db.close();
     }
   });
@@ -343,6 +393,14 @@ function getCurrentPrivateJwk(
     .get() as { private_jwk: string };
 
   return JSON.parse(row.private_jwk) as PrivateJwk;
+}
+
+function getStandbyKid(db: ReturnType<typeof createDatabaseClient>): string {
+  const row = db
+    .prepare("SELECT kid FROM jwks_keys WHERE id = 'STANDBY' LIMIT 1")
+    .get() as { kid: string };
+
+  return row.kid;
 }
 
 function getSlotRows(

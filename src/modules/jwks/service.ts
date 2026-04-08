@@ -81,21 +81,8 @@ export async function rotateKeys(
   kid: string;
 }> {
   assertCompleteJwksSlotState(db);
-  const currentKey = getJwksSlot(db, 'CURRENT');
-  const standbyKey = getJwksSlot(db, 'STANDBY');
-
-  if (!currentKey || !standbyKey) {
-    throw createJwksSlotContractError();
-  }
-
   const keyRecord = generateEd25519KeyRecord();
-  rotateJwksSlots(db, keyRecord);
-
-  const nextCurrentKey = getJwksSlot(db, 'CURRENT');
-
-  if (!nextCurrentKey) {
-    throw createJwksSlotContractError();
-  }
+  const nextCurrentKey = rotateJwksSlots(db, keyRecord);
 
   input.logger.info(
     { event: 'jwks.rotated', kid: nextCurrentKey.kid },

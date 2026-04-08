@@ -135,13 +135,15 @@ export function insertJwksSlot(
 export function rotateJwksSlots(
   db: DatabaseClient,
   nextStandby: KeyRecord,
-): void {
-  const standby = getJwksSlot(db, 'STANDBY');
-
-  if (!standby) {
-    throw createJwksSlotContractError();
-  }
-
+): StoredJwksKey {
+  const selectSlot = db.prepare(
+    [
+      'SELECT id, kid, alg, public_jwk, private_jwk',
+      'FROM jwks_keys',
+      'WHERE id = ?',
+      'LIMIT 1',
+    ].join(' '),
+  );
   const update = db.prepare(
     [
       'UPDATE jwks_keys',
@@ -150,7 +152,15 @@ export function rotateJwksSlots(
     ].join(' '),
   );
 
-  db.transaction(() => {
+  return db.transaction(() => {
+    const standbyRow = selectSlot.get('STANDBY') as JwksKeyRow | undefined;
+
+    if (!standbyRow) {
+      throw createJwksSlotContractError();
+    }
+
+    const standby = mapRow(standbyRow);
+
     update.run(
       nextStandby.kid,
       nextStandby.alg,
@@ -165,6 +175,7 @@ export function rotateJwksSlots(
       JSON.stringify(standby.privateJwk),
       'CURRENT',
     );
+    return standby;
   })();
 }
 
