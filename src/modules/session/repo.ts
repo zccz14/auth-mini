@@ -6,7 +6,6 @@ type SessionRow = {
   user_id: string;
   refresh_token_hash: string;
   expires_at: string;
-  revoked_at: string | null;
   created_at: string;
 };
 
@@ -15,7 +14,6 @@ export type Session = {
   userId: string;
   refreshTokenHash: string;
   expiresAt: string;
-  revokedAt: string | null;
   createdAt: string;
 };
 
@@ -35,32 +33,14 @@ export function createSession(
 export function getSessionById(db: DatabaseClient, id: string): Session | null {
   const row = db
     .prepare(
-      'SELECT id, user_id, refresh_token_hash, expires_at, revoked_at, created_at FROM sessions WHERE id = ? LIMIT 1',
+      'SELECT id, user_id, refresh_token_hash, expires_at, created_at FROM sessions WHERE id = ? LIMIT 1',
     )
     .get(id) as SessionRow | undefined;
 
   return row ? mapSession(row) : null;
 }
 
-export function getSessionByRefreshTokenHash(
-  db: DatabaseClient,
-  refreshTokenHash: string,
-): Session | null {
-  const row = db
-    .prepare(
-      [
-        'SELECT id, user_id, refresh_token_hash, expires_at, revoked_at, created_at',
-        'FROM sessions',
-        'WHERE refresh_token_hash = ?',
-        'LIMIT 1',
-      ].join(' '),
-    )
-    .get(refreshTokenHash) as SessionRow | undefined;
-
-  return row ? mapSession(row) : null;
-}
-
-export function revokeSessionById(
+export function expireSessionById(
   db: DatabaseClient,
   id: string,
   now: string,
@@ -69,8 +49,8 @@ export function revokeSessionById(
     .prepare(
       [
         'UPDATE sessions',
-        'SET revoked_at = ?',
-        'WHERE id = ? AND revoked_at IS NULL AND expires_at > ?',
+        'SET expires_at = ?',
+        'WHERE id = ? AND expires_at > ?',
       ].join(' '),
     )
     .run(now, id, now);
@@ -78,117 +58,50 @@ export function revokeSessionById(
   return result.changes > 0;
 }
 
-export function revokeSessionByRefreshTokenHash(
-  db: DatabaseClient,
-  refreshTokenHash: string,
-  now: string,
-): Session | null {
-  const select = db.prepare(
-    [
-      'SELECT id, user_id, refresh_token_hash, expires_at, revoked_at, created_at',
-      'FROM sessions',
-      'WHERE refresh_token_hash = ? AND revoked_at IS NULL AND expires_at > ?',
-      'LIMIT 1',
-    ].join(' '),
-  );
-  const update = db.prepare(
-    [
-      'UPDATE sessions',
-      'SET revoked_at = ?',
-      'WHERE id = ? AND revoked_at IS NULL AND expires_at > ?',
-    ].join(' '),
-  );
-  const transaction = db.transaction(
-    (tokenHash: string, timestamp: string): Session | null => {
-      const row = select.get(tokenHash, timestamp) as SessionRow | undefined;
-
-      if (!row) {
-        return null;
-      }
-
-      const result = update.run(timestamp, row.id, timestamp);
-
-      if (result.changes === 0) {
-        return null;
-      }
-
-      return mapSession({
-        ...row,
-        revoked_at: timestamp,
-      });
-    },
-  );
-
-  return transaction(refreshTokenHash, now);
-}
-
-export function rotateSessionById(
+export function rotateRefreshToken(
   db: DatabaseClient,
   input: {
     sessionId: string;
-    refreshTokenHash: string;
+    currentRefreshTokenHash: string;
     nextRefreshTokenHash: string;
-    nextExpiresAt: string;
-    now: string;
   },
-):
-  | { ok: true; session: Session }
-  | { ok: false; reason: 'session_invalidated' | 'session_superseded' } {
+): Session | null {
+  const now = new Date().toISOString();
+  const update = db.prepare(
+    [
+      'UPDATE sessions',
+      'SET refresh_token_hash = ?',
+      'WHERE id = ? AND refresh_token_hash = ? AND expires_at > ?',
+    ].join(' '),
+  );
   const select = db.prepare(
     [
-      'SELECT id, user_id, refresh_token_hash, expires_at, revoked_at, created_at',
+      'SELECT id, user_id, refresh_token_hash, expires_at, created_at',
       'FROM sessions',
       'WHERE id = ?',
       'LIMIT 1',
     ].join(' '),
   );
-  const update = db.prepare(
-    [
-      'UPDATE sessions',
-      'SET refresh_token_hash = ?, expires_at = ?',
-      'WHERE id = ? AND refresh_token_hash = ? AND revoked_at IS NULL AND expires_at > ?',
-    ].join(' '),
-  );
   const transaction = db.transaction(
-    (
-      params: typeof input,
-    ):
-      | { ok: true; session: Session }
-      | { ok: false; reason: 'session_invalidated' | 'session_superseded' } => {
-      const row = select.get(params.sessionId) as SessionRow | undefined;
-
-      if (!row || row.revoked_at !== null || row.expires_at <= params.now) {
-        return { ok: false, reason: 'session_invalidated' };
-      }
-
-      if (row.refresh_token_hash !== params.refreshTokenHash) {
-        return { ok: false, reason: 'session_superseded' };
-      }
-
+    (params: typeof input, timestamp: string): Session | null => {
       const result = update.run(
         params.nextRefreshTokenHash,
-        params.nextExpiresAt,
         params.sessionId,
-        params.refreshTokenHash,
-        params.now,
+        params.currentRefreshTokenHash,
+        timestamp,
       );
 
       if (result.changes === 0) {
-        return { ok: false, reason: 'session_invalidated' };
+        return null;
       }
 
-      return {
-        ok: true,
-        session: mapSession({
-          ...row,
-          refresh_token_hash: params.nextRefreshTokenHash,
-          expires_at: params.nextExpiresAt,
-        }),
-      };
+      const row = select.get(params.sessionId) as SessionRow | undefined;
+
+      return row ? mapSession(row) : null;
     },
   );
 
-  return transaction(input);
+  return transaction(input, now);
 }
 
 function mapSession(row: SessionRow): Session {
@@ -197,7 +110,6 @@ function mapSession(row: SessionRow): Session {
     userId: row.user_id,
     refreshTokenHash: row.refresh_token_hash,
     expiresAt: row.expires_at,
-    revokedAt: row.revoked_at,
     createdAt: row.created_at,
   };
 }

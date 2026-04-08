@@ -15,10 +15,6 @@ export function invalidAccessTokenError(): HttpError {
   return new HttpError(401, 'invalid_access_token');
 }
 
-export function invalidRefreshTokenError(): HttpError {
-  return new HttpError(401, 'invalid_refresh_token');
-}
-
 export function sessionInvalidatedError(): HttpError {
   return new HttpError(401, 'session_invalidated');
 }

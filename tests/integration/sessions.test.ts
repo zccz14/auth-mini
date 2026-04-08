@@ -12,7 +12,7 @@ import { runStartCommand } from '../../src/app/commands/start.js';
 import { hashValue } from '../../src/shared/crypto.js';
 import {
   createSession,
-  revokeSessionByRefreshTokenHash,
+  rotateRefreshToken,
 } from '../../src/modules/session/repo.js';
 import { createTempDbPath } from '../helpers/db.js';
 import {
@@ -108,6 +108,8 @@ describe('session routes', () => {
     });
     expectLogEntry(testApp.logs, {
       event: 'session.refresh.failed',
+      reason: 'session_superseded',
+      session_id: testApp.sessionId,
     });
   });
 
@@ -130,6 +132,11 @@ describe('session routes', () => {
 
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ error: 'session_invalidated' });
+    expectLogEntry(testApp.logs, {
+      event: 'session.refresh.failed',
+      reason: 'session_invalidated',
+      session_id: testApp.sessionId,
+    });
   });
 
   it('refresh token claim only succeeds once across database clients', async () => {
@@ -151,20 +158,25 @@ describe('session routes', () => {
         expiresAt: '2099-01-01T00:00:00.000Z',
       });
 
-      const firstClaim = revokeSessionByRefreshTokenHash(
-        writerDb,
-        'refresh-hash',
-        '2030-01-01T00:00:00.000Z',
-      );
-      const secondClaim = revokeSessionByRefreshTokenHash(
-        readerDb,
-        'refresh-hash',
-        '2030-01-01T00:00:01.000Z',
-      );
+      const session = writerDb
+        .prepare('SELECT id FROM sessions WHERE user_id = ? LIMIT 1')
+        .get('user-1') as { id: string };
+
+      const firstClaim = rotateRefreshToken(writerDb, {
+        sessionId: session.id,
+        currentRefreshTokenHash: 'refresh-hash',
+        nextRefreshTokenHash: 'next-refresh-hash',
+      });
+      const secondClaim = rotateRefreshToken(readerDb, {
+        sessionId: session.id,
+        currentRefreshTokenHash: 'refresh-hash',
+        nextRefreshTokenHash: 'reader-refresh-hash',
+      });
 
       expect(firstClaim).toMatchObject({
+        id: session.id,
         userId: 'user-1',
-        refreshTokenHash: 'refresh-hash',
+        refreshTokenHash: 'next-refresh-hash',
       });
       expect(secondClaim).toBeNull();
     } finally {
@@ -173,9 +185,10 @@ describe('session routes', () => {
     }
   });
 
-  it('logout revokes the session referenced by sid', async () => {
+  it('logout expires the session referenced by sid', async () => {
     const testApp = await createSignedInApp('logout@example.com');
     openApps.push(testApp);
+    const beforeLogout = new Date().toISOString();
 
     const response = await testApp.app.request('/session/logout', {
       method: 'POST',
@@ -185,12 +198,14 @@ describe('session routes', () => {
     });
 
     const session = testApp.db
-      .prepare('SELECT revoked_at FROM sessions WHERE id = ?')
-      .get(testApp.sessionId) as { revoked_at: string | null };
+      .prepare('SELECT expires_at FROM sessions WHERE id = ?')
+      .get(testApp.sessionId) as { expires_at: string };
+    const afterLogout = new Date().toISOString();
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
-    expect(session.revoked_at).toBeTruthy();
+    expect(session.expires_at >= beforeLogout).toBe(true);
+    expect(session.expires_at <= afterLogout).toBe(true);
     expectLogEntry(testApp.logs, {
       event: 'session.logout.succeeded',
       session_id: testApp.sessionId,
@@ -250,6 +265,11 @@ describe('session routes', () => {
     expect(await refreshResponse.json()).toEqual({
       error: 'session_invalidated',
     });
+    expectLogEntry(testApp.logs, {
+      event: 'session.refresh.failed',
+      reason: 'session_invalidated',
+      session_id: testApp.sessionId,
+    });
   });
 
   it('me returns user id, email, credentials, and active sessions', async () => {
@@ -277,7 +297,7 @@ describe('session routes', () => {
     });
   });
 
-  it('me excludes revoked and expired sessions from active_sessions', async () => {
+  it('me relies on expires_at for active_sessions', async () => {
     const testApp = await createSignedInApp('active@example.com');
     openApps.push(testApp);
 
@@ -315,8 +335,9 @@ describe('session routes', () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body.active_sessions).toHaveLength(1);
-    expect(body.active_sessions[0]?.id).toBe(testApp.sessionId);
+    expect(
+      body.active_sessions.map((session: { id: string }) => session.id),
+    ).toEqual([testApp.sessionId, 'session-revoked']);
   });
 
   it('me rejects missing or invalid bearer token', async () => {
@@ -502,9 +523,9 @@ async function createSignedInApp(email: string) {
     .get(email) as { id: string };
   const session = testApp.db
     .prepare(
-      'SELECT id FROM sessions WHERE user_id = ? AND revoked_at IS NULL ORDER BY created_at DESC LIMIT 1',
+      'SELECT id FROM sessions WHERE user_id = ? AND expires_at > ? ORDER BY created_at DESC LIMIT 1',
     )
-    .get(user.id) as { id: string };
+    .get(user.id, new Date().toISOString()) as { id: string };
 
   return {
     ...testApp,

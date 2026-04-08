@@ -10,7 +10,6 @@ import {
   verifyEmailAuth,
 } from '../modules/email-auth/service.js';
 import {
-  InvalidRefreshTokenError,
   logoutSession,
   refreshSessionTokens,
   SessionInvalidatedError,
@@ -52,7 +51,6 @@ import {
   duplicateCredentialError,
   HttpError,
   invalidEmailOtpError,
-  invalidRefreshTokenError,
   invalidRequestError,
   invalidWebauthnAuthenticationError,
   invalidWebauthnRegistrationError,
@@ -384,10 +382,6 @@ function toHttpError(error: unknown): HttpError {
 
   if (error instanceof InvalidEmailOtpError) {
     return invalidEmailOtpError();
-  }
-
-  if (error instanceof InvalidRefreshTokenError) {
-    return invalidRefreshTokenError();
   }
 
   if (error instanceof SessionInvalidatedError) {

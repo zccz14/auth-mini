@@ -9,8 +9,9 @@ import {
 import { generateOpaqueToken, hashValue } from '../../shared/crypto.js';
 import {
   createSession,
-  revokeSessionById,
-  rotateSessionById,
+  expireSessionById,
+  getSessionById,
+  rotateRefreshToken,
   type Session,
 } from './repo.js';
 
@@ -21,12 +22,6 @@ export type TokenPair = {
   expires_in: number;
   refresh_token: string;
 };
-
-export class InvalidRefreshTokenError extends Error {
-  constructor() {
-    super('invalid_refresh_token');
-  }
-}
 
 export class SessionInvalidatedError extends Error {
   constructor() {
@@ -81,39 +76,73 @@ export async function refreshSessionTokens(
   },
 ): Promise<TokenPair & { session: Session }> {
   const now = new Date().toISOString();
-  const refreshToken = generateOpaqueToken();
-  const issuedAt = getUnixTimeSeconds();
-  const expiresAt = new Date(
-    getExpiresAtUnixSeconds(issuedAt, TTLS.refreshTokenSeconds) * 1000,
-  ).toISOString();
-  const rotation = rotateSessionById(db, {
-    sessionId: input.sessionId,
-    refreshTokenHash: hashValue(input.refreshToken),
-    nextRefreshTokenHash: hashValue(refreshToken),
-    nextExpiresAt: expiresAt,
-    now,
-  });
+  const submittedRefreshTokenHash = hashValue(input.refreshToken);
+  const currentSession = getSessionById(db, input.sessionId);
 
-  if (!rotation.ok) {
+  if (!currentSession || currentSession.expiresAt <= now) {
     input.logger?.warn(
       {
         event: 'session.refresh.failed',
-        reason: rotation.reason,
+        reason: 'session_invalidated',
         session_id: input.sessionId,
       },
       'Session refresh failed',
     );
 
-    if (rotation.reason === 'session_superseded') {
+    throw new SessionInvalidatedError();
+  }
+
+  if (currentSession.refreshTokenHash !== submittedRefreshTokenHash) {
+    input.logger?.warn(
+      {
+        event: 'session.refresh.failed',
+        reason: 'session_superseded',
+        session_id: input.sessionId,
+      },
+      'Session refresh failed',
+    );
+
+    throw new SessionSupersededError();
+  }
+
+  const refreshToken = generateOpaqueToken();
+  const rotatedSession = rotateRefreshToken(db, {
+    sessionId: input.sessionId,
+    currentRefreshTokenHash: submittedRefreshTokenHash,
+    nextRefreshTokenHash: hashValue(refreshToken),
+  });
+
+  if (!rotatedSession) {
+    const latestSession = getSessionById(db, input.sessionId);
+
+    if (latestSession && latestSession.expiresAt > now) {
+      input.logger?.warn(
+        {
+          event: 'session.refresh.failed',
+          reason: 'session_superseded',
+          session_id: input.sessionId,
+        },
+        'Session refresh failed',
+      );
+
       throw new SessionSupersededError();
     }
+
+    input.logger?.warn(
+      {
+        event: 'session.refresh.failed',
+        reason: 'session_invalidated',
+        session_id: input.sessionId,
+      },
+      'Session refresh failed',
+    );
 
     throw new SessionInvalidatedError();
   }
 
   const accessToken = await signJwt(db, {
-    sub: rotation.session.userId,
-    sid: rotation.session.id,
+    sub: rotatedSession.userId,
+    sid: rotatedSession.id,
     iss: input.issuer,
     typ: 'access',
   });
@@ -121,15 +150,15 @@ export async function refreshSessionTokens(
   input.logger?.info(
     {
       event: 'session.refresh.succeeded',
-      session_id: rotation.session.id,
-      user_id: rotation.session.userId,
+      session_id: rotatedSession.id,
+      user_id: rotatedSession.userId,
     },
     'Session refresh succeeded',
   );
 
   return {
-    session: rotation.session,
-    session_id: rotation.session.id,
+    session: rotatedSession,
+    session_id: rotatedSession.id,
     access_token: accessToken,
     token_type: 'Bearer',
     expires_in: TTLS.accessTokenSeconds,
@@ -141,13 +170,13 @@ export function logoutSession(
   db: DatabaseClient,
   input: { sessionId: string; userId?: string; logger?: AppLogger },
 ): void {
-  const revoked = revokeSessionById(
+  const expired = expireSessionById(
     db,
     input.sessionId,
     new Date().toISOString(),
   );
 
-  if (!revoked) {
+  if (!expired) {
     return;
   }
 

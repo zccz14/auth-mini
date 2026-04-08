@@ -119,7 +119,7 @@ export function listActiveUserSessions(
       [
         'SELECT id, created_at, expires_at',
         'FROM sessions',
-        'WHERE user_id = ? AND revoked_at IS NULL AND expires_at > ?',
+        'WHERE user_id = ? AND expires_at > ?',
         'ORDER BY created_at ASC, id ASC',
       ].join(' '),
     )
