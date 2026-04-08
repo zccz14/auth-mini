@@ -204,10 +204,10 @@ Send `Authorization: Bearer <access_token>`.
 - `POST /webauthn/register/verify`
 - `DELETE /webauthn/credentials/:id`
 
-Refresh uses the refresh token in the JSON body:
+Refresh uses the session id and refresh token in the JSON body:
 
 ```json
-{ "refresh_token": "..." }
+{ "session_id": "...", "refresh_token": "..." }
 ```
 
 `GET /me` returns the current user, stored WebAuthn credentials, and only active sessions.
@@ -306,7 +306,7 @@ If a refresh token is already stored, startup enters `recovering` first and then
 
 - The SDK script origin must match the auth API origin because the singleton client derives its base URL from the script `src`.
 - Cross-origin browser pages are supported only when the page origin is stored via the `origin` topic commands.
-- Multiple tabs sharing one session can currently race during refresh-token rotation and invalidate one another. This is a known SDK bug, not a product contract.
+- Multiple tabs sharing one session can still race during refresh-token rotation, but the loser tab enters `recovering` and usually converges to the latest shared session state.
 
 ## WebAuthn flow
 

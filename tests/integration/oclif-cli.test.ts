@@ -281,8 +281,15 @@ describe('oclif cli contract', () => {
     expect(readme).not.toContain(
       'auth-mini start ./auth-mini.sqlite --issuer https://auth.zccz14.com --origin',
     );
+    expect(readme).toContain('{ "session_id": "...", "refresh_token": "..." }');
+    expect(readme).toContain(
+      'the loser tab enters `recovering` and usually converges to the latest shared session state.',
+    );
     expect(readme).not.toContain('authenticate/options` with an empty body');
     expect(readme).not.toContain('--rp-id');
+    expect(readme).not.toContain(
+      'Multiple tabs sharing one session can currently race during refresh-token rotation and invalidate one another. This is a known SDK bug, not a product contract.',
+    );
 
     expect(deployDoc).toContain(
       'npx auth-mini origin add /data/auth.sqlite --value https://app.example.com',
