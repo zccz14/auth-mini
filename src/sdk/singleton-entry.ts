@@ -806,6 +806,8 @@ function createRuntime() {
     return (
       error?.status === 401 ||
       error?.error === 'invalid_refresh_token' ||
+      error?.error === 'session_invalidated' ||
+      error?.error === 'session_superseded' ||
       (error?.code === 'request_failed' &&
         error?.message === 'request_failed: Invalid session payload')
     );

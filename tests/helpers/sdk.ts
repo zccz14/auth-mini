@@ -195,6 +195,7 @@ export function createWebauthnRequestRecorder() {
 
     if (path === '/webauthn/authenticate/verify') {
       return jsonResponse({
+        session_id: 'session-authenticated',
         access_token: 'access-authenticated',
         refresh_token: 'refresh-authenticated',
         expires_in: 900,

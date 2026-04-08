@@ -143,6 +143,7 @@ describe('sdk webauthn flows', () => {
       )
       .mockImplementationOnce(async () =>
         jsonResponse({
+          session_id: 'session-authenticated',
           access_token: 'access-authenticated',
           refresh_token: 'refresh-authenticated',
           expires_in: 900,
@@ -239,6 +240,7 @@ describe('sdk webauthn flows', () => {
 
       if (path === '/session/refresh') {
         return jsonResponse({
+          session_id: 'session-refreshed',
           access_token: 'refreshed-access',
           refresh_token: 'refreshed-refresh',
           expires_in: 900,
