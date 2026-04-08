@@ -51,10 +51,18 @@ describe('sdk d.ts build artifact', () => {
     ) as {
       scripts?: Record<string, string>;
     };
-
-    expect(packageJson.scripts?.test).toContain(
-      'npx tsc -p tests/fixtures/sdk-dts-consumer/tsconfig.json',
+    const testRunnerSource = readFileSync(
+      resolve(process.cwd(), 'scripts/run-tests.js'),
+      'utf8',
     );
+
+    expect(packageJson.scripts?.test).toBe('node scripts/run-tests.js');
+    expect(testRunnerSource).toContain("run('npx', ['tsc'");
+    expect(testRunnerSource).toContain(
+      "'tests/fixtures/sdk-dts-consumer/tsconfig.json'",
+    );
+    expect(testRunnerSource).toContain('process.argv.slice(2)');
+    expect(testRunnerSource).toContain('if (vitestArgs.length > 0)');
   });
 
   it('contains only a global Window.AuthMini declaration surface', () => {
