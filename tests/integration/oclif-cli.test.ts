@@ -285,6 +285,9 @@ describe('oclif cli contract', () => {
     expect(readme).toContain(
       'the loser tab enters `recovering` and usually converges to the latest shared session state.',
     );
+    expect(readme).toContain(
+      'That convergence depends on receiving a usable shared snapshot before the recovery timeout; otherwise only the local in-memory state falls back to anonymous.',
+    );
     expect(readme).not.toContain('authenticate/options` with an empty body');
     expect(readme).not.toContain('--rp-id');
     expect(readme).not.toContain(
