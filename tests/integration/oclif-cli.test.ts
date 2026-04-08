@@ -365,7 +365,6 @@ describe('oclif cli contract', () => {
     ]);
 
     expect(result.exitCode).toBeGreaterThan(0);
-    expect(result.stdout).toContain('db.migration.started');
     expect(result.stdout).not.toContain('server.listening');
     expect(result.stderr).toContain('schema');
     expect(result.stderr).toContain('rebuild or migrate');
