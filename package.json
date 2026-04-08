@@ -34,7 +34,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node dist/sdk/build-singleton-iife.js && node dist/sdk/build-singleton-dts.js",
-    "test": "npm run build && vitest run tests --maxWorkers=1",
+    "test": "npm run build && vitest run tests --maxWorkers=1 && npx tsc -p tests/fixtures/sdk-dts-consumer/tsconfig.json",
     "test:integration": "npm run build && vitest run tests/integration",
     "lint": "eslint .",
     "format": "prettier --write .",

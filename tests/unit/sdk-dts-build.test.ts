@@ -45,6 +45,18 @@ const getTypeLiteralMemberNames = (typeLiteral: ts.TypeLiteralNode) =>
   typeLiteral.members.map((member) => member.name?.getText() ?? '<anonymous>');
 
 describe('sdk d.ts build artifact', () => {
+  it('is enforced by the automated repo test command', () => {
+    const packageJson = JSON.parse(
+      readFileSync(resolve(process.cwd(), 'package.json'), 'utf8'),
+    ) as {
+      scripts?: Record<string, string>;
+    };
+
+    expect(packageJson.scripts?.test).toContain(
+      'npx tsc -p tests/fixtures/sdk-dts-consumer/tsconfig.json',
+    );
+  });
+
   it('contains only a global Window.AuthMini declaration surface', () => {
     const source = readBuiltDeclaration();
 
