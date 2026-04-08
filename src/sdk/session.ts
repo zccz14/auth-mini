@@ -33,6 +33,7 @@ export function createSessionController(input: {
   waitForExternalStorage?: (timeoutMs: number) => Promise<void>;
 }) {
   let refreshPromise: Promise<SessionResult> | null = null;
+  let supersededRecoveryPromise: Promise<void> | null = null;
 
   return {
     getState: () => input.state.getState(),
@@ -97,7 +98,13 @@ export function createSessionController(input: {
           });
         } catch (error) {
           if (isSessionSupersededError(error)) {
-            void startSupersededRecovery(snapshot);
+            const recoveryPromise = startSupersededRecovery(snapshot);
+
+            supersededRecoveryPromise = recoveryPromise.finally(() => {
+              if (supersededRecoveryPromise === recoveryPromise) {
+                supersededRecoveryPromise = null;
+              }
+            });
           } else if (isAuthInvalidatingError(error)) {
             input.state.setAnonymous();
           }
@@ -139,6 +146,18 @@ export function createSessionController(input: {
           me,
         });
       } catch (error) {
+        if (isSessionSupersededError(error)) {
+          await supersededRecoveryPromise;
+
+          const current = input.state.getState();
+
+          if (isSameRecoveringSession(current, snapshot)) {
+            input.state.setAnonymousLocal();
+          }
+
+          return;
+        }
+
         if (isAuthInvalidatingError(error)) {
           input.state.setAnonymous();
         }
@@ -227,30 +246,45 @@ export function createSessionController(input: {
       me: snapshot.me,
     });
 
-    await input.waitForExternalStorage?.(input.recoveryTimeoutMs ?? 50);
+    const timeoutMs = input.recoveryTimeoutMs ?? 50;
+    const deadline = Date.now() + timeoutMs;
 
-    const current = input.state.getState();
+    while (true) {
+      const current = input.state.getState();
 
-    if (!isSameRecoveringSession(current, snapshot)) {
-      return;
-    }
+      if (!isSameRecoveringSession(current, snapshot)) {
+        return;
+      }
 
-    if (adoptRecoveredSharedState(snapshot)) {
-      return;
+      const adoption = adoptRecoveredSharedState(snapshot);
+
+      if (adoption === 'usable') {
+        return;
+      }
+
+      const remainingMs = deadline - Date.now();
+
+      if (remainingMs <= 0) {
+        break;
+      }
+
+      await input.waitForExternalStorage?.(remainingMs);
     }
 
     input.state.setAnonymousLocal();
   }
 
-  function adoptRecoveredSharedState(snapshot: SessionSnapshot): boolean {
+  function adoptRecoveredSharedState(
+    snapshot: SessionSnapshot,
+  ): 'usable' | 'provisional' | 'none' {
     const shared = input.readSharedState?.();
 
     if (!shared?.sessionId || !shared.refreshToken) {
-      return false;
+      return 'none';
     }
 
     if (!hasSharedSessionChanged(snapshot, shared)) {
-      return false;
+      return 'none';
     }
 
     if (
@@ -278,11 +312,11 @@ export function createSessionController(input: {
         expiresAt: shared.expiresAt ?? new Date(input.now()).toISOString(),
         me: shared.me,
       });
-      return true;
+      return 'usable';
     }
 
     input.state.applyPersistedState(shared);
-    return true;
+    return 'provisional';
   }
 }
 
@@ -389,8 +423,6 @@ function isSameRecoveringSession(
   snapshot: SessionSnapshot,
 ): boolean {
   return (
-    current.status === 'recovering' &&
-    current.sessionId === snapshot.sessionId &&
-    current.refreshToken === snapshot.refreshToken
+    current.status === 'recovering' && current.sessionId === snapshot.sessionId
   );
 }

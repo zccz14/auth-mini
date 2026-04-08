@@ -262,7 +262,7 @@ describe('sdk session flows', () => {
     try {
       const shared = createSharedStorageHarness({
         sessionId: 'session-1',
-        accessToken: 'access-1',
+        accessToken: null,
         refreshToken: 'refresh-1',
         receivedAt: '2026-04-03T00:00:00.000Z',
         expiresAt: '2026-04-03T00:03:00.000Z',
@@ -291,6 +291,72 @@ describe('sdk session flows', () => {
         sessionId: 'session-1',
         refreshToken: 'refresh-1',
       });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps waiting after a provisional shared snapshot and only times out locally', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const shared = createSharedStorageHarness({
+        sessionId: 'session-1',
+        accessToken: 'access-1',
+        refreshToken: 'refresh-1',
+        receivedAt: '2026-04-03T00:00:00.000Z',
+        expiresAt: '2026-04-03T00:03:00.000Z',
+        me: null,
+      });
+      const sdk = shared.createSdk({
+        autoRecover: true,
+        recoveryTimeoutMs: 25,
+        fetch: vi
+          .fn()
+          .mockResolvedValueOnce(
+            jsonResponse({ error: 'session_superseded' }, 401),
+          ),
+      });
+      let readySettled = false;
+
+      void sdk.ready.then(() => {
+        readySettled = true;
+      });
+
+      await vi.runAllTicks();
+
+      shared.write({
+        sessionId: 'session-1',
+        accessToken: 'access-2',
+        refreshToken: 'refresh-2',
+        receivedAt: '2026-04-03T00:02:00.000Z',
+        expiresAt: '2026-04-03T00:17:00.000Z',
+        me: null,
+      });
+      shared.dispatchStorageUpdate();
+      await vi.runAllTicks();
+
+      expect(sdk.session.getState()).toMatchObject({
+        status: 'recovering',
+        sessionId: 'session-1',
+        refreshToken: 'refresh-2',
+      });
+      expect(readySettled).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(25);
+      await sdk.ready;
+      await vi.runAllTicks();
+
+      expect(sdk.session.getState()).toMatchObject({
+        status: 'anonymous',
+        sessionId: null,
+        refreshToken: null,
+      });
+      expect(shared.read()).toMatchObject({
+        sessionId: 'session-1',
+        refreshToken: 'refresh-2',
+      });
+      expect(readySettled).toBe(true);
     } finally {
       vi.useRealTimers();
     }
