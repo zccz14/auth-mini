@@ -19,6 +19,14 @@ export function invalidRefreshTokenError(): HttpError {
   return new HttpError(401, 'invalid_refresh_token');
 }
 
+export function sessionInvalidatedError(): HttpError {
+  return new HttpError(401, 'session_invalidated');
+}
+
+export function sessionSupersededError(): HttpError {
+  return new HttpError(401, 'session_superseded');
+}
+
 export function invalidEmailOtpError(): HttpError {
   return new HttpError(401, 'invalid_email_otp');
 }

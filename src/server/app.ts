@@ -56,6 +56,8 @@ import {
   invalidRequestError,
   invalidWebauthnAuthenticationError,
   invalidWebauthnRegistrationError,
+  sessionInvalidatedError,
+  sessionSupersededError,
   smtpNotConfiguredError,
   smtpTemporarilyUnavailableError,
 } from './errors.js';
@@ -389,11 +391,11 @@ function toHttpError(error: unknown): HttpError {
   }
 
   if (error instanceof SessionInvalidatedError) {
-    return invalidRefreshTokenError();
+    return sessionInvalidatedError();
   }
 
   if (error instanceof SessionSupersededError) {
-    return invalidRefreshTokenError();
+    return sessionSupersededError();
   }
 
   if (error instanceof InvalidWebauthnRegistrationError) {

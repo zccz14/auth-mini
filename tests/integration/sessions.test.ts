@@ -104,7 +104,7 @@ describe('session routes', () => {
     expect(firstResponse.status).toBe(200);
     expect(secondResponse.status).toBe(401);
     expect(await secondResponse.json()).toEqual({
-      error: 'invalid_refresh_token',
+      error: 'session_superseded',
     });
     expectLogEntry(testApp.logs, {
       event: 'session.refresh.failed',
@@ -129,7 +129,7 @@ describe('session routes', () => {
     });
 
     expect(response.status).toBe(401);
-    expect(await response.json()).toEqual({ error: 'invalid_refresh_token' });
+    expect(await response.json()).toEqual({ error: 'session_invalidated' });
   });
 
   it('refresh token claim only succeeds once across database clients', async () => {
@@ -248,7 +248,7 @@ describe('session routes', () => {
     expect(logoutResponse.status).toBe(200);
     expect(refreshResponse.status).toBe(401);
     expect(await refreshResponse.json()).toEqual({
-      error: 'invalid_refresh_token',
+      error: 'session_invalidated',
     });
   });
 
