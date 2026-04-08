@@ -210,6 +210,8 @@ Refresh uses the refresh token in the JSON body:
 
 auth-mini also serves a singleton browser SDK at `GET /sdk/singleton-iife.js`.
 
+For TypeScript consumers, the matching declaration file is available at `GET /sdk/singleton-iife.d.ts`. It types `window.AuthMini`, so you can download that file and include it in your TS project. If your toolchain supports it, you can also use that same file as the source for a triple-slash reference or editor-only workflow.
+
 Load the script from the auth server origin. The singleton SDK still infers its API base URL from its own `src`, so the script origin and API origin must match:
 
 ```html
