@@ -101,6 +101,18 @@ export function assertValidJwksSlotState(db: DatabaseClient): void {
   }
 }
 
+export function assertCompleteJwksSlotState(db: DatabaseClient): void {
+  const rows = db
+    .prepare('SELECT id FROM jwks_keys ORDER BY rowid ASC')
+    .all() as Array<{ id: string }>;
+
+  if (rows.length !== slotOrder.length) {
+    throw createJwksSlotContractError();
+  }
+
+  assertValidJwksSlotState(db);
+}
+
 export function insertJwksSlot(
   db: DatabaseClient,
   slotId: JwksSlotId,

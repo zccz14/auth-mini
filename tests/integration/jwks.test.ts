@@ -20,7 +20,7 @@ describe('jwks service', () => {
     vi.useRealTimers();
   });
 
-  it('generates an Ed25519 signing key and emits a public jwks entry', async () => {
+  it('publishes the current and standby jwks slots and signs with CURRENT', async () => {
     const testApp = await createTestApp();
 
     try {
@@ -28,7 +28,7 @@ describe('jwks service', () => {
       const body = await response.json();
 
       expect(response.status).toBe(200);
-      expect(body.keys).toHaveLength(1);
+      expect(body.keys).toHaveLength(2);
       expect(body.keys[0]).toMatchObject({
         kid: expect.any(String),
         alg: 'EdDSA',
@@ -37,6 +37,15 @@ describe('jwks service', () => {
         use: 'sig',
       });
       expect(body.keys[0]).not.toHaveProperty('d');
+      expect(body.keys[1]).toMatchObject({
+        kid: expect.any(String),
+        alg: 'EdDSA',
+        kty: 'OKP',
+        crv: 'Ed25519',
+        use: 'sig',
+      });
+      expect(body.keys[1]).not.toHaveProperty('d');
+      expect(body.keys[0].kid).not.toBe(body.keys[1].kid);
       expect(testApp.logs).toContainEqual(
         expect.objectContaining({
           event: 'jwks.read',
@@ -47,36 +56,48 @@ describe('jwks service', () => {
     }
   });
 
-  it('keeps rotated keys available for verification', async () => {
+  it('rotates jwks slots by promoting STANDBY to CURRENT and minting a fresh STANDBY', async () => {
     const dbPath = await createTempDbPath();
     await bootstrapDatabase(dbPath);
     const db = createDatabaseClient(dbPath);
     const logCollector = createMemoryLogCollector();
 
     try {
-      const firstKey = await bootstrapKeys(db);
+      await bootstrapKeys(db);
+      const beforeRotation = getSlotRows(db);
       const token = await signJwt(db, {
         sub: 'user-1',
         typ: 'access',
         sid: 'session-1',
       });
+      const tokenHeader = decodeJwtHeader(token);
 
       const rotatedKey = await rotateKeys(db, { logger: logCollector.logger });
-      const payload = await verifyJwt(db, token);
       const publicKeys = await listPublicKeys(db, {
         logger: logCollector.logger,
       });
+      const afterRotation = getSlotRows(db);
 
-      expect(rotatedKey.kid).not.toBe(firstKey.kid);
-      expect(payload).toMatchObject({
-        sub: 'user-1',
-        sid: 'session-1',
-        typ: 'access',
-      });
-      expect(publicKeys.map((key) => key.kid)).toEqual([
-        firstKey.kid,
-        rotatedKey.kid,
+      expect(tokenHeader.kid).toBe(beforeRotation[0]?.kid);
+      expect(beforeRotation.map((row) => row.id)).toEqual([
+        'CURRENT',
+        'STANDBY',
       ]);
+      expect(afterRotation.map((row) => row.id)).toEqual([
+        'CURRENT',
+        'STANDBY',
+      ]);
+      expect(rotatedKey.kid).toBe(beforeRotation[1]?.kid);
+      expect(afterRotation[0]?.kid).toBe(beforeRotation[1]?.kid);
+      expect(afterRotation[1]?.kid).not.toBe(beforeRotation[0]?.kid);
+      expect(afterRotation[1]?.kid).not.toBe(beforeRotation[1]?.kid);
+      expect(publicKeys.map((key) => key.kid)).toEqual([
+        afterRotation[0]?.kid,
+        afterRotation[1]?.kid,
+      ]);
+      await expect(verifyJwt(db, token)).rejects.toThrowError(
+        'Unknown JWT kid',
+      );
       expect(logCollector.entries).toContainEqual(
         expect.objectContaining({
           event: 'jwks.rotated',
@@ -88,7 +109,7 @@ describe('jwks service', () => {
     }
   });
 
-  it('emits a structured bootstrap event only when creating the first key', async () => {
+  it('emits a structured bootstrap event only when creating missing slots', async () => {
     const dbPath = await createTempDbPath();
     await bootstrapDatabase(dbPath);
     const db = createDatabaseClient(dbPath);
@@ -100,12 +121,17 @@ describe('jwks service', () => {
 
       await bootstrapKeys(db, { logger: logCollector.logger });
 
-      expect(logCollector.entries).toContainEqual(
+      expect(logCollector.entries).toEqual([
         expect.objectContaining({
           event: 'jwks.bootstrap.created',
           kid: firstKey.kid,
+          slot: 'CURRENT',
         }),
-      );
+        expect.objectContaining({
+          event: 'jwks.bootstrap.created',
+          slot: 'STANDBY',
+        }),
+      ]);
       expect(logCollector.entries).toHaveLength(entryCountAfterCreate);
     } finally {
       db.close();
@@ -139,33 +165,35 @@ describe('jwks service', () => {
     );
   });
 
-  it('old jwks keys remain available long enough for unexpired access token verification', async () => {
+  it('fails fast when runtime operations do not have both jwks slots', async () => {
     const dbPath = await createTempDbPath();
     await bootstrapDatabase(dbPath);
     const db = createDatabaseClient(dbPath);
+    const logCollector = createMemoryLogCollector();
 
     try {
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date('2030-01-01T00:00:00.000Z'));
-      const logCollector = createMemoryLogCollector();
-
       await bootstrapKeys(db);
-
-      const oldToken = await signJwt(db, {
+      const token = await signJwt(db, {
         sub: 'user-1',
         typ: 'access',
         sid: 'session-1',
       });
 
-      await rotateKeys(db, { logger: logCollector.logger });
+      db.prepare("DELETE FROM jwks_keys WHERE id = 'STANDBY'").run();
 
-      vi.setSystemTime(new Date('2030-01-01T00:10:00.000Z'));
-
-      await expect(verifyJwt(db, oldToken)).resolves.toMatchObject({
-        sub: 'user-1',
-        sid: 'session-1',
-        typ: 'access',
-      });
+      await expect(
+        listPublicKeys(db, { logger: logCollector.logger }),
+      ).rejects.toThrowError('jwks_keys slot contract');
+      await expect(
+        signJwt(db, {
+          sub: 'user-2',
+          typ: 'access',
+          sid: 'session-2',
+        }),
+      ).rejects.toThrowError('jwks_keys slot contract');
+      await expect(verifyJwt(db, token)).rejects.toThrowError(
+        'jwks_keys slot contract',
+      );
     } finally {
       db.close();
     }
@@ -183,7 +211,7 @@ describe('jwks service', () => {
         db,
         {
           alg: 'EdDSA',
-          kid: getActiveKid(db),
+          kid: getCurrentKid(db),
           typ: 'JWT',
         },
         {
@@ -200,7 +228,7 @@ describe('jwks service', () => {
         db,
         {
           alg: 'EdDSA',
-          kid: getActiveKid(db),
+          kid: getCurrentKid(db),
           typ: 'JWT',
         },
         {
@@ -225,7 +253,7 @@ describe('jwks service', () => {
 
     try {
       await bootstrapKeys(db);
-      const kid = getActiveKid(db);
+      const kid = getCurrentKid(db);
       const validPayload = {
         sub: 'user-1',
         typ: 'access',
@@ -280,7 +308,7 @@ describe('jwks service', () => {
         db,
         {
           alg: 'EdDSA',
-          kid: getActiveKid(db),
+          kid: getCurrentKid(db),
           typ: 'JWT',
         },
         {
@@ -299,22 +327,44 @@ describe('jwks service', () => {
   });
 });
 
-function getActiveKid(db: ReturnType<typeof createDatabaseClient>): string {
+function getCurrentKid(db: ReturnType<typeof createDatabaseClient>): string {
   const row = db
-    .prepare('SELECT kid FROM jwks_keys WHERE is_active = 1 LIMIT 1')
+    .prepare("SELECT kid FROM jwks_keys WHERE id = 'CURRENT' LIMIT 1")
     .get() as { kid: string };
 
   return row.kid;
 }
 
-function getActivePrivateJwk(
+function getCurrentPrivateJwk(
   db: ReturnType<typeof createDatabaseClient>,
 ): PrivateJwk {
   const row = db
-    .prepare('SELECT private_jwk FROM jwks_keys WHERE is_active = 1 LIMIT 1')
+    .prepare("SELECT private_jwk FROM jwks_keys WHERE id = 'CURRENT' LIMIT 1")
     .get() as { private_jwk: string };
 
   return JSON.parse(row.private_jwk) as PrivateJwk;
+}
+
+function getSlotRows(
+  db: ReturnType<typeof createDatabaseClient>,
+): Array<{ id: 'CURRENT' | 'STANDBY'; kid: string }> {
+  return db
+    .prepare('SELECT id, kid FROM jwks_keys ORDER BY id ASC')
+    .all() as Array<{ id: 'CURRENT' | 'STANDBY'; kid: string }>;
+}
+
+function decodeJwtHeader(token: string): { kid?: string } {
+  const [headerSegment] = token.split('.');
+
+  if (!headerSegment) {
+    return {};
+  }
+
+  return JSON.parse(
+    Buffer.from(headerSegment, 'base64url').toString('utf8'),
+  ) as {
+    kid?: string;
+  };
 }
 
 function createSignedToken(
@@ -322,7 +372,7 @@ function createSignedToken(
   header: Record<string, unknown>,
   payload: Record<string, unknown>,
 ): string {
-  const privateJwk = getActivePrivateJwk(db);
+  const privateJwk = getCurrentPrivateJwk(db);
   const encodedHeader = encodeBase64Url(JSON.stringify(header));
   const encodedPayload = encodeBase64Url(JSON.stringify(payload));
   const signingInput = `${encodedHeader}.${encodedPayload}`;

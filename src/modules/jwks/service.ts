@@ -14,6 +14,7 @@ import {
   getUnixTimeSeconds,
 } from '../../shared/time.js';
 import {
+  assertCompleteJwksSlotState,
   assertValidJwksSlotState,
   createJwksSlotContractError,
   getJwksSlot,
@@ -79,7 +80,7 @@ export async function rotateKeys(
   id: string;
   kid: string;
 }> {
-  assertValidJwksSlotState(db);
+  assertCompleteJwksSlotState(db);
   const currentKey = getJwksSlot(db, 'CURRENT');
   const standbyKey = getJwksSlot(db, 'STANDBY');
 
@@ -108,7 +109,7 @@ export async function listPublicKeys(
   db: DatabaseClient,
   input: { logger: AppLogger },
 ): Promise<PublicJwk[]> {
-  assertValidJwksSlotState(db);
+  assertCompleteJwksSlotState(db);
   const keys = listJwksSlots(db).map((key) => toPublicJwk(key.privateJwk));
   input.logger.info(
     { event: 'jwks.read', key_count: keys.length },
@@ -122,6 +123,7 @@ export async function signJwt(
   db: DatabaseClient,
   payload: JwtPayload,
 ): Promise<string> {
+  assertCompleteJwksSlotState(db);
   const currentKey = getJwksSlot(db, 'CURRENT');
 
   if (!currentKey) {
@@ -142,6 +144,7 @@ export async function verifyJwt(
   db: DatabaseClient,
   token: string,
 ): Promise<JwtPayload> {
+  assertCompleteJwksSlotState(db);
   const headerSegment = token.split('.')[0];
 
   if (!headerSegment) {
