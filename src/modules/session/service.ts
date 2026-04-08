@@ -106,10 +106,11 @@ export async function refreshSessionTokens(
   }
 
   const refreshToken = generateOpaqueToken();
+  const rotatedRefreshTokenHash = hashValue(refreshToken);
   const rotatedSession = rotateRefreshToken(db, {
     sessionId: input.sessionId,
     currentRefreshTokenHash: submittedRefreshTokenHash,
-    nextRefreshTokenHash: hashValue(refreshToken),
+    nextRefreshTokenHash: rotatedRefreshTokenHash,
     now,
   });
 
@@ -141,12 +142,25 @@ export async function refreshSessionTokens(
     throw new SessionInvalidatedError();
   }
 
-  const accessToken = await signJwt(db, {
-    sub: rotatedSession.userId,
-    sid: rotatedSession.id,
-    iss: input.issuer,
-    typ: 'access',
-  });
+  let accessToken: string;
+
+  try {
+    accessToken = await signJwt(db, {
+      sub: rotatedSession.userId,
+      sid: rotatedSession.id,
+      iss: input.issuer,
+      typ: 'access',
+    });
+  } catch (error) {
+    rotateRefreshToken(db, {
+      sessionId: input.sessionId,
+      currentRefreshTokenHash: rotatedRefreshTokenHash,
+      nextRefreshTokenHash: submittedRefreshTokenHash,
+      now,
+    });
+
+    throw error;
+  }
 
   input.logger?.info(
     {

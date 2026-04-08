@@ -10,9 +10,11 @@ import { createDatabaseClient } from '../../src/infra/db/client.js';
 import { importSmtpConfigs } from '../../src/infra/smtp/config-import.js';
 import { runStartCommand } from '../../src/app/commands/start.js';
 import { bootstrapKeys } from '../../src/modules/jwks/service.js';
+import * as jwksService from '../../src/modules/jwks/service.js';
 import { hashValue } from '../../src/shared/crypto.js';
 import {
   createSession,
+  getSessionById,
   rotateRefreshToken,
 } from '../../src/modules/session/repo.js';
 import { refreshSessionTokens } from '../../src/modules/session/service.js';
@@ -203,6 +205,52 @@ describe('session routes', () => {
     }
   });
 
+  it('refresh keeps the old token usable when signing fails after rotation', async () => {
+    const dbPath = await createTempDbPath();
+    await bootstrapDatabase(dbPath);
+    const db = createDatabaseClient(dbPath);
+
+    try {
+      await bootstrapKeys(db);
+      db.prepare(
+        'INSERT INTO users (id, email, email_verified_at) VALUES (?, ?, ?)',
+      ).run('user-1', 'user-1@example.com', '2030-01-01T00:00:00.000Z');
+
+      const session = createSession(db, {
+        userId: 'user-1',
+        refreshTokenHash: hashValue('refresh-token'),
+        expiresAt: '2099-01-01T00:00:00.000Z',
+      });
+      const signJwtSpy = vi
+        .spyOn(jwksService, 'signJwt')
+        .mockRejectedValueOnce(new Error('signing unavailable'));
+
+      await expect(
+        refreshSessionTokens(db, {
+          sessionId: session.id,
+          refreshToken: 'refresh-token',
+          issuer: 'https://issuer.example',
+        }),
+      ).rejects.toThrow('signing unavailable');
+
+      expect(getSessionById(db, session.id)?.refreshTokenHash).toBe(
+        hashValue('refresh-token'),
+      );
+
+      const retryResult = await refreshSessionTokens(db, {
+        sessionId: session.id,
+        refreshToken: 'refresh-token',
+        issuer: 'https://issuer.example',
+      });
+
+      expect(retryResult.session_id).toBe(session.id);
+      expect(retryResult.refresh_token).not.toBe('refresh-token');
+      signJwtSpy.mockRestore();
+    } finally {
+      db.close();
+    }
+  });
+
   it('refresh token claim only succeeds once across database clients', async () => {
     const dbPath = await createTempDbPath();
     await bootstrapDatabase(dbPath);
@@ -277,7 +325,7 @@ describe('session routes', () => {
     });
   });
 
-  it('logout does not log success when the session was already revoked', async () => {
+  it('logout does not log success when the token session is already expired', async () => {
     const testApp = await createSignedInApp('logout-repeat@example.com');
     openApps.push(testApp);
 
@@ -301,8 +349,50 @@ describe('session routes', () => {
     );
 
     expect(firstResponse.status).toBe(200);
-    expect(secondResponse.status).toBe(200);
+    expect(secondResponse.status).toBe(401);
+    expect(await secondResponse.json()).toEqual({
+      error: 'invalid_access_token',
+    });
     expect(logoutSuccessLogs).toHaveLength(1);
+  });
+
+  it('me rejects an access token after logout expires its session', async () => {
+    const testApp = await createSignedInApp('logout-me@example.com');
+    openApps.push(testApp);
+
+    const logoutResponse = await testApp.app.request('/session/logout', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${testApp.tokens.access_token}`,
+      },
+    });
+    const meResponse = await testApp.app.request('/me', {
+      headers: {
+        authorization: `Bearer ${testApp.tokens.access_token}`,
+      },
+    });
+
+    expect(logoutResponse.status).toBe(200);
+    expect(meResponse.status).toBe(401);
+    expect(await meResponse.json()).toEqual({ error: 'invalid_access_token' });
+  });
+
+  it('me rejects an access token after direct session expiry', async () => {
+    const testApp = await createSignedInApp('expired-me@example.com');
+    openApps.push(testApp);
+
+    testApp.db
+      .prepare('UPDATE sessions SET expires_at = ? WHERE id = ?')
+      .run('2020-01-01T00:00:00.000Z', testApp.sessionId);
+
+    const response = await testApp.app.request('/me', {
+      headers: {
+        authorization: `Bearer ${testApp.tokens.access_token}`,
+      },
+    });
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: 'invalid_access_token' });
   });
 
   it('logout makes the current refresh token unusable', async () => {
