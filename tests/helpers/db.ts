@@ -114,6 +114,7 @@ export async function createMalformedJwksSlotDbPath(input: {
   includeIdPrimaryKey?: boolean;
   includeIdSlotCheck?: boolean;
   includeKidUnique?: boolean;
+  nullableColumns?: Array<'kid' | 'alg' | 'public_jwk' | 'private_jwk'>;
 }): Promise<string> {
   const dbPath = await createTempDbPath();
   const db = new Database(dbPath);
@@ -126,6 +127,7 @@ export async function createMalformedJwksSlotDbPath(input: {
   ]
     .filter(Boolean)
     .join(' ');
+  const nullableColumns = new Set(input.nullableColumns ?? []);
 
   try {
     db.exec(`
@@ -162,10 +164,10 @@ export async function createMalformedJwksSlotDbPath(input: {
 
       CREATE TABLE jwks_keys (
         ${idDefinition},
-        kid TEXT NOT NULL${input.includeKidUnique === false ? '' : ' UNIQUE'},
-        alg TEXT NOT NULL,
-        public_jwk TEXT NOT NULL,
-        private_jwk TEXT NOT NULL
+        kid TEXT${nullableColumns.has('kid') ? '' : ' NOT NULL'}${input.includeKidUnique === false ? '' : ' UNIQUE'},
+        alg TEXT${nullableColumns.has('alg') ? '' : ' NOT NULL'},
+        public_jwk TEXT${nullableColumns.has('public_jwk') ? '' : ' NOT NULL'},
+        private_jwk TEXT${nullableColumns.has('private_jwk') ? '' : ' NOT NULL'}
       );
     `);
 

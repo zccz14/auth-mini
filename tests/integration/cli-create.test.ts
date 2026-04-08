@@ -335,6 +335,23 @@ describe('workspace bootstrap', () => {
     );
   });
 
+  it('fails bootstrap when a new-schema jwks table allows nullable slot fields', async () => {
+    const { bootstrapDatabase } =
+      await import('../../src/infra/db/bootstrap.js');
+    const dbPath = await createMalformedJwksSlotDbPath({
+      rows: [
+        { id: 'CURRENT', kid: 'kid-current' },
+        { id: 'STANDBY', kid: 'kid-standby' },
+      ],
+      nullableColumns: ['kid', 'alg', 'public_jwk', 'private_jwk'],
+    });
+
+    await expect(bootstrapDatabase(dbPath)).rejects.toThrow(/schema/i);
+    await expect(bootstrapDatabase(dbPath)).rejects.toThrow(
+      /jwks_keys slot contract/i,
+    );
+  });
+
   it('fails bootstrap when a new-schema jwks table duplicates a slot id', async () => {
     const { bootstrapKeys } = await import('../../src/modules/jwks/service.js');
     const dbPath = await createMalformedJwksSlotDbPath({

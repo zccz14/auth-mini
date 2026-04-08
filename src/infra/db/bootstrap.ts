@@ -102,6 +102,7 @@ function assertJwksSlotSchema(
 
   const columns = db.prepare("PRAGMA table_info('jwks_keys')").all() as Array<{
     name: string;
+    notnull: 0 | 1;
     pk: number;
   }>;
   const indexes = db.prepare("PRAGMA index_list('jwks_keys')").all() as Array<{
@@ -110,6 +111,12 @@ function assertJwksSlotSchema(
   }>;
   const normalizedSql = normalizeSql(tableDefinition.sql ?? '');
   const primaryKeyColumns = columns.filter((column) => column.pk > 0);
+  const requiredNotNullColumns = new Set([
+    'kid',
+    'alg',
+    'public_jwk',
+    'private_jwk',
+  ]);
   const hasUniqueKidIndex = indexes.some((index) => {
     if (index.unique !== 1) {
       return false;
@@ -128,6 +135,10 @@ function assertJwksSlotSchema(
     columns.length !== expectedJwksColumns.length ||
     columns.some(
       (column, index) => column.name !== expectedJwksColumns[index],
+    ) ||
+    columns.some(
+      (column) =>
+        requiredNotNullColumns.has(column.name) && column.notnull !== 1,
     ) ||
     primaryKeyColumns.length !== 1 ||
     primaryKeyColumns[0]?.name !== 'id' ||
