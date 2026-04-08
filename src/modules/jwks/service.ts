@@ -19,7 +19,6 @@ import {
   createJwksSlotContractError,
   getJwksSlot,
   getKeyByKid,
-  insertJwksSlot,
   listJwksSlots,
   rotateJwksSlots,
 } from './repo.js';
@@ -33,44 +32,71 @@ export async function bootstrapKeys(
 }> {
   assertValidJwksSlotState(db);
 
-  let currentKey = getJwksSlot(db, 'CURRENT');
-  let standbyKey = getJwksSlot(db, 'STANDBY');
+  const repairedState = db.transaction(() => {
+    const insertIfMissing = db.prepare(
+      [
+        'INSERT OR IGNORE INTO jwks_keys (id, kid, alg, public_jwk, private_jwk)',
+        'VALUES (?, ?, ?, ?, ?)',
+      ].join(' '),
+    );
+    const created: Array<{ slot: 'CURRENT' | 'STANDBY'; kid: string }> = [];
 
-  if (!currentKey) {
-    const currentRecord = generateEd25519KeyRecord();
-    insertJwksSlot(db, 'CURRENT', currentRecord);
-    currentKey = getJwksSlot(db, 'CURRENT');
+    let currentKey = getJwksSlot(db, 'CURRENT');
+    let standbyKey = getJwksSlot(db, 'STANDBY');
 
+    if (!currentKey) {
+      const currentRecord = generateEd25519KeyRecord();
+      const result = insertIfMissing.run(
+        'CURRENT',
+        currentRecord.kid,
+        currentRecord.alg,
+        JSON.stringify(currentRecord.publicJwk),
+        JSON.stringify(currentRecord.privateJwk),
+      );
+
+      if (result.changes === 1) {
+        created.push({ slot: 'CURRENT', kid: currentRecord.kid });
+      }
+
+      currentKey = getJwksSlot(db, 'CURRENT');
+    }
+
+    if (!standbyKey) {
+      const standbyRecord = generateEd25519KeyRecord();
+      const result = insertIfMissing.run(
+        'STANDBY',
+        standbyRecord.kid,
+        standbyRecord.alg,
+        JSON.stringify(standbyRecord.publicJwk),
+        JSON.stringify(standbyRecord.privateJwk),
+      );
+
+      if (result.changes === 1) {
+        created.push({ slot: 'STANDBY', kid: standbyRecord.kid });
+      }
+
+      standbyKey = getJwksSlot(db, 'STANDBY');
+    }
+
+    return { currentKey, standbyKey, created };
+  })();
+
+  for (const entry of repairedState.created) {
     input?.logger?.info(
       {
         event: 'jwks.bootstrap.created',
-        kid: currentRecord.kid,
-        slot: 'CURRENT',
+        kid: entry.kid,
+        slot: entry.slot,
       },
       'Initial JWKS signing key created',
     );
   }
 
-  if (!standbyKey) {
-    const standbyRecord = generateEd25519KeyRecord();
-    insertJwksSlot(db, 'STANDBY', standbyRecord);
-    standbyKey = getJwksSlot(db, 'STANDBY');
-
-    input?.logger?.info(
-      {
-        event: 'jwks.bootstrap.created',
-        kid: standbyRecord.kid,
-        slot: 'STANDBY',
-      },
-      'Initial JWKS signing key created',
-    );
-  }
-
-  if (!currentKey || !standbyKey) {
+  if (!repairedState.currentKey || !repairedState.standbyKey) {
     throw createJwksSlotContractError();
   }
 
-  return { id: currentKey.id, kid: currentKey.kid };
+  return { id: repairedState.currentKey.id, kid: repairedState.currentKey.kid };
 }
 
 export async function rotateKeys(

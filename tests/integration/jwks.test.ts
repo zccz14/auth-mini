@@ -188,6 +188,56 @@ describe('jwks service', () => {
     }
   });
 
+  it('converges cleanly when a missing slot is repaired concurrently', async () => {
+    const dbPath = await createTempDbPath();
+    await bootstrapDatabase(dbPath);
+    const db = createDatabaseClient(dbPath);
+    const originalPrepare = db.prepare.bind(db);
+    const competingStandby = generateEd25519KeyRecord();
+
+    try {
+      await bootstrapKeys(db);
+      db.prepare("DELETE FROM jwks_keys WHERE id = 'STANDBY'").run();
+
+      db.prepare = ((sql: string) => {
+        const statement = originalPrepare(sql);
+
+        if (sql.includes('INSERT') && sql.includes('jwks_keys')) {
+          return {
+            ...statement,
+            run: (...args: unknown[]) => {
+              if (args[0] === 'STANDBY') {
+                originalPrepare(
+                  'INSERT INTO jwks_keys (id, kid, alg, public_jwk, private_jwk) VALUES (?, ?, ?, ?, ?)',
+                ).run(
+                  'STANDBY',
+                  competingStandby.kid,
+                  competingStandby.alg,
+                  JSON.stringify(competingStandby.publicJwk),
+                  JSON.stringify(competingStandby.privateJwk),
+                );
+              }
+
+              return statement.run(...args);
+            },
+          };
+        }
+
+        return statement;
+      }) as typeof db.prepare;
+
+      await expect(bootstrapKeys(db)).resolves.toMatchObject({ id: 'CURRENT' });
+      expect(getStandbyKid(db)).toBe(competingStandby.kid);
+      expect(getSlotRows(db).map((row) => row.id)).toEqual([
+        'CURRENT',
+        'STANDBY',
+      ]);
+    } finally {
+      db.prepare = originalPrepare;
+      db.close();
+    }
+  });
+
   it('emits a structured bootstrap event only when creating missing slots', async () => {
     const dbPath = await createTempDbPath();
     await bootstrapDatabase(dbPath);
