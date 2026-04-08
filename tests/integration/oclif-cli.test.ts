@@ -224,6 +224,15 @@ describe('oclif cli contract', () => {
     expect(readme).toContain(
       '`rotate-jwks` remains available only as a transition/compatibility alias during the migration release.',
     );
+    expect(readme).toContain(
+      '`/jwks` always publishes the `CURRENT` and `STANDBY` keys.',
+    );
+    expect(readme).toContain(
+      '`rotate jwks` promotes `STANDBY` to `CURRENT`, then generates a fresh `STANDBY`.',
+    );
+    expect(readme).toContain(
+      'After rotation, the previous `CURRENT` key is no longer retained.',
+    );
     expect(readme).not.toContain(
       'once allowed-origin runtime configuration is wired back into the CLI/runtime contract',
     );

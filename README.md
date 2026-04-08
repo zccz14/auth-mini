@@ -144,6 +144,12 @@ Rotate JWKS keys:
 npx auth-mini rotate jwks ./auth-mini.sqlite
 ```
 
+`/jwks` always publishes the `CURRENT` and `STANDBY` keys.
+
+`rotate jwks` promotes `STANDBY` to `CURRENT`, then generates a fresh `STANDBY`.
+
+After rotation, the previous `CURRENT` key is no longer retained.
+
 By default, CLI errors stay concise; use `--verbose` for detailed diagnostics.
 
 `rotate-jwks` remains available only as a transition/compatibility alias during the migration release.
