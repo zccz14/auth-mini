@@ -104,8 +104,25 @@ function assertJwksSlotSchema(
     name: string;
     pk: number;
   }>;
+  const indexes = db.prepare("PRAGMA index_list('jwks_keys')").all() as Array<{
+    name: string;
+    unique: 0 | 1;
+  }>;
   const normalizedSql = normalizeSql(tableDefinition.sql ?? '');
   const primaryKeyColumns = columns.filter((column) => column.pk > 0);
+  const hasUniqueKidIndex = indexes.some((index) => {
+    if (index.unique !== 1) {
+      return false;
+    }
+
+    const indexColumns = db
+      .prepare(`PRAGMA index_info(${index.name})`)
+      .all() as Array<{
+      name: string;
+    }>;
+
+    return indexColumns.length === 1 && indexColumns[0]?.name === 'kid';
+  });
 
   if (
     columns.length !== expectedJwksColumns.length ||
@@ -114,6 +131,7 @@ function assertJwksSlotSchema(
     ) ||
     primaryKeyColumns.length !== 1 ||
     primaryKeyColumns[0]?.name !== 'id' ||
+    !hasUniqueKidIndex ||
     !normalizedSql.includes(
       "id text primary key check (id in ('current', 'standby'))",
     )

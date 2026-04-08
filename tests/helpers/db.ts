@@ -113,6 +113,7 @@ export async function createMalformedJwksSlotDbPath(input: {
   rows: SlotFixtureRow[];
   includeIdPrimaryKey?: boolean;
   includeIdSlotCheck?: boolean;
+  includeKidUnique?: boolean;
 }): Promise<string> {
   const dbPath = await createTempDbPath();
   const db = new Database(dbPath);
@@ -161,7 +162,7 @@ export async function createMalformedJwksSlotDbPath(input: {
 
       CREATE TABLE jwks_keys (
         ${idDefinition},
-        kid TEXT NOT NULL UNIQUE,
+        kid TEXT NOT NULL${input.includeKidUnique === false ? '' : ' UNIQUE'},
         alg TEXT NOT NULL,
         public_jwk TEXT NOT NULL,
         private_jwk TEXT NOT NULL
