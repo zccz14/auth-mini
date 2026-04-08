@@ -717,7 +717,6 @@ function createFakeDocument(options: {
     'api-reference-list',
     'backend-notes-list',
     'deployment-notes-list',
-    'known-issues-list',
     'backend-notes-disclosure',
   ]) {
     const element = createElement(id.includes('list') ? 'ul' : 'div');

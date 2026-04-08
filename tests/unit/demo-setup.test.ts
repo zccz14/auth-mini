@@ -39,7 +39,8 @@ describe('demo WebAuthn setup guidance', () => {
         jwksUrl: 'https://auth.zccz14.com/jwks',
         startupCommand:
           'npx auth-mini origin add ./auth-mini.sqlite --value https://docs.example.com\n' +
-          'npx auth-mini start ./auth-mini.sqlite --issuer https://auth.zccz14.com',
+          'npx auth-mini start ./auth-mini.sqlite --issuer https://auth.zccz14.com\n' +
+          'npx auth-mini smtp add ./auth-mini.sqlite --host smtp.example.com --port 587 --username mailer --password secret --from-email noreply@example.com',
       }),
     );
     expect(state).not.toHaveProperty('currentRpId');
@@ -173,7 +174,8 @@ describe('demo WebAuthn setup guidance', () => {
       expect.objectContaining({
         startupCommand:
           'npx auth-mini origin add ./auth-mini.sqlite --value http://localhost:8080\n' +
-          'npx auth-mini start ./auth-mini.sqlite --issuer http://127.0.0.1:7777',
+          'npx auth-mini start ./auth-mini.sqlite --issuer http://127.0.0.1:7777\n' +
+          'npx auth-mini smtp add ./auth-mini.sqlite --host smtp.example.com --port 587 --username mailer --password secret --from-email noreply@example.com',
       }),
     );
   });

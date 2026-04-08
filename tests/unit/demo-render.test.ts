@@ -35,7 +35,8 @@ const sampleSetupState = {
     'Run npx auth-mini origin add with this page origin before browser calls to the auth server will succeed cross-origin.',
   startupCommand:
     'npx auth-mini origin add ./auth-mini.sqlite --value https://docs.example.com\n' +
-    'npx auth-mini start ./auth-mini.sqlite --issuer https://auth.zccz14.com',
+    'npx auth-mini start ./auth-mini.sqlite --issuer https://auth.zccz14.com\n' +
+    'npx auth-mini smtp add ./auth-mini.sqlite --host smtp.example.com --port 587 --username mailer --password secret --from-email noreply@example.com',
 };
 
 describe('demo render helpers', () => {
@@ -132,9 +133,7 @@ describe('demo render helpers', () => {
     expect(
       root.querySelector('#deployment-notes-list li')?.textContent,
     ).toContain('GitHub Pages');
-    expect(root.querySelector('#known-issues-list li')?.textContent).toContain(
-      'Passkeys',
-    );
+    expect(root.querySelector('#known-issues-list')).toBeNull();
   });
 
   it('renders hero and how-it-works content for the landing-page view', async () => {
@@ -292,7 +291,6 @@ function createRenderRoot(): FakeRenderRoot {
   backendNotesDisclosure.appendChild(backendNotesSummary);
   elements.set('#backend-notes-disclosure', backendNotesDisclosure);
   makeElement('deployment-notes-list');
-  makeElement('known-issues-list');
   makeElement('register-output');
   makeElement('authenticate-output');
   makeElement('email-start-button');

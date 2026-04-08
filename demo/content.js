@@ -164,11 +164,6 @@ export function buildDemoContent(setupState) {
       'If docs and auth live on different origins, keep the page URL on the docs host and append ?sdk-origin=https://your-auth-origin so the browser loads the SDK from the auth host.',
       'If you use a custom GitHub Pages domain, publish a matching CNAME file and keep that domain stable; update the stored allowed origin whenever the docs host changes enough to alter window.location.origin.',
     ],
-    knownIssues: [
-      'Passkeys require a browser environment that supports WebAuthn.',
-      'Cross-origin pages must be allowlisted with npx auth-mini origin add before browser calls will succeed.',
-      'Multiple tabs can currently race during session refresh. This is a known SDK bug, not a product contract.',
-    ],
   };
 }
 

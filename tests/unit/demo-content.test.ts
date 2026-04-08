@@ -10,7 +10,8 @@ const sampleState = {
   suggestedOrigin: 'https://docs.example.com',
   startupCommand:
     'npx auth-mini origin add ./auth-mini.sqlite --value https://docs.example.com\n' +
-    'npx auth-mini start ./auth-mini.sqlite --issuer https://auth.zccz14.com',
+    'npx auth-mini start ./auth-mini.sqlite --issuer https://auth.zccz14.com\n' +
+    'npx auth-mini smtp add ./auth-mini.sqlite --host smtp.example.com --port 587 --username mailer --password secret --from-email noreply@example.com',
 };
 
 describe('demo content builders', () => {
@@ -23,6 +24,9 @@ describe('demo content builders', () => {
     expect(content.joseSnippet).toContain("new URL('/jwks', issuer)");
     expect(content.joseSnippet).toContain(
       "const issuer = 'https://auth.zccz14.com'",
+    );
+    expect(content.startupCommand).toContain(
+      'npx auth-mini smtp add ./auth-mini.sqlite --host smtp.example.com --port 587 --username mailer --password secret --from-email noreply@example.com',
     );
   });
 
@@ -180,11 +184,10 @@ describe('demo content builders', () => {
     );
   });
 
-  it('describes multi-tab behavior as a bug, not a supported limit', () => {
+  it('does not expose a known-issues content block anymore', () => {
     const content = buildDemoContent(sampleState);
 
-    expect(content.knownIssues.join('\n')).toContain('known SDK bug');
-    expect(content.knownIssues.join('\n')).not.toContain('single-tab only');
+    expect(content).not.toHaveProperty('knownIssues');
   });
 
   it('documents audience validation and /me usage in backend jwt guidance', () => {
@@ -227,12 +230,11 @@ describe('demo content builders', () => {
     expect(content.backendNotesDisclosureLabel).toContain('More');
   });
 
-  it('includes all required known-issue topics', () => {
+  it('keeps quick start focused on startup and smtp setup only', () => {
     const content = buildDemoContent(sampleState);
-    const knownIssues = content.knownIssues.join('\n');
 
-    expect(knownIssues).toContain('browser');
-    expect(knownIssues).toContain('origin add');
-    expect(knownIssues).toContain('known SDK bug');
+    expect(content.startupCommand).toContain('npx auth-mini origin add');
+    expect(content.startupCommand).toContain('npx auth-mini start');
+    expect(content.startupCommand).toContain('npx auth-mini smtp add');
   });
 });

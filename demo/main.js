@@ -20,7 +20,6 @@ export function renderContentState(root, setupState, content) {
   setList(root, '#how-it-works-list', content.howItWorks || []);
   setList(root, '#backend-notes-list', content.backendNotes || []);
   setList(root, '#deployment-notes-list', content.deploymentNotes || []);
-  setList(root, '#known-issues-list', content.knownIssues || []);
   setBackendDisclosureSummary(root, content.backendNotesDisclosureLabel || '');
 
   const configError = query(root, '#config-error');

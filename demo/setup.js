@@ -38,6 +38,7 @@ export function getDemoSetupState(locationLike) {
     startupCommand: [
       `npx auth-mini origin add ./auth-mini.sqlite --value ${origin}`,
       `npx auth-mini start ./auth-mini.sqlite --issuer ${issuer}`,
+      'npx auth-mini smtp add ./auth-mini.sqlite --host smtp.example.com --port 587 --username mailer --password secret --from-email noreply@example.com',
     ].join('\n'),
   };
 }
