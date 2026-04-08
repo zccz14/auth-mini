@@ -8,6 +8,7 @@ describe('sdk login contract', () => {
         .fn()
         .mockResolvedValueOnce(
           jsonResponse({
+            session_id: 's1',
             access_token: 'a',
             refresh_token: 'r',
             expires_in: 900,
@@ -32,6 +33,7 @@ describe('sdk login contract', () => {
     expect(result.me.email).toBe('u@example.com');
     expect(sdk.me.get()?.email).toBe('u@example.com');
     expect(sdk.session.getState().expiresAt).toBe('2026-04-03T00:15:00.000Z');
+    expect(sdk.session.getState().sessionId).toBe('s1');
   });
 
   it('email.verify rolls back auth state when /me fails', async () => {
@@ -40,6 +42,7 @@ describe('sdk login contract', () => {
         .fn()
         .mockResolvedValueOnce(
           jsonResponse({
+            session_id: 's1',
             access_token: 'a',
             refresh_token: 'r',
             expires_in: 900,

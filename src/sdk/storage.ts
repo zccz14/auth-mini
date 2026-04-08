@@ -23,6 +23,7 @@ export function readPersistedSdkState(
     }
 
     const accessToken = toNullableString(value.accessToken);
+    const sessionId = toNullableString(value.sessionId);
     const refreshToken = toNullableString(value.refreshToken);
     const receivedAt = toNullableString(value.receivedAt);
     const expiresAt = toNullableString(value.expiresAt);
@@ -30,6 +31,7 @@ export function readPersistedSdkState(
 
     if (
       accessToken === undefined ||
+      sessionId === undefined ||
       refreshToken === undefined ||
       receivedAt === undefined ||
       expiresAt === undefined ||
@@ -40,6 +42,7 @@ export function readPersistedSdkState(
 
     return {
       accessToken,
+      sessionId,
       refreshToken,
       receivedAt,
       expiresAt,

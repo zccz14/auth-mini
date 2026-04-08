@@ -15,6 +15,7 @@ export type MeResponse = {
 export type SessionSnapshot = {
   status: SdkStatus;
   authenticated: boolean;
+  sessionId: string | null;
   accessToken: string | null;
   refreshToken: string | null;
   receivedAt: string | null;
@@ -23,6 +24,7 @@ export type SessionSnapshot = {
 };
 
 export type PersistedSdkState = {
+  sessionId: string | null;
   accessToken: string | null;
   refreshToken: string | null;
   receivedAt: string | null;
@@ -33,6 +35,7 @@ export type PersistedSdkState = {
 export type AuthenticatedStateInput = PersistedSdkState;
 
 export type SessionTokens = {
+  sessionId: string;
   accessToken: string | null;
   refreshToken: string;
   receivedAt: string;

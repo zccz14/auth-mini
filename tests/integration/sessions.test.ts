@@ -46,30 +46,33 @@ describe('session routes', () => {
     const response = await testApp.app.request('/session/refresh', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: json({ refresh_token: testApp.tokens.refresh_token }),
+      body: json({
+        session_id: testApp.sessionId,
+        refresh_token: testApp.tokens.refresh_token,
+      }),
     });
 
     const body = await response.json();
-    const sessions = testApp.db
-      .prepare(
-        'SELECT id, revoked_at FROM sessions ORDER BY created_at ASC, id ASC',
-      )
-      .all() as Array<{ id: string; revoked_at: string | null }>;
-    const originalSession = sessions.find(
-      (session) => session.id === testApp.sessionId,
-    );
-    const rotatedSession = sessions.find(
-      (session) => session.id !== testApp.sessionId,
-    );
+    const session = testApp.db
+      .prepare('SELECT id, refresh_token_hash FROM sessions WHERE id = ?')
+      .get(testApp.sessionId) as
+      | { id: string; refresh_token_hash: string }
+      | undefined;
 
     expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      session_id: testApp.sessionId,
+      refresh_token: expect.any(String),
+      access_token: expect.any(String),
+    });
     expect(body.refresh_token).not.toBe(testApp.tokens.refresh_token);
-    expect(sessions).toHaveLength(2);
-    expect(originalSession?.revoked_at).toBeTruthy();
-    expect(rotatedSession?.revoked_at).toBeNull();
+    expect(session).toEqual({
+      id: testApp.sessionId,
+      refresh_token_hash: hashValue(body.refresh_token),
+    });
     expectLogEntry(testApp.logs, {
       event: 'session.refresh.succeeded',
-      session_id: rotatedSession?.id,
+      session_id: testApp.sessionId,
       user_id: testApp.userId,
     });
     expect(JSON.stringify(testApp.logs)).not.toContain(
@@ -84,12 +87,18 @@ describe('session routes', () => {
     const firstResponse = await testApp.app.request('/session/refresh', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: json({ refresh_token: testApp.tokens.refresh_token }),
+      body: json({
+        session_id: testApp.sessionId,
+        refresh_token: testApp.tokens.refresh_token,
+      }),
     });
     const secondResponse = await testApp.app.request('/session/refresh', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: json({ refresh_token: testApp.tokens.refresh_token }),
+      body: json({
+        session_id: testApp.sessionId,
+        refresh_token: testApp.tokens.refresh_token,
+      }),
     });
 
     expect(firstResponse.status).toBe(200);
@@ -113,7 +122,10 @@ describe('session routes', () => {
     const response = await testApp.app.request('/session/refresh', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: json({ refresh_token: testApp.tokens.refresh_token }),
+      body: json({
+        session_id: testApp.sessionId,
+        refresh_token: testApp.tokens.refresh_token,
+      }),
     });
 
     expect(response.status).toBe(401);
@@ -227,7 +239,10 @@ describe('session routes', () => {
     const refreshResponse = await testApp.app.request('/session/refresh', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: json({ refresh_token: testApp.tokens.refresh_token }),
+      body: json({
+        session_id: testApp.sessionId,
+        refresh_token: testApp.tokens.refresh_token,
+      }),
     });
 
     expect(logoutResponse.status).toBe(200);

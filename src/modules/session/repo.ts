@@ -122,6 +122,75 @@ export function revokeSessionByRefreshTokenHash(
   return transaction(refreshTokenHash, now);
 }
 
+export function rotateSessionById(
+  db: DatabaseClient,
+  input: {
+    sessionId: string;
+    refreshTokenHash: string;
+    nextRefreshTokenHash: string;
+    nextExpiresAt: string;
+    now: string;
+  },
+):
+  | { ok: true; session: Session }
+  | { ok: false; reason: 'session_invalidated' | 'session_superseded' } {
+  const select = db.prepare(
+    [
+      'SELECT id, user_id, refresh_token_hash, expires_at, revoked_at, created_at',
+      'FROM sessions',
+      'WHERE id = ?',
+      'LIMIT 1',
+    ].join(' '),
+  );
+  const update = db.prepare(
+    [
+      'UPDATE sessions',
+      'SET refresh_token_hash = ?, expires_at = ?',
+      'WHERE id = ? AND refresh_token_hash = ? AND revoked_at IS NULL AND expires_at > ?',
+    ].join(' '),
+  );
+  const transaction = db.transaction(
+    (
+      params: typeof input,
+    ):
+      | { ok: true; session: Session }
+      | { ok: false; reason: 'session_invalidated' | 'session_superseded' } => {
+      const row = select.get(params.sessionId) as SessionRow | undefined;
+
+      if (!row || row.revoked_at !== null || row.expires_at <= params.now) {
+        return { ok: false, reason: 'session_invalidated' };
+      }
+
+      if (row.refresh_token_hash !== params.refreshTokenHash) {
+        return { ok: false, reason: 'session_superseded' };
+      }
+
+      const result = update.run(
+        params.nextRefreshTokenHash,
+        params.nextExpiresAt,
+        params.sessionId,
+        params.refreshTokenHash,
+        params.now,
+      );
+
+      if (result.changes === 0) {
+        return { ok: false, reason: 'session_invalidated' };
+      }
+
+      return {
+        ok: true,
+        session: mapSession({
+          ...row,
+          refresh_token_hash: params.nextRefreshTokenHash,
+          expires_at: params.nextExpiresAt,
+        }),
+      };
+    },
+  );
+
+  return transaction(input);
+}
+
 function mapSession(row: SessionRow): Session {
   return {
     id: row.id,

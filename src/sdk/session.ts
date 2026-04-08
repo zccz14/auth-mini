@@ -7,6 +7,7 @@ type StateStore = {
   onChange(listener: (state: SessionSnapshot) => void): () => void;
   setAuthenticated(next: SessionResult): void;
   setRecovering(next: {
+    sessionId: string;
     accessToken: string | null;
     refreshToken: string;
     receivedAt: string;
@@ -67,11 +68,16 @@ export function createSessionController(input: {
         throw createSdkError('missing_session', 'Missing refresh token');
       }
 
+      if (!snapshot.sessionId) {
+        throw createSdkError('missing_session', 'Missing session id');
+      }
+
       refreshPromise = (async () => {
         try {
           const response = await input.http.postJson<unknown>(
             '/session/refresh',
             {
+              session_id: snapshot.sessionId,
               refresh_token: snapshot.refreshToken,
             },
           );
@@ -100,6 +106,11 @@ export function createSessionController(input: {
       }
 
       try {
+        if (!snapshot.sessionId) {
+          input.state.setAnonymous();
+          return;
+        }
+
         if (!snapshot.accessToken || needsRefresh(snapshot, input.now())) {
           await this.refresh();
           return;
@@ -107,6 +118,7 @@ export function createSessionController(input: {
 
         const me = await fetchMe(snapshot.accessToken);
         input.state.setAuthenticated({
+          sessionId: snapshot.sessionId,
           accessToken: snapshot.accessToken,
           refreshToken: snapshot.refreshToken,
           receivedAt:
@@ -131,9 +143,14 @@ export function createSessionController(input: {
         return (await this.refresh()).me;
       }
 
+      if (!snapshot.sessionId) {
+        throw createSdkError('missing_session', 'Missing session id');
+      }
+
       const me = await fetchMe(snapshot.accessToken);
 
       input.state.setAuthenticated({
+        sessionId: snapshot.sessionId,
         accessToken: snapshot.accessToken,
         refreshToken: snapshot.refreshToken,
         receivedAt: snapshot.receivedAt ?? new Date(input.now()).toISOString(),
@@ -201,6 +218,7 @@ export function normalizeTokenResponse(
 
   if (
     typeof payload.access_token !== 'string' ||
+    typeof payload.session_id !== 'string' ||
     typeof payload.refresh_token !== 'string' ||
     typeof payload.expires_in !== 'number'
   ) {
@@ -211,6 +229,7 @@ export function normalizeTokenResponse(
 
   return {
     accessToken: payload.access_token,
+    sessionId: payload.session_id,
     refreshToken: payload.refresh_token,
     receivedAt: new Date(receivedAtMs).toISOString(),
     expiresAt: new Date(receivedAtMs + payload.expires_in * 1000).toISOString(),
@@ -258,6 +277,8 @@ function isAuthInvalidatingError(error: unknown): boolean {
   return (
     candidate.status === 401 ||
     candidate.error === 'invalid_refresh_token' ||
+    candidate.error === 'session_invalidated' ||
+    candidate.error === 'session_superseded' ||
     (candidate.code === 'request_failed' &&
       candidate.message === 'request_failed: Invalid session payload')
   );

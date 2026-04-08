@@ -126,12 +126,14 @@ function createRuntime() {
       if (!value || typeof value !== 'object') {
         return null;
       }
+      const sessionId = toNullableString(value.sessionId);
       const accessToken = toNullableString(value.accessToken);
       const refreshToken = toNullableString(value.refreshToken);
       const receivedAt = toNullableString(value.receivedAt);
       const expiresAt = toNullableString(value.expiresAt);
       const me = toMe(value.me);
       if (
+        sessionId === undefined ||
         accessToken === undefined ||
         refreshToken === undefined ||
         receivedAt === undefined ||
@@ -141,6 +143,7 @@ function createRuntime() {
         return null;
       }
       return {
+        sessionId,
         accessToken,
         refreshToken,
         receivedAt,
@@ -297,6 +300,7 @@ function createRuntime() {
     }
     if (
       typeof payload.access_token !== 'string' ||
+      typeof payload.session_id !== 'string' ||
       typeof payload.refresh_token !== 'string' ||
       typeof payload.expires_in !== 'number'
     ) {
@@ -304,6 +308,7 @@ function createRuntime() {
     }
     const receivedAtMs = now();
     return {
+      sessionId: payload.session_id,
       accessToken: payload.access_token,
       refreshToken: payload.refresh_token,
       receivedAt: new Date(receivedAtMs).toISOString(),
@@ -351,9 +356,13 @@ function createRuntime() {
         if (!snapshot.refreshToken) {
           throw createSdkError('missing_session', 'Missing refresh token');
         }
+        if (!snapshot.sessionId) {
+          throw createSdkError('missing_session', 'Missing session id');
+        }
         refreshPromise = (async () => {
           try {
             const response = await input.http.postJson('/session/refresh', {
+              session_id: snapshot.sessionId,
               refresh_token: snapshot.refreshToken,
             });
             return await controller.acceptSessionResponse(response, {
@@ -377,12 +386,17 @@ function createRuntime() {
           return;
         }
         try {
+          if (!snapshot.sessionId) {
+            input.state.setAnonymous();
+            return;
+          }
           if (!snapshot.accessToken || needsRefresh(snapshot, input.now())) {
             await controller.refresh();
             return;
           }
           const me = await fetchMe(snapshot.accessToken);
           input.state.setAuthenticated({
+            sessionId: snapshot.sessionId,
             accessToken: snapshot.accessToken,
             refreshToken: snapshot.refreshToken,
             receivedAt:
@@ -405,8 +419,12 @@ function createRuntime() {
         if (!snapshot.accessToken || needsRefresh(snapshot, input.now())) {
           return (await controller.refresh()).me;
         }
+        if (!snapshot.sessionId) {
+          throw createSdkError('missing_session', 'Missing session id');
+        }
         const me = await fetchMe(snapshot.accessToken);
         input.state.setAuthenticated({
+          sessionId: snapshot.sessionId,
           accessToken: snapshot.accessToken,
           refreshToken: snapshot.refreshToken,
           receivedAt:
@@ -832,6 +850,7 @@ function createRuntime() {
     return freezeSnapshot({
       status,
       authenticated: status === 'authenticated',
+      sessionId: null,
       accessToken: null,
       refreshToken: null,
       receivedAt: null,
@@ -842,6 +861,7 @@ function createRuntime() {
 
   function clonePersisted(snapshot) {
     return {
+      sessionId: snapshot.sessionId,
       accessToken: snapshot.accessToken,
       refreshToken: snapshot.refreshToken,
       receivedAt: snapshot.receivedAt,

@@ -159,6 +159,7 @@ export async function verifyEmailAuth(
   );
 
   return {
+    session_id: tokens.session_id,
     access_token: tokens.access_token,
     token_type: tokens.token_type,
     expires_in: tokens.expires_in,

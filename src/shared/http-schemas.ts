@@ -10,6 +10,7 @@ export const emailVerifySchema = z.object({
 });
 
 export const refreshSchema = z.object({
+  session_id: z.uuid(),
   refresh_token: z.string().min(1),
 });
 

@@ -13,6 +13,8 @@ import {
   InvalidRefreshTokenError,
   logoutSession,
   refreshSessionTokens,
+  SessionInvalidatedError,
+  SessionSupersededError,
 } from '../modules/session/service.js';
 import {
   deleteCredential,
@@ -227,12 +229,14 @@ export function createApp(input: {
   app.post('/session/refresh', async (c) => {
     const body = await parseJson(c.req.raw, refreshSchema);
     const result = await refreshSessionTokens(c.var.db, {
+      sessionId: body.session_id,
       refreshToken: body.refresh_token,
       issuer: c.var.issuer,
       logger: c.var.logger,
     });
 
     return c.json({
+      session_id: result.session_id,
       access_token: result.access_token,
       token_type: result.token_type,
       expires_in: result.expires_in,
@@ -315,6 +319,7 @@ export function createApp(input: {
     });
 
     return c.json({
+      session_id: result.session_id,
       access_token: result.access_token,
       token_type: result.token_type,
       expires_in: result.expires_in,
@@ -380,6 +385,14 @@ function toHttpError(error: unknown): HttpError {
   }
 
   if (error instanceof InvalidRefreshTokenError) {
+    return invalidRefreshTokenError();
+  }
+
+  if (error instanceof SessionInvalidatedError) {
+    return invalidRefreshTokenError();
+  }
+
+  if (error instanceof SessionSupersededError) {
     return invalidRefreshTokenError();
   }
 

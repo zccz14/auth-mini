@@ -73,6 +73,7 @@ export function createStateStore(storage: Storage) {
     return {
       status: 'recovering',
       authenticated: false,
+      sessionId: persisted.sessionId,
       accessToken: persisted.accessToken,
       refreshToken: persisted.refreshToken,
       receivedAt: persisted.receivedAt,
@@ -85,6 +86,7 @@ export function createStateStore(storage: Storage) {
     return freezeSnapshot({
       status,
       authenticated: status === 'authenticated',
+      sessionId: null,
       accessToken: null,
       refreshToken: null,
       receivedAt: null,
@@ -97,6 +99,7 @@ export function createStateStore(storage: Storage) {
     return freezeSnapshot({
       status: snapshot.status,
       authenticated: snapshot.authenticated,
+      sessionId: snapshot.sessionId,
       accessToken: snapshot.accessToken,
       refreshToken: snapshot.refreshToken,
       receivedAt: snapshot.receivedAt,
@@ -127,6 +130,7 @@ export function createStateStore(storage: Storage) {
   ): AuthenticatedStateInput {
     return {
       accessToken: currentState.accessToken,
+      sessionId: currentState.sessionId,
       refreshToken: currentState.refreshToken,
       receivedAt: currentState.receivedAt,
       expiresAt: currentState.expiresAt,
