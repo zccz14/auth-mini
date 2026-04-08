@@ -2,8 +2,8 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const vitestArgs = process.argv.slice(2);
-const narrowingFlags = new Set(['-t', '--testNamePattern', '--dir']);
-const optionsWithValues = new Set(['--maxWorkers', '--project', '--shard']);
+const looksLikePath = (arg) =>
+  arg.includes('/') || arg.includes('\\') || /\.(?:[cm]?[jt]sx?)$/.test(arg);
 
 const run = (command, args) => {
   const result = spawnSync(command, args, {
@@ -19,16 +19,31 @@ export const isTargetedVitestRun = (args) => {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
 
-    if (narrowingFlags.has(arg)) {
+    if (arg === '-t' || arg === '--testNamePattern') {
       return true;
     }
 
-    if (optionsWithValues.has(arg)) {
-      index += 1;
+    if (arg.startsWith('--testNamePattern=')) {
+      return true;
+    }
+
+    if (arg === '--dir') {
+      return true;
+    }
+
+    if (arg.startsWith('--dir=')) {
+      return true;
+    }
+
+    if (arg.startsWith('-')) {
+      if (!arg.includes('=')) {
+        index += 1;
+      }
+
       continue;
     }
 
-    if (!arg.startsWith('-')) {
+    if (looksLikePath(arg)) {
       return true;
     }
   }

@@ -76,6 +76,8 @@ describe('sdk d.ts build artifact', () => {
     expect(isTargetedVitestRun(['--maxWorkers', '1'])).toBe(false);
     expect(isTargetedVitestRun(['--project', 'default'])).toBe(false);
     expect(isTargetedVitestRun(['--shard', '1/2'])).toBe(false);
+    expect(isTargetedVitestRun(['--config', 'vitest.config.ts'])).toBe(false);
+    expect(isTargetedVitestRun(['--reporter', 'dot'])).toBe(false);
     expect(isTargetedVitestRun(['tests/unit/sdk-dts-build.test.ts'])).toBe(
       true,
     );
@@ -83,6 +85,11 @@ describe('sdk d.ts build artifact', () => {
     expect(
       isTargetedVitestRun(['--testNamePattern', 'sdk d.ts build artifact']),
     ).toBe(true);
+    expect(
+      isTargetedVitestRun(['--testNamePattern=sdk d.ts build artifact']),
+    ).toBe(true);
+    expect(isTargetedVitestRun(['--dir', 'tests/unit'])).toBe(true);
+    expect(isTargetedVitestRun(['--dir=tests/unit'])).toBe(true);
   });
 
   it('contains only a global Window.AuthMini declaration surface', () => {
