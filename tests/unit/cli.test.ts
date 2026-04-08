@@ -7,10 +7,19 @@ afterEach(() => {
 
 describe('start cli boundary', () => {
   it('passes only supported start flags to runStartCommand', async () => {
-    const runStartCommand = vi.fn().mockResolvedValue({
-      close: vi.fn().mockResolvedValue(undefined),
+    const close = vi.fn().mockResolvedValue(undefined);
+    let resolveRunStartCommandCalled!: () => void;
+    const runStartCommandCalled = new Promise<void>((resolve) => {
+      resolveRunStartCommandCalled = resolve;
     });
-    const runStartCli = await loadRunStartCli(runStartCommand);
+    const runStartCommand = vi.fn().mockImplementation(async () => {
+      resolveRunStartCommandCalled();
+      return { close };
+    });
+    const runStartCli = await loadRunStartCli(
+      runStartCommand,
+      runStartCommandCalled,
+    );
 
     await runStartCli([
       'db.sqlite',
@@ -31,10 +40,19 @@ describe('start cli boundary', () => {
   });
 
   it('omits removed start flags at the app-command boundary', async () => {
-    const runStartCommand = vi.fn().mockResolvedValue({
-      close: vi.fn().mockResolvedValue(undefined),
+    const close = vi.fn().mockResolvedValue(undefined);
+    let resolveRunStartCommandCalled!: () => void;
+    const runStartCommandCalled = new Promise<void>((resolve) => {
+      resolveRunStartCommandCalled = resolve;
     });
-    const runStartCli = await loadRunStartCli(runStartCommand);
+    const runStartCommand = vi.fn().mockImplementation(async () => {
+      resolveRunStartCommandCalled();
+      return { close };
+    });
+    const runStartCli = await loadRunStartCli(
+      runStartCommand,
+      runStartCommandCalled,
+    );
 
     await runStartCli(['db.sqlite']);
 
@@ -47,7 +65,10 @@ describe('start cli boundary', () => {
   });
 });
 
-async function loadRunStartCli(runStartCommand: ReturnType<typeof vi.fn>) {
+async function loadRunStartCli(
+  runStartCommand: ReturnType<typeof vi.fn>,
+  runStartCommandCalled: Promise<void>,
+) {
   vi.resetModules();
 
   vi.doMock('../../src/app/commands/start.js', () => ({ runStartCommand }));
@@ -55,11 +76,18 @@ async function loadRunStartCli(runStartCommand: ReturnType<typeof vi.fn>) {
 
   return async (argv: string[]) => {
     const handlers = new Map<NodeJS.Signals, () => void>();
+    let resolveSigtermRegistered!: () => void;
+    const sigtermRegistered = new Promise<void>((resolve) => {
+      resolveSigtermRegistered = resolve;
+    });
     const processOn = vi.spyOn(process, 'on').mockImplementation(((
       signal: NodeJS.Signals,
       handler: () => void,
     ) => {
       handlers.set(signal, handler);
+      if (signal === 'SIGTERM') {
+        resolveSigtermRegistered();
+      }
       return process;
     }) as typeof process.on);
     const processOff = vi.spyOn(process, 'off').mockImplementation(((
@@ -72,9 +100,8 @@ async function loadRunStartCli(runStartCommand: ReturnType<typeof vi.fn>) {
     try {
       const commandPromise = module.default.run(argv, process.cwd());
 
-      await vi.waitFor(() => {
-        expect(runStartCommand).toHaveBeenCalledTimes(1);
-      });
+      await runStartCommandCalled;
+      await sigtermRegistered;
 
       handlers.get('SIGTERM')?.();
 
