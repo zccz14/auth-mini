@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { Hono, type Context } from 'hono';
 import type { ZodType } from 'zod';
 import type { DatabaseClient } from '../infra/db/client.js';
@@ -68,6 +70,11 @@ type AppVariables = AuthVariables & {
   origins: string[];
   requestId: string;
 };
+
+const singletonIifeDtsSource = readFileSync(
+  resolve(process.cwd(), 'dist/sdk/singleton-iife.d.ts'),
+  'utf8',
+);
 
 export function createApp(input: {
   db: DatabaseClient;
@@ -179,6 +186,13 @@ export function createApp(input: {
   app.get('/sdk/singleton-iife.js', (c) => {
     return c.body(renderSingletonIifeSource(), 200, {
       'content-type': 'application/javascript; charset=utf-8',
+      'cache-control': 'no-cache',
+    });
+  });
+
+  app.get('/sdk/singleton-iife.d.ts', (c) => {
+    return c.body(singletonIifeDtsSource, 200, {
+      'content-type': 'text/plain; charset=utf-8',
       'cache-control': 'no-cache',
     });
   });

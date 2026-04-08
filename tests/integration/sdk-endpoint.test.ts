@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createTestApp } from '../helpers/app.js';
 import { executeServedSdk, fakeStorage } from '../helpers/sdk.js';
@@ -30,6 +32,48 @@ describe('singleton sdk endpoint', () => {
 
     try {
       const response = await testApp.app.request('/sdk/singleton-iife.js', {
+        headers: { origin: 'https://app.example.com' },
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get('access-control-allow-origin')).toBe(
+        'https://app.example.com',
+      );
+      expect(response.headers.get('vary')).toBe('Origin');
+    } finally {
+      testApp.close();
+    }
+  });
+
+  it('serves the singleton sdk declaration as text with no-cache headers', async () => {
+    const testApp = await createTestApp();
+
+    try {
+      const response = await testApp.app.request('/sdk/singleton-iife.d.ts');
+      const body = await response.text();
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-type')).toBe(
+        'text/plain; charset=utf-8',
+      );
+      expect(response.headers.get('cache-control')).toContain('no-cache');
+
+      const built = readFileSync(
+        resolve(process.cwd(), 'dist/sdk/singleton-iife.d.ts'),
+        'utf8',
+      );
+
+      expect(body).toBe(built);
+    } finally {
+      testApp.close();
+    }
+  });
+
+  it('returns cors headers for allowed origins on the singleton sdk declaration endpoint', async () => {
+    const testApp = await createTestApp();
+
+    try {
+      const response = await testApp.app.request('/sdk/singleton-iife.d.ts', {
         headers: { origin: 'https://app.example.com' },
       });
 
