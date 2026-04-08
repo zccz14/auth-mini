@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 const vitestArgs = process.argv.slice(2);
