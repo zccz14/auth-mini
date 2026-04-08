@@ -73,6 +73,9 @@ describe('sdk d.ts build artifact', () => {
     const { isTargetedVitestRun } = await loadTestRunnerModule();
 
     expect(isTargetedVitestRun(['--maxWorkers=1'])).toBe(false);
+    expect(isTargetedVitestRun(['--maxWorkers', '1'])).toBe(false);
+    expect(isTargetedVitestRun(['--project', 'default'])).toBe(false);
+    expect(isTargetedVitestRun(['--shard', '1/2'])).toBe(false);
     expect(isTargetedVitestRun(['tests/unit/sdk-dts-build.test.ts'])).toBe(
       true,
     );

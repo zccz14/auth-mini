@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 const vitestArgs = process.argv.slice(2);
 const narrowingFlags = new Set(['-t', '--testNamePattern', '--dir']);
+const optionsWithValues = new Set(['--maxWorkers', '--project', '--shard']);
 
 const run = (command, args) => {
   const result = spawnSync(command, args, {
@@ -15,9 +16,16 @@ const run = (command, args) => {
 };
 
 export const isTargetedVitestRun = (args) => {
-  for (const arg of args) {
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
     if (narrowingFlags.has(arg)) {
       return true;
+    }
+
+    if (optionsWithValues.has(arg)) {
+      index += 1;
+      continue;
     }
 
     if (!arg.startsWith('-')) {
