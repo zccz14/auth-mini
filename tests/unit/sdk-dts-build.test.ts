@@ -69,18 +69,28 @@ describe('sdk d.ts build artifact', () => {
     expect(testRunnerSource).toContain('fileURLToPath(import.meta.url)');
   });
 
-  it('keeps fixture enforcement for full-run vitest options only', async () => {
+  it('treats known option values as non-targeted and only bare positional test paths as explicit targets', async () => {
     const { isTargetedVitestRun } = await loadTestRunnerModule();
 
     expect(isTargetedVitestRun(['--maxWorkers=1'])).toBe(false);
     expect(isTargetedVitestRun(['--maxWorkers', '1'])).toBe(false);
     expect(isTargetedVitestRun(['--project', 'default'])).toBe(false);
     expect(isTargetedVitestRun(['--shard', '1/2'])).toBe(false);
+    expect(isTargetedVitestRun(['--config', 'tests/vitest.config.ts'])).toBe(
+      false,
+    );
     expect(isTargetedVitestRun(['--config', 'vitest.config.ts'])).toBe(false);
     expect(isTargetedVitestRun(['--coverage', 'text'])).toBe(false);
     expect(isTargetedVitestRun(['--reporter', 'dot'])).toBe(false);
     expect(
       isTargetedVitestRun(['--coverage', 'tests/unit/sdk-dts-build.test.ts']),
+    ).toBe(false);
+    expect(
+      isTargetedVitestRun([
+        '--coverage',
+        'text',
+        'tests/unit/sdk-dts-build.test.ts',
+      ]),
     ).toBe(true);
     expect(isTargetedVitestRun(['tests/unit/sdk-dts-build.test.ts'])).toBe(
       true,

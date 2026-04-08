@@ -3,6 +3,15 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 const vitestArgs = process.argv.slice(2);
+const knownNonTargetValueOptions = new Set([
+  '--config',
+  '--project',
+  '--reporter',
+  '--coverage',
+  '--shard',
+  '--maxWorkers',
+]);
+
 const looksLikeTestTarget = (arg) =>
   /(^|[\\/])tests([\\/]|$)/.test(arg) ||
   /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(arg);
@@ -35,6 +44,19 @@ export const isTargetedVitestRun = (args) => {
 
     if (arg.startsWith('--dir=')) {
       return true;
+    }
+
+    if (knownNonTargetValueOptions.has(arg)) {
+      index += 1;
+      continue;
+    }
+
+    if (
+      [...knownNonTargetValueOptions].some((option) =>
+        arg.startsWith(`${option}=`),
+      )
+    ) {
+      continue;
     }
 
     if (arg.startsWith('-')) {
