@@ -159,6 +159,35 @@ describe('jwks service', () => {
     }
   });
 
+  it('fails rotation when CURRENT disappears inside the transactional path', async () => {
+    const dbPath = await createTempDbPath();
+    await bootstrapDatabase(dbPath);
+    const db = createDatabaseClient(dbPath);
+    const logCollector = createMemoryLogCollector();
+    const originalTransaction = db.transaction.bind(db);
+
+    try {
+      await bootstrapKeys(db);
+      const beforeRotation = getSlotRows(db);
+
+      db.transaction = ((fn) =>
+        originalTransaction(() => {
+          db.prepare("DELETE FROM jwks_keys WHERE id = 'CURRENT'").run();
+
+          return fn();
+        })) as typeof db.transaction;
+
+      await expect(
+        rotateKeys(db, { logger: logCollector.logger }),
+      ).rejects.toThrowError('jwks_keys slot contract');
+
+      expect(getSlotRows(db)).toEqual(beforeRotation);
+    } finally {
+      db.transaction = originalTransaction;
+      db.close();
+    }
+  });
+
   it('emits a structured bootstrap event only when creating missing slots', async () => {
     const dbPath = await createTempDbPath();
     await bootstrapDatabase(dbPath);

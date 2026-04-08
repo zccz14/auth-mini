@@ -153,28 +153,39 @@ export function rotateJwksSlots(
   );
 
   return db.transaction(() => {
+    const currentRow = selectSlot.get('CURRENT') as JwksKeyRow | undefined;
     const standbyRow = selectSlot.get('STANDBY') as JwksKeyRow | undefined;
 
-    if (!standbyRow) {
+    if (!currentRow || !standbyRow) {
       throw createJwksSlotContractError();
     }
 
     const standby = mapRow(standbyRow);
 
-    update.run(
+    const standbyUpdate = update.run(
       nextStandby.kid,
       nextStandby.alg,
       JSON.stringify(nextStandby.publicJwk),
       JSON.stringify(nextStandby.privateJwk),
       'STANDBY',
     );
-    update.run(
+
+    if (standbyUpdate.changes !== 1) {
+      throw createJwksSlotContractError();
+    }
+
+    const currentUpdate = update.run(
       standby.kid,
       standby.alg,
       JSON.stringify(standby.publicJwk),
       JSON.stringify(standby.privateJwk),
       'CURRENT',
     );
+
+    if (currentUpdate.changes !== 1) {
+      throw createJwksSlotContractError();
+    }
+
     return standby;
   })();
 }
