@@ -40,6 +40,10 @@ export function readPersistedSdkState(
       return null;
     }
 
+    if (refreshToken && !sessionId) {
+      return null;
+    }
+
     return {
       accessToken,
       sessionId,

@@ -6,6 +6,7 @@ import {
 import type {
   AuthenticatedStateInput,
   Listener,
+  PersistedSdkState,
   SessionSnapshot,
   SdkStatus,
 } from './types.js';
@@ -42,6 +43,12 @@ export function createStateStore(storage: Storage) {
       clearPersistedSdkState(storage);
       updateState(createSnapshot('anonymous'));
     },
+    applyPersistedState(next: PersistedSdkState | null): void {
+      updateState(hydrateSnapshot(next));
+    },
+    setAnonymousLocal(): void {
+      updateState(createSnapshot('anonymous'));
+    },
   };
 
   function updatePersistedState(next: SessionSnapshot): void {
@@ -64,13 +71,17 @@ export function createStateStore(storage: Storage) {
   }
 
   function hydrateState(currentStorage: Storage): SessionSnapshot {
-    const persisted = readPersistedSdkState(currentStorage);
+    return hydrateSnapshot(readPersistedSdkState(currentStorage));
+  }
 
-    if (!persisted?.refreshToken) {
+  function hydrateSnapshot(
+    persisted: PersistedSdkState | null,
+  ): SessionSnapshot {
+    if (!persisted?.refreshToken || !persisted.sessionId) {
       return createSnapshot('anonymous');
     }
 
-    return {
+    return freezeSnapshot({
       status: 'recovering',
       authenticated: false,
       sessionId: persisted.sessionId,
@@ -79,7 +90,7 @@ export function createStateStore(storage: Storage) {
       receivedAt: persisted.receivedAt,
       expiresAt: persisted.expiresAt,
       me: persisted.me,
-    };
+    });
   }
 
   function createSnapshot(status: SdkStatus): SessionSnapshot {

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createSingletonSdk } from '../../src/sdk/singleton-entry.js';
 import { createStateStore } from '../../src/sdk/state.js';
 import type { MeResponse } from '../../src/sdk/types.js';
-import { fakeStorage } from '../helpers/sdk.js';
+import { createSharedStorageHarness, fakeStorage } from '../helpers/sdk.js';
 
 describe('sdk state store', () => {
   it('hydrates anonymous state when storage is empty', () => {
@@ -15,12 +15,29 @@ describe('sdk state store', () => {
   it('hydrates recovering state when a refresh token exists', () => {
     const sdk = createStateStore(
       fakeStorage({
+        sessionId: 'session-1',
         refreshToken: 'rt',
         expiresAt: '2026-04-03T00:00:00.000Z',
       }),
     );
 
     expect(sdk.getState().status).toBe('recovering');
+    expect(sdk.getState().sessionId).toBe('session-1');
+  });
+
+  it('treats persisted sessions without a sessionId as invalid', () => {
+    const sdk = createStateStore(
+      fakeStorage({
+        refreshToken: 'rt',
+        expiresAt: '2026-04-03T00:00:00.000Z',
+      }),
+    );
+
+    expect(sdk.getState()).toMatchObject({
+      status: 'anonymous',
+      sessionId: null,
+      refreshToken: null,
+    });
   });
 
   it('notifies subscribers on transition', () => {
@@ -29,6 +46,7 @@ describe('sdk state store', () => {
 
     sdk.onChange(listener);
     sdk.setAuthenticated({
+      sessionId: 'session-1',
       accessToken: 'a',
       refreshToken: 'r',
       receivedAt: '2026-04-03T00:00:00.000Z',
@@ -64,6 +82,7 @@ describe('sdk state store', () => {
     const sdk = createSingletonSdk({
       baseUrl: 'https://auth.example.com',
       storage: fakeStorage({
+        sessionId: 'session-1',
         refreshToken: 'rt',
         expiresAt: '2026-04-03T00:00:00.000Z',
       }),
@@ -82,6 +101,7 @@ describe('sdk state store', () => {
     const sdk = createStateStore(fakeStorage());
 
     sdk.setAuthenticated({
+      sessionId: 'session-1',
       accessToken: 'a',
       refreshToken: 'r',
       receivedAt: '2026-04-03T00:00:00.000Z',
@@ -122,6 +142,7 @@ describe('sdk state store', () => {
     };
 
     sdk.setAuthenticated({
+      sessionId: 'session-1',
       accessToken: 'a',
       refreshToken: 'r',
       receivedAt: '2026-04-03T00:00:00.000Z',
@@ -135,5 +156,63 @@ describe('sdk state store', () => {
     expect(Object.isFrozen(me)).toBe(false);
     expect(sdk.getState().me).toMatchObject({ email: 'u@example.com' });
     expect(sdk.getState().me?.webauthn_credentials).toEqual([]);
+  });
+
+  it('adopts external persisted session updates through the store api', () => {
+    const shared = createSharedStorageHarness();
+    const sdk = createStateStore(fakeStorage());
+    const listener = vi.fn();
+
+    sdk.onChange(listener);
+    shared.onStorageUpdate((next) => {
+      sdk.applyPersistedState(next);
+    });
+
+    shared.write({
+      sessionId: 'session-2',
+      accessToken: 'access-2',
+      refreshToken: 'refresh-2',
+      receivedAt: '2026-04-03T00:00:00.000Z',
+      expiresAt: '2026-04-03T00:15:00.000Z',
+      me: null,
+    });
+    shared.dispatchStorageUpdate();
+
+    expect(sdk.getState()).toMatchObject({
+      status: 'recovering',
+      authenticated: false,
+      sessionId: 'session-2',
+      refreshToken: 'refresh-2',
+    });
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'recovering',
+        sessionId: 'session-2',
+      }),
+    );
+  });
+
+  it('drops only local in-memory state when setAnonymousLocal is used', () => {
+    const shared = createSharedStorageHarness({
+      sessionId: 'session-3',
+      accessToken: 'access-3',
+      refreshToken: 'refresh-3',
+      receivedAt: '2026-04-03T00:00:00.000Z',
+      expiresAt: '2026-04-03T00:15:00.000Z',
+      me: null,
+    });
+    const sdk = createStateStore(shared.storage);
+
+    sdk.setAnonymousLocal();
+
+    expect(sdk.getState()).toMatchObject({
+      status: 'anonymous',
+      sessionId: null,
+      refreshToken: null,
+    });
+    expect(shared.read()).toMatchObject({
+      sessionId: 'session-3',
+      refreshToken: 'refresh-3',
+    });
   });
 });

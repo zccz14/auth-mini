@@ -1,4 +1,9 @@
 import { createAuthMiniInternal } from '../../src/sdk/singleton-entry.js';
+import {
+  clearPersistedSdkState,
+  readPersistedSdkState,
+  writePersistedSdkState,
+} from '../../src/sdk/storage.js';
 import type {
   InternalSdkDeps,
   MeResponse,
@@ -99,6 +104,43 @@ export function createAuthMiniForTest(options: Partial<InternalSdkDeps> = {}) {
     storage: fakeStorage(),
     ...options,
   });
+}
+
+export function createSharedStorageHarness(seed: StorageSeed = {}) {
+  const storage = fakeStorage(seed);
+  const listeners = new Set<(next: PersistedSdkState | null) => void>();
+
+  return {
+    storage,
+    clear() {
+      clearPersistedSdkState(storage);
+    },
+    createSdk(options: Partial<InternalSdkDeps> = {}) {
+      return createAuthMiniForTest({
+        storage,
+        ...options,
+      });
+    },
+    dispatchStorageUpdate() {
+      const snapshot = readPersistedSdkState(storage);
+
+      for (const listener of listeners) {
+        listener(snapshot);
+      }
+    },
+    read() {
+      return readPersistedSdkState(storage);
+    },
+    onStorageUpdate(listener: (next: PersistedSdkState | null) => void) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    write(next: PersistedSdkState) {
+      writePersistedSdkState(storage, next);
+    },
+  };
 }
 
 export function createNotAllowedError(message: string): Error {
