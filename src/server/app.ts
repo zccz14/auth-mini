@@ -89,9 +89,9 @@ const singletonIifeDtsSource = readFileSync(singletonIifeDtsPath, 'utf8');
 export function createApp(input: {
   db: DatabaseClient;
   getClientIp?: (request: Request) => string | null;
+  getOrigins(): string[];
   issuer: string;
   logger: AppLogger;
-  origins: string[];
 }) {
   const app = new Hono<{ Variables: AppVariables }>();
 
@@ -104,7 +104,7 @@ export function createApp(input: {
     c.set('db', input.db);
     c.set('issuer', input.issuer);
     c.set('logger', input.logger.child({ request_id: requestId }));
-    c.set('origins', input.origins);
+    c.set('origins', input.getOrigins());
     c.set('requestId', requestId);
     c.set('clientIp', input.getClientIp?.(c.req.raw) ?? null);
 
@@ -185,7 +185,7 @@ export function createApp(input: {
 
   app.onError((error, c) => {
     return buildErrorResponse(c, error, {
-      allowedOrigins: input.origins,
+      allowedOrigins: input.getOrigins(),
       allowMethods: corsAllowMethods,
       allowHeaders: corsAllowHeaders,
       logger: 'logger' in c.var ? c.var.logger : undefined,

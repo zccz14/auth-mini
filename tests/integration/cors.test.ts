@@ -42,6 +42,39 @@ describe('server cors', () => {
     }
   });
 
+  it('applies newly added allowed origins without restarting the server', async () => {
+    const testApp = await createTestApp({
+      origins: ['https://app.example.com'],
+    });
+
+    try {
+      const beforeResponse = await testApp.app.request('/jwks', {
+        headers: { origin: 'https://admin.example.com' },
+      });
+
+      expect(beforeResponse.status).toBe(200);
+      expect(
+        beforeResponse.headers.get('access-control-allow-origin'),
+      ).toBeNull();
+
+      testApp.db
+        .prepare('INSERT INTO allowed_origins (origin) VALUES (?)')
+        .run('https://admin.example.com');
+
+      const afterResponse = await testApp.app.request('/jwks', {
+        headers: { origin: 'https://admin.example.com' },
+      });
+
+      expect(afterResponse.status).toBe(200);
+      expect(afterResponse.headers.get('access-control-allow-origin')).toBe(
+        'https://admin.example.com',
+      );
+      expect(afterResponse.headers.get('vary')).toBe('Origin');
+    } finally {
+      testApp.close();
+    }
+  });
+
   it('handles global preflight for allowed origins', async () => {
     const testApp = await createTestApp({
       origins: ['https://app.example.com'],

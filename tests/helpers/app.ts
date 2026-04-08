@@ -1,5 +1,6 @@
 import { bootstrapDatabase } from '../../src/infra/db/bootstrap.js';
 import { createDatabaseClient } from '../../src/infra/db/client.js';
+import { listAllowedOrigins } from '../../src/infra/origins/repo.js';
 import { createApp } from '../../src/server/app.js';
 import { bootstrapKeys } from '../../src/modules/jwks/service.js';
 import { createTempDbPath } from './db.js';
@@ -74,8 +75,10 @@ export async function createTestApp(options: CreateTestAppOptions = {}) {
     getClientIp(request) {
       return clientIps.get(request) ?? null;
     },
+    getOrigins() {
+      return listAllowedOrigins(db).map((origin) => origin.origin);
+    },
     issuer: 'https://issuer.example',
-    origins: loadAllowedOrigins(db),
     logger: logCollector.logger,
   });
 
@@ -97,16 +100,4 @@ export async function createTestApp(options: CreateTestAppOptions = {}) {
       db.close();
     },
   };
-}
-
-function loadAllowedOrigins(
-  db: ReturnType<typeof createDatabaseClient>,
-): string[] {
-  return (
-    db
-      .prepare('SELECT origin FROM allowed_origins ORDER BY id ASC')
-      .all() as Array<{
-      origin: string;
-    }>
-  ).map((row) => row.origin);
 }

@@ -104,7 +104,7 @@ describe('singleton sdk endpoint', () => {
         `process.chdir(${JSON.stringify(tempCwd)});`,
         `const { createApp } = await import(${JSON.stringify(appModuleUrl.href)});`,
         'const logger = { child() { return this; }, info() {}, warn() {}, error() {} };',
-        "const app = createApp({ db: {}, issuer: 'https://issuer.example', logger, origins: ['https://app.example.com'] });",
+        "const app = createApp({ db: {}, getOrigins() { return ['https://app.example.com']; }, issuer: 'https://issuer.example', logger });",
         "const response = await app.request('/sdk/singleton-iife.d.ts');",
         'const body = await response.text();',
         `const built = readFileSync(${JSON.stringify(builtDtsPath)}, 'utf8');`,

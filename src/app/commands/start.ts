@@ -40,8 +40,6 @@ export async function runStartCommand(
 
     await bootstrapKeys(db, { logger });
 
-    const runtimeResources = loadStartRuntimeResources(db);
-
     const clientIps = new WeakMap<Request, string | null>();
 
     const app = createApp({
@@ -49,9 +47,11 @@ export async function runStartCommand(
       getClientIp(request) {
         return clientIps.get(request) ?? null;
       },
+      getOrigins() {
+        return listAllowedOrigins(db).map((origin) => origin.origin);
+      },
       issuer: config.issuer,
       logger,
-      origins: runtimeResources.origins,
     });
 
     const server = createServer((req, res) => {
@@ -226,15 +226,5 @@ function toRuntimeConfigInput(input: unknown): {
     host: runtimeInput.host,
     port: runtimeInput.port,
     issuer: runtimeInput.issuer,
-  };
-}
-
-function loadStartRuntimeResources(
-  db: ReturnType<typeof createDatabaseClient>,
-): {
-  origins: string[];
-} {
-  return {
-    origins: listAllowedOrigins(db).map((origin) => origin.origin),
   };
 }

@@ -99,8 +99,10 @@ describe('http request logging', () => {
       getClientIp(request) {
         return clientIps.get(request) ?? null;
       },
+      getOrigins() {
+        return ['https://app.example.com'];
+      },
       issuer: 'https://issuer.example',
-      origins: ['https://app.example.com'],
       logger: logCollector.logger,
     });
 
