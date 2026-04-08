@@ -25,14 +25,26 @@ describe('oclif cli contract', () => {
     expect(createResult.stdout).toContain('cli.init.started');
     expect(createResult.stdout).toContain('cli.init.completed');
     expect(createResult.stdout).not.toContain('cli.create.');
-    expect(await countRows(dbPath, 'jwks_keys')).toBe(1);
-    expect(await countActiveKeys(dbPath)).toBe(1);
+    expect(await countRows(dbPath, 'jwks_keys')).toBe(2);
+
+    const beforeRotate = await listJwksKids(dbPath);
+
+    expect(beforeRotate).toHaveLength(2);
+    expect(beforeRotate.map((row) => row.id)).toEqual(['CURRENT', 'STANDBY']);
 
     const result = await runBuiltCli(['rotate', 'jwks', dbPath]);
 
     expect(result.exitCode).toBe(0);
     expect(await countRows(dbPath, 'jwks_keys')).toBe(2);
-    expect(await countActiveKeys(dbPath)).toBe(1);
+
+    const afterRotate = await listJwksKids(dbPath);
+
+    expect(afterRotate).toHaveLength(2);
+    expect(afterRotate.map((row) => row.id)).toEqual(['CURRENT', 'STANDBY']);
+    expect(afterRotate[0]?.kid).toBe(beforeRotate[1]?.kid);
+    expect(afterRotate[1]?.kid).toBeTruthy();
+    expect(afterRotate[1]?.kid).not.toBe(beforeRotate[0]?.kid);
+    expect(afterRotate[1]?.kid).not.toBe(beforeRotate[1]?.kid);
   }, 15000);
 
   it('keeps rotate-jwks as a compatibility alias', async () => {
@@ -41,14 +53,26 @@ describe('oclif cli contract', () => {
     const createResult = await runBuiltCli(['create', dbPath]);
 
     expect(createResult.exitCode).toBe(0);
-    expect(await countRows(dbPath, 'jwks_keys')).toBe(1);
-    expect(await countActiveKeys(dbPath)).toBe(1);
+    expect(await countRows(dbPath, 'jwks_keys')).toBe(2);
+
+    const beforeRotate = await listJwksKids(dbPath);
+
+    expect(beforeRotate).toHaveLength(2);
+    expect(beforeRotate.map((row) => row.id)).toEqual(['CURRENT', 'STANDBY']);
 
     const result = await runBuiltCli(['rotate-jwks', dbPath]);
 
     expect(result.exitCode).toBe(0);
     expect(await countRows(dbPath, 'jwks_keys')).toBe(2);
-    expect(await countActiveKeys(dbPath)).toBe(1);
+
+    const afterRotate = await listJwksKids(dbPath);
+
+    expect(afterRotate).toHaveLength(2);
+    expect(afterRotate.map((row) => row.id)).toEqual(['CURRENT', 'STANDBY']);
+    expect(afterRotate[0]?.kid).toBe(beforeRotate[1]?.kid);
+    expect(afterRotate[1]?.kid).toBeTruthy();
+    expect(afterRotate[1]?.kid).not.toBe(beforeRotate[0]?.kid);
+    expect(afterRotate[1]?.kid).not.toBe(beforeRotate[1]?.kid);
   });
 
   it('keeps create as a compatibility alias', async () => {
@@ -60,7 +84,7 @@ describe('oclif cli contract', () => {
     expect(result.stdout).toContain('cli.init.started');
     expect(result.stdout).toContain('cli.init.completed');
     expect(result.stdout).not.toContain('cli.create.');
-    expect(await countRows(dbPath, 'jwks_keys')).toBe(1);
+    expect(await countRows(dbPath, 'jwks_keys')).toBe(2);
   });
 
   it('prints unknown command errors to stderr', async () => {
@@ -120,6 +144,10 @@ describe('oclif cli contract', () => {
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe('');
     expect(result.stdout).toContain('USAGE');
+    expect(result.stdout).toContain(
+      'Promote the standby JWKS signing key and generate a new standby key',
+    );
+    expect(result.stdout).not.toContain('active JWKS signing key');
   }, 30000);
 
   it('discovers nested origin add command from the packed artifact', async () => {
@@ -140,6 +168,10 @@ describe('oclif cli contract', () => {
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe('');
     expect(result.stdout).toContain('USAGE');
+    expect(result.stdout).toContain(
+      'Promote the standby JWKS signing key and generate a new standby key',
+    );
+    expect(result.stdout).not.toContain('active JWKS signing key');
   }, 30000);
 
   it('prints version from the packed artifact metadata', async () => {
@@ -333,7 +365,7 @@ describe('oclif cli contract', () => {
     ]);
 
     expect(result.exitCode).toBeGreaterThan(0);
-    expect(result.stdout).toContain('cli.start.started');
+    expect(result.stdout).toContain('db.migration.started');
     expect(result.stdout).not.toContain('server.listening');
     expect(result.stderr).toContain('schema');
     expect(result.stderr).toContain('rebuild or migrate');
@@ -359,15 +391,15 @@ describe('oclif cli contract', () => {
   });
 });
 
-async function countActiveKeys(dbPath: string): Promise<number> {
+async function listJwksKids(
+  dbPath: string,
+): Promise<Array<{ id: string; kid: string }>> {
   const db = createDatabaseClient(dbPath);
 
   try {
-    const row = db
-      .prepare('SELECT COUNT(*) AS count FROM jwks_keys WHERE is_active = 1')
-      .get() as { count: number };
-
-    return row.count;
+    return db
+      .prepare('SELECT id, kid FROM jwks_keys ORDER BY id ASC')
+      .all() as Array<{ id: string; kid: string }>;
   } finally {
     db.close();
   }

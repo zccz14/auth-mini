@@ -3,7 +3,8 @@ import { runRotateJwksCommand } from '../../app/commands/rotate-jwks.js';
 import { BaseCommand } from '../../oclif/base-command.js';
 
 export default class RotateJwksCommand extends BaseCommand {
-  static summary = 'Rotate the active JWKS signing key';
+  static summary =
+    'Promote the standby JWKS signing key and generate a new standby key';
 
   static aliases = ['rotate-jwks'];
 
