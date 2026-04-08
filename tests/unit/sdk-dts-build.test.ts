@@ -77,7 +77,11 @@ describe('sdk d.ts build artifact', () => {
     expect(isTargetedVitestRun(['--project', 'default'])).toBe(false);
     expect(isTargetedVitestRun(['--shard', '1/2'])).toBe(false);
     expect(isTargetedVitestRun(['--config', 'vitest.config.ts'])).toBe(false);
+    expect(isTargetedVitestRun(['--coverage', 'text'])).toBe(false);
     expect(isTargetedVitestRun(['--reporter', 'dot'])).toBe(false);
+    expect(
+      isTargetedVitestRun(['--coverage', 'tests/unit/sdk-dts-build.test.ts']),
+    ).toBe(true);
     expect(isTargetedVitestRun(['tests/unit/sdk-dts-build.test.ts'])).toBe(
       true,
     );

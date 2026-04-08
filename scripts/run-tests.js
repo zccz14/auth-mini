@@ -3,8 +3,9 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 const vitestArgs = process.argv.slice(2);
-const looksLikePath = (arg) =>
-  arg.includes('/') || arg.includes('\\') || /\.(?:[cm]?[jt]sx?)$/.test(arg);
+const looksLikeTestTarget = (arg) =>
+  /(^|[\\/])tests([\\/]|$)/.test(arg) ||
+  /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(arg);
 
 const run = (command, args) => {
   const result = spawnSync(command, args, {
@@ -37,14 +38,10 @@ export const isTargetedVitestRun = (args) => {
     }
 
     if (arg.startsWith('-')) {
-      if (!arg.includes('=')) {
-        index += 1;
-      }
-
       continue;
     }
 
-    if (looksLikePath(arg)) {
+    if (looksLikeTestTarget(arg)) {
       return true;
     }
   }
