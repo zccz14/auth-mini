@@ -1,15 +1,32 @@
 # auth-mini
 
-Minimal, opinionated auth server for apps that just need auth.
+> **Authentication** is a critical subsystem to prove who users are, while **Authorization** is another critical subsystem to control what users can do.
 
-auth-mini is for teams that want email sign-in, passkeys, JWTs, and a database they can actually understand without adopting a full backend platform just to get authentication working. It is intentionally small: email OTP for first login, discoverable passkeys for fast return sign-in, SQLite for storage, a small-footprint Hono HTTP server, and `/jwks` for backend token verification.
+Minimal, opinionated authentication server for apps that just need a solid authentication core.
 
-## Who this is for
+[Live demo](https://auth-mini.zccz14.com/?sdk-origin=https%3A%2F%2Fauth.zccz14.com) | [Docs](docs/) | [GitHub](https://github.com/zccz14/auth-mini)
 
-- **For:** small products, internal tools, side projects, and teams that want to run a focused auth service themselves.
-- **Not for:** teams looking for a hosted auth control plane, social login marketplace, user-management suite, or a broader backend platform.
+✅ Good fit for authentication system needs:
 
-The design shape exists because many apps need a reliable auth core, not an auth empire. auth-mini keeps the moving parts narrow enough to inspect, operate, and replace.
+- 🔒 Password-less Authentication
+  - 📧 Email One-Time Password (OTP) sign-in
+  - 🔑 Passkey (WebAuthn) registration and sign-in
+- 🔐 Session Management
+  - Issue JSON Web Token (JWT) access tokens for backend stateless verification
+  - CURRENT/STANDBY JWKS key pairs for smooth key rotation
+  - Issue opaque refresh tokens for long-term sessions and easy revocation while keeping JWTs short-lived
+- You control the server and data. Not Google. Not AWS. Not Auth0. You.
+  - Simple SQLite storage without extra Database servers (no Postgres, MySQL, Redis, etc. required)
+  - CORS included for accessing from cross-origin front-ends.
+- UUID-based user ID keeps it simple and opaque, and could be foreign keys for your app's user records if you want.
+
+❌ Not trying to include: (But you can build these on top if you want!)
+
+- Authorization features like ACLs, RBAC, ABAC, roles, permissions, groups, etc.
+- Social Login like "Sign in with Google/Facebook/GitHub/etc."
+- SMS or TOTP 2FA factors.
+- User profiles like names, avatars, bios, etc.
+- User management features like admin dashboards, user search etc.
 
 ## Main user journeys
 
@@ -78,7 +95,12 @@ sequenceDiagram
     Backend-->>Frontend: Protected resource
 ```
 
-## Quick integration peek
+## Quick Start
+
+Pre-requisites:
+
+- Node.js 20.10.0+
+- SMTP service credentials for email OTP. (Most email providers have SMTP options, or you can use transactional email services like SendGrid, Mailgun, etc.)
 
 Minimal CLI setup:
 
@@ -86,15 +108,55 @@ Minimal CLI setup:
 npx auth-mini init ./auth-mini.sqlite
 ```
 
+Setup SMTP config:
+
+```bash
+npx auth-mini smtp add ./auth-mini.sqlite  --from-email 'sample@your-domain.com' --from-name 'sample-name' --host 'smtp.sample.com' --port 465 --secure --username 'sample@your-domain.com' --password '<smtp-password>'
+```
+
+Setup Origin config:
+
+```bash
+npx auth-mini origin add ./auth-mini.sqlite --value 'https://frontend.your-domain.com'
+```
+
+No need to add backend API origins.
+
+Start the server:
+
+```bash
+npx auth-mini start ./auth-mini.sqlite --port 7777 --issuer 'https://auth.your-domain.com'
+```
+
+Then deploy it with Cloudflare Tunnel or your preferred hosting method.
+
 Minimal browser SDK usage:
 
 ```html
-<script src="https://auth.zccz14.com/sdk/singleton-iife.js"></script>
+<script src="https://auth.your-domain.com/sdk/singleton-iife.js"></script>
 <script>
   window.AuthMini.session.onChange((state) => {
     console.log('auth status:', state.status);
   });
 </script>
+```
+
+Minimal backend JWT verification (jose example):
+
+```js
+import { createRemoteJWKSet, jwtVerify } from 'jose';
+
+const issuer = 'https://auth.your-domain.com';
+const JWKS = createRemoteJWKSet(new URL(`/jwks`, issuer));
+
+async function verifyAccessToken(token) {
+  try {
+    const { payload } = await jwtVerify(token, JWKS, { issuer });
+    console.log('Token is valid. Payload:', payload);
+  } catch (err) {
+    console.error('Invalid token:', err);
+  }
+}
 ```
 
 From there, typical integration looks like this:
@@ -114,7 +176,6 @@ From there, typical integration looks like this:
 - HTTP API reference: [docs/reference/http-api.md](docs/reference/http-api.md)
 - CLI and operations: [docs/reference/cli-and-operations.md](docs/reference/cli-and-operations.md)
 - Docker + Cloudflared deployment: [docs/deploy/docker-cloudflared.md](docs/deploy/docker-cloudflared.md)
-- Interactive companion: [demo/](demo/)
 
 For the one-container Cloudflare Tunnel path, see [docs/deploy/docker-cloudflared.md](docs/deploy/docker-cloudflared.md). Deployment details live there.
 
