@@ -523,14 +523,23 @@ describe('session routes', () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body.keys).toHaveLength(1);
-    expect(body.keys[0]).toMatchObject({
-      alg: 'EdDSA',
-      crv: 'Ed25519',
-      kty: 'OKP',
-      use: 'sig',
-    });
+    expect(body.keys).toHaveLength(2);
+    expect(body.keys).toEqual([
+      expect.objectContaining({
+        alg: 'EdDSA',
+        crv: 'Ed25519',
+        kty: 'OKP',
+        use: 'sig',
+      }),
+      expect.objectContaining({
+        alg: 'EdDSA',
+        crv: 'Ed25519',
+        kty: 'OKP',
+        use: 'sig',
+      }),
+    ]);
     expect(body.keys[0]).not.toHaveProperty('d');
+    expect(body.keys[1]).not.toHaveProperty('d');
   });
 
   it('start fails fast when required webauthn config is missing', async () => {

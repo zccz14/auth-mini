@@ -8,6 +8,7 @@ import {
   assertRequiredTablesAndColumns,
   createDatabaseClient,
 } from '../../infra/db/client.js';
+import { bootstrapDatabase } from '../../infra/db/bootstrap.js';
 import { listAllowedOrigins } from '../../infra/origins/repo.js';
 import { bootstrapKeys } from '../../modules/jwks/service.js';
 import { createApp } from '../../server/app.js';
@@ -32,6 +33,9 @@ export async function runStartCommand(
     command: 'start',
     db_path: config.dbPath,
   });
+
+  await bootstrapDatabase(config.dbPath, { logger });
+
   const db = createDatabaseClient(config.dbPath);
   try {
     logger.info({ event: 'cli.start.started' }, 'Starting auth-mini server');
