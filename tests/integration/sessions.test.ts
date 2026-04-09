@@ -542,13 +542,34 @@ describe('session routes', () => {
     expect(body.keys[1]).not.toHaveProperty('d');
   });
 
-  it('start fails fast when required webauthn config is missing', async () => {
-    await expect(
-      runStartCommand({
-        dbPath: '/tmp/auth-mini.sqlite',
-        issuer: 'https://issuer.example',
-      }),
-    ).rejects.toThrowError();
+  it('start succeeds without allowed origins, but webauthn option requests fail', async () => {
+    const dbPath = await createTempDbPath();
+    const port = await getAvailablePort();
+
+    await bootstrapDatabase(dbPath);
+
+    const server = await runStartCommand({
+      dbPath,
+      host: '127.0.0.1',
+      port,
+      issuer: 'https://issuer.example',
+    });
+
+    const response = await fetch(
+      `http://127.0.0.1:${port}/webauthn/authenticate/options`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: json({ rp_id: 'app.example.com' }),
+      },
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: 'invalid_webauthn_authentication',
+    });
+
+    await server.close();
   });
 
   it('start succeeds with valid required config and can be cleanly started and stopped', async () => {

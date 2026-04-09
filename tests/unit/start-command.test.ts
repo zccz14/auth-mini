@@ -141,6 +141,9 @@ describe('runStartCommand', () => {
     const runningServer = await runStartCommand({
       dbPath: '/tmp/auth-mini.db',
     });
+    const createAppInput = createApp.mock.calls[0]?.[0] as
+      | { getOrigins(): string[] }
+      | undefined;
 
     expect(assertRequiredTablesAndColumns).toHaveBeenCalledWith(
       db,
@@ -151,15 +154,19 @@ describe('runStartCommand', () => {
     expect(bootstrapDatabase).toHaveBeenCalledWith('/tmp/auth-mini.db', {
       logger: expect.any(Object),
     });
-    expect(db.prepare).toHaveBeenCalledWith(
-      'SELECT id, origin, created_at FROM allowed_origins ORDER BY id ASC',
-    );
     expect(createApp).toHaveBeenCalledWith(
       expect.objectContaining({
         db,
+        getOrigins: expect.any(Function),
         issuer: 'https://issuer.example',
-        origins: ['https://app.example.com', 'https://admin.example.com'],
       }),
+    );
+    expect(createAppInput?.getOrigins()).toEqual([
+      'https://app.example.com',
+      'https://admin.example.com',
+    ]);
+    expect(db.prepare).toHaveBeenCalledWith(
+      'SELECT id, origin, created_at FROM allowed_origins ORDER BY id ASC',
     );
     expect(createApp).not.toHaveBeenCalledWith(
       expect.objectContaining({ rpId: expect.anything() }),
@@ -211,12 +218,16 @@ describe('runStartCommand', () => {
     const runningServer = await runStartCommand({
       dbPath: '/tmp/auth-mini.db',
     });
+    const createAppInput = createApp.mock.calls[0]?.[0] as
+      | { getOrigins(): string[] }
+      | undefined;
 
     expect(createApp).toHaveBeenCalledWith(
       expect.objectContaining({
-        origins: [],
+        getOrigins: expect.any(Function),
       }),
     );
+    expect(createAppInput?.getOrigins()).toEqual([]);
     expect(bootstrapDatabase).toHaveBeenCalledWith('/tmp/auth-mini.db', {
       logger: expect.any(Object),
     });
