@@ -2,15 +2,16 @@
 
 Minimal, opinionated auth server for apps that just need auth.
 
-auth-mini is built for the common case: you want email sign-in, passkeys, JWTs, and a database you can actually understand, without adopting a full backend platform (e.g. Supabase) just to get authentication working.
+auth-mini is for teams that want email sign-in, passkeys, JWTs, and a database they can actually understand without adopting a full backend platform just to get authentication working. It is intentionally small: email OTP for first login, discoverable passkeys for fast return sign-in, SQLite for storage, a small-footprint Hono HTTP server, and `/jwks` for backend token verification.
 
-It uses email OTP for first login, discoverable WebAuthn credentials for username-less passkey login, and SQLite for storage. The goal is not to be an auth empire. The goal is to be small, clear, and easy to run.
+## Who this is for
 
-## Demo / Docs
+- **For:** small products, internal tools, side projects, and teams that want to run a focused auth service themselves.
+- **Not for:** teams looking for a hosted auth control plane, social login marketplace, user-management suite, or a broader backend platform.
 
-See `demo/` for the single-page static demo/docs site that doubles as the browser integration guide, API reference, deployment walkthrough, and JWT verification reference.
+The design shape exists because many apps need a reliable auth core, not an auth empire. auth-mini keeps the moving parts narrow enough to inspect, operate, and replace.
 
-## Interaction flow
+## Main user journeys
 
 ### Email OTP sign-in
 
@@ -26,13 +27,12 @@ sequenceDiagram
     Auth-->>User: Send OTP email
     User->>Frontend: Enter OTP
     Frontend->>Auth: POST /email/verify
-    Auth-->>Frontend: Access token + refresh token
-
-    Frontend->>Auth: GET /me (Bearer access token)
+    Auth-->>Frontend: session_id + access token + refresh token
+    Frontend->>Auth: GET /me
     Auth-->>Frontend: Current user + active credentials/sessions
 ```
 
-### Passkey flow
+### Passkey registration and sign-in
 
 ```mermaid
 sequenceDiagram
@@ -55,12 +55,10 @@ sequenceDiagram
     Frontend->>User: Browser/OS shows available passkeys
     User-->>Frontend: Choose passkey and approve
     Frontend->>Auth: POST /webauthn/authenticate/verify
-    Auth-->>Frontend: Access token + refresh token
-    Frontend->>Auth: GET /me (Bearer access token)
-    Auth-->>Frontend: Current user + active credentials/sessions
+    Auth-->>Frontend: session_id + access token + refresh token
 ```
 
-### Full auth and backend verification
+### Frontend -> backend -> `/jwks` verification
 
 ```mermaid
 sequenceDiagram
@@ -70,155 +68,25 @@ sequenceDiagram
     participant Auth as Auth Mini Server
     participant Backend
 
-    User->>Frontend: Complete sign-in (email OTP or passkey)
+    User->>Frontend: Complete sign-in
     Frontend->>Auth: Login / verify request
-    Auth-->>Frontend: Access token + refresh token
-
+    Auth-->>Frontend: session_id + access token + refresh token
     Frontend->>Backend: App API request (Bearer access token)
     Backend->>Auth: GET /jwks
     Auth-->>Backend: Public signing keys
     Backend->>Backend: Verify JWT signature and claims
     Backend-->>Frontend: Protected resource
-
-    opt Access token expired
-        Frontend->>Auth: POST /session/refresh (refresh token)
-        Auth-->>Frontend: New access token + refresh token
-        Frontend->>Backend: Retry API request (new access token)
-        Backend-->>Frontend: Protected resource
-    end
 ```
 
-## Features
+## Quick integration peek
 
-- Email sign-in with one-time passwords
-- Discoverable WebAuthn credentials for username-less sign-in
-- Access + refresh token sessions
-- JWKS endpoint for access token verification
-- SQLite storage for users, sessions, SMTP config, WebAuthn credentials, and challenges
-- Hono HTTP server with a small operational footprint
-
-## CLI
-
-Requires Node.js 20.10+ (the published CLI uses modern ESM, JSON import attributes, and top-level `await`).
-
-Initialize an auth-mini instance (currently a SQLite database path):
+Minimal CLI setup:
 
 ```bash
 npx auth-mini init ./auth-mini.sqlite
 ```
 
-`<instance>` currently means `Auth-mini instance (currently a SQLite database path)`.
-
-`create` remains available as a compatibility alias during the transition.
-
-Manage allowed browser origins with the `origin` topic:
-
-```bash
-npx auth-mini origin add ./auth-mini.sqlite --value https://app.example.com
-npx auth-mini origin list ./auth-mini.sqlite
-npx auth-mini origin update ./auth-mini.sqlite --id 1 --value https://admin.example.com
-npx auth-mini origin delete ./auth-mini.sqlite --id 1
-```
-
-Manage SMTP configs with the `smtp` topic:
-
-```bash
-npx auth-mini smtp add ./auth-mini.sqlite --host smtp.example.com --port 587 --username mailer --password secret --from-email noreply@example.com
-npx auth-mini smtp list ./auth-mini.sqlite
-npx auth-mini smtp update ./auth-mini.sqlite --id 1 --secure true
-npx auth-mini smtp delete ./auth-mini.sqlite --id 1
-```
-
-Start the server:
-
-```bash
-npx auth-mini start ./auth-mini.sqlite \
-  --host 127.0.0.1 \
-  --port 7777 \
-  --issuer https://auth.zccz14.com
-```
-
-Rotate JWKS keys:
-
-```bash
-npx auth-mini rotate jwks ./auth-mini.sqlite
-```
-
-`/jwks` always publishes the `CURRENT` and `STANDBY` keys.
-
-`rotate jwks` promotes `STANDBY` to `CURRENT`, then generates a fresh `STANDBY`.
-
-After rotation, the previous `CURRENT` key is no longer retained.
-
-By default, CLI errors stay concise; use `--verbose` for detailed diagnostics.
-
-`rotate-jwks` remains available only as a transition/compatibility alias during the migration release.
-
-## Logging
-
-auth-mini writes structured JSON logs by default. The logs are suitable for redirection to a file:
-
-```bash
-npx auth-mini start ./auth-mini.sqlite --issuer https://auth.zccz14.com >> auth-mini.log
-```
-
-In the current version, logs may contain plaintext email addresses and client IPs. Logs intentionally exclude OTP values, tokens, and SMTP passwords.
-
-## Docker deployment
-
-For the one-container Cloudflare Tunnel path, see [docs/deploy/docker-cloudflared.md](docs/deploy/docker-cloudflared.md).
-
-```bash
-docker run --name auth-mini \
-  --restart unless-stopped \
-  -e TUNNEL_TOKEN=cf_tunnel_token_here \
-  -e AUTH_ISSUER=https://auth.zccz14.com \
-  -v auth-mini-data:/data \
-  ghcr.io/<owner>/auth-mini:latest
-```
-
-- `TUNNEL_TOKEN` and `AUTH_ISSUER` are required.
-- `/data` persists the default instance at `/data/auth.sqlite`.
-- Set the Cloudflare Dashboard service URL to exactly `http://127.0.0.1:7777`.
-- GHCR/container assets are separate from the npm package contents.
-- v1 container images target `linux/amd64` only.
-
-## HTTP API
-
-### Public endpoints
-
-- `POST /email/start` sends an OTP to the email address
-- `POST /email/verify` verifies the OTP and returns an access/refresh token pair
-- `POST /session/refresh` exchanges a refresh token for a new access/refresh token pair
-- `POST /webauthn/authenticate/options` creates a username-less passkey challenge
-- `POST /webauthn/authenticate/verify` verifies the passkey assertion and returns a session
-- `GET /jwks` returns public keys for verifying access tokens
-
-### Authenticated endpoints
-
-Send `Authorization: Bearer <access_token>`.
-
-- `GET /me`
-- `POST /session/logout`
-- `POST /webauthn/register/options`
-- `POST /webauthn/register/verify`
-- `DELETE /webauthn/credentials/:id`
-
-Refresh uses the session id and refresh token in the JSON body:
-
-```json
-{ "session_id": "...", "refresh_token": "..." }
-```
-
-`GET /me` returns the current user, stored WebAuthn credentials, and only active sessions.
-
-## Browser SDK
-
-auth-mini also serves a singleton browser SDK at `GET /sdk/singleton-iife.js`.
-
-For TypeScript consumers, the matching declaration file is available at `GET /sdk/singleton-iife.d.ts`. It types `window.AuthMini`, so you can download that file and include it in your TS project. If your toolchain supports it, you can also use that same file as the source for a triple-slash reference or editor-only workflow.
-
-Load the script from the auth server origin. The singleton SDK still infers its API base URL from its own `src`, so the script origin and API origin must match:
+Minimal browser SDK usage:
 
 ```html
 <script src="https://auth.zccz14.com/sdk/singleton-iife.js"></script>
@@ -229,172 +97,48 @@ Load the script from the auth server origin. The singleton SDK still infers its 
 </script>
 ```
 
-v1 is intentionally zero-config: the script infers its API base URL from its own `src`, persists session state in `localStorage`, and automatically refreshes access tokens. Browser pages may be hosted on a different origin than the auth server as long as the page origin is explicitly stored in the instance with `npx auth-mini origin add <instance> --value <page-origin>`.
+From there, typical integration looks like this:
 
-Same-origin proxy deployment is still supported if you prefer to front auth-mini through your app origin, but direct cross-origin loading is now the primary browser SDK path.
+- add your app origin with the CLI
+- start auth-mini with your issuer
+- configure SMTP, then sign in via email OTP and optionally register a passkey
+- send the access token to your backend and verify it with `/jwks`
 
-For example, this page:
+## Docs and next steps
 
-- page origin: `http://localhost:3000`
-- auth server origin: `http://127.0.0.1:7777`
+`docs/` is the canonical static reference source. [`demo/`](demo/) is an interactive companion and playground, not the sole detailed docs surface.
 
-works when `http://localhost:3000` has been added with `npx auth-mini origin add ./auth-mini.sqlite --value http://localhost:3000` and the page loads the SDK from the auth server:
+- Browser SDK integration: [docs/integration/browser-sdk.md](docs/integration/browser-sdk.md)
+- WebAuthn integration: [docs/integration/webauthn.md](docs/integration/webauthn.md)
+- Backend JWT verification: [docs/integration/backend-jwt-verification.md](docs/integration/backend-jwt-verification.md)
+- HTTP API reference: [docs/reference/http-api.md](docs/reference/http-api.md)
+- CLI and operations: [docs/reference/cli-and-operations.md](docs/reference/cli-and-operations.md)
+- Docker + Cloudflared deployment: [docs/deploy/docker-cloudflared.md](docs/deploy/docker-cloudflared.md)
+- Interactive companion: [demo/](demo/)
 
-```html
-<script src="http://127.0.0.1:7777/sdk/singleton-iife.js"></script>
-```
-
-The published demo/docs page does **not** auto-target localhost anymore. It stays in a neutral docs-only state until you provide `?sdk-origin=https://your-auth-origin`, which makes the playground load the SDK from that auth origin.
-
-### Publishing the single-page demo/docs
-
-The static site lives in `demo/`.
-
-- Publish the **contents of `demo/`** so `index.html`, `./style.css`, and `./main.js` stay at the final URL you want browsers to open.
-- For GitHub Pages, that means publishing `demo/` as the Pages artifact (for example via a Pages Action that uploads `demo/`, or by copying `demo/` into the branch/folder Pages serves).
-- Project Pages subpaths such as `https://<user>.github.io/auth-mini/` are fine because the demo uses relative local assets.
-- `npx auth-mini origin add <instance> --value ...` must use the final **page origin** (`window.location.origin`), not the auth server origin. Path changes like `/auth-mini/` vs `/demo/` do not change that origin value, but moving between `https://docs.example.com` and `https://example.github.io` does.
-- If the docs page and auth server live on different origins, keep the docs page on its static host and append `?sdk-origin=https://your-auth-origin` so the page loads `/sdk/singleton-iife.js` from the auth server.
-- If you attach a custom GitHub Pages domain, publish a matching `CNAME` file in the Pages artifact/root so GitHub serves that domain consistently; then store `https://your-domain.example` with `npx auth-mini origin add <instance> --value https://your-domain.example`.
-
-Example:
-
-- published docs origin: `https://example.github.io`
-- auth server origin: `https://auth.zccz14.com`
-
-Open:
-
-```text
-https://example.github.io/auth-mini/?sdk-origin=https://auth.zccz14.com
-```
-
-Configure the published docs origin, then start auth-mini with:
-
-```bash
-npx auth-mini origin add ./auth-mini.sqlite --value https://example.github.io
-npx auth-mini start ./auth-mini.sqlite --issuer https://auth.zccz14.com
-```
-
-### Startup state model
-
-If a refresh token is already stored, startup enters `recovering` first and then settles to `authenticated` or `anonymous` after recovery completes. During recovery, `AuthMini.me.get()` may return the last cached snapshot while `AuthMini.session.getState().status` still reports `recovering`.
-
-### `me.get()` vs `me.reload()`
-
-- `AuthMini.me.get()` returns the current cached `/me` snapshot synchronously.
-- `AuthMini.me.reload()` performs authenticated network I/O, follows the SDK refresh rules, updates cached state, and resolves with the fresh `/me` payload.
-
-### Passkey example
-
-```html
-<script src="https://auth.zccz14.com/sdk/singleton-iife.js"></script>
-<script>
-  async function signIn(email, code) {
-    await window.AuthMini.email.start({ email });
-    await window.AuthMini.email.verify({ email, code });
-    console.log(window.AuthMini.me.get());
-  }
-
-  async function signInWithPasskey() {
-    await window.AuthMini.webauthn.authenticate();
-    console.log(window.AuthMini.me.get());
-  }
-</script>
-```
-
-### Operational limits
-
-- The SDK script origin must match the auth API origin because the singleton client derives its base URL from the script `src`.
-- Cross-origin browser pages are supported only when the page origin is stored via the `origin` topic commands.
-- Multiple tabs sharing one session can still race during refresh-token rotation, but the loser tab enters `recovering` and usually converges to the latest shared session state.
-- That convergence depends on receiving a usable shared snapshot before the recovery timeout; otherwise only the local in-memory state falls back to anonymous.
-
-## WebAuthn flow
-
-1. Sign in with email OTP.
-2. Call `POST /webauthn/register/options` while authenticated with `{ "rp_id": "example.com" }`.
-3. Pass `publicKey` into `navigator.credentials.create()`.
-4. Send `{ request_id, credential }` to `POST /webauthn/register/verify`.
-5. Later, call `POST /webauthn/authenticate/options` with `{ "rp_id": "example.com" }`.
-6. Pass `publicKey` into `navigator.credentials.get()`.
-7. Send `{ request_id, credential }` to `POST /webauthn/authenticate/verify`.
-
-auth-mini uses discoverable credentials for passkey login. Users sign in with email first, register a passkey while authenticated, and can later sign in directly with the passkey without entering an email address first.
-
-Registration options require discoverable credentials:
-
-```json
-{
-  "request_id": "<uuid>",
-  "publicKey": {
-    "challenge": "<base64url>",
-    "rp": { "name": "auth-mini", "id": "example.com" },
-    "user": {
-      "id": "<base64url>",
-      "name": "user@example.com",
-      "displayName": "user@example.com"
-    },
-    "pubKeyCredParams": [
-      { "type": "public-key", "alg": -7 },
-      { "type": "public-key", "alg": -257 }
-    ],
-    "timeout": 300000,
-    "authenticatorSelection": {
-      "residentKey": "required",
-      "userVerification": "preferred"
-    }
-  }
-}
-```
-
-Authentication options are username-less and intentionally omit `allowCredentials`:
-
-```json
-{
-  "request_id": "<uuid>",
-  "publicKey": {
-    "challenge": "<base64url>",
-    "rpId": "example.com",
-    "timeout": 300000,
-    "userVerification": "preferred"
-  }
-}
-```
-
-WebAuthn registration and authentication verification now use `@simplewebauthn/server`. auth-mini intentionally limits advertised registration algorithms to `-7` (ES256) and `-257` (RS256), because those are the algorithms explicitly covered by the integration test suite.
-
-Generating a new registration challenge invalidates the previous unused registration challenge for the same signed-in user. Authentication challenges are preserved so concurrent sign-in attempts can complete independently.
+For the one-container Cloudflare Tunnel path, see [docs/deploy/docker-cloudflared.md](docs/deploy/docker-cloudflared.md). Deployment details live there.
 
 ## Philosophy
 
 ### Why not a full auth platform?
 
-If your project only needs authentication, adopting a large backend platform can be unnecessary overhead. auth-mini is for the case where you want to run a focused auth service yourself, keep the moving parts small, and understand exactly where your users, sessions, SMTP config, and signing keys live.
+If your project only needs authentication, a larger backend platform can be unnecessary overhead. auth-mini focuses on the auth slice so you can keep users, sessions, SMTP config, and signing keys understandable.
 
-### Why email OTP first?
+### Why email OTP + passkeys?
 
-Email is familiar, universal, and gives you a practical recovery and communication channel. For many products, that matters more than inventing another username-password system or expecting every user to already understand wallets, private keys, or more exotic login flows.
-
-### Why passwordless and discoverable passkeys?
-
-Passwords are easy to forget, easy to reuse, and expensive to defend forever. Email OTP removes the long-lived shared secret, and WebAuthn goes further by letting the device authenticate with phishing-resistant credentials. auth-mini specifically uses discoverable credentials so passkey login can be truly username-less instead of pretending to be passwordless while still asking for an identifier first.
+Email is familiar and useful for recovery and communication. Passkeys then provide phishing-resistant, username-less sign-in with discoverable credentials instead of another password system.
 
 ### Why SQLite?
 
-Auth data is usually small and operational simplicity matters. SQLite is easy to run, back up, inspect, and move around. In this design, that trade-off is often better than introducing a separate database server just because auth sounds important. JWT verification also stays stateless on the consumer side, so not every authenticated request has to hit the database.
+Auth data is usually small, and operational simplicity matters. SQLite is easy to run, back up, inspect, and move without introducing another server just because auth sounds important.
 
 ### Why access + refresh tokens?
 
-Access tokens should be short-lived. Refresh tokens should be revocable and rotated. auth-mini keeps those roles separate: access tokens are JWTs signed by your keys and suitable for API verification, while refresh tokens are random database-backed secrets that can be invalidated and replaced on every refresh. That keeps API auth simple without pretending JWTs are easy to revoke after they leak.
+Access tokens stay short-lived and verifiable by APIs through `/jwks`; refresh tokens stay revocable and database-backed. That keeps backend verification simple without pretending leaked JWTs are easy to revoke.
 
 ## Development
 
-```bash
-npm run format
-npm run lint
-npm run typecheck
-npm test
-```
+Run `npm run format`, `npm run lint`, `npm run typecheck`, and `npm test`.
 
 ## License
 

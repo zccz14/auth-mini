@@ -193,10 +193,13 @@ describe('oclif cli contract', () => {
 
   it('documents the supported Node.js runtime floor for the CLI', async () => {
     const { default: pkg } = await import('../../package.json');
-    const readme = await readFile(resolve(process.cwd(), 'README.md'), 'utf8');
+    const cliDoc = await readFile(
+      resolve(process.cwd(), 'docs/reference/cli-and-operations.md'),
+      'utf8',
+    );
 
     expect(pkg.engines?.node).toBe('>=20.10.0');
-    expect(readme).toContain('Node.js 20.10+');
+    expect(cliDoc).toContain('Node.js 20.10+');
   });
 
   it('prints help to stdout only', async () => {
@@ -207,90 +210,88 @@ describe('oclif cli contract', () => {
     expect(result.stdout).toContain('USAGE');
   });
 
-  it('documents rotate jwks migration semantics in README', async () => {
-    const readme = await readFile(resolve(process.cwd(), 'README.md'), 'utf8');
+  it('documents rotate jwks migration semantics in the CLI operations doc', async () => {
+    const cliDoc = await readFile(
+      resolve(process.cwd(), 'docs/reference/cli-and-operations.md'),
+      'utf8',
+    );
 
-    expect(readme).toContain('npx auth-mini rotate jwks ./auth-mini.sqlite');
-    expect(readme).toContain('npx auth-mini init ./auth-mini.sqlite');
-    expect(readme).toContain(
+    expect(cliDoc).toContain('npx auth-mini rotate jwks ./auth-mini.sqlite');
+    expect(cliDoc).toContain('npx auth-mini init ./auth-mini.sqlite');
+    expect(cliDoc).toContain(
       '`create` remains available as a compatibility alias',
     );
-    expect(readme).toContain(
-      'Auth-mini instance (currently a SQLite database path)',
+    expect(cliDoc).toContain(
+      '`<instance>` currently means the path to your auth-mini SQLite database file.',
     );
-    expect(readme).toContain(
+    expect(cliDoc).toContain(
       'By default, CLI errors stay concise; use `--verbose` for detailed diagnostics.',
     );
-    expect(readme).toContain(
+    expect(cliDoc).toContain(
       '`rotate-jwks` remains available only as a transition/compatibility alias during the migration release.',
     );
-    expect(readme).toContain(
+    expect(cliDoc).toContain(
       '`/jwks` always publishes the `CURRENT` and `STANDBY` keys.',
     );
-    expect(readme).toContain(
+    expect(cliDoc).toContain(
       '`rotate jwks` promotes `STANDBY` to `CURRENT`, then generates a fresh `STANDBY`.',
     );
-    expect(readme).toContain(
+    expect(cliDoc).toContain(
       'After rotation, the previous `CURRENT` key is no longer retained.',
     );
-    expect(readme).not.toContain(
+    expect(cliDoc).not.toContain(
       'once allowed-origin runtime configuration is wired back into the CLI/runtime contract',
     );
-    expect(readme).not.toContain(
+    expect(cliDoc).not.toContain(
       'When allowed-origin runtime configuration returns',
     );
-    expect(readme).not.toContain(
+    expect(cliDoc).not.toContain(
       'current `start` CLI contract does not expose that setup yet',
     );
   });
 
-  it('documents the current CLI workflow in README', async () => {
-    const readme = await readFile(resolve(process.cwd(), 'README.md'), 'utf8');
+  it('documents the current CLI workflow in the CLI operations doc', async () => {
+    const cliDoc = await readFile(
+      resolve(process.cwd(), 'docs/reference/cli-and-operations.md'),
+      'utf8',
+    );
     const deployDoc = await readFile(
       resolve(process.cwd(), 'docs/deploy/docker-cloudflared.md'),
       'utf8',
     );
 
-    expect(readme).toContain('npx auth-mini init ./auth-mini.sqlite');
-    expect(readme).toContain('npx auth-mini start ./auth-mini.sqlite \\');
-    expect(readme).toContain('--host 127.0.0.1');
-    expect(readme).toContain('--port 7777');
-    expect(readme).toContain('--issuer https://auth.zccz14.com');
-    expect(readme).toContain(
+    expect(cliDoc).toContain('npx auth-mini init ./auth-mini.sqlite');
+    expect(cliDoc).toContain('npx auth-mini start ./auth-mini.sqlite \\');
+    expect(cliDoc).toContain('--host 127.0.0.1');
+    expect(cliDoc).toContain('--port 7777');
+    expect(cliDoc).toContain('--issuer https://auth.zccz14.com');
+    expect(cliDoc).toContain(
       'npx auth-mini origin add ./auth-mini.sqlite --value https://app.example.com',
     );
-    expect(readme).toContain('npx auth-mini origin list ./auth-mini.sqlite');
-    expect(readme).toContain(
+    expect(cliDoc).toContain('npx auth-mini origin list ./auth-mini.sqlite');
+    expect(cliDoc).toContain(
       'npx auth-mini origin update ./auth-mini.sqlite --id 1 --value https://admin.example.com',
     );
-    expect(readme).toContain(
+    expect(cliDoc).toContain(
       'npx auth-mini origin delete ./auth-mini.sqlite --id 1',
     );
-    expect(readme).toContain(
+    expect(cliDoc).toContain(
       'npx auth-mini smtp add ./auth-mini.sqlite --host smtp.example.com --port 587',
     );
-    expect(readme).toContain('npx auth-mini smtp list ./auth-mini.sqlite');
-    expect(readme).toContain(
+    expect(cliDoc).toContain('npx auth-mini smtp list ./auth-mini.sqlite');
+    expect(cliDoc).toContain(
       'npx auth-mini smtp update ./auth-mini.sqlite --id 1 --secure true',
     );
-    expect(readme).toContain(
+    expect(cliDoc).toContain(
       'npx auth-mini smtp delete ./auth-mini.sqlite --id 1',
     );
-    expect(readme).not.toContain('https://auth.example.com');
-    expect(readme).not.toContain('--smtp-config');
-    expect(readme).not.toContain(
+    expect(cliDoc).not.toContain('https://auth.example.com');
+    expect(cliDoc).not.toContain('--smtp-config');
+    expect(cliDoc).not.toContain(
       'auth-mini start ./auth-mini.sqlite --issuer https://auth.zccz14.com --origin',
     );
-    expect(readme).toContain('{ "session_id": "...", "refresh_token": "..." }');
-    expect(readme).toContain(
-      'the loser tab enters `recovering` and usually converges to the latest shared session state.',
-    );
-    expect(readme).toContain(
-      'That convergence depends on receiving a usable shared snapshot before the recovery timeout; otherwise only the local in-memory state falls back to anonymous.',
-    );
-    expect(readme).not.toContain('authenticate/options` with an empty body');
-    expect(readme).not.toContain('--rp-id');
-    expect(readme).not.toContain(
+    expect(cliDoc).not.toContain('--rp-id');
+    expect(cliDoc).not.toContain(
       'Multiple tabs sharing one session can currently race during refresh-token rotation and invalidate one another. This is a known SDK bug, not a product contract.',
     );
 

@@ -64,16 +64,16 @@ export function buildDemoContent(setupState) {
         when: 'Exchange the email OTP for a signed-in session.',
         body: { email: 'user@example.com', code: '123456' },
         response:
-          '{ "access_token": "<jwt>", "token_type": "Bearer", "expires_in": 3600, "refresh_token": "<refresh-token>" }',
+          '{ "session_id": "sess_123", "access_token": "<jwt>", "token_type": "Bearer", "expires_in": 3600, "refresh_token": "<refresh-token>" }',
       }),
       makeApiEntry({
         sdkOrigin: resolvedSdkOrigin,
         method: 'POST',
         path: '/session/refresh',
         when: 'Rotate a refresh token into a fresh access token.',
-        body: { refresh_token: '<refresh-token>' },
+        body: { session_id: 'sess_123', refresh_token: '<refresh-token>' },
         response:
-          '{ "access_token": "<jwt>", "token_type": "Bearer", "expires_in": 3600, "refresh_token": "<refresh-token>" }',
+          '{ "session_id": "sess_123", "access_token": "<jwt>", "token_type": "Bearer", "expires_in": 3600, "refresh_token": "<refresh-token>" }',
       }),
       makeApiEntry({
         sdkOrigin: resolvedSdkOrigin,
@@ -100,7 +100,7 @@ export function buildDemoContent(setupState) {
         headers: { authorization: 'Bearer <access_token>' },
         body: { rp_id: 'example.com' },
         response:
-          '{ "request_id": "request-register", "publicKey": { "challenge": "...", "rp": { "id": "example.com", "name": "auth-mini" }, "user": { "id": "<base64url>", "name": "user@example.com", "displayName": "user@example.com" }, "pubKeyCredParams": [{ "type": "public-key", "alg": -7 }, { "type": "public-key", "alg": -257 }], "timeout": 300000, "authenticatorSelection": { "residentKey": "required", "userVerification": "preferred" } } }',
+          '{ "request_id": "550e8400-e29b-41d4-a716-446655440000", "publicKey": { "challenge": "...", "rp": { "id": "example.com", "name": "auth-mini" }, "user": { "id": "<base64url>", "name": "user@example.com", "displayName": "user@example.com" }, "pubKeyCredParams": [{ "type": "public-key", "alg": -7 }, { "type": "public-key", "alg": -257 }], "timeout": 300000, "authenticatorSelection": { "residentKey": "required", "userVerification": "preferred" } } }',
       }),
       makeApiEntry({
         sdkOrigin: resolvedSdkOrigin,
@@ -109,10 +109,21 @@ export function buildDemoContent(setupState) {
         when: 'Verify the completed passkey registration ceremony.',
         headers: { authorization: 'Bearer <access_token>' },
         body: {
-          request_id: 'request-register',
-          credential: '<PublicKeyCredential>',
+          request_id: '550e8400-e29b-41d4-a716-446655440000',
+          credential: {
+            id: 'cred_123',
+            rawId: '<base64url>',
+            type: 'public-key',
+            authenticatorAttachment: 'platform',
+            clientExtensionResults: {},
+            response: {
+              clientDataJSON: '<base64url>',
+              attestationObject: '<base64url>',
+              transports: ['internal'],
+            },
+          },
         },
-        response: '{ "ok": true, "user": { "email": "user@example.com" } }',
+        response: '{ "ok": true }',
       }),
       makeApiEntry({
         sdkOrigin: resolvedSdkOrigin,
@@ -121,7 +132,7 @@ export function buildDemoContent(setupState) {
         when: 'Request authentication options for username-less passkey sign-in.',
         body: { rp_id: 'example.com' },
         response:
-          '{ "request_id": "request-authenticate", "publicKey": { "challenge": "...", "rpId": "example.com", "timeout": 300000, "userVerification": "preferred" } }',
+          '{ "request_id": "550e8400-e29b-41d4-a716-446655440000", "publicKey": { "challenge": "...", "rpId": "example.com", "timeout": 300000, "userVerification": "preferred" } }',
       }),
       makeApiEntry({
         sdkOrigin: resolvedSdkOrigin,
@@ -129,11 +140,23 @@ export function buildDemoContent(setupState) {
         path: '/webauthn/authenticate/verify',
         when: 'Verify the passkey assertion and create a session.',
         body: {
-          request_id: 'request-authenticate',
-          credential: '<PublicKeyCredential>',
+          request_id: '550e8400-e29b-41d4-a716-446655440000',
+          credential: {
+            id: 'cred_123',
+            rawId: '<base64url>',
+            type: 'public-key',
+            authenticatorAttachment: 'platform',
+            clientExtensionResults: {},
+            response: {
+              authenticatorData: '<base64url>',
+              clientDataJSON: '<base64url>',
+              signature: '<base64url>',
+              userHandle: '<base64url-or-null>',
+            },
+          },
         },
         response:
-          '{ "access_token": "<jwt>", "token_type": "Bearer", "expires_in": 3600, "refresh_token": "<refresh-token>" }',
+          '{ "session_id": "sess_123", "access_token": "<jwt>", "token_type": "Bearer", "expires_in": 3600, "refresh_token": "<refresh-token>" }',
       }),
       makeApiEntry({
         sdkOrigin: resolvedSdkOrigin,
@@ -148,7 +171,8 @@ export function buildDemoContent(setupState) {
         method: 'GET',
         path: '/jwks',
         when: 'Publish the JWKS used to verify JWT signatures.',
-        response: '{ "keys": [{ "kid": "...", "kty": "EC" }] }',
+        response:
+          '{ "keys": [{ "kid": "current-key-id", "kty": "OKP", "alg": "EdDSA", "use": "sig", "crv": "Ed25519", "x": "..." }, { "kid": "standby-key-id", "kty": "OKP", "alg": "EdDSA", "use": "sig", "crv": "Ed25519", "x": "..." }] }',
       }),
     ],
     backendNotes: [
@@ -156,10 +180,11 @@ export function buildDemoContent(setupState) {
       'Validate aud whenever your backend uses audience boundaries between services.',
       'Use GET /me for frontend user-state hydration, not as the backend per-request auth path.',
       `Cache the remote JWKS from ${resolvedJwksUrl} and keep backend verifier config aligned with your issuer.`,
+      'Because the previous CURRENT key is not retained after rotation, refreshing JWKS after rotation may break verification for still-valid older access tokens.',
     ],
     backendNotesDisclosureLabel: 'More backend JWT notes',
     deploymentNotes: [
-      'For GitHub Pages, publish the contents of demo/ so index.html stays at the final page URL and its relative ./style.css + ./main.js assets keep working on project subpaths.',
+      'For GitHub Pages, publish the contents of demo/ unchanged as the site artifact root so its files and relative paths stay intact at the final URL.',
       `After publish, run npx auth-mini origin add ./auth-mini.sqlite --value ${currentOrigin} (or whatever final page origin you actually deployed) because the stored origin must match the browser page origin, not the auth server origin.`,
       'If docs and auth live on different origins, keep the page URL on the docs host and append ?sdk-origin=https://your-auth-origin so the browser loads the SDK from the auth host.',
       'If you use a custom GitHub Pages domain, publish a matching CNAME file and keep that domain stable; update the stored allowed origin whenever the docs host changes enough to alter window.location.origin.',

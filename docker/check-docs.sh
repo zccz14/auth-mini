@@ -26,14 +26,12 @@ guide = guide_path.read_text() if guide_path.exists() else ''
 
 checks: list[tuple[str, bool]] = [
     ('README deployment entry point link', 'docs/deploy/docker-cloudflared.md' in readme),
-    ('README canonical docker run command', 'docker run' in readme and 'TUNNEL_TOKEN' in readme and 'AUTH_ISSUER' in readme and '/data' in readme),
-    ('README npm boundary note', 'GHCR/container assets are separate from the npm package contents' in readme),
-    ('README linux amd64 scope', 'linux/amd64' in readme),
     ('guide exists', guide_path.exists()),
     ('Zero Trust tunnel creation steps', 'Zero Trust' in guide and 'Networks' in guide and 'Tunnels' in guide and 'Add a tunnel' in guide),
     ('token find copy rotate guidance', 'TUNNEL_TOKEN' in guide and 'copy' in guide and 'rotate' in guide),
     ('dashboard service URL requirement', 'http://127.0.0.1:7777' in guide and 'Dashboard' in guide),
     ('one docker run path', 'docker run' in guide),
+    ('guide runtime contract details', 'docker run' in guide and 'TUNNEL_TOKEN' in guide and 'AUTH_ISSUER' in guide and '/data' in guide),
     ('data persistence and post start tasks', '/data' in guide and 'origin add' in guide and 'SMTP' in guide),
     ('unsupported tunnel modes boundary', 'Dashboard-managed tunnel' in guide and 'config.yml' in guide and 'credentials files' in guide and 'custom ingress' in guide),
     ('issuer mismatch troubleshooting', 'issuer/hostname mismatch' in guide and 'JWT `iss`' in guide and 'WebAuthn' in guide and 'SDK' in guide),
@@ -45,6 +43,7 @@ checks: list[tuple[str, bool]] = [
     ('entrypoint auto initialization', 'entrypoint' in guide and 'auto-initializes' in guide and '/jwks' in guide),
     ('common failure inspection guidance', 'log' in guide and 'output' in guide),
     ('docker distribution boundary note', 'GHCR/container distribution' in guide and 'npm package contents' in guide),
+    ('guide linux amd64 scope', 'linux/amd64' in guide),
 ]
 
 missing = [name for name, ok in checks if not ok]
