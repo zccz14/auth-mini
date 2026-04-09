@@ -4,49 +4,57 @@
 
 ### ✅ 已完成
 
-- 已完成任务契约 plan.md、简版 RFC 与 RFC review 闭环；风险定级为 Medium 并获 APPROVED。
-- 已完成 Dockerfile 改造：基础镜像锁定到 node:24.14.1-trixie-slim@sha256:c319bb4fac67c01ced508b67193a0397e02d37555d8f9b72958649efd302b7f8，新增非 runtime 的 cloudflared-fetch 阶段并移除 runtime apt。
-- 已完成 entrypoint 安全收敛：TUNNEL_TOKEN 不再出现在 argv，且不会被 auth-mini 继承；runtime 默认切换为非 root 用户。
-- 已完成 review 闭环：review-code PASS、review-security PASS；entrypoint 结论为“本轮不可移除”。
-- 用户已将方案进一步收敛：只保留 node:24.14.1-trixie-slim，不锁 digest；runtime 去掉 apt、curl、cloudflared。
-- Dockerfile 已简化为纯 auth-mini runtime；docker/entrypoint.sh 已改为单进程入口，只做 AUTH_ISSUER 校验、首次 init、exec auth-mini start。
-- docker/test-entrypoint.sh 与 docker/test-image-smoke.sh 已同步移除 cloudflared/curl mock 与相关断言；shell 语法检查通过。
-- 已删除 docker/entrypoint.sh，运行模型改为 tini -> node /app/docker/launcher.mjs -> auth-mini。
-- Dockerfile 已切换到 node:24.14.1-trixie-slim，并在独立阶段安装 tini 后复制到 runtime。
-- docker/test-entrypoint.sh 与 docker/test-image-smoke.sh 已改为围绕 launcher + 单进程 auth-mini 模型验证。
-- 已删除 docker/launcher.mjs，镜像入口进一步收敛为 tini -> auth-mini start。
-- Dockerfile 现在使用 ENTRYPOINT ["/usr/bin/tini", "--", "auth-mini"] + 默认 CMD start /data/auth.sqlite --host 127.0.0.1 --port 7777。
-- docker/test-entrypoint.sh 与 docker/test-image-smoke.sh 已改为验证默认命令链与 tini 存在，不再依赖 launcher。
-
+- 已恢复 active task `docker-runtime-slim-entrypoint`，沿用既有 `plan.md` / `rfc.md` / task docs 继续推进。
+- 已确认当前运行模型为极简容器入口：`ENTRYPOINT ["/tini", "--"]` + 默认 `CMD ["auth-mini", "start", "/data/auth.sqlite", "--port", "7777"]`。
+- 已修复本地 Docker 冒烟测试在 `USER node` 下的 bind mount 日志目录权限问题；测试临时 `/logs` 目录现显式 `chmod 0777`。
+- 已统一 Docker 测试脚本的 build/run 平台声明，默认使用 `IMAGE_PLATFORM=linux/amd64`，避免本地 arm64 宿主机上出现 build/run 平台语义漂移。
+- 已修复测试对 Docker `ENTRYPOINT + CMD` 语义的误用：运行时 case 现在会显式重建默认命令链后再追加 `--issuer`，同时通过 `docker image inspect` 静态断言镜像默认 `Entrypoint/Cmd`。
+- 已补充 non-root 回归断言，确认镜像内 `id -u != 0`。
+- 已为远程下载的 `tini` 增加按 `TARGETARCH` 的 SHA256 校验（amd64/arm64），并在 smoke test 中增加轻量回归断言。
+- 已修复真实容器启动时 `USER node` 无法读取 `/app/package.json` 与 `/app/sql/schema.sql` 的问题；容器内 `auth-mini init` / `auth-mini start` 现可正常运行。
+- 已为 `start` 命令增加 `AUTH_HOST` / `AUTH_PORT` / `AUTH_ISSUER` 环境变量回退，避免本地 Docker published-port smoke 必须重写整条默认命令链。
+- `docker/test-image-smoke.sh` 已升级为真实容器 HTTP smoke：先 init volume，再以 `AUTH_HOST=0.0.0.0` + `AUTH_ISSUER=...` 启动真实容器，验证 `/jwks`、`/sdk/singleton-iife.js` 与 `/me` 401。
+- 已在本地 Docker daemon 环境真实执行并通过：
+  - `bash -n docker/test-entrypoint.sh`
+  - `bash -n docker/test-image-smoke.sh`
+  - `bash docker/test-entrypoint.sh validation`
+  - `bash docker/test-entrypoint.sh supervision`
+  - `bash docker/test-image-smoke.sh`
+- 已完成最新一轮代码审查与安全审查，结论均为 PASS。
 
 ### 🟡 进行中
 
-(暂无)
-
+- 正在同步最终交付文档（report-walkthrough / pr-body）与任务状态。
 
 ### ⚠️ 阻塞/待定
 
-- 容器级 Docker 测试仍待在有 Docker daemon 的环境执行。
-
+- （无）
 
 ---
 
 ## 关键文件
 
-(暂无)
+- `Dockerfile`：为 `tini-static-${TARGETARCH}` 增加 checksum 校验，维持 `tini -> auth-mini start` 运行模型。
+- `src/commands/start.ts`：增加 `AUTH_HOST` / `AUTH_PORT` / `AUTH_ISSUER` 环境变量回退。
+- `docker/test-entrypoint.sh`：修复非 root bind mount 日志写入、显式平台声明、默认命令链验证。
+- `docker/test-image-smoke.sh`：补充镜像配置检查、non-root 回归、`tini` checksum 回归断言与真实容器 HTTP smoke。
+- `.legion/tasks/docker-runtime-slim-entrypoint/docs/test-report.md`：记录真实本地 Docker 验证结果。
+- `.legion/tasks/docker-runtime-slim-entrypoint/docs/review-code.md`：最新代码审查结论（PASS）。
+- `.legion/tasks/docker-runtime-slim-entrypoint/docs/review-security.md`：最新安全审查结论（PASS）。
 
 ---
 
 ## 关键决策
 
-| 决策 | 原因 | 替代方案 | 日期 |
-|------|------|----------|------|
-| 本任务先按 Medium 风险推进 | 变更影响容器运行时契约与发布镜像，但仍可通过 Dockerfile 回滚，不涉及数据迁移。 | 若仅替换 tag 且不评估 entrypoint，可按 Low 处理；但用户要求同时评估 entrypoint 去留，需更明确设计。 | 2026-04-09 |
-| 本轮固定采用 node:24.14.1-trixie-slim 作为 builder/runtime 基础镜像 | 满足锁定 Node 24.14.1 与最新 Debian slim 的要求，且官方 tag 当前可用。 | 继续使用浮动 tag 或 bookworm-slim 会降低可复现性/不满足“最新 slim”要求。 | 2026-04-09 |
-| 本轮 entrypoint 不移除 | 它仍承载参数校验、首次初始化、readiness 门控、双进程监督、信号处理与退出码保留，当前没有等价替代。 | 删除 entrypoint 改成 CMD 串联命令会回退现有容器契约与测试覆盖。 | 2026-04-09 |
-| 直接删除所有 cloudflared 与 curl 路径，而不是保留 shim 或下载阶段 | 用户明确要求容器内不要启动 cloudflared、不要 mock curl、不要安装 cloudflared。 | 保留 cloudflared-fetch/curl shim 与双进程编排会违背新的明确指令。 | 2026-04-09 |
-| 用 Node launcher 取代 shell entrypoint | 用户明确要求删除 entrypoint.sh，并要求由 tini 作为父进程启动 Node 进程。 | 继续保留 shell entrypoint 不符合最新指令。 | 2026-04-09 |
-| 不再新增 launcher 或 index.ts 级包装逻辑 | 用户要求纯粹的 tini + auth-mini start；当前 start 命令已具备基本 graceful shutdown 处理，因此本轮不再额外加一层。 | 继续保留 Node launcher 或把相同职责搬到 index.ts 都会违背“纯粹 tini + auth-mini start”的目标。 | 2026-04-09 |
+| 决策                                                                  | 原因                                                                                                 | 替代方案                                                                            | 日期       |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ---------- |
+| 本轮按 Low 风险继续推进                                               | 当前工作以测试收敛与供应链完整性补强为主，可通过脚本与 Dockerfile 最小回滚，不涉及数据迁移。         | 重新开新 task 会割裂既有 task 历史与交付物。                                        | 2026-04-09 |
+| 继续保持极简入口 `tini -> auth-mini start`                            | 这是当前 task 契约与用户明确目标。                                                                   | 重新引入 shell entrypoint / launcher 会违背最新约束。                               | 2026-04-09 |
+| 测试脚本显式声明 `IMAGE_PLATFORM=linux/amd64`                         | 当前镜像与本地验证都围绕 amd64 目标进行，显式声明可避免 arm64 宿主机上 build/run 语义漂移。          | 继续依赖 Docker 默认平台会产生告警和潜在歧义。                                      | 2026-04-09 |
+| 通过 `chmod 0777` 修复测试临时日志目录写权限                          | 问题根因在测试夹具，不应为通过测试而放宽 runtime 非 root 边界。                                      | 回退到 root 运行会削弱镜像安全边界。                                                | 2026-04-09 |
+| 继续使用远程 `ADD` 下载 `tini`，但补充按架构 checksum 校验            | 这是修复供应链完整性问题的最小改动，且不改变当前运行模型。                                           | 改成额外下载阶段/GPG 流程会增加复杂度。                                             | 2026-04-09 |
+| 显式放宽 `/app/package.json` 与 `/app/sql/schema.sql` 为只读可读      | 真实容器在 `USER node` 下需要读取 oclif root metadata 与 schema 文件，否则 `init/start` 会直接失败。 | 回退到 root 或重新引入 wrapper 都不如直接修正文件权限简单。                         | 2026-04-09 |
+| 将镜像默认 CMD 简化为 `auth-mini start /data/auth.sqlite --port 7777` | 保留 `tini -> auth-mini start` 模型，同时让 `AUTH_HOST` 环境变量可在 Docker 场景下覆盖 host。        | 继续把 `--host 127.0.0.1` 硬编码进 CMD 会阻断 env 覆盖与本地 published-port smoke。 | 2026-04-09 |
 
 ---
 
@@ -54,12 +62,15 @@
 
 **下次继续从这里开始：**
 
-1. 在有 Docker daemon 的环境执行 docker/test-entrypoint.sh validation、docker/test-entrypoint.sh supervision、docker/test-image-smoke.sh。
+1. 直接复用 `<taskRoot>/docs/pr-body.md` 作为 PR 描述。
+2. 如需进一步加固，可优先评估基础镜像 digest pin、CI 漏洞扫描与环境变量异常路径测试。
 
 **注意事项：**
 
-- 当前镜像使用默认 CMD 提供 start/dbPath/host/port，issuer 通过容器启动参数追加。
+- 当前 Docker 验证脚本默认使用 `IMAGE_PLATFORM=linux/amd64`；若目标平台不同，请显式覆写后复跑。
+- 本地 published-port 场景若需从宿主访问容器，需要显式提供 `AUTH_HOST=0.0.0.0`；镜像默认 host 仍由应用保持 `127.0.0.1`。
+- 当前任务已不再保留 `docker/entrypoint.sh` / `docker/launcher.mjs` / `cloudflared` / `curl` 路径。
 
 ---
 
-*最后更新: 2026-04-09 20:28 by Claude*
+_最后更新: 2026-04-09 22:34 by Claude_

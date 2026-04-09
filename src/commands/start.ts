@@ -87,9 +87,9 @@ export default class StartCommand extends BaseCommand {
     const { args, flags } = await this.parse(StartCommand);
     const server = await runStartCommand({
       dbPath: args.instance,
-      host: flags.host,
-      port: flags.port,
-      issuer: flags.issuer,
+      host: flags.host ?? process.env.AUTH_HOST,
+      port: flags.port ?? process.env.AUTH_PORT,
+      issuer: flags.issuer ?? process.env.AUTH_ISSUER,
     });
     const lifecycle = createStartLifecycle({
       close: () => server.close(),
