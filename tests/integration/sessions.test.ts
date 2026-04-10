@@ -90,6 +90,10 @@ describe('session routes', () => {
     });
 
     const body = await response.json();
+    const payload = await jwksService.verifyJwt(
+      testApp.db,
+      body.access_token as string,
+    );
     const session = testApp.db
       .prepare('SELECT id, refresh_token_hash FROM sessions WHERE id = ?')
       .get(testApp.sessionId) as
@@ -102,6 +106,7 @@ describe('session routes', () => {
       refresh_token: expect.any(String),
       access_token: expect.any(String),
     });
+    expect(payload.amr).toEqual(['email_otp']);
     expect(body.refresh_token).not.toBe(testApp.tokens.refresh_token);
     expect(session).toEqual({
       id: testApp.sessionId,

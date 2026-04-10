@@ -11,7 +11,9 @@ import {
   type KeyObject,
 } from 'node:crypto';
 
-export type JwtPayload = Record<string, unknown>;
+export type JwtPayload = Record<string, unknown> & {
+  amr?: string[];
+};
 
 export type PublicJwk = JsonWebKey & {
   alg: 'EdDSA';

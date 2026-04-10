@@ -35,6 +35,10 @@ export class SessionSupersededError extends Error {
   }
 }
 
+function toAmr(authMethod: Session['authMethod']): string[] {
+  return [authMethod];
+}
+
 export async function mintSessionTokens(
   db: DatabaseClient,
   input: {
@@ -59,6 +63,7 @@ export async function mintSessionTokens(
     sub: input.userId,
     sid: session.id,
     iss: input.issuer,
+    amr: toAmr(session.authMethod),
     typ: 'access',
   });
 
@@ -205,6 +210,7 @@ async function finalizeRefresh(
       sub: params.rotatedSession.userId,
       sid: params.rotatedSession.id,
       iss: params.input.issuer,
+      amr: toAmr(params.rotatedSession.authMethod),
       typ: 'access',
     });
   } catch (error) {

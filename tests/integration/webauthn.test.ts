@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { encodeBase64Url } from '../../src/shared/crypto.js';
+import { verifyJwt } from '../../src/modules/jwks/service.js';
 import type { OtpMailSeam } from '../helpers/mock-smtp.js';
 
 const otpSeam = vi.hoisted(() => ({ current: null as OtpMailSeam | null }));
@@ -895,6 +896,8 @@ describe('webauthn routes', () => {
       public_key: string;
       counter: number;
     };
+    const body = (await verifyResponse.json()) as { access_token: string };
+    const payload = await verifyJwt(testApp.db, body.access_token);
 
     expect(storedCredentialBeforeAuth).toEqual({
       credential_id: passkey.credentialId,
@@ -904,12 +907,13 @@ describe('webauthn routes', () => {
     expect(storedCredentialBeforeAuth.public_key).not.toMatch(/^\s*\{/);
     expect(storedCredentialBeforeAuth.public_key.length).toBeGreaterThan(0);
     expect(verifyResponse.status).toBe(200);
-    expect(await verifyResponse.json()).toMatchObject({
+    expect(body).toMatchObject({
       access_token: expect.any(String),
       token_type: 'Bearer',
       expires_in: 900,
       refresh_token: expect.any(String),
     });
+    expect(payload.amr).toEqual(['webauthn']);
     expect(storedCredential).toEqual({
       credential_id: passkey.credentialId,
       public_key: storedCredentialBeforeAuth.public_key,
