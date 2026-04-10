@@ -18,11 +18,11 @@ const doesNotExposeSdkScriptUrl: Expect<
   HasKey<State, 'sdkScriptUrl'> extends false ? true : false
 > = true;
 
-// @ts-expect-error sdkUrl is a legacy input and should not be part of the declaration contract.
 getDemoSetupState({
   origin: 'https://docs.example.com',
   protocol: 'https:',
   hostname: 'docs.example.com',
+  // @ts-expect-error sdkUrl is a legacy input and should not be part of the declaration contract.
   sdkUrl: 'https://auth.example.com/sdk.js',
 });
 
