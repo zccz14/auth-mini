@@ -419,6 +419,29 @@ describe('demo bootstrap', () => {
     expect(env.window.location.hash).toBe('#playground');
     expect(env.window.location.reload).toHaveBeenCalledTimes(1);
   });
+
+  it('clearing sdk-origin removes the query param before reload', async () => {
+    const env = createTestEnvironment(
+      'https://docs.example.com/demo/index.html?sdk-origin=https://auth-a.example.com#playground',
+    );
+    const { bootstrapDemoPage } = await import('../../demo/bootstrap.js');
+    const sdk = createFakeSdk();
+
+    await runBootstrap(bootstrapDemoPage, env, {
+      loadSdkScript: async () => sdk,
+    });
+
+    env.document.querySelector('#sdk-origin-input')!.value = '   ';
+    await env.document.querySelector('#sdk-origin-input')!.dispatchEvent({
+      type: 'change',
+      preventDefault() {},
+    });
+
+    expect(env.window.location.search).toBe('');
+    expect(env.window.location.pathname).toBe('/demo/index.html');
+    expect(env.window.location.hash).toBe('#playground');
+    expect(env.window.location.reload).toHaveBeenCalledTimes(1);
+  });
 });
 
 function runBootstrap(

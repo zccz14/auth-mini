@@ -6,12 +6,10 @@ const getDemoSetupState = getDemoSetupStateUntyped as (locationLike: {
   protocol: string;
   hostname: string;
   sdkOriginInput?: string;
-  sdkUrl?: string;
 }) => {
   currentOrigin: string;
   suggestedOrigin: string;
   sdkOrigin: string;
-  sdkScriptUrl: string;
   issuer: string;
   jwksUrl: string;
   configStatus: string;
@@ -34,7 +32,6 @@ describe('demo WebAuthn setup guidance', () => {
         currentOrigin: 'https://docs.example.com',
         suggestedOrigin: 'https://docs.example.com',
         sdkOrigin: 'https://auth.zccz14.com',
-        sdkScriptUrl: 'https://auth.zccz14.com/sdk/singleton-iife.js',
         issuer: 'https://auth.zccz14.com',
         jwksUrl: 'https://auth.zccz14.com/jwks',
         startupCommand:
@@ -127,15 +124,20 @@ describe('demo WebAuthn setup guidance', () => {
     expect(state.issuer).toBe('https://auth.example.com');
   });
 
-  it('falls back to the existing localhost sdk origin when no query param is present', () => {
+  it('does not derive sdk-origin from legacy singleton script urls anymore', () => {
     const state = getDemoSetupState({
       origin: 'http://localhost:8080',
       protocol: 'http:',
       hostname: 'localhost',
-      sdkUrl: 'http://127.0.0.1:7777/sdk/singleton-iife.js',
     });
 
-    expect(state.sdkOrigin).toBe('http://127.0.0.1:7777');
+    expect(state).toEqual(
+      expect.objectContaining({
+        sdkOrigin: '',
+        configStatus: 'waiting',
+        configError: expect.stringContaining('Add ?sdk-origin='),
+      }),
+    );
   });
 
   it('derives the auth server origin recommendation from window.location.origin', () => {
@@ -168,7 +170,7 @@ describe('demo WebAuthn setup guidance', () => {
         origin: 'http://localhost:8080',
         protocol: 'http:',
         hostname: 'localhost',
-        sdkUrl: 'http://127.0.0.1:7777/sdk/singleton-iife.js',
+        sdkOriginInput: 'http://127.0.0.1:7777',
       }),
     ).toEqual(
       expect.objectContaining({
@@ -180,17 +182,17 @@ describe('demo WebAuthn setup guidance', () => {
     );
   });
 
-  it('blocks runtime when sdk url derivation fails', () => {
+  it('ignores malformed legacy sdk script config and still waits for sdk-origin', () => {
     expect(
       getDemoSetupState({
         origin: 'http://localhost:8080',
         protocol: 'http:',
         hostname: 'localhost',
-        sdkUrl: 'not-a-valid-url',
       }),
     ).toEqual(
       expect.objectContaining({
-        configError: expect.stringContaining('sdk-origin must be an origin'),
+        configStatus: 'waiting',
+        configError: expect.stringContaining('Add ?sdk-origin='),
         startupCommand: '',
       }),
     );

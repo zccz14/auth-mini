@@ -4,7 +4,6 @@ import { buildDemoContent } from '../../demo/content.js';
 const sampleState = {
   currentOrigin: 'https://docs.example.com',
   sdkOrigin: 'https://auth.zccz14.com',
-  sdkScriptUrl: 'https://auth.zccz14.com/sdk/singleton-iife.js',
   issuer: 'https://auth.zccz14.com',
   jwksUrl: 'https://auth.zccz14.com/jwks',
   suggestedOrigin: 'https://docs.example.com',
@@ -15,11 +14,14 @@ const sampleState = {
 };
 
 describe('demo content builders', () => {
-  it('builds sdk script and jose snippets from the shared setup state', () => {
+  it('builds browser sdk and jose snippets from the shared setup state', () => {
     const content = buildDemoContent(sampleState);
 
-    expect(content.sdkScriptTag).toContain(
-      'https://auth.zccz14.com/sdk/singleton-iife.js',
+    expect(content.sdkModuleSnippet).toContain(
+      "import { createBrowserSdk } from 'auth-mini/sdk/browser';",
+    );
+    expect(content.sdkModuleSnippet).toContain(
+      "const AuthMini = createBrowserSdk('https://auth.zccz14.com');",
     );
     expect(content.joseSnippet).toContain("new URL('/jwks', issuer)");
     expect(content.joseSnippet).toContain(
@@ -34,7 +36,6 @@ describe('demo content builders', () => {
     const content = buildDemoContent({
       ...sampleState,
       sdkOrigin: '',
-      sdkScriptUrl: '',
       issuer: '',
       jwksUrl: '',
     });
@@ -86,7 +87,6 @@ describe('demo content builders', () => {
       sdkOrigin: 'https://staging-auth.example.com',
       issuer: 'https://staging-auth.example.com',
       jwksUrl: 'https://staging-auth.example.com/jwks',
-      sdkScriptUrl: 'https://staging-auth.example.com/sdk/singleton-iife.js',
     });
 
     for (const entry of content.apiReference) {
@@ -216,7 +216,7 @@ describe('demo content builders', () => {
         'self-hosted',
       ]),
     );
-    expect(content.howItWorks.join('\n')).toContain('script origin');
+    expect(content.howItWorks.join('\n')).toContain('module construction');
     expect(content.howItWorks.join('\n')).toContain('origin add');
     expect(content.howItWorks.join('\n')).toContain('WebAuthn');
   });

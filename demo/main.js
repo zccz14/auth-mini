@@ -594,7 +594,14 @@ async function clearState({
 
 function handleSdkOriginChange({ history, location, value, windowObject }) {
   const params = new URLSearchParams(location.search);
-  params.set('sdk-origin', value.trim());
+  const trimmedValue = value.trim();
+
+  if (trimmedValue) {
+    params.set('sdk-origin', trimmedValue);
+  } else {
+    params.delete('sdk-origin');
+  }
+
   const search = params.toString();
   history.replaceState(
     {},
