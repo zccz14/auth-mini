@@ -14,11 +14,14 @@ type BootstrapInput = {
   storage?: Storage;
 };
 
-type SingletonInput = {
-  baseUrl: string;
+export type BrowserSdkFactoryOptions = {
   fetch?: FetchLike;
   now?: () => number;
   storage?: Storage;
+};
+
+type SingletonInput = BrowserSdkFactoryOptions & {
+  baseUrl: string;
 };
 
 declare global {
@@ -36,7 +39,17 @@ export function createAuthMiniInternal(
 }
 
 export function createSingletonSdk(input: SingletonInput): AuthMiniInternal {
-  return getRuntime().createSingletonSdk(input) as AuthMiniInternal;
+  return createBrowserSdkInternal(input.baseUrl, input);
+}
+
+export function createBrowserSdkInternal(
+  baseUrl: string,
+  options: BrowserSdkFactoryOptions = {},
+): AuthMiniInternal {
+  return getRuntime().createSingletonSdk({
+    ...options,
+    baseUrl,
+  }) as AuthMiniInternal;
 }
 
 export function bootstrapSingletonSdk(input: BootstrapInput) {
