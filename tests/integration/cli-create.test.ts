@@ -8,6 +8,7 @@ import {
   countRows,
   createMalformedJwksSlotDbPath,
   createLegacySchemaDbPath,
+  createSessionAuthMethodCompatDbPath,
   createTempDbPath,
   listTables,
 } from '../helpers/db.js';
@@ -280,6 +281,36 @@ describe('workspace bootstrap', () => {
       'webauthn_challenges',
       'webauthn_credentials',
     ]);
+  });
+
+  it('bootstraps a sessions table missing only auth_method and backfills legacy rows', async () => {
+    const { bootstrapDatabase } =
+      await import('../../src/infra/db/bootstrap.js');
+    const { createDatabaseClient } =
+      await import('../../src/infra/db/client.js');
+    const dbPath = await createSessionAuthMethodCompatDbPath();
+
+    await expect(bootstrapDatabase(dbPath)).resolves.toBeUndefined();
+
+    const db = createDatabaseClient(dbPath);
+
+    try {
+      const sessionColumns = db
+        .prepare("PRAGMA table_info('sessions')")
+        .all() as Array<{
+        name: string;
+      }>;
+      const sessionRow = db
+        .prepare('SELECT auth_method FROM sessions WHERE id = ? LIMIT 1')
+        .get('session-1') as { auth_method: string };
+
+      expect(sessionColumns.map((column) => column.name)).toContain(
+        'auth_method',
+      );
+      expect(sessionRow).toEqual({ auth_method: 'email_otp' });
+    } finally {
+      db.close();
+    }
   });
 
   it('fails bootstrap when a new-schema jwks table contains an extra row', async () => {

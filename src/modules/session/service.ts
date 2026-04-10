@@ -113,7 +113,7 @@ export async function refreshSessionTokens(
 
   const refreshToken = generateOpaqueToken();
   const rotatedRefreshTokenHash = hashValue(refreshToken);
-  const rotatedSession = rotateRefreshToken(db, {
+  let rotatedSession = rotateRefreshToken(db, {
     sessionId: input.sessionId,
     currentRefreshTokenHash: submittedRefreshTokenHash,
     nextRefreshTokenHash: rotatedRefreshTokenHash,
@@ -121,19 +121,43 @@ export async function refreshSessionTokens(
   });
 
   if (!rotatedSession) {
-    const latestSession = getSessionById(db, input.sessionId);
+    let latestSession = getSessionById(db, input.sessionId);
 
     if (latestSession && latestSession.expiresAt > now) {
-      input.logger?.warn(
-        {
-          event: 'session.refresh.failed',
-          reason: 'session_superseded',
-          session_id: input.sessionId,
-        },
-        'Session refresh failed',
-      );
+      rotatedSession = rotateRefreshToken(db, {
+        sessionId: input.sessionId,
+        currentRefreshTokenHash: submittedRefreshTokenHash,
+        nextRefreshTokenHash: rotatedRefreshTokenHash,
+        now,
+      });
 
-      throw new SessionSupersededError();
+      latestSession = rotatedSession
+        ? latestSession
+        : getSessionById(db, input.sessionId);
+
+      if (rotatedSession) {
+        return finalizeRefresh(db, {
+          input,
+          now,
+          refreshToken,
+          rotatedRefreshTokenHash,
+          rotatedSession,
+          submittedRefreshTokenHash,
+        });
+      }
+
+      if (latestSession && latestSession.expiresAt > now) {
+        input.logger?.warn(
+          {
+            event: 'session.refresh.failed',
+            reason: 'session_superseded',
+            session_id: input.sessionId,
+          },
+          'Session refresh failed',
+        );
+
+        throw new SessionSupersededError();
+      }
     }
 
     input.logger?.warn(
@@ -148,42 +172,68 @@ export async function refreshSessionTokens(
     throw new SessionInvalidatedError();
   }
 
+  return finalizeRefresh(db, {
+    input,
+    now,
+    refreshToken,
+    rotatedRefreshTokenHash,
+    rotatedSession,
+    submittedRefreshTokenHash,
+  });
+}
+
+async function finalizeRefresh(
+  db: DatabaseClient,
+  params: {
+    input: {
+      sessionId: string;
+      refreshToken: string;
+      issuer: string;
+      logger?: AppLogger;
+    };
+    now: string;
+    refreshToken: string;
+    rotatedRefreshTokenHash: string;
+    rotatedSession: Session;
+    submittedRefreshTokenHash: string;
+  },
+): Promise<TokenPair & { session: Session }> {
   let accessToken: string;
 
   try {
     accessToken = await signJwt(db, {
-      sub: rotatedSession.userId,
-      sid: rotatedSession.id,
-      iss: input.issuer,
+      sub: params.rotatedSession.userId,
+      sid: params.rotatedSession.id,
+      iss: params.input.issuer,
       typ: 'access',
     });
   } catch (error) {
     rotateRefreshToken(db, {
-      sessionId: input.sessionId,
-      currentRefreshTokenHash: rotatedRefreshTokenHash,
-      nextRefreshTokenHash: submittedRefreshTokenHash,
-      now,
+      sessionId: params.input.sessionId,
+      currentRefreshTokenHash: params.rotatedRefreshTokenHash,
+      nextRefreshTokenHash: params.submittedRefreshTokenHash,
+      now: params.now,
     });
 
     throw error;
   }
 
-  input.logger?.info(
+  params.input.logger?.info(
     {
       event: 'session.refresh.succeeded',
-      session_id: rotatedSession.id,
-      user_id: rotatedSession.userId,
+      session_id: params.rotatedSession.id,
+      user_id: params.rotatedSession.userId,
     },
     'Session refresh succeeded',
   );
 
   return {
-    session: rotatedSession,
-    session_id: rotatedSession.id,
+    session: params.rotatedSession,
+    session_id: params.rotatedSession.id,
     access_token: accessToken,
     token_type: 'Bearer',
     expires_in: TTLS.accessTokenSeconds,
-    refresh_token: refreshToken,
+    refresh_token: params.refreshToken,
   };
 }
 
