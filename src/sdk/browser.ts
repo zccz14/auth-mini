@@ -1,8 +1,5 @@
-import {
-  createBrowserSdkInternal,
-  type BrowserSdkFactoryOptions,
-} from './singleton-entry.js';
-import type { AuthMiniApi } from './types.js';
+import { createBrowserSdkInternal } from './singleton-entry.js';
+import type { AuthMiniApi, BrowserSdkFactoryOptions } from './types.js';
 
 export type {
   AuthMiniApi,

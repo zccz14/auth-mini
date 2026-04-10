@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createBrowserSdk } from '../../src/sdk/browser.js';
 import { fakeStorage, jsonResponse } from '../helpers/sdk.js';
@@ -28,5 +30,19 @@ describe('browser module sdk', () => {
     expect(requestInit).toMatchObject({
       method: 'POST',
     });
+  });
+
+  it('keeps the browser module declaration free of singleton global typings', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/sdk/browser.ts'),
+      'utf8',
+    );
+
+    expect(source).not.toMatch(
+      /type\s+BrowserSdkFactoryOptions[\s\S]*from '\.\/singleton-entry\.js'/,
+    );
+    expect(source).toContain('createBrowserSdkInternal');
+    expect(source).toContain('BrowserSdkFactoryOptions');
+    expect(source).toContain("from './types.js'");
   });
 });
