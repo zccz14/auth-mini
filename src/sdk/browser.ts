@@ -1,9 +1,8 @@
 import { createBrowserSdkInternal } from './singleton-entry.js';
-import type { AuthMiniApi, BrowserSdkFactoryOptions } from './types.js';
+import type { AuthMiniApi } from './types.js';
 
 export type {
   AuthMiniApi,
-  BrowserSdkFactoryOptions,
   EmailStartInput,
   EmailStartResponse,
   EmailVerifyInput,
@@ -15,9 +14,6 @@ export type {
   WebauthnVerifyResponse,
 } from './types.js';
 
-export function createBrowserSdk(
-  serverBaseUrl: string,
-  options: BrowserSdkFactoryOptions = {},
-): AuthMiniApi {
-  return createBrowserSdkInternal(serverBaseUrl, options);
+export function createBrowserSdk(serverBaseUrl: string): AuthMiniApi {
+  return createBrowserSdkInternal(serverBaseUrl);
 }

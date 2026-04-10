@@ -8,28 +8,33 @@ describe('browser module sdk', () => {
   it('uses the explicit base URL for browser sdk requests without window side effects', async () => {
     const storage = fakeStorage();
     const fetch = vi.fn(async () => jsonResponse({ ok: true }));
-    const sdk = createBrowserSdk('https://sdk.example.test:9443', {
-      fetch,
-      storage,
-    });
+    vi.stubGlobal('fetch', fetch);
+    vi.stubGlobal('localStorage', storage);
 
-    expect(typeof sdk.email.start).toBe('function');
-    expect(typeof sdk.session.onChange).toBe('function');
-    expect('AuthMini' in globalThis).toBe(false);
+    const sdk = createBrowserSdk('https://sdk.example.test:9443');
 
-    await expect(
-      sdk.email.start({ email: 'user@example.com' }),
-    ).resolves.toEqual({ ok: true });
+    try {
+      expect(typeof sdk.email.start).toBe('function');
+      expect(typeof sdk.session.onChange).toBe('function');
+      expect('AuthMini' in globalThis).toBe(false);
 
-    expect(fetch).toHaveBeenCalledTimes(1);
+      await expect(
+        sdk.email.start({ email: 'user@example.com' }),
+      ).resolves.toEqual({ ok: true });
 
-    const [requestUrl, requestInit] = fetch.mock.calls[0] ?? [];
+      expect(fetch).toHaveBeenCalledTimes(1);
 
-    expect(requestUrl).toBeInstanceOf(URL);
-    expect(requestUrl.href).toBe('https://sdk.example.test:9443/email/start');
-    expect(requestInit).toMatchObject({
-      method: 'POST',
-    });
+      const [requestUrl, requestInit] = fetch.mock.calls[0] ?? [];
+
+      expect(requestUrl).toBeInstanceOf(URL);
+      expect(requestUrl.href).toBe('https://sdk.example.test:9443/email/start');
+      expect(requestInit).toMatchObject({
+        method: 'POST',
+      });
+      expect('AuthMini' in globalThis).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('keeps the browser module declaration free of singleton global typings', () => {
@@ -42,10 +47,10 @@ describe('browser module sdk', () => {
       /type\s+BrowserSdkFactoryOptions[\s\S]*from '\.\/singleton-entry\.js'/,
     );
     expect(source).toContain('createBrowserSdkInternal');
-    expect(source).toContain('BrowserSdkFactoryOptions');
     expect(source).toContain("from './types.js'");
+    expect(source).not.toContain('BrowserSdkFactoryOptions');
     expect(source).toContain(
-      'export type {\n  AuthMiniApi,\n  BrowserSdkFactoryOptions,',
+      'export function createBrowserSdk(serverBaseUrl: string): AuthMiniApi',
     );
   });
 });

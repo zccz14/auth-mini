@@ -5,12 +5,6 @@ export type FetchLike = (
   init?: RequestInit,
 ) => Promise<Response>;
 
-export type BrowserSdkFactoryOptions = {
-  fetch?: FetchLike;
-  now?: () => number;
-  storage?: Storage;
-};
-
 export type MeResponse = {
   user_id: string;
   email: string;

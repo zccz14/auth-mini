@@ -3,10 +3,15 @@
 import type {
   AuthMiniApi,
   AuthMiniInternal,
-  BrowserSdkFactoryOptions,
   FetchLike,
   InternalSdkDeps,
 } from './types.js';
+
+type BrowserSdkFactoryOptions = {
+  fetch?: FetchLike;
+  now?: () => number;
+  storage?: Storage;
+};
 
 type BootstrapInput = {
   currentScript: { src?: string | null } | null;
