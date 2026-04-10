@@ -576,6 +576,36 @@ describe('session routes', () => {
     });
   });
 
+  it('me accepts a legacy access token without amr for an ed25519 session', async () => {
+    const testApp = await createSignedInApp('legacy-ed25519-me@example.com');
+    openApps.push(testApp);
+
+    testApp.db
+      .prepare('UPDATE sessions SET auth_method = ? WHERE id = ?')
+      .run('ed25519', testApp.sessionId);
+
+    const accessToken = await forgeLegacyAccessToken(testApp);
+    const response = await testApp.app.request('/me', {
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      user_id: testApp.userId,
+      email: 'legacy-ed25519-me@example.com',
+      webauthn_credentials: [],
+      active_sessions: [
+        {
+          id: testApp.sessionId,
+          created_at: expect.any(String),
+          expires_at: expect.any(String),
+        },
+      ],
+    });
+  });
+
   it('me relies on expires_at for active_sessions', async () => {
     const testApp = await createSignedInApp('active@example.com');
     openApps.push(testApp);
