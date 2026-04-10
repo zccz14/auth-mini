@@ -1,0 +1,78 @@
+{
+  "version": "1.0.0",
+  "currentTask": "docker-runtime-slim-entrypoint",
+  "settings": {
+    "autoRemind": true,
+    "remindBeforeReset": true,
+    "taskCreationPolicy": "agent-with-approval"
+  },
+  "tasks": [
+    {
+      "id": "docker-runtime-slim-entrypoint",
+      "name": "Docker runtime slim + entrypoint 评估",
+      "status": "active",
+      "createdAt": "2026-04-09T08:59:25.936Z",
+      "updatedAt": "2026-04-09T12:28:19.515Z"
+    }
+  ],
+  "pendingProposals": [
+    {
+      "id": "proposal-mnr8wqvk-43eb5d",
+      "name": "Docker runtime slim + entrypoint 评估",
+      "goal": "锁定 Docker 基础镜像到 node:24.14.1 的 Debian slim 变体，清理 runtime 安装步骤，并评估是否可以移除 docker/entrypoint.sh。",
+      "rationale": "用户要求以最少打断完成一次端到端交付，并明确提出 Docker 基础镜像锁定、runtime 精简以及 entrypoint 可移除性调研；需要用独立 task 持久化设计、验证与交付产物。",
+      "points": [
+        "将 Dockerfile 基础镜像改为最新 Debian slim 上的 node 24.14.1 具体 tag，避免 floating tag。",
+        "runtime stage 去掉 apt-get update / apt-get install，保持行为不回退。",
+        "调研 docker/entrypoint.sh 的职责、启动顺序与依赖点，明确是否能去掉及前置条件。",
+        "补齐必要验证、代码评审与 PR 说明，产物统一写入任务 docs 目录。"
+      ],
+      "scope": [
+        "Dockerfile",
+        "docker/entrypoint.sh",
+        "docker/test-entrypoint.sh",
+        "docker/test-image-smoke.sh",
+        ".legion/**"
+      ],
+      "phases": [
+        {
+          "name": "设计与现状调研",
+          "tasks": [
+            {
+              "description": "审查当前 Dockerfile 与 entrypoint 相关脚本，确认风险、约束与验证口径",
+              "acceptance": "plan.md 完成，包含风险分级、允许 scope、验收与 design-lite 摘要"
+            }
+          ]
+        },
+        {
+          "name": "实现与验证",
+          "tasks": [
+            {
+              "description": "更新 Dockerfile/runtime 逻辑并在必要时调整相关测试",
+              "acceptance": "变更实现完成，相关脚本验证结果已记录到 test-report.md"
+            },
+            {
+              "description": "评估 entrypoint 是否可移除并形成结论",
+              "acceptance": "report/pr-body 中包含 entrypoint 职责拆解、是否可移除的结论与依据"
+            }
+          ]
+        },
+        {
+          "name": "评审与交付",
+          "tasks": [
+            {
+              "description": "完成代码评审、安全评估（如需要）与交付文档",
+              "acceptance": "生成 review-code.md、report-walkthrough.md、pr-body.md；如涉及安全则补 review-security.md"
+            }
+          ]
+        }
+      ],
+      "proposedBy": "Claude",
+      "proposedAt": "2026-04-09T08:59:15.345Z",
+      "status": "approved",
+      "decidedAt": "2026-04-09T08:59:25.936Z",
+      "decidedBy": "Claude",
+      "createdTaskId": "docker-runtime-slim-entrypoint"
+    }
+  ]
+}
