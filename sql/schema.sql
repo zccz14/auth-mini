@@ -81,3 +81,23 @@ CREATE TABLE IF NOT EXISTS webauthn_challenges (
   ),
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS ed25519_credentials (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  public_key TEXT NOT NULL,
+  last_used_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS ed25519_challenges (
+  request_id TEXT PRIMARY KEY,
+  credential_id TEXT NOT NULL,
+  challenge TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  consumed_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (credential_id) REFERENCES ed25519_credentials(id) ON DELETE CASCADE
+);

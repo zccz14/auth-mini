@@ -21,6 +21,14 @@ type SessionRow = {
   expires_at: string;
 };
 
+type Ed25519CredentialRow = {
+  id: string;
+  name: string;
+  public_key: string;
+  last_used_at: string | null;
+  created_at: string;
+};
+
 export type User = {
   id: string;
   email: string;
@@ -39,6 +47,14 @@ export type ActiveSession = {
   id: string;
   created_at: string;
   expires_at: string;
+};
+
+export type MeEd25519Credential = {
+  id: string;
+  name: string;
+  public_key: string;
+  last_used_at: string | null;
+  created_at: string;
 };
 
 export function getUserByEmail(db: DatabaseClient, email: string): User | null {
@@ -129,6 +145,30 @@ export function listActiveUserSessions(
     id: row.id,
     created_at: row.created_at,
     expires_at: row.expires_at,
+  }));
+}
+
+export function listUserEd25519Credentials(
+  db: DatabaseClient,
+  userId: string,
+): MeEd25519Credential[] {
+  const rows = db
+    .prepare(
+      [
+        'SELECT id, name, public_key, last_used_at, created_at',
+        'FROM ed25519_credentials',
+        'WHERE user_id = ?',
+        'ORDER BY created_at ASC, id ASC',
+      ].join(' '),
+    )
+    .all(userId) as Ed25519CredentialRow[];
+
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    public_key: row.public_key,
+    last_used_at: row.last_used_at,
+    created_at: row.created_at,
   }));
 }
 
