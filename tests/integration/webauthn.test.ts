@@ -156,25 +156,29 @@ describe('webauthn routes', () => {
     });
   });
 
-  it('returns insufficient_authentication_method for mixed passkey management amr', async () => {
+  it('allows passkey management for composite human amr sessions', async () => {
     const testApp = await createSignedInApp(
       'passkey-management-mixed@example.com',
     );
     openApps.push(testApp);
+    const passkey = createTestPasskey('passkey-management-mixed@example.com');
+    const options = await getRegisterOptions(testApp);
     const accessToken = await forgeAccessToken(testApp, {
       amr: ['webauthn', 'ed25519'],
     });
+    const credential = passkey.createRegistrationCredential(
+      options.publicKey,
+      origin,
+    );
 
-    const response = await testApp.app.request('/webauthn/register/options', {
+    const response = await testApp.app.request('/webauthn/register/verify', {
       method: 'POST',
       headers: authHeaders(accessToken),
-      body: json({ rp_id: 'app.example.com' }),
+      body: json({ request_id: options.request_id, credential }),
     });
 
-    expect(response.status).toBe(403);
-    expect(await response.json()).toEqual({
-      error: 'insufficient_authentication_method',
-    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
   });
 
   it('register/verify stores a discoverable credential', async () => {
@@ -1401,6 +1405,34 @@ describe('webauthn routes', () => {
     expect(allowedResponse.status).toBe(200);
     expect(await allowedResponse.json()).toEqual({ ok: true });
     expect(deleted).toBeUndefined();
+  });
+
+  it('returns insufficient_authentication_method for unsupported delete credential amr', async () => {
+    const testApp = await createSignedInApp('delete-denied@example.com');
+    openApps.push(testApp);
+
+    await registerPasskey(testApp, 'delete-denied@example.com');
+    const credential = testApp.db
+      .prepare('SELECT id FROM webauthn_credentials WHERE user_id = ?')
+      .get(testApp.userId) as { id: string };
+    const accessToken = await forgeAccessToken(testApp, {
+      amr: ['ed25519'],
+    });
+
+    const response = await testApp.app.request(
+      `/webauthn/credentials/${credential.id}`,
+      {
+        method: 'DELETE',
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+        },
+      },
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      error: 'insufficient_authentication_method',
+    });
   });
 
   it('webauthn authenticate requests do not invalidate each other', async () => {
