@@ -73,7 +73,9 @@ export const requireAccessToken: MiddlewareHandler<{
 export const requirePasskeyManagementAuth: MiddlewareHandler<{
   Variables: AuthContextVariables;
 }> = async (c, next) => {
-  if (!c.var.auth.amr.some((method) => isAllowedPasskeyManagementAmr(method))) {
+  if (
+    !c.var.auth.amr.every((method) => isAllowedPasskeyManagementAmr(method))
+  ) {
     throw insufficientAuthenticationMethodError();
   }
 

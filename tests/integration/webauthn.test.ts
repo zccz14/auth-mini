@@ -156,6 +156,27 @@ describe('webauthn routes', () => {
     });
   });
 
+  it('returns insufficient_authentication_method for mixed passkey management amr', async () => {
+    const testApp = await createSignedInApp(
+      'passkey-management-mixed@example.com',
+    );
+    openApps.push(testApp);
+    const accessToken = await forgeAccessToken(testApp, {
+      amr: ['webauthn', 'ed25519'],
+    });
+
+    const response = await testApp.app.request('/webauthn/register/options', {
+      method: 'POST',
+      headers: authHeaders(accessToken),
+      body: json({ rp_id: 'app.example.com' }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      error: 'insufficient_authentication_method',
+    });
+  });
+
   it('register/verify stores a discoverable credential', async () => {
     const testApp = await createSignedInApp('register@example.com');
     openApps.push(testApp);
