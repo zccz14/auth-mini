@@ -540,6 +540,7 @@ describe('session routes', () => {
       user_id: testApp.userId,
       email: 'me@example.com',
       webauthn_credentials: [],
+      ed25519_credentials: [],
       active_sessions: [
         {
           id: testApp.sessionId,
@@ -566,6 +567,7 @@ describe('session routes', () => {
       user_id: testApp.userId,
       email: 'legacy-me@example.com',
       webauthn_credentials: [],
+      ed25519_credentials: [],
       active_sessions: [
         {
           id: testApp.sessionId,
@@ -596,6 +598,7 @@ describe('session routes', () => {
       user_id: testApp.userId,
       email: 'legacy-ed25519-me@example.com',
       webauthn_credentials: [],
+      ed25519_credentials: [],
       active_sessions: [
         {
           id: testApp.sessionId,

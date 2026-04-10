@@ -7,6 +7,7 @@ import { runBuiltCli } from '../helpers/cli.js';
 import {
   countRows,
   createMalformedJwksSlotDbPath,
+  createLegacySessionAuthMethodConstraintDbPath,
   createLegacySchemaDbPath,
   createSessionAuthMethodCompatDbPath,
   createTempDbPath,
@@ -230,6 +231,8 @@ describe('workspace bootstrap', () => {
 
     expect(await listTables(tempDbPath)).toEqual([
       'allowed_origins',
+      'ed25519_challenges',
+      'ed25519_credentials',
       'email_otps',
       'jwks_keys',
       'sessions',
@@ -308,6 +311,57 @@ describe('workspace bootstrap', () => {
         'auth_method',
       );
       expect(sessionRow).toEqual({ auth_method: 'email_otp' });
+      expect(() =>
+        db
+          .prepare(
+            [
+              'INSERT INTO sessions',
+              '(id, user_id, refresh_token_hash, auth_method, expires_at)',
+              'VALUES (?, ?, ?, ?, ?)',
+            ].join(' '),
+          )
+          .run(
+            'session-ed25519',
+            'user-1',
+            'refresh-hash-ed25519',
+            'ed25519',
+            '2099-01-01T00:00:00.000Z',
+          ),
+      ).not.toThrow();
+    } finally {
+      db.close();
+    }
+  });
+
+  it('widens a legacy sessions auth_method constraint to allow ed25519', async () => {
+    const { bootstrapDatabase } =
+      await import('../../src/infra/db/bootstrap.js');
+    const { createDatabaseClient } =
+      await import('../../src/infra/db/client.js');
+    const dbPath = await createLegacySessionAuthMethodConstraintDbPath();
+
+    await expect(bootstrapDatabase(dbPath)).resolves.toBeUndefined();
+
+    const db = createDatabaseClient(dbPath);
+
+    try {
+      expect(() =>
+        db
+          .prepare(
+            [
+              'INSERT INTO sessions',
+              '(id, user_id, refresh_token_hash, auth_method, expires_at)',
+              'VALUES (?, ?, ?, ?, ?)',
+            ].join(' '),
+          )
+          .run(
+            'session-ed25519-upgraded',
+            'user-1',
+            'refresh-hash-ed25519-upgraded',
+            'ed25519',
+            '2099-01-01T00:00:00.000Z',
+          ),
+      ).not.toThrow();
     } finally {
       db.close();
     }

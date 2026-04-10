@@ -4,6 +4,7 @@ import { decodeBase64Url, generateOpaqueToken } from '../../shared/crypto.js';
 import type { AppLogger } from '../../shared/logger.js';
 import { TTLS } from '../../shared/time.js';
 import { mintSessionTokens, type TokenPair } from '../session/service.js';
+import { expireSessionById } from '../session/repo.js';
 import {
   consumeChallenge,
   createChallenge,
@@ -180,8 +181,9 @@ export async function verifyAuthentication(
     logger?: AppLogger;
   },
 ): Promise<TokenPair> {
+  const now = new Date().toISOString();
+
   try {
-    const now = new Date().toISOString();
     const challenge = getChallengeByRequestId(db, input.requestId);
 
     if (!challenge || challenge.consumedAt || challenge.expiresAt <= now) {
@@ -194,30 +196,15 @@ export async function verifyAuthentication(
       throw new InvalidEd25519AuthenticationError();
     }
 
-    const signature = decodeBase64Url(input.signature);
-    const publicKey = createPublicKey({
-      key: Buffer.concat([
-        ED25519_SPKI_PREFIX,
-        decodeBase64Url(credential.publicKey),
-      ]),
-      format: 'der',
-      type: 'spki',
+    const verified = verifyChallenge({
+      challenge: challenge.challenge,
+      publicKey: credential.publicKey,
+      signature: input.signature,
     });
-    const verified = verify(
-      null,
-      Buffer.from(challenge.challenge, 'utf8'),
-      publicKey,
-      signature,
-    );
 
-    if (!verified || !consumeChallenge(db, challenge.requestId, now)) {
+    if (!verified) {
       throw new InvalidEd25519AuthenticationError();
     }
-
-    updateCredentialLastUsedAt(db, {
-      id: credential.id,
-      lastUsedAt: now,
-    });
 
     const tokens = await mintSessionTokens(db, {
       userId: credential.userId,
@@ -225,6 +212,22 @@ export async function verifyAuthentication(
       issuer: input.issuer,
       logger: input.logger,
     });
+
+    try {
+      db.transaction(() => {
+        if (!consumeChallenge(db, challenge.requestId, now)) {
+          throw new InvalidEd25519AuthenticationError();
+        }
+
+        updateCredentialLastUsedAt(db, {
+          id: credential.id,
+          lastUsedAt: now,
+        });
+      })();
+    } catch (error) {
+      expireSessionById(db, tokens.session.id, now);
+      throw error;
+    }
 
     input.logger?.info(
       {
@@ -257,6 +260,33 @@ export async function verifyAuthentication(
       throw error;
     }
 
+    throw error;
+  }
+}
+
+function verifyChallenge(input: {
+  challenge: string;
+  publicKey: string;
+  signature: string;
+}) {
+  try {
+    const signature = decodeBase64Url(input.signature);
+    const publicKey = createPublicKey({
+      key: Buffer.concat([
+        ED25519_SPKI_PREFIX,
+        decodeBase64Url(input.publicKey),
+      ]),
+      format: 'der',
+      type: 'spki',
+    });
+
+    return verify(
+      null,
+      Buffer.from(input.challenge, 'utf8'),
+      publicKey,
+      signature,
+    );
+  } catch {
     throw new InvalidEd25519AuthenticationError();
   }
 }

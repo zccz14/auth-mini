@@ -68,6 +68,7 @@ export async function bootstrapDatabase(
 
     if (hasExistingAppSchema(db)) {
       addMissingSessionAuthMethodColumn(db);
+      widenLegacySessionAuthMethodConstraint(db);
       assertRequiredTablesAndColumns(db, requiredRuntimeSchema);
       assertJwksSlotSchema(db);
     }
@@ -173,10 +174,79 @@ function addMissingSessionAuthMethodColumn(
       [
         'ALTER TABLE sessions',
         "ADD COLUMN auth_method TEXT NOT NULL DEFAULT 'email_otp'",
-        "CHECK (auth_method IN ('email_otp', 'webauthn'))",
+        "CHECK (auth_method IN ('email_otp', 'webauthn', 'ed25519'))",
       ].join(' '),
     );
   }
+}
+
+function widenLegacySessionAuthMethodConstraint(
+  db: ReturnType<typeof createDatabaseClient>,
+): void {
+  if (
+    !tableExists(db, 'users') ||
+    !tableExists(db, 'sessions') ||
+    !tableHasColumn(db, 'sessions', 'auth_method')
+  ) {
+    return;
+  }
+
+  const tableDefinition = db
+    .prepare(
+      [
+        'SELECT sql',
+        'FROM sqlite_master',
+        "WHERE type = 'table' AND name = 'sessions'",
+      ].join(' '),
+    )
+    .get() as { sql: string | null } | undefined;
+  const normalizedSql = normalizeSql(tableDefinition?.sql ?? '');
+
+  if (
+    !normalizedSql.includes(
+      "check (auth_method in ('email_otp', 'webauthn'))",
+    ) ||
+    normalizedSql.includes('ed25519')
+  ) {
+    return;
+  }
+
+  db.transaction(() => {
+    db.exec('ALTER TABLE sessions RENAME TO sessions_legacy_auth_method');
+    db.exec(`
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        refresh_token_hash TEXT NOT NULL,
+        auth_method TEXT NOT NULL CHECK (auth_method IN ('email_otp', 'webauthn', 'ed25519')),
+        expires_at TEXT NOT NULL,
+        revoked_at TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+    db.exec(`
+      INSERT INTO sessions (
+        id,
+        user_id,
+        refresh_token_hash,
+        auth_method,
+        expires_at,
+        revoked_at,
+        created_at
+      )
+      SELECT
+        id,
+        user_id,
+        refresh_token_hash,
+        auth_method,
+        expires_at,
+        revoked_at,
+        created_at
+      FROM sessions_legacy_auth_method
+    `);
+    db.exec('DROP TABLE sessions_legacy_auth_method');
+  })();
 }
 
 function tableExists(

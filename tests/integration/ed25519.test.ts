@@ -485,6 +485,43 @@ describe('ed25519 routes', () => {
       error: 'invalid_ed25519_authentication',
     });
   });
+
+  it('returns 500 without consuming the challenge when session minting fails', async () => {
+    const testApp = await createSignedInApp('ed25519-jwks-failure@example.com');
+    openApps.push(testApp);
+    const deviceKey = createTestEd25519Keypair('default');
+    const credential = await createCredentialForDevice(testApp, {
+      name: 'Mint failure signer',
+      publicKey: deviceKey.publicKey,
+    });
+    const startBody = await startAuthentication(testApp, credential.id);
+
+    testApp.db.prepare('DELETE FROM jwks_keys WHERE id = ?').run('CURRENT');
+
+    const response = await testApp.app.request('/ed25519/verify', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: json({
+        request_id: startBody.request_id,
+        signature: deviceKey.signChallenge(startBody.challenge),
+      }),
+    });
+    const storedChallenge = testApp.db
+      .prepare(
+        'SELECT consumed_at FROM ed25519_challenges WHERE request_id = ? LIMIT 1',
+      )
+      .get(startBody.request_id) as { consumed_at: string | null };
+    const storedCredential = testApp.db
+      .prepare(
+        'SELECT last_used_at FROM ed25519_credentials WHERE id = ? LIMIT 1',
+      )
+      .get(credential.id) as { last_used_at: string | null };
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: 'internal_error' });
+    expect(storedChallenge.consumed_at).toBeNull();
+    expect(storedCredential.last_used_at).toBeNull();
+  });
 });
 
 async function createSignedInApp(email: string) {
