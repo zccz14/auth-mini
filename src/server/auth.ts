@@ -42,8 +42,7 @@ export const requireAccessToken: MiddlewareHandler<{
     if (
       payload.typ !== 'access' ||
       typeof payload.sub !== 'string' ||
-      typeof payload.sid !== 'string' ||
-      !isValidAmr(payload.amr)
+      typeof payload.sid !== 'string'
     ) {
       throw new Error('Invalid access token payload');
     }
@@ -58,10 +57,12 @@ export const requireAccessToken: MiddlewareHandler<{
       throw new Error('Invalid access token session');
     }
 
+    const amr = resolveAccessTokenAmr(payload.amr, session.authMethod);
+
     c.set('auth', {
       sub: payload.sub,
       sid: payload.sid,
-      amr: payload.amr,
+      amr,
     });
   } catch {
     throw invalidAccessTokenError();
@@ -86,6 +87,21 @@ function isValidAmr(amr: unknown): amr is string[] {
     amr.length > 0 &&
     amr.every((value) => typeof value === 'string')
   );
+}
+
+function resolveAccessTokenAmr(
+  amr: unknown,
+  sessionAuthMethod: 'email_otp' | 'webauthn',
+): string[] {
+  if (amr === undefined) {
+    return [sessionAuthMethod];
+  }
+
+  if (!isValidAmr(amr)) {
+    throw new Error('Invalid access token payload');
+  }
+
+  return amr;
 }
 
 function isAllowedPasskeyManagementAmr(method: string) {

@@ -491,6 +491,32 @@ describe('session routes', () => {
     });
   });
 
+  it('me accepts a legacy access token without amr', async () => {
+    const testApp = await createSignedInApp('legacy-me@example.com');
+    openApps.push(testApp);
+    const accessToken = await forgeLegacyAccessToken(testApp);
+
+    const response = await testApp.app.request('/me', {
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      user_id: testApp.userId,
+      email: 'legacy-me@example.com',
+      webauthn_credentials: [],
+      active_sessions: [
+        {
+          id: testApp.sessionId,
+          created_at: expect.any(String),
+          expires_at: expect.any(String),
+        },
+      ],
+    });
+  });
+
   it('me relies on expires_at for active_sessions', async () => {
     const testApp = await createSignedInApp('active@example.com');
     openApps.push(testApp);
@@ -759,6 +785,24 @@ async function createSignedInApp(email: string) {
     userId: user.id,
     sessionId: session.id,
   };
+}
+
+async function forgeLegacyAccessToken(
+  testApp: Awaited<ReturnType<typeof createSignedInApp>>,
+) {
+  const payload = await jwksService.verifyJwt(
+    testApp.db,
+    testApp.tokens.access_token,
+  );
+  const legacyPayload = { ...payload };
+
+  delete legacyPayload.amr;
+
+  return jwksService.signJwt(testApp.db, {
+    ...legacyPayload,
+    sid: testApp.sessionId,
+    sub: testApp.userId,
+  });
 }
 
 function getCurrentOtpSeam(): OtpMailSeam {
