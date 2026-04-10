@@ -388,13 +388,13 @@ describe('demo bootstrap', () => {
     );
     expect(
       env.document.querySelector('#sdk-script-snippet')?.textContent,
-    ).toContain("import { createBrowserSdk } from '../dist/sdk/browser.js';");
+    ).toContain("import { createBrowserSdk } from 'auth-mini/sdk/browser';");
     expect(
       env.document.querySelector('#sdk-script-snippet')?.textContent,
     ).toContain("createBrowserSdk('https://auth.example.com')");
     expect(
       env.document.querySelector('#deployment-notes-list')?.textContent,
-    ).toContain('dist/sdk/browser.js');
+    ).toContain('auth-mini/sdk/browser');
     expect(env.document.querySelector('#hero-capabilities li')?.tagName).toBe(
       'LI',
     );
