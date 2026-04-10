@@ -2,11 +2,15 @@ import type { MiddlewareHandler } from 'hono';
 import type { DatabaseClient } from '../infra/db/client.js';
 import { verifyJwt } from '../modules/jwks/service.js';
 import { getSessionById } from '../modules/session/repo.js';
-import { invalidAccessTokenError } from './errors.js';
+import {
+  insufficientAuthenticationMethodError,
+  invalidAccessTokenError,
+} from './errors.js';
 
 export type AccessTokenClaims = {
   sub: string;
   sid: string;
+  amr: string[];
 };
 
 export type AuthVariables = {
@@ -38,7 +42,8 @@ export const requireAccessToken: MiddlewareHandler<{
     if (
       payload.typ !== 'access' ||
       typeof payload.sub !== 'string' ||
-      typeof payload.sid !== 'string'
+      typeof payload.sid !== 'string' ||
+      !isValidAmr(payload.amr)
     ) {
       throw new Error('Invalid access token payload');
     }
@@ -56,6 +61,7 @@ export const requireAccessToken: MiddlewareHandler<{
     c.set('auth', {
       sub: payload.sub,
       sid: payload.sid,
+      amr: payload.amr,
     });
   } catch {
     throw invalidAccessTokenError();
@@ -63,3 +69,25 @@ export const requireAccessToken: MiddlewareHandler<{
 
   await next();
 };
+
+export const requirePasskeyManagementAuth: MiddlewareHandler<{
+  Variables: AuthContextVariables;
+}> = async (c, next) => {
+  if (!c.var.auth.amr.some((method) => isAllowedPasskeyManagementAmr(method))) {
+    throw insufficientAuthenticationMethodError();
+  }
+
+  await next();
+};
+
+function isValidAmr(amr: unknown): amr is string[] {
+  return (
+    Array.isArray(amr) &&
+    amr.length > 0 &&
+    amr.every((value) => typeof value === 'string')
+  );
+}
+
+function isAllowedPasskeyManagementAmr(method: string) {
+  return method === 'email_otp' || method === 'webauthn';
+}

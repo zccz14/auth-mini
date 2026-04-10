@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { encodeBase64Url } from '../../src/shared/crypto.js';
-import { verifyJwt } from '../../src/modules/jwks/service.js';
+import { signJwt, verifyJwt } from '../../src/modules/jwks/service.js';
 import type { OtpMailSeam } from '../helpers/mock-smtp.js';
 
 const otpSeam = vi.hoisted(() => ({ current: null as OtpMailSeam | null }));
@@ -64,6 +64,96 @@ describe('webauthn routes', () => {
 
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ error: 'invalid_access_token' });
+  });
+
+  it('rejects /me when access token amr is not a non-empty string array', async () => {
+    const testApp = await createSignedInApp('invalid-amr@example.com');
+    openApps.push(testApp);
+    const accessToken = await forgeAccessToken(testApp, {
+      amr: [],
+    });
+
+    const response = await testApp.app.request('/me', {
+      method: 'GET',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: 'invalid_access_token' });
+  });
+
+  it('allows passkey management for email otp sessions', async () => {
+    const testApp = await createSignedInApp(
+      'passkey-management-email@example.com',
+    );
+    openApps.push(testApp);
+
+    const response = await testApp.app.request('/webauthn/register/options', {
+      method: 'POST',
+      headers: authHeaders(testApp.tokens.access_token),
+      body: json({ rp_id: 'app.example.com' }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      request_id: expect.any(String),
+      publicKey: expect.any(Object),
+    });
+  });
+
+  it('allows passkey management for webauthn sessions', async () => {
+    const testApp = await createSignedInApp(
+      'passkey-management-webauthn@example.com',
+    );
+    openApps.push(testApp);
+    const passkey = await registerPasskey(
+      testApp,
+      'passkey-management-webauthn@example.com',
+    );
+    const authOptions = await getAuthOptions(testApp);
+    const authResponse = await verifyAuth(
+      testApp,
+      authOptions.request_id,
+      passkey.createAuthenticationCredential(authOptions.publicKey, origin),
+    );
+    const authBody = (await authResponse.json()) as { access_token: string };
+
+    expect(authResponse.status).toBe(200);
+
+    const response = await testApp.app.request('/webauthn/register/options', {
+      method: 'POST',
+      headers: authHeaders(authBody.access_token),
+      body: json({ rp_id: 'app.example.com' }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      request_id: expect.any(String),
+      publicKey: expect.any(Object),
+    });
+  });
+
+  it('returns insufficient_authentication_method for unsupported passkey management amr', async () => {
+    const testApp = await createSignedInApp(
+      'passkey-management-denied@example.com',
+    );
+    openApps.push(testApp);
+    const accessToken = await forgeAccessToken(testApp, {
+      amr: ['ed25519'],
+    });
+
+    const response = await testApp.app.request('/webauthn/register/options', {
+      method: 'POST',
+      headers: authHeaders(accessToken),
+      body: json({ rp_id: 'app.example.com' }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      error: 'insufficient_authentication_method',
+    });
   });
 
   it('register/verify stores a discoverable credential', async () => {
@@ -1398,12 +1488,32 @@ async function signInOnExistingApp(
   const user = testApp.db
     .prepare('SELECT id FROM users WHERE email = ?')
     .get(email) as { id: string };
+  const session = testApp.db
+    .prepare(
+      'SELECT id FROM sessions WHERE user_id = ? AND expires_at > ? ORDER BY created_at DESC LIMIT 1',
+    )
+    .get(user.id, new Date().toISOString()) as { id: string };
 
   return {
     ...testApp,
+    sessionId: session.id,
     tokens,
     userId: user.id,
   };
+}
+
+async function forgeAccessToken(
+  testApp: Awaited<ReturnType<typeof createSignedInApp>>,
+  overrides: { amr: unknown },
+) {
+  const payload = await verifyJwt(testApp.db, testApp.tokens.access_token);
+
+  return signJwt(testApp.db, {
+    ...payload,
+    sid: testApp.sessionId,
+    sub: testApp.userId,
+    amr: overrides.amr,
+  });
 }
 
 function getOrCreateOtpSeam(): OtpMailSeam {

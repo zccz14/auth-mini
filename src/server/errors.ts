@@ -15,6 +15,10 @@ export function invalidAccessTokenError(): HttpError {
   return new HttpError(401, 'invalid_access_token');
 }
 
+export function insufficientAuthenticationMethodError(): HttpError {
+  return new HttpError(403, 'insufficient_authentication_method');
+}
+
 export function sessionInvalidatedError(): HttpError {
   return new HttpError(401, 'session_invalidated');
 }
