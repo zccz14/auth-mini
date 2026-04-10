@@ -45,6 +45,37 @@ afterEach(() => {
 });
 
 describe('session routes', () => {
+  it('persists and reads the session auth method', async () => {
+    const dbPath = await createTempDbPath();
+    await bootstrapDatabase(dbPath);
+    const db = createDatabaseClient(dbPath);
+
+    try {
+      db.prepare(
+        'INSERT INTO users (id, email, email_verified_at) VALUES (?, ?, ?)',
+      ).run('user-1', 'user-1@example.com', '2030-01-01T00:00:00.000Z');
+
+      const session = createSession(db, {
+        userId: 'user-1',
+        refreshTokenHash: 'refresh-hash',
+        authMethod: 'email_otp',
+        expiresAt: '2099-01-01T00:00:00.000Z',
+      });
+
+      expect(session).toMatchObject({
+        userId: 'user-1',
+        refreshTokenHash: 'refresh-hash',
+        authMethod: 'email_otp',
+      });
+      expect(getSessionById(db, session.id)).toMatchObject({
+        id: session.id,
+        authMethod: 'email_otp',
+      });
+    } finally {
+      db.close();
+    }
+  });
+
   it('refresh rotates the refresh token', async () => {
     const testApp = await createSignedInApp('rotate@example.com');
     openApps.push(testApp);
@@ -160,6 +191,7 @@ describe('session routes', () => {
       const session = createSession(db, {
         userId: 'user-1',
         refreshTokenHash: hashValue('refresh-token'),
+        authMethod: 'email_otp',
         expiresAt: '2030-01-01T00:00:01.000Z',
       });
 
@@ -219,6 +251,7 @@ describe('session routes', () => {
       const session = createSession(db, {
         userId: 'user-1',
         refreshTokenHash: hashValue('refresh-token'),
+        authMethod: 'email_otp',
         expiresAt: '2099-01-01T00:00:00.000Z',
       });
       const signJwtSpy = vi
@@ -267,6 +300,7 @@ describe('session routes', () => {
       createSession(writerDb, {
         userId: 'user-1',
         refreshTokenHash: 'refresh-hash',
+        authMethod: 'email_otp',
         expiresAt: '2099-01-01T00:00:00.000Z',
       });
 
@@ -289,6 +323,7 @@ describe('session routes', () => {
         id: session.id,
         userId: 'user-1',
         refreshTokenHash: 'next-refresh-hash',
+        authMethod: 'email_otp',
       });
       expect(secondClaim).toBeNull();
     } finally {
