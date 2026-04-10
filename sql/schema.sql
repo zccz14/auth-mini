@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
   refresh_token_hash TEXT NOT NULL,
-  auth_method TEXT NOT NULL CHECK (auth_method IN ('email_otp', 'webauthn')),
+  auth_method TEXT NOT NULL CHECK (auth_method IN ('email_otp', 'webauthn', 'ed25519')),
   expires_at TEXT NOT NULL,
   revoked_at TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,

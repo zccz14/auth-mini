@@ -76,6 +76,33 @@ describe('session routes', () => {
     }
   });
 
+  it('persists and reads the ed25519 session auth method', async () => {
+    const dbPath = await createTempDbPath();
+    await bootstrapDatabase(dbPath);
+    const db = createDatabaseClient(dbPath);
+
+    try {
+      db.prepare(
+        'INSERT INTO users (id, email, email_verified_at) VALUES (?, ?, ?)',
+      ).run('user-1', 'user-1@example.com', '2030-01-01T00:00:00.000Z');
+
+      const session = createSession(db, {
+        userId: 'user-1',
+        refreshTokenHash: 'refresh-hash',
+        authMethod: 'ed25519',
+        expiresAt: '2099-01-01T00:00:00.000Z',
+      });
+
+      expect(session).toMatchObject({ authMethod: 'ed25519' });
+      expect(getSessionById(db, session.id)).toMatchObject({
+        id: session.id,
+        authMethod: 'ed25519',
+      });
+    } finally {
+      db.close();
+    }
+  });
+
   it('refresh rotates the refresh token', async () => {
     const testApp = await createSignedInApp('rotate@example.com');
     openApps.push(testApp);
@@ -284,6 +311,38 @@ describe('session routes', () => {
       expect(retryResult.session_id).toBe(session.id);
       expect(retryResult.refresh_token).not.toBe('refresh-token');
       signJwtSpy.mockRestore();
+    } finally {
+      db.close();
+    }
+  });
+
+  it('refresh signs access tokens with ed25519 amr', async () => {
+    const dbPath = await createTempDbPath();
+    await bootstrapDatabase(dbPath);
+    const db = createDatabaseClient(dbPath);
+
+    try {
+      await bootstrapKeys(db);
+      db.prepare(
+        'INSERT INTO users (id, email, email_verified_at) VALUES (?, ?, ?)',
+      ).run('user-1', 'user-1@example.com', '2030-01-01T00:00:00.000Z');
+
+      const session = createSession(db, {
+        userId: 'user-1',
+        refreshTokenHash: hashValue('refresh-token'),
+        authMethod: 'ed25519',
+        expiresAt: '2099-01-01T00:00:00.000Z',
+      });
+
+      const result = await refreshSessionTokens(db, {
+        sessionId: session.id,
+        refreshToken: 'refresh-token',
+        issuer: 'https://issuer.example',
+      });
+      const payload = await jwksService.verifyJwt(db, result.access_token);
+
+      expect(result.session).toMatchObject({ authMethod: 'ed25519' });
+      expect(payload.amr).toEqual(['ed25519']);
     } finally {
       db.close();
     }

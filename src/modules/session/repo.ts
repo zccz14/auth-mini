@@ -14,7 +14,7 @@ export type Session = {
   id: string;
   userId: string;
   refreshTokenHash: string;
-  authMethod: 'email_otp' | 'webauthn';
+  authMethod: 'email_otp' | 'webauthn' | 'ed25519';
   expiresAt: string;
   createdAt: string;
 };
