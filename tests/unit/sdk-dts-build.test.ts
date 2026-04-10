@@ -6,6 +6,9 @@ import { describe, expect, it } from 'vitest';
 const readBuiltDeclaration = () =>
   readFileSync(resolve(process.cwd(), 'dist/sdk/singleton-iife.d.ts'), 'utf8');
 
+const readBrowserModuleDeclaration = () =>
+  readFileSync(resolve(process.cwd(), 'dist/sdk/browser.d.ts'), 'utf8');
+
 const getWindowAuthMiniType = (source: string) => {
   const file = ts.createSourceFile(
     'singleton-iife.d.ts',
@@ -322,5 +325,14 @@ describe('sdk d.ts build artifact', () => {
       }
       "
     `);
+  });
+
+  it('emits browser sdk module declarations', () => {
+    const output = readBrowserModuleDeclaration();
+
+    expect(output).toContain('export declare function createBrowserSdk');
+    expect(output).toContain('createBrowserSdk');
+    expect(output).toContain('AuthMiniApi');
+    expect(output).toContain('SessionSnapshot');
   });
 });
