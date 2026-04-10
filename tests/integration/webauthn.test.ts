@@ -1560,13 +1560,14 @@ async function forgeAccessToken(
   overrides: { amr: unknown },
 ) {
   const payload = await verifyJwt(testApp.db, testApp.tokens.access_token);
-
-  return signJwt(testApp.db, {
+  const nextPayload: Record<string, unknown> = {
     ...payload,
     sid: testApp.sessionId,
     sub: testApp.userId,
     amr: overrides.amr,
-  });
+  };
+
+  return signJwt(testApp.db, nextPayload);
 }
 
 function getOrCreateOtpSeam(): OtpMailSeam {
