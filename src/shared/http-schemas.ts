@@ -56,3 +56,12 @@ export const ed25519CredentialCreateSchema = z.object({
 export const ed25519CredentialUpdateSchema = z.object({
   name: z.string().min(1),
 });
+
+export const ed25519StartSchema = z.object({
+  credential_id: z.uuid(),
+});
+
+export const ed25519VerifySchema = z.object({
+  request_id: z.uuid(),
+  signature: z.string().min(1),
+});

@@ -42,10 +42,15 @@ export function createCredential(
   input: { userId: string; name: string; publicKey: string },
 ): StoredEd25519Credential {
   const id = randomUUID();
+  const createdAt = new Date().toISOString();
 
   db.prepare(
-    'INSERT INTO ed25519_credentials (id, user_id, name, public_key) VALUES (?, ?, ?, ?)',
-  ).run(id, input.userId, input.name, input.publicKey);
+    [
+      'INSERT INTO ed25519_credentials',
+      '(id, user_id, name, public_key, created_at)',
+      'VALUES (?, ?, ?, ?, ?)',
+    ].join(' '),
+  ).run(id, input.userId, input.name, input.publicKey, createdAt);
 
   return getCredentialById(db, id) as StoredEd25519Credential;
 }
@@ -119,14 +124,21 @@ export function createChallenge(
   input: { credentialId: string; challenge: string; expiresAt: string },
 ): Ed25519Challenge {
   const requestId = randomUUID();
+  const createdAt = new Date().toISOString();
 
   db.prepare(
     [
       'INSERT INTO ed25519_challenges',
-      '(request_id, credential_id, challenge, expires_at)',
-      'VALUES (?, ?, ?, ?)',
+      '(request_id, credential_id, challenge, expires_at, created_at)',
+      'VALUES (?, ?, ?, ?, ?)',
     ].join(' '),
-  ).run(requestId, input.credentialId, input.challenge, input.expiresAt);
+  ).run(
+    requestId,
+    input.credentialId,
+    input.challenge,
+    input.expiresAt,
+    createdAt,
+  );
 
   return getChallengeByRequestId(db, requestId) as Ed25519Challenge;
 }

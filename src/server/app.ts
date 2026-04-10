@@ -24,7 +24,9 @@ import {
   InvalidEd25519AuthenticationError,
   InvalidEd25519CredentialError,
   listCredentials as listEd25519Credentials,
+  startAuthentication as startEd25519Authentication,
   updateCredential as updateEd25519Credential,
+  verifyAuthentication as verifyEd25519Authentication,
 } from '../modules/ed25519/service.js';
 import {
   deleteCredential,
@@ -46,6 +48,8 @@ import {
 import {
   ed25519CredentialCreateSchema,
   ed25519CredentialUpdateSchema,
+  ed25519StartSchema,
+  ed25519VerifySchema,
   emailStartSchema,
   emailVerifySchema,
   refreshSchema,
@@ -355,6 +359,29 @@ export function createApp(input: {
       );
     },
   );
+
+  app.post('/ed25519/start', async (c) => {
+    const body = await parseJson(c.req.raw, ed25519StartSchema);
+
+    return c.json(
+      startEd25519Authentication(c.var.db, {
+        credentialId: body.credential_id,
+        logger: c.var.logger,
+      }),
+    );
+  });
+
+  app.post('/ed25519/verify', async (c) => {
+    const body = await parseJson(c.req.raw, ed25519VerifySchema);
+    const result = await verifyEd25519Authentication(c.var.db, {
+      requestId: body.request_id,
+      signature: body.signature,
+      issuer: c.var.issuer,
+      logger: c.var.logger,
+    });
+
+    return c.json(result);
+  });
 
   app.post(
     '/webauthn/register/options',

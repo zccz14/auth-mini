@@ -307,6 +307,184 @@ describe('ed25519 routes', () => {
       error: 'insufficient_authentication_method',
     });
   });
+
+  it('starts an ed25519 authentication challenge', async () => {
+    const testApp = await createSignedInApp('ed25519-start@example.com');
+    openApps.push(testApp);
+    const deviceKey = createTestEd25519Keypair('default');
+    const credential = await createCredentialForDevice(testApp, {
+      name: 'Signer',
+      publicKey: deviceKey.publicKey,
+    });
+
+    const response = await testApp.app.request('/ed25519/start', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: json({ credential_id: credential.id }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      request_id: expect.any(String),
+      challenge: expect.any(String),
+    });
+  });
+
+  it('verifies an ed25519 challenge and mints a session token pair', async () => {
+    const testApp = await createSignedInApp('ed25519-verify@example.com');
+    openApps.push(testApp);
+    const deviceKey = createTestEd25519Keypair('default');
+    const credential = await createCredentialForDevice(testApp, {
+      name: 'Builder',
+      publicKey: deviceKey.publicKey,
+    });
+    const startResponse = await testApp.app.request('/ed25519/start', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: json({ credential_id: credential.id }),
+    });
+    const startBody = (await startResponse.json()) as {
+      request_id: string;
+      challenge: string;
+    };
+
+    const verifyResponse = await testApp.app.request('/ed25519/verify', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: json({
+        request_id: startBody.request_id,
+        signature: deviceKey.signChallenge(startBody.challenge),
+      }),
+    });
+    const verifyBody = (await verifyResponse.json()) as {
+      session_id: string;
+      access_token: string;
+      token_type: 'Bearer';
+      expires_in: number;
+      refresh_token: string;
+    };
+    const payload = await verifyJwt(testApp.db, verifyBody.access_token);
+    const storedCredential = testApp.db
+      .prepare('SELECT last_used_at FROM ed25519_credentials WHERE id = ?')
+      .get(credential.id) as { last_used_at: string | null };
+
+    expect(verifyResponse.status).toBe(200);
+    expect(verifyBody).toEqual({
+      session_id: expect.any(String),
+      access_token: expect.any(String),
+      token_type: 'Bearer',
+      expires_in: 900,
+      refresh_token: expect.any(String),
+    });
+    expect(payload.amr).toEqual(['ed25519']);
+    expect(storedCredential.last_used_at).toEqual(expect.any(String));
+  });
+
+  it('rejects expired challenges', async () => {
+    const testApp = await createSignedInApp('ed25519-expired@example.com');
+    openApps.push(testApp);
+    const deviceKey = createTestEd25519Keypair('default');
+    const credential = await createCredentialForDevice(testApp, {
+      name: 'Expired signer',
+      publicKey: deviceKey.publicKey,
+    });
+    const startBody = await startAuthentication(testApp, credential.id);
+
+    testApp.db
+      .prepare(
+        'UPDATE ed25519_challenges SET expires_at = ? WHERE request_id = ?',
+      )
+      .run('2000-01-01T00:00:00.000Z', startBody.request_id);
+
+    const response = await testApp.app.request('/ed25519/verify', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: json({
+        request_id: startBody.request_id,
+        signature: deviceKey.signChallenge(startBody.challenge),
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: 'invalid_ed25519_authentication',
+    });
+  });
+
+  it('rejects reused challenges', async () => {
+    const testApp = await createSignedInApp('ed25519-reuse@example.com');
+    openApps.push(testApp);
+    const deviceKey = createTestEd25519Keypair('default');
+    const credential = await createCredentialForDevice(testApp, {
+      name: 'Reuse signer',
+      publicKey: deviceKey.publicKey,
+    });
+    const startBody = await startAuthentication(testApp, credential.id);
+    const payload = json({
+      request_id: startBody.request_id,
+      signature: deviceKey.signChallenge(startBody.challenge),
+    });
+
+    const firstResponse = await testApp.app.request('/ed25519/verify', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: payload,
+    });
+    const secondResponse = await testApp.app.request('/ed25519/verify', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: payload,
+    });
+
+    expect(firstResponse.status).toBe(200);
+    expect(secondResponse.status).toBe(400);
+    expect(await secondResponse.json()).toEqual({
+      error: 'invalid_ed25519_authentication',
+    });
+  });
+
+  it('rejects invalid signatures and unknown request ids', async () => {
+    const testApp = await createSignedInApp(
+      'ed25519-invalid-signature@example.com',
+    );
+    openApps.push(testApp);
+    const deviceKey = createTestEd25519Keypair('default');
+    const otherKey = createTestEd25519Keypair('alternate');
+    const credential = await createCredentialForDevice(testApp, {
+      name: 'Invalid signer',
+      publicKey: deviceKey.publicKey,
+    });
+    const startBody = await startAuthentication(testApp, credential.id);
+
+    const badSignatureResponse = await testApp.app.request('/ed25519/verify', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: json({
+        request_id: startBody.request_id,
+        signature: otherKey.signChallenge(startBody.challenge),
+      }),
+    });
+    const unknownRequestResponse = await testApp.app.request(
+      '/ed25519/verify',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: json({
+          request_id: '5dbcb0f7-d30f-4f68-a721-bd08ae5f2475',
+          signature: deviceKey.signChallenge(startBody.challenge),
+        }),
+      },
+    );
+
+    expect(badSignatureResponse.status).toBe(400);
+    expect(await badSignatureResponse.json()).toEqual({
+      error: 'invalid_ed25519_authentication',
+    });
+    expect(unknownRequestResponse.status).toBe(400);
+    expect(await unknownRequestResponse.json()).toEqual({
+      error: 'invalid_ed25519_authentication',
+    });
+  });
 });
 
 async function createSignedInApp(email: string) {
@@ -408,4 +586,34 @@ async function forgeAccessToken(
   };
 
   return signJwt(testApp.db, nextPayload);
+}
+
+async function createCredentialForDevice(
+  testApp: Awaited<ReturnType<typeof createSignedInApp>>,
+  input: { name: string; publicKey: string },
+) {
+  const response = await testApp.app.request('/ed25519/credentials', {
+    method: 'POST',
+    headers: authHeaders(testApp.tokens.access_token),
+    body: json({ name: input.name, public_key: input.publicKey }),
+  });
+
+  expect(response.status).toBe(200);
+
+  return (await response.json()) as { id: string };
+}
+
+async function startAuthentication(
+  testApp: Awaited<ReturnType<typeof createSignedInApp>>,
+  credentialId: string,
+) {
+  const response = await testApp.app.request('/ed25519/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: json({ credential_id: credentialId }),
+  });
+
+  expect(response.status).toBe(200);
+
+  return (await response.json()) as { request_id: string; challenge: string };
 }
