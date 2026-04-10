@@ -28,6 +28,7 @@ vi.mock('../../src/infra/smtp/mailer.js', async () => {
 });
 
 import { createTestEd25519Keypair } from '../helpers/ed25519.js';
+import { signJwt, verifyJwt } from '../../src/modules/jwks/service.js';
 import {
   createOtpMailSeam,
   extractOtpCode,
@@ -189,6 +190,123 @@ describe('ed25519 routes', () => {
       public_key: sharedKey.publicKey,
     });
   });
+
+  it('renames and deletes only the current user credential', async () => {
+    const ownerApp = await createSignedInApp(
+      'ed25519-update-owner@example.com',
+    );
+    const otherApp = await createSignedInApp(
+      'ed25519-update-other@example.com',
+    );
+    openApps.push(ownerApp, otherApp);
+    const ownerKey = createTestEd25519Keypair('default');
+    const otherKey = createTestEd25519Keypair('alternate');
+
+    const ownerCreateResponse = await ownerApp.app.request(
+      '/ed25519/credentials',
+      {
+        method: 'POST',
+        headers: authHeaders(ownerApp.tokens.access_token),
+        body: json({ name: 'Owner device', public_key: ownerKey.publicKey }),
+      },
+    );
+    const otherCreateResponse = await otherApp.app.request(
+      '/ed25519/credentials',
+      {
+        method: 'POST',
+        headers: authHeaders(otherApp.tokens.access_token),
+        body: json({ name: 'Other device', public_key: otherKey.publicKey }),
+      },
+    );
+    const ownerCredential = (await ownerCreateResponse.json()) as {
+      id: string;
+    };
+    const otherCredential = (await otherCreateResponse.json()) as {
+      id: string;
+    };
+
+    const renameResponse = await ownerApp.app.request(
+      `/ed25519/credentials/${ownerCredential.id}`,
+      {
+        method: 'PATCH',
+        headers: authHeaders(ownerApp.tokens.access_token),
+        body: json({ name: 'Renamed owner device' }),
+      },
+    );
+    const forbiddenDeleteResponse = await ownerApp.app.request(
+      `/ed25519/credentials/${otherCredential.id}`,
+      {
+        method: 'DELETE',
+        headers: authHeaders(ownerApp.tokens.access_token),
+      },
+    );
+    const deleteResponse = await ownerApp.app.request(
+      `/ed25519/credentials/${ownerCredential.id}`,
+      {
+        method: 'DELETE',
+        headers: authHeaders(ownerApp.tokens.access_token),
+      },
+    );
+
+    expect(renameResponse.status).toBe(200);
+    expect(await renameResponse.json()).toEqual({
+      id: ownerCredential.id,
+      name: 'Renamed owner device',
+      public_key: ownerKey.publicKey,
+      last_used_at: null,
+      created_at: expect.any(String),
+    });
+    expect(forbiddenDeleteResponse.status).toBe(404);
+    expect(await forbiddenDeleteResponse.json()).toEqual({
+      error: 'credential_not_found',
+    });
+    expect(deleteResponse.status).toBe(200);
+    expect(await deleteResponse.json()).toEqual({ ok: true });
+  });
+
+  it('rejects malformed ed25519 public keys', async () => {
+    const testApp = await createSignedInApp('invalid-ed25519-key@example.com');
+    openApps.push(testApp);
+
+    const response = await testApp.app.request('/ed25519/credentials', {
+      method: 'POST',
+      headers: authHeaders(testApp.tokens.access_token),
+      body: json({
+        name: 'Broken device',
+        public_key: 'not-a-valid-ed25519-public-key',
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: 'invalid_ed25519_credential',
+    });
+  });
+
+  it('rejects ed25519 session amr on ed25519 credential management routes', async () => {
+    const testApp = await createSignedInApp(
+      'ed25519-management-denied@example.com',
+    );
+    openApps.push(testApp);
+    const accessToken = await forgeAccessToken(testApp, {
+      amr: ['ed25519'],
+    });
+    const deviceKey = createTestEd25519Keypair('default');
+
+    const response = await testApp.app.request('/ed25519/credentials', {
+      method: 'POST',
+      headers: authHeaders(accessToken),
+      body: json({
+        name: 'Denied device',
+        public_key: deviceKey.publicKey,
+      }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      error: 'insufficient_authentication_method',
+    });
+  });
 });
 
 async function createSignedInApp(email: string) {
@@ -275,4 +393,19 @@ async function loadMockedAppHelpers() {
   });
 
   return import('../helpers/app.js');
+}
+
+async function forgeAccessToken(
+  testApp: Awaited<ReturnType<typeof createSignedInApp>>,
+  overrides: { amr: unknown },
+) {
+  const payload = await verifyJwt(testApp.db, testApp.tokens.access_token);
+  const nextPayload: Record<string, unknown> = {
+    ...payload,
+    sid: testApp.sessionId,
+    sub: testApp.userId,
+    amr: overrides.amr,
+  };
+
+  return signJwt(testApp.db, nextPayload);
 }
