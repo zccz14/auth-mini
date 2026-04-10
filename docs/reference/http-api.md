@@ -13,6 +13,8 @@
 
 Send `Authorization: Bearer <access_token>`.
 
+Access tokens issued by this API include an `amr` (Authentication Methods References) claim so downstream consumers can tell which sign-in method established the session. Current session-issuing flows produce `amr` values aligned with the completed login step, such as `email_otp` for email OTP sign-in and `webauthn` for passkey sign-in.
+
 - `GET /me`
 - `POST /session/logout`
 - `POST /webauthn/register/options`
@@ -43,6 +45,8 @@ Example response:
 
 Completes the email OTP flow and creates a session.
 
+The returned access token represents a human-authenticated email OTP session and carries `amr: ["email_otp"]`.
+
 Request body:
 
 ```json
@@ -67,6 +71,8 @@ Response shape:
 
 Exchanges the current refresh token for a new access/refresh pair.
 
+The refreshed access token keeps the session's existing authentication-method context in its `amr` claim.
+
 Request body:
 
 ```json
@@ -90,6 +96,8 @@ Response shape:
 Starts passkey registration for an authenticated user.
 
 Request: send `Authorization: Bearer <access_token>`.
+
+This route requires a human-authenticated session. The presented access token must carry an `amr` that includes either `email_otp` or `webauthn`.
 
 Request body:
 
@@ -151,6 +159,8 @@ Response shape:
 
 Completes the passkey assertion and creates a session.
 
+The returned access token represents a human-authenticated passkey session and carries `amr: ["webauthn"]`.
+
 Request body:
 
 ```json
@@ -197,6 +207,8 @@ Response shape:
 Completes passkey registration for an authenticated user.
 
 Request: send `Authorization: Bearer <access_token>`.
+
+This route requires a human-authenticated session. The presented access token must carry an `amr` that includes either `email_otp` or `webauthn`.
 
 Serialize the browser `PublicKeyCredential` into JSON before sending it. Keep string fields as-is, include `authenticatorAttachment` when present, include `clientExtensionResults`, base64url-encode binary fields such as `rawId`, `response.clientDataJSON`, and `response.attestationObject`, and keep `response.transports` as a plain string array when your client exposes it.
 
@@ -245,6 +257,8 @@ Example response:
 Deletes one stored WebAuthn credential for the authenticated user.
 
 Request: send `Authorization: Bearer <access_token>` and the credential id in the route.
+
+This route requires a human-authenticated session. The presented access token must carry an `amr` that includes either `email_otp` or `webauthn`.
 
 Successful response: deletion confirmation; clients should treat the credential as removed from local UI state.
 
