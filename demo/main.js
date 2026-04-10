@@ -107,16 +107,9 @@ function enableFlowButtons(root) {
 
 export async function loadSdkScript(
   setupState,
-  { createSdk = createBrowserSdk, document = globalThis.document } = {},
+  { createSdk = createBrowserSdk } = {},
 ) {
-  const sdk = createSdk(setupState.sdkOrigin);
-  const windowObject = document?.defaultView || globalThis.window;
-
-  if (windowObject) {
-    windowObject.AuthMini = sdk;
-  }
-
-  return sdk;
+  return createSdk(setupState.sdkOrigin);
 }
 
 export function createDemoRuntime({
@@ -249,7 +242,7 @@ export function createDemoRuntime({
 
     async completeStartup() {
       if (!sdk) {
-        this.handleSdkLoadFailure(new Error('SDK global was not initialized.'));
+        this.handleSdkLoadFailure(new Error('SDK instance was not created.'));
         return;
       }
 
