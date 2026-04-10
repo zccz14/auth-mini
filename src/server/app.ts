@@ -18,6 +18,17 @@ import {
   SessionSupersededError,
 } from '../modules/session/service.js';
 import {
+  createCredential as createEd25519Credential,
+  deleteCredential as deleteEd25519Credential,
+  Ed25519CredentialNotFoundError,
+  InvalidEd25519AuthenticationError,
+  InvalidEd25519CredentialError,
+  listCredentials as listEd25519Credentials,
+  startAuthentication as startEd25519Authentication,
+  updateCredential as updateEd25519Credential,
+  verifyAuthentication as verifyEd25519Authentication,
+} from '../modules/ed25519/service.js';
+import {
   deleteCredential,
   DuplicateCredentialError,
   generateAuthenticationOptions,
@@ -31,9 +42,14 @@ import {
 import {
   getUserById,
   listActiveUserSessions,
+  listUserEd25519Credentials,
   listUserWebauthnCredentials,
 } from '../modules/users/repo.js';
 import {
+  ed25519CredentialCreateSchema,
+  ed25519CredentialUpdateSchema,
+  ed25519StartSchema,
+  ed25519VerifySchema,
   emailStartSchema,
   emailVerifySchema,
   refreshSchema,
@@ -56,6 +72,8 @@ import {
   credentialNotFoundError,
   duplicateCredentialError,
   HttpError,
+  invalidEd25519AuthenticationError,
+  invalidEd25519CredentialError,
   invalidEmailOtpError,
   invalidRequestError,
   invalidWebauthnAuthenticationError,
@@ -99,7 +117,7 @@ export function createApp(input: {
 }) {
   const app = new Hono<{ Variables: AppVariables }>();
 
-  const corsAllowMethods = 'GET, POST, DELETE, OPTIONS';
+  const corsAllowMethods = 'GET, POST, PATCH, DELETE, OPTIONS';
   const corsAllowHeaders = 'Authorization, Content-Type';
 
   app.use(async (c, next) => {
@@ -246,6 +264,7 @@ export function createApp(input: {
       user_id: user.id,
       email: user.email,
       webauthn_credentials: listUserWebauthnCredentials(c.var.db, user.id),
+      ed25519_credentials: listUserEd25519Credentials(c.var.db, user.id),
       active_sessions: listActiveUserSessions(
         c.var.db,
         user.id,
@@ -279,6 +298,89 @@ export function createApp(input: {
       logger: c.var.logger,
     });
     return c.json({ ok: true });
+  });
+
+  app.post(
+    '/ed25519/credentials',
+    requireAccessToken,
+    requirePasskeyManagementAuth,
+    async (c) => {
+      const body = await parseJson(c.req.raw, ed25519CredentialCreateSchema);
+
+      return c.json(
+        createEd25519Credential(c.var.db, {
+          userId: c.var.auth.sub,
+          name: body.name,
+          publicKey: body.public_key,
+          logger: c.var.logger,
+        }),
+      );
+    },
+  );
+
+  app.get(
+    '/ed25519/credentials',
+    requireAccessToken,
+    requirePasskeyManagementAuth,
+    async (c) => {
+      return c.json(listEd25519Credentials(c.var.db, c.var.auth.sub));
+    },
+  );
+
+  app.patch(
+    '/ed25519/credentials/:id',
+    requireAccessToken,
+    requirePasskeyManagementAuth,
+    async (c) => {
+      const body = await parseJson(c.req.raw, ed25519CredentialUpdateSchema);
+
+      return c.json(
+        updateEd25519Credential(c.var.db, {
+          credentialId: c.req.param('id'),
+          userId: c.var.auth.sub,
+          name: body.name,
+          logger: c.var.logger,
+        }),
+      );
+    },
+  );
+
+  app.delete(
+    '/ed25519/credentials/:id',
+    requireAccessToken,
+    requirePasskeyManagementAuth,
+    async (c) => {
+      return c.json(
+        deleteEd25519Credential(c.var.db, {
+          credentialId: c.req.param('id'),
+          userId: c.var.auth.sub,
+          logger: c.var.logger,
+        }),
+      );
+    },
+  );
+
+  app.post('/ed25519/start', async (c) => {
+    const body = await parseJson(c.req.raw, ed25519StartSchema);
+
+    return c.json(
+      startEd25519Authentication(c.var.db, {
+        credentialId: body.credential_id,
+        logger: c.var.logger,
+      }),
+    );
+  });
+
+  app.post('/ed25519/verify', async (c) => {
+    const body = await parseJson(c.req.raw, ed25519VerifySchema);
+    const result = await verifyEd25519Authentication(c.var.db, {
+      requestId: body.request_id,
+      signature: body.signature,
+      issuer: c.var.issuer,
+      logger: c.var.logger,
+    });
+
+    return c.json(result);
   });
 
   app.post(
@@ -443,11 +545,23 @@ function toHttpError(error: unknown): HttpError {
     return invalidWebauthnAuthenticationError();
   }
 
+  if (error instanceof InvalidEd25519CredentialError) {
+    return invalidEd25519CredentialError();
+  }
+
+  if (error instanceof InvalidEd25519AuthenticationError) {
+    return invalidEd25519AuthenticationError();
+  }
+
   if (error instanceof DuplicateCredentialError) {
     return duplicateCredentialError();
   }
 
   if (error instanceof WebauthnCredentialNotFoundError) {
+    return credentialNotFoundError();
+  }
+
+  if (error instanceof Ed25519CredentialNotFoundError) {
     return credentialNotFoundError();
   }
 

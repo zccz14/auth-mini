@@ -39,6 +39,14 @@ export function invalidWebauthnAuthenticationError(): HttpError {
   return new HttpError(400, 'invalid_webauthn_authentication');
 }
 
+export function invalidEd25519CredentialError(): HttpError {
+  return new HttpError(400, 'invalid_ed25519_credential');
+}
+
+export function invalidEd25519AuthenticationError(): HttpError {
+  return new HttpError(400, 'invalid_ed25519_authentication');
+}
+
 export function duplicateCredentialError(): HttpError {
   return new HttpError(409, 'duplicate_credential');
 }

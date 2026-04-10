@@ -1,6 +1,7 @@
 import type { MiddlewareHandler } from 'hono';
 import type { DatabaseClient } from '../infra/db/client.js';
 import { verifyJwt } from '../modules/jwks/service.js';
+import type { Session } from '../modules/session/repo.js';
 import { getSessionById } from '../modules/session/repo.js';
 import {
   insufficientAuthenticationMethodError,
@@ -91,7 +92,7 @@ function isValidAmr(amr: unknown): amr is string[] {
 
 function resolveAccessTokenAmr(
   amr: unknown,
-  sessionAuthMethod: 'email_otp' | 'webauthn',
+  sessionAuthMethod: Session['authMethod'],
 ): string[] {
   if (amr === undefined) {
     return [sessionAuthMethod];

@@ -13,10 +13,14 @@
 
 Send `Authorization: Bearer <access_token>`.
 
-Access tokens issued by this API include an `amr` (Authentication Methods References) claim so downstream consumers can tell which sign-in method established the session. Current session-issuing flows produce `amr` values aligned with the completed login step, such as `email_otp` for email OTP sign-in and `webauthn` for passkey sign-in.
+Access tokens issued by this API include an `amr` (Authentication Methods References) claim so downstream consumers can tell which sign-in method established the session. Current session-issuing flows produce `amr` values aligned with the completed login step, such as `email_otp` for email OTP sign-in, `webauthn` for passkey sign-in, and `ed25519` for registered device-key sign-in.
 
 - `GET /me`
 - `POST /session/logout`
+- `GET /ed25519/credentials`
+- `POST /ed25519/credentials`
+- `PATCH /ed25519/credentials/:id`
+- `DELETE /ed25519/credentials/:id`
 - `POST /webauthn/register/options`
 - `POST /webauthn/register/verify`
 - `DELETE /webauthn/credentials/:id`
@@ -62,7 +66,7 @@ Response shape:
   "session_id": "...",
   "access_token": "...",
   "token_type": "Bearer",
-  "expires_in": 3600,
+  "expires_in": 900,
   "refresh_token": "..."
 }
 ```
@@ -86,7 +90,7 @@ Response shape:
   "session_id": "...",
   "access_token": "...",
   "token_type": "Bearer",
-  "expires_in": 3600,
+  "expires_in": 900,
   "refresh_token": "..."
 }
 ```
@@ -197,7 +201,7 @@ Response shape:
   "session_id": "...",
   "access_token": "...",
   "token_type": "Bearer",
-  "expires_in": 3600,
+  "expires_in": 900,
   "refresh_token": "..."
 }
 ```
@@ -252,6 +256,130 @@ Example response:
 { "ok": true }
 ```
 
+### `POST /ed25519/credentials`
+
+Registers a device ED25519 public key for the authenticated user.
+
+Request: send `Authorization: Bearer <access_token>`.
+
+This route requires a human-authenticated session. The presented access token must carry an `amr` that includes either `email_otp` or `webauthn`.
+
+Request body:
+
+```json
+{ "name": "CI runner", "public_key": "<base64url-32-byte-key>" }
+```
+
+Response shape:
+
+```json
+{
+  "id": "...",
+  "name": "CI runner",
+  "public_key": "<base64url-32-byte-key>",
+  "last_used_at": null,
+  "created_at": "2026-04-11T00:00:00.000Z"
+}
+```
+
+### `GET /ed25519/credentials`
+
+Lists the authenticated user's registered ED25519 credentials.
+
+Request: send `Authorization: Bearer <access_token>`.
+
+This route requires a human-authenticated session. The presented access token must carry an `amr` that includes either `email_otp` or `webauthn`.
+
+Response shape:
+
+```json
+[
+  {
+    "id": "...",
+    "name": "CI runner",
+    "public_key": "<base64url-32-byte-key>",
+    "last_used_at": null,
+    "created_at": "2026-04-11T00:00:00.000Z"
+  }
+]
+```
+
+### `PATCH /ed25519/credentials/:id`
+
+Renames one registered ED25519 credential for the authenticated user.
+
+Request: send `Authorization: Bearer <access_token>` and the credential id in the route.
+
+This route requires a human-authenticated session. The presented access token must carry an `amr` that includes either `email_otp` or `webauthn`.
+
+Request body:
+
+```json
+{ "name": "Renamed runner" }
+```
+
+Response shape matches `POST /ed25519/credentials`.
+
+### `DELETE /ed25519/credentials/:id`
+
+Deletes one registered ED25519 credential for the authenticated user.
+
+Request: send `Authorization: Bearer <access_token>` and the credential id in the route.
+
+This route requires a human-authenticated session. The presented access token must carry an `amr` that includes either `email_otp` or `webauthn`.
+
+Example response:
+
+```json
+{ "ok": true }
+```
+
+### `POST /ed25519/start`
+
+Starts device authentication for one registered ED25519 credential.
+
+Request body:
+
+```json
+{ "credential_id": "550e8400-e29b-41d4-a716-446655440000" }
+```
+
+Response shape:
+
+```json
+{
+  "request_id": "550e8400-e29b-41d4-a716-446655440000",
+  "challenge": "<opaque-string>"
+}
+```
+
+### `POST /ed25519/verify`
+
+Verifies a device signature over the issued challenge and creates a session.
+
+The returned access token represents a device-authenticated session and carries `amr: ["ed25519"]`.
+
+Request body:
+
+```json
+{
+  "request_id": "550e8400-e29b-41d4-a716-446655440000",
+  "signature": "<base64url-signature>"
+}
+```
+
+Response shape:
+
+```json
+{
+  "session_id": "...",
+  "access_token": "...",
+  "token_type": "Bearer",
+  "expires_in": 900,
+  "refresh_token": "..."
+}
+```
+
 ### `DELETE /webauthn/credentials/:id`
 
 Deletes one stored WebAuthn credential for the authenticated user.
@@ -270,7 +398,7 @@ Example response:
 
 ## `/me` behavior
 
-`GET /me` returns the current user, stored WebAuthn credentials, and only active sessions.
+`GET /me` returns the current user, stored WebAuthn credentials, stored ED25519 credentials, and only active sessions.
 
 Example response:
 
@@ -284,6 +412,15 @@ Example response:
       "public_key": "<base64url>",
       "counter": 1,
       "transports": "internal"
+    }
+  ],
+  "ed25519_credentials": [
+    {
+      "id": "cred_device_123",
+      "name": "CI runner",
+      "public_key": "<base64url-32-byte-key>",
+      "last_used_at": "2026-04-11T00:00:00.000Z",
+      "created_at": "2026-04-10T00:00:00.000Z"
     }
   ],
   "active_sessions": [

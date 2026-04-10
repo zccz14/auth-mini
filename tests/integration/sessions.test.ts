@@ -76,6 +76,33 @@ describe('session routes', () => {
     }
   });
 
+  it('persists and reads the ed25519 session auth method', async () => {
+    const dbPath = await createTempDbPath();
+    await bootstrapDatabase(dbPath);
+    const db = createDatabaseClient(dbPath);
+
+    try {
+      db.prepare(
+        'INSERT INTO users (id, email, email_verified_at) VALUES (?, ?, ?)',
+      ).run('user-1', 'user-1@example.com', '2030-01-01T00:00:00.000Z');
+
+      const session = createSession(db, {
+        userId: 'user-1',
+        refreshTokenHash: 'refresh-hash',
+        authMethod: 'ed25519',
+        expiresAt: '2099-01-01T00:00:00.000Z',
+      });
+
+      expect(session).toMatchObject({ authMethod: 'ed25519' });
+      expect(getSessionById(db, session.id)).toMatchObject({
+        id: session.id,
+        authMethod: 'ed25519',
+      });
+    } finally {
+      db.close();
+    }
+  });
+
   it('refresh rotates the refresh token', async () => {
     const testApp = await createSignedInApp('rotate@example.com');
     openApps.push(testApp);
@@ -289,6 +316,38 @@ describe('session routes', () => {
     }
   });
 
+  it('refresh signs access tokens with ed25519 amr', async () => {
+    const dbPath = await createTempDbPath();
+    await bootstrapDatabase(dbPath);
+    const db = createDatabaseClient(dbPath);
+
+    try {
+      await bootstrapKeys(db);
+      db.prepare(
+        'INSERT INTO users (id, email, email_verified_at) VALUES (?, ?, ?)',
+      ).run('user-1', 'user-1@example.com', '2030-01-01T00:00:00.000Z');
+
+      const session = createSession(db, {
+        userId: 'user-1',
+        refreshTokenHash: hashValue('refresh-token'),
+        authMethod: 'ed25519',
+        expiresAt: '2099-01-01T00:00:00.000Z',
+      });
+
+      const result = await refreshSessionTokens(db, {
+        sessionId: session.id,
+        refreshToken: 'refresh-token',
+        issuer: 'https://issuer.example',
+      });
+      const payload = await jwksService.verifyJwt(db, result.access_token);
+
+      expect(result.session).toMatchObject({ authMethod: 'ed25519' });
+      expect(payload.amr).toEqual(['ed25519']);
+    } finally {
+      db.close();
+    }
+  });
+
   it('refresh token claim only succeeds once across database clients', async () => {
     const dbPath = await createTempDbPath();
     await bootstrapDatabase(dbPath);
@@ -481,6 +540,7 @@ describe('session routes', () => {
       user_id: testApp.userId,
       email: 'me@example.com',
       webauthn_credentials: [],
+      ed25519_credentials: [],
       active_sessions: [
         {
           id: testApp.sessionId,
@@ -507,6 +567,38 @@ describe('session routes', () => {
       user_id: testApp.userId,
       email: 'legacy-me@example.com',
       webauthn_credentials: [],
+      ed25519_credentials: [],
+      active_sessions: [
+        {
+          id: testApp.sessionId,
+          created_at: expect.any(String),
+          expires_at: expect.any(String),
+        },
+      ],
+    });
+  });
+
+  it('me accepts a legacy access token without amr for an ed25519 session', async () => {
+    const testApp = await createSignedInApp('legacy-ed25519-me@example.com');
+    openApps.push(testApp);
+
+    testApp.db
+      .prepare('UPDATE sessions SET auth_method = ? WHERE id = ?')
+      .run('ed25519', testApp.sessionId);
+
+    const accessToken = await forgeLegacyAccessToken(testApp);
+    const response = await testApp.app.request('/me', {
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      user_id: testApp.userId,
+      email: 'legacy-ed25519-me@example.com',
+      webauthn_credentials: [],
+      ed25519_credentials: [],
       active_sessions: [
         {
           id: testApp.sessionId,

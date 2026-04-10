@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
   refresh_token_hash TEXT NOT NULL,
-  auth_method TEXT NOT NULL CHECK (auth_method IN ('email_otp', 'webauthn')),
+  auth_method TEXT NOT NULL CHECK (auth_method IN ('email_otp', 'webauthn', 'ed25519')),
   expires_at TEXT NOT NULL,
   revoked_at TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -80,4 +80,24 @@ CREATE TABLE IF NOT EXISTS webauthn_challenges (
     (type = 'authenticate' AND user_id IS NULL)
   ),
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS ed25519_credentials (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  public_key TEXT NOT NULL,
+  last_used_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS ed25519_challenges (
+  request_id TEXT PRIMARY KEY,
+  credential_id TEXT NOT NULL,
+  challenge TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  consumed_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (credential_id) REFERENCES ed25519_credentials(id) ON DELETE CASCADE
 );

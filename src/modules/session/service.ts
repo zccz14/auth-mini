@@ -36,7 +36,9 @@ export class SessionSupersededError extends Error {
 }
 
 function toAmr(authMethod: Session['authMethod']): string[] {
-  return [authMethod];
+  const amr = [authMethod];
+
+  return amr;
 }
 
 export async function mintSessionTokens(

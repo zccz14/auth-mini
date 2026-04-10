@@ -96,7 +96,7 @@ describe('server cors', () => {
       );
       expect(response.headers.get('vary')).toBe('Origin');
       expect(response.headers.get('access-control-allow-methods')).toBe(
-        'GET, POST, DELETE, OPTIONS',
+        'GET, POST, PATCH, DELETE, OPTIONS',
       );
       expect(response.headers.get('access-control-allow-headers')).toBe(
         'Authorization, Content-Type',
