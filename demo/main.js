@@ -1,9 +1,10 @@
 import { bootstrapDemoPage } from './bootstrap.js';
+import { createBrowserSdk } from 'auth-mini/sdk/browser';
 
 const STORAGE_KEY = 'auth-mini-demo-inputs';
 const DEFAULT_LATEST_ACTION = 'No request yet.';
 const DEFAULT_LATEST_RESULT = 'No response yet.';
-const DEFAULT_SDK_URL = 'http://127.0.0.1:7777/sdk/singleton-iife.js';
+const DEFAULT_SDK_ORIGIN = 'http://127.0.0.1:7777';
 const BROWSER_PASSKEY_WARNING =
   'This browser does not support WebAuthn / passkeys.';
 
@@ -14,7 +15,7 @@ export function renderContentState(root, setupState, content) {
   setList(root, '#hero-capabilities', content.hero?.capabilities || []);
   setText(root, '#page-origin', setupState.currentOrigin || '');
   setText(root, '#origin-command', content.startupCommand || '');
-  setText(root, '#sdk-script-snippet', content.sdkScriptTag || '');
+  setText(root, '#sdk-script-snippet', content.sdkModuleSnippet || '');
   setText(root, '#jose-snippet', content.joseSnippet || '');
   setText(root, '#setup-warning', setupState.corsWarning || '');
   setList(root, '#how-it-works-list', content.howItWorks || []);
@@ -106,20 +107,16 @@ function enableFlowButtons(root) {
 
 export async function loadSdkScript(
   setupState,
-  { document = globalThis.document } = {},
+  { createSdk = createBrowserSdk, document = globalThis.document } = {},
 ) {
-  const script = document.createElement('script');
-  script.src = setupState.sdkScriptUrl;
-  script.dataset.miniAuthSdk = 'true';
+  const sdk = createSdk(setupState.sdkOrigin);
+  const windowObject = document?.defaultView || globalThis.window;
 
-  const loaded = waitForScript(script);
-  if (typeof document.body.appendChild === 'function') {
-    document.body.appendChild(script);
-  } else {
-    document.body.append(script);
+  if (windowObject) {
+    windowObject.AuthMini = sdk;
   }
 
-  await loaded;
+  return sdk;
 }
 
 export function createDemoRuntime({
@@ -129,6 +126,7 @@ export function createDemoRuntime({
   localStorage,
   location,
   windowObject,
+  createSdk = createBrowserSdk,
 }) {
   const elements = getElements(root);
   const sectionViews = getSectionViews(elements);
@@ -149,7 +147,7 @@ export function createDemoRuntime({
       }
 
       if (elements.baseUrl) {
-        elements.baseUrl.value = setupState.sdkScriptUrl || DEFAULT_SDK_URL;
+        elements.baseUrl.value = setupState.sdkOrigin || DEFAULT_SDK_ORIGIN;
       }
       if (elements.sdkOriginInput) {
         elements.sdkOriginInput.value = setupState.sdkOrigin || '';
@@ -237,6 +235,16 @@ export function createDemoRuntime({
       if (sdk?.session?.onChange) {
         sdk.session.onChange(() => renderState());
       }
+    },
+
+    async connectSdk() {
+      if (setupState.configStatus !== 'ready') {
+        return null;
+      }
+
+      const nextSdk = await Promise.resolve(createSdk(setupState.sdkOrigin));
+      this.attachSdk(nextSdk);
+      return nextSdk;
     },
 
     async completeStartup() {
@@ -652,17 +660,6 @@ function getPasskeyBlockReason(windowObject) {
   }
 
   return '';
-}
-
-function waitForScript(script) {
-  return new Promise((resolve, reject) => {
-    script.addEventListener('load', () => resolve(script), { once: true });
-    script.addEventListener(
-      'error',
-      () => reject(new Error(`Failed to load ${script.src}`)),
-      { once: true },
-    );
-  });
 }
 
 function setList(root, selector, items) {

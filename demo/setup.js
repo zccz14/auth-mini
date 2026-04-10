@@ -12,7 +12,6 @@ export function getDemoSetupState(locationLike) {
       currentOrigin: origin,
       suggestedOrigin: origin,
       sdkOrigin: '',
-      sdkScriptUrl: '',
       issuer: '',
       jwksUrl: '',
       configStatus: normalizedSdkOrigin.status,
@@ -29,7 +28,6 @@ export function getDemoSetupState(locationLike) {
     currentOrigin: origin,
     suggestedOrigin: origin,
     sdkOrigin,
-    sdkScriptUrl: new URL('/sdk/singleton-iife.js', sdkOrigin).toString(),
     issuer,
     jwksUrl: new URL('/jwks', sdkOrigin).toString(),
     configStatus: 'ready',
@@ -43,37 +41,16 @@ export function getDemoSetupState(locationLike) {
   };
 }
 
-function getOriginFromSdkUrl(sdkUrl) {
-  if (typeof sdkUrl !== 'string' || !sdkUrl) {
-    return '';
-  }
-
-  try {
-    return new URL(sdkUrl).origin;
-  } catch {
-    return '';
-  }
-}
-
 function resolveSdkOrigin(locationLike) {
   if (locationLike.sdkOriginInput !== undefined) {
-    return withStatus(normalizeSdkOrigin(locationLike.sdkOriginInput), 'error');
+    return withStatus(normalizeSdkOrigin(locationLike.sdkOriginInput), 'ready');
   }
 
-  if (typeof locationLike.sdkUrl !== 'string' || !locationLike.sdkUrl) {
-    return {
-      ok: false,
-      status: 'waiting',
-      error: WAITING_FOR_SDK_ORIGIN_MESSAGE,
-    };
-  }
-
-  const derivedOrigin = getOriginFromSdkUrl(locationLike.sdkUrl);
-  if (!derivedOrigin) {
-    return withStatus(normalizeSdkOrigin(''), 'error');
-  }
-
-  return withStatus(normalizeSdkOrigin(derivedOrigin), 'ready');
+  return {
+    ok: false,
+    status: 'waiting',
+    error: WAITING_FOR_SDK_ORIGIN_MESSAGE,
+  };
 }
 
 function withStatus(result, status) {

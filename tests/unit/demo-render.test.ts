@@ -27,9 +27,9 @@ const sampleSetupState = {
   currentOrigin: 'https://docs.example.com',
   suggestedOrigin: 'https://docs.example.com',
   sdkOrigin: 'https://auth.zccz14.com',
-  sdkScriptUrl: 'https://auth.zccz14.com/sdk/singleton-iife.js',
   issuer: 'https://auth.zccz14.com',
   jwksUrl: 'https://auth.zccz14.com/jwks',
+  configStatus: 'ready',
   configError: '',
   corsWarning:
     'Run npx auth-mini origin add with this page origin before browser calls to the auth server will succeed cross-origin.',
@@ -60,7 +60,7 @@ describe('demo render helpers', () => {
       '--origin https://docs.example.com',
     );
     expect(root.querySelector('#sdk-script-snippet')?.textContent).toContain(
-      'https://auth.zccz14.com/sdk/singleton-iife.js',
+      "createBrowserSdk('https://auth.zccz14.com')",
     );
     expect(root.querySelector('#jose-snippet')?.textContent).toContain(
       "const issuer = 'https://auth.zccz14.com'",
@@ -148,8 +148,46 @@ describe('demo render helpers', () => {
       'auth-mini',
     );
     expect(root.querySelector('#how-it-works-list')?.textContent).toContain(
-      'script origin',
+      'browser SDK',
     );
+  });
+
+  it('connects the runtime through an injected sdk factory', async () => {
+    const { createDemoRuntime } = await import('../../demo/main.js');
+    const root = createRenderRoot();
+    const sdk = {
+      ready: Promise.resolve(),
+      email: { start: async () => ({}), verify: async () => ({}) },
+      webauthn: { register: async () => ({}), authenticate: async () => ({}) },
+      me: { get: () => null, reload: async () => ({}) },
+      session: {
+        getState: () => ({
+          status: 'anonymous',
+          accessToken: null,
+          refreshToken: null,
+        }),
+        onChange: () => () => {},
+        logout: async () => {},
+      },
+    };
+    const createSdk = (baseUrl: string) => {
+      expect(baseUrl).toBe('https://auth.zccz14.com');
+      return sdk;
+    };
+    const runtime = createDemoRuntime({
+      root,
+      setupState: sampleSetupState,
+      history: { replaceState() {} },
+      localStorage: createStorage(),
+      location: new URL('https://docs.example.com/demo/'),
+      windowObject: {
+        location: { reload() {} },
+        PublicKeyCredential: undefined,
+      },
+      createSdk,
+    });
+
+    expect(await runtime.connectSdk()).toBe(sdk);
   });
 
   it('renders progressive disclosure containers for secondary details', async () => {

@@ -57,14 +57,14 @@
           </div>
 
           <details class="doc-details">
-            <summary>Show SDK runtime target</summary>
+            <summary>Show browser SDK base URL</summary>
             <label class="field compact-field">
-              <span>SDK script URL</span>
+              <span>SDK base URL</span>
               <input
                 id="base-url"
                 type="text"
                 readonly
-                placeholder="http://127.0.0.1:7777/sdk/singleton-iife.js"
+                placeholder="http://127.0.0.1:7777"
               />
             </label>
           </details>
@@ -97,9 +97,9 @@ npx auth-mini start ... --issuer https://auth.zccz14.com</pre
           </article>
 
           <details class="doc-details panel inset-panel">
-            <summary>Show browser script snippet</summary>
+            <summary>Show browser module snippet</summary>
             <pre id="sdk-script-snippet" class="doc-code">
-Runtime snippet target: Task 4 renders the config-derived script tag here.</pre
+ Runtime snippet target: Task 4 renders the config-derived createBrowserSdk(...) snippet here.</pre
             >
           </details>
         </div>
@@ -129,8 +129,8 @@ Runtime snippet target: Task 4 renders the config-derived script tag here.</pre
               </div>
 
               <p class="card-copy">
-                This page loads the singleton SDK from the auth server origin so
-                the script origin stays equal to the API origin.
+                This page constructs the browser SDK from the auth server origin
+                so the SDK base URL and API origin stay aligned.
               </p>
 
               <details class="doc-details inline-details">
@@ -212,7 +212,7 @@ No request yet.</pre
               </div>
 
               <p class="card-copy">
-                Uses <code>window.AuthMini.webauthn.register()</code> to fetch
+                Uses <code>AuthMini.webauthn.register()</code> to fetch
                 options, complete the browser passkey prompt, and verify the
                 credential.
               </p>
@@ -237,7 +237,7 @@ No request yet.</pre
 
               <p class="card-copy">
                 Starts a username-less passkey login through
-                <code>window.AuthMini.webauthn.authenticate()</code> and waits
+                <code>AuthMini.webauthn.authenticate()</code> and waits
                 until session + <code>/me</code> state are ready.
               </p>
 
@@ -330,7 +330,8 @@ No request yet.</pre
               <code>origin add</code> value.
             </li>
             <li>
-              The auth origin becomes the SDK script origin and the API origin.
+              The auth origin becomes the browser SDK base URL and the API
+              origin.
             </li>
             <li>
               WebAuthn and CORS depend on those values being configured

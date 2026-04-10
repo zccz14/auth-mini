@@ -1,23 +1,21 @@
 const API_DETAILS_LABEL = 'Show request and response';
 
 export function buildDemoContent(setupState) {
-  const {
-    currentOrigin,
-    issuer,
-    jwksUrl,
-    sdkOrigin,
-    sdkScriptUrl,
-    startupCommand,
-  } = setupState;
+  const { currentOrigin, issuer, jwksUrl, sdkOrigin, startupCommand } =
+    setupState;
   const placeholderOrigin = 'https://auth.zccz14.com';
   const resolvedSdkOrigin = sdkOrigin || placeholderOrigin;
   const resolvedIssuer = issuer || placeholderOrigin;
   const resolvedJwksUrl = jwksUrl || `${placeholderOrigin}/jwks`;
 
   return {
-    sdkScriptTag: sdkScriptUrl
-      ? `<script src="${sdkScriptUrl}"></script>`
-      : '<!-- Add ?sdk-origin=https://your-auth-origin to render the exact SDK script tag. -->',
+    sdkModuleSnippet: sdkOrigin
+      ? [
+          "import { createBrowserSdk } from 'auth-mini/sdk/browser';",
+          '',
+          `const AuthMini = createBrowserSdk('${sdkOrigin}');`,
+        ].join('\n')
+      : '// Add ?sdk-origin=https://your-auth-origin to render the exact browser SDK snippet.',
     startupCommand,
     hero: {
       title: 'auth-mini',
@@ -36,8 +34,8 @@ export function buildDemoContent(setupState) {
     },
     howItWorks: [
       'The page origin is the value you store with npx auth-mini origin add.',
-      'The sdk-origin is where the browser loads /sdk/singleton-iife.js.',
-      'script origin == api origin: the singleton SDK always talks back to the auth server that served the script.',
+      'The sdk-origin is the auth origin you pass into createBrowserSdk(...) as the browser SDK base URL.',
+      'module construction keeps the auth origin explicit instead of inferring it from a served singleton script URL.',
       'WebAuthn and CORS both depend on the page origin being allowlisted and the auth server issuer matching the auth origin.',
     ],
     joseSnippet: [
@@ -186,7 +184,7 @@ export function buildDemoContent(setupState) {
     deploymentNotes: [
       'For GitHub Pages, publish the contents of demo/ unchanged as the site artifact root so its files and relative paths stay intact at the final URL.',
       `After publish, run npx auth-mini origin add ./auth-mini.sqlite --value ${currentOrigin} (or whatever final page origin you actually deployed) because the stored origin must match the browser page origin, not the auth server origin.`,
-      'If docs and auth live on different origins, keep the page URL on the docs host and append ?sdk-origin=https://your-auth-origin so the browser loads the SDK from the auth host.',
+      'If docs and auth live on different origins, keep the page URL on the docs host and append ?sdk-origin=https://your-auth-origin so createBrowserSdk(...) still points at the auth host.',
       'If you use a custom GitHub Pages domain, publish a matching CNAME file and keep that domain stable; update the stored allowed origin whenever the docs host changes enough to alter window.location.origin.',
     ],
   };

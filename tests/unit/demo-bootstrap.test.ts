@@ -70,7 +70,6 @@ type FakeWindow = {
   __AUTH_MINI_TEST_HOOKS__?: {
     loadSdkScript?: () => Promise<void>;
   };
-  __AUTH_MINI_SDK_URL__?: string;
   PublicKeyCredential?: unknown;
   location: FakeLocation;
   history: FakeHistory;
@@ -179,31 +178,24 @@ describe('demo bootstrap', () => {
     ).toContain('AuthMini SDK did not load');
   });
 
-  it('shows docs and disables actions when the default script element fails to load', async () => {
+  it('builds the sdk from an injected factory without appending a script tag', async () => {
     const env = createTestEnvironment(
       'https://docs.example.com/demo/?sdk-origin=https://auth.example.com',
-      { autoFailScript: true },
     );
-    const { bootstrapDemoPage } = await import('../../demo/bootstrap.js');
+    const { loadSdkScript } = await import('../../demo/main.js');
+    const sdk = createFakeSdk();
+    const createSdk = vi.fn(() => sdk);
 
-    await runBootstrap(bootstrapDemoPage, env);
+    await expect(
+      loadSdkScript(
+        { sdkOrigin: 'https://auth.example.com' },
+        { createSdk, document: env.document },
+      ),
+    ).resolves.toBe(sdk);
 
-    expect(
-      env.document.querySelector('#api-reference-list')?.textContent,
-    ).toContain('/jwks');
-    expect(
-      env.document.querySelector('#api-reference-list')?.textContent,
-    ).toContain('rp_id');
-    expect(
-      env.document.querySelector('#latest-response')?.textContent,
-    ).toContain('AuthMini SDK did not load');
-    expect(env.document.querySelector('#email-start-button')?.disabled).toBe(
-      true,
-    );
-    expect(
-      env.document.querySelector('#api-reference-list article details pre')
-        ?.tagName,
-    ).toBe('PRE');
+    expect(createSdk).toHaveBeenCalledWith('https://auth.example.com');
+    expect(env.document.body.children).toHaveLength(0);
+    expect(env.window.AuthMini).toBe(sdk);
   });
 
   it('keeps actions safe before sdk is attached', async () => {
@@ -230,38 +222,6 @@ describe('demo bootstrap', () => {
     );
 
     void startup;
-  });
-
-  it('uses the injected window for fallback sdk url reads', async () => {
-    const env = createTestEnvironment('https://docs.example.com/demo/');
-    const { bootstrapDemoPage } = await import('../../demo/bootstrap.js');
-    setTestGlobal('window', {
-      location: Object.assign(new URL('https://global.example.com/demo/'), {
-        reload: vi.fn(),
-      }),
-      __AUTH_MINI_SDK_URL__: 'https://global.example.com/sdk/singleton-iife.js',
-      history: env.history,
-      localStorage: env.localStorage,
-    } as FakeWindow);
-
-    env.window.__AUTH_MINI_SDK_URL__ =
-      'https://injected-window.example.com/sdk/singleton-iife.js';
-
-    await runBootstrap(bootstrapDemoPage, env, {
-      loadSdkScript: async () => {
-        throw new Error('network down');
-      },
-      location: undefined,
-    });
-
-    expect(
-      env.document.querySelector('#sdk-script-snippet')?.textContent,
-    ).toContain('https://injected-window.example.com/sdk/singleton-iife.js');
-    expect(
-      env.document.querySelector('#origin-command')?.textContent,
-    ).toContain(
-      'npx auth-mini origin add ./auth-mini.sqlite --value https://docs.example.com',
-    );
   });
 
   it('stays neutral when no sdk-origin is configured', async () => {
@@ -434,7 +394,7 @@ describe('demo bootstrap', () => {
     );
     expect(
       env.document.querySelector('#sdk-script-snippet')?.textContent,
-    ).toContain('https://auth.example.com/sdk/singleton-iife.js');
+    ).toContain("createBrowserSdk('https://auth.example.com')");
     expect(env.document.querySelector('#hero-capabilities li')?.tagName).toBe(
       'LI',
     );
@@ -489,7 +449,7 @@ function runBootstrap(
 
 function createTestEnvironment(
   urlString: string,
-  options: { autoFailScript?: boolean; publicKeyCredential?: unknown } = {},
+  options: { publicKeyCredential?: unknown } = {},
 ): TestEnvironment {
   const location = Object.assign(new URL(urlString), { reload: vi.fn() });
   const localStorage = createStorage();
@@ -637,19 +597,11 @@ function createFakeSdk(
   return { ...sdk, ...overrides } as FakeSdk;
 }
 
-function createFakeDocument(options: {
-  autoFailScript?: boolean;
-  publicKeyCredential?: unknown;
-}): FakeDocument {
+function createFakeDocument(): FakeDocument {
   const elements = new Map<string, FakeElement>();
   const body = createElement('body');
   body.append = (...nodes: FakeElement[]) => {
     body.children.push(...nodes);
-    for (const node of nodes) {
-      if (options.autoFailScript && node.tagName === 'SCRIPT') {
-        queueMicrotask(() => node.dispatchEvent({ type: 'error' }));
-      }
-    }
   };
   body.appendChild = (node: FakeElement) => {
     body.append(node);
