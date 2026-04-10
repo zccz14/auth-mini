@@ -1,4 +1,5 @@
 const API_DETAILS_LABEL = 'Show request and response';
+const DEMO_SDK_MODULE_PATH = '../dist/sdk/browser.js';
 
 export function buildDemoContent(setupState) {
   const { currentOrigin, issuer, jwksUrl, sdkOrigin, startupCommand } =
@@ -11,7 +12,7 @@ export function buildDemoContent(setupState) {
   return {
     sdkModuleSnippet: sdkOrigin
       ? [
-          "import { createBrowserSdk } from 'auth-mini/sdk/browser';",
+          `import { createBrowserSdk } from '${DEMO_SDK_MODULE_PATH}';`,
           '',
           `const AuthMini = createBrowserSdk('${sdkOrigin}');`,
         ].join('\n')
@@ -34,7 +35,7 @@ export function buildDemoContent(setupState) {
     },
     howItWorks: [
       'The page origin is the value you store with npx auth-mini origin add.',
-      'The sdk-origin is the auth origin you pass into createBrowserSdk(...) as the browser SDK base URL.',
+      `Load ${DEMO_SDK_MODULE_PATH} from the same static publish root as this page, then pass sdk-origin into createBrowserSdk(...) as the browser SDK base URL.`,
       'module construction keeps the auth origin explicit instead of inferring it from a served singleton script URL.',
       'WebAuthn and CORS both depend on the page origin being allowlisted and the auth server issuer matching the auth origin.',
     ],
@@ -182,7 +183,7 @@ export function buildDemoContent(setupState) {
     ],
     backendNotesDisclosureLabel: 'More backend JWT notes',
     deploymentNotes: [
-      'For GitHub Pages, publish the contents of demo/ unchanged as the site artifact root so its files and relative paths stay intact at the final URL.',
+      `For GitHub Pages or any static host, publish demo/ together with dist/sdk/browser.js so ${DEMO_SDK_MODULE_PATH} stays browser-resolvable from demo/main.js at the final URL.`,
       `After publish, run npx auth-mini origin add ./auth-mini.sqlite --value ${currentOrigin} (or whatever final page origin you actually deployed) because the stored origin must match the browser page origin, not the auth server origin.`,
       'If docs and auth live on different origins, keep the page URL on the docs host and append ?sdk-origin=https://your-auth-origin so createBrowserSdk(...) still points at the auth host.',
       'If you use a custom GitHub Pages domain, publish a matching CNAME file and keep that domain stable; update the stored allowed origin whenever the docs host changes enough to alter window.location.origin.',

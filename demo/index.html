@@ -97,10 +97,10 @@ npx auth-mini start ... --issuer https://auth.zccz14.com</pre
           </article>
 
           <details class="doc-details panel inset-panel">
-            <summary>Show browser module snippet</summary>
-            <pre id="sdk-script-snippet" class="doc-code">
- Runtime snippet target: Task 4 renders the config-derived createBrowserSdk(...) snippet here.</pre
-            >
+             <summary>Show browser module snippet</summary>
+             <pre id="sdk-script-snippet" class="doc-code">
+ Runtime snippet target: Task 4 renders the config-derived ../dist/sdk/browser.js import + createBrowserSdk(...) snippet here.</pre
+             >
           </details>
         </div>
       </section>
@@ -424,9 +424,9 @@ Runtime snippet target: Task 4 renders the jose JWT verification example here.</
         <div class="panel inset-panel">
           <ul id="deployment-notes-list" class="doc-list">
             <li>
-              Publish the contents of <code>demo/</code> so
-              <code>index.html</code>, <code>./style.css</code>, and
-              <code>./main.js</code> stay path-safe on GitHub Pages.
+              Publish <code>demo/</code> together with
+              <code>dist/sdk/browser.js</code> so <code>./main.js</code> can
+              resolve <code>../dist/sdk/browser.js</code> in the browser.
             </li>
             <li>
               Store the final browser page origin with

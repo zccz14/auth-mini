@@ -18,7 +18,7 @@ describe('demo content builders', () => {
     const content = buildDemoContent(sampleState);
 
     expect(content.sdkModuleSnippet).toContain(
-      "import { createBrowserSdk } from 'auth-mini/sdk/browser';",
+      "import { createBrowserSdk } from '../dist/sdk/browser.js';",
     );
     expect(content.sdkModuleSnippet).toContain(
       "const AuthMini = createBrowserSdk('https://auth.zccz14.com');",
@@ -99,7 +99,12 @@ describe('demo content builders', () => {
     const deploymentText = content.deploymentNotes.join('\n');
 
     expect(deploymentText).toContain('GitHub Pages');
-    expect(deploymentText).toContain('publish the contents of demo/');
+    expect(deploymentText).toContain(
+      'publish demo/ together with dist/sdk/browser.js',
+    );
+    expect(deploymentText).not.toContain(
+      'publish the contents of demo/ unchanged',
+    );
     expect(deploymentText).toContain('CNAME');
     expect(deploymentText).toContain('origin add');
     expect(deploymentText).toContain('?sdk-origin=https://your-auth-origin');

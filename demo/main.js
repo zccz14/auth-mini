@@ -1,5 +1,5 @@
 import { bootstrapDemoPage } from './bootstrap.js';
-import { createBrowserSdk } from 'auth-mini/sdk/browser';
+import { createBrowserSdk } from '../dist/sdk/browser.js';
 
 const STORAGE_KEY = 'auth-mini-demo-inputs';
 const DEFAULT_LATEST_ACTION = 'No request yet.';

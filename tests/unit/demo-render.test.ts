@@ -60,6 +60,9 @@ describe('demo render helpers', () => {
       '--origin https://docs.example.com',
     );
     expect(root.querySelector('#sdk-script-snippet')?.textContent).toContain(
+      "import { createBrowserSdk } from '../dist/sdk/browser.js';",
+    );
+    expect(root.querySelector('#sdk-script-snippet')?.textContent).toContain(
       "createBrowserSdk('https://auth.zccz14.com')",
     );
     expect(root.querySelector('#jose-snippet')?.textContent).toContain(
@@ -133,6 +136,9 @@ describe('demo render helpers', () => {
     expect(
       root.querySelector('#deployment-notes-list li')?.textContent,
     ).toContain('GitHub Pages');
+    expect(root.querySelector('#deployment-notes-list')?.textContent).toContain(
+      'dist/sdk/browser.js',
+    );
     expect(root.querySelector('#known-issues-list')).toBeNull();
   });
 
