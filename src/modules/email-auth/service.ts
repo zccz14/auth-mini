@@ -144,6 +144,7 @@ export async function verifyEmailAuth(
 
   const tokens = await mintSessionTokens(db, {
     userId: user.id,
+    authMethod: 'email_otp',
     issuer: input.issuer,
     logger: input.logger,
   });

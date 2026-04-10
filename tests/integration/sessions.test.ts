@@ -493,25 +493,27 @@ describe('session routes', () => {
     testApp.db
       .prepare(
         [
-          'INSERT INTO sessions (id, user_id, refresh_token_hash, expires_at, revoked_at)',
-          'VALUES (?, ?, ?, ?, ?)',
+          'INSERT INTO sessions (id, user_id, refresh_token_hash, auth_method, expires_at, revoked_at)',
+          'VALUES (?, ?, ?, ?, ?, ?)',
         ].join(' '),
       )
       .run(
         'session-revoked',
         testApp.userId,
         hashValue('revoked-token'),
+        'email_otp',
         '2099-01-01T00:00:00.000Z',
         '2026-04-01T00:00:00.000Z',
       );
     testApp.db
       .prepare(
-        'INSERT INTO sessions (id, user_id, refresh_token_hash, expires_at) VALUES (?, ?, ?, ?)',
+        'INSERT INTO sessions (id, user_id, refresh_token_hash, auth_method, expires_at) VALUES (?, ?, ?, ?, ?)',
       )
       .run(
         'session-expired',
         testApp.userId,
         hashValue('expired-token'),
+        'email_otp',
         '2020-01-01T00:00:00.000Z',
       );
 

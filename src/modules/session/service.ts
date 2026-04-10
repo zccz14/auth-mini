@@ -37,7 +37,12 @@ export class SessionSupersededError extends Error {
 
 export async function mintSessionTokens(
   db: DatabaseClient,
-  input: { userId: string; issuer: string; logger?: AppLogger },
+  input: {
+    userId: string;
+    authMethod: Session['authMethod'];
+    issuer: string;
+    logger?: AppLogger;
+  },
 ): Promise<TokenPair & { session: Session }> {
   const refreshToken = generateOpaqueToken();
   const issuedAt = getUnixTimeSeconds();
@@ -47,6 +52,7 @@ export async function mintSessionTokens(
   const session = createSession(db, {
     userId: input.userId,
     refreshTokenHash: hashValue(refreshToken),
+    authMethod: input.authMethod,
     expiresAt,
   });
   const accessToken = await signJwt(db, {
