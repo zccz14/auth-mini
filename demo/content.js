@@ -36,7 +36,7 @@ export function buildDemoContent(setupState) {
     },
     howItWorks: [
       'The page origin is the value you store with npx auth-mini origin add.',
-      `Import the browser SDK from ${DEMO_SDK_MODULE_PATH} in demo/main.js, then let this page's import map resolve it to ${DEMO_SDK_IMPORT_MAP_TARGET} from the same static publish root.`,
+      `Import the browser SDK from ${DEMO_SDK_MODULE_PATH} in demo/main.js, then let the /demo/ page's import map resolve it to ${DEMO_SDK_IMPORT_MAP_TARGET} from the sibling /dist/ directory in the same static site.`,
       'module construction keeps the auth origin explicit instead of inferring it from a served singleton script URL.',
       'WebAuthn and CORS both depend on the page origin being allowlisted and the auth server issuer matching the auth origin.',
     ],
@@ -184,7 +184,7 @@ export function buildDemoContent(setupState) {
     ],
     backendNotesDisclosureLabel: 'More backend JWT notes',
     deploymentNotes: [
-      `For GitHub Pages or any static host, publish demo/ together with dist/sdk/browser.js and keep the page import map pointing ${DEMO_SDK_MODULE_PATH} at ${DEMO_SDK_IMPORT_MAP_TARGET}.`,
+      `For GitHub Pages or any static host, publish a static site root that keeps sibling demo/ and dist/ directories, then serve this page from /demo/ with the import map still pointing ${DEMO_SDK_MODULE_PATH} at ${DEMO_SDK_IMPORT_MAP_TARGET}.`,
       `After publish, run npx auth-mini origin add ./auth-mini.sqlite --value ${currentOrigin} (or whatever final page origin you actually deployed) because the stored origin must match the browser page origin, not the auth server origin.`,
       'If docs and auth live on different origins, keep the page URL on the docs host and append ?sdk-origin=https://your-auth-origin so createBrowserSdk(...) still points at the auth host.',
       'If you use a custom GitHub Pages domain, publish a matching CNAME file and keep that domain stable; update the stored allowed origin whenever the docs host changes enough to alter window.location.origin.',

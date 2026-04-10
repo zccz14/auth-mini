@@ -424,9 +424,10 @@ Runtime snippet target: Task 4 renders the jose JWT verification example here.</
         <div class="panel inset-panel">
           <ul id="deployment-notes-list" class="doc-list">
             <li>
-              Publish <code>demo/</code> together with
-              <code>dist/sdk/browser.js</code>, then keep the page import map
-              resolving <code>auth-mini/sdk/browser</code> to
+              Publish a static site root with sibling <code>demo/</code> and
+              <code>dist/</code> directories, then keep the demo page at
+              <code>/demo/</code> with its import map resolving
+              <code>auth-mini/sdk/browser</code> to
               <code>../dist/sdk/browser.js</code> in the browser.
             </li>
             <li>

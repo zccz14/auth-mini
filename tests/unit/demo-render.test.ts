@@ -142,6 +142,9 @@ describe('demo render helpers', () => {
     expect(root.querySelector('#deployment-notes-list')?.textContent).toContain(
       '../dist/sdk/browser.js',
     );
+    expect(root.querySelector('#deployment-notes-list')?.textContent).toContain(
+      '/demo/',
+    );
     expect(root.querySelector('#known-issues-list')).toBeNull();
   });
 

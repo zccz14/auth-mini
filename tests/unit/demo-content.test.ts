@@ -100,10 +100,11 @@ describe('demo content builders', () => {
 
     expect(deploymentText).toContain('GitHub Pages');
     expect(deploymentText).toContain(
-      'publish demo/ together with dist/sdk/browser.js and keep the page import map',
+      'publish a static site root that keeps sibling demo/ and dist/ directories',
     );
     expect(deploymentText).toContain('auth-mini/sdk/browser');
     expect(deploymentText).toContain('../dist/sdk/browser.js');
+    expect(deploymentText).toContain('/demo/');
     expect(deploymentText).toContain('CNAME');
     expect(deploymentText).toContain('origin add');
     expect(deploymentText).toContain('?sdk-origin=https://your-auth-origin');
