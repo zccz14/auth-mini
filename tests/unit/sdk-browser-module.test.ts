@@ -44,5 +44,8 @@ describe('browser module sdk', () => {
     expect(source).toContain('createBrowserSdkInternal');
     expect(source).toContain('BrowserSdkFactoryOptions');
     expect(source).toContain("from './types.js'");
+    expect(source).toContain(
+      'export type {\n  AuthMiniApi,\n  BrowserSdkFactoryOptions,',
+    );
   });
 });

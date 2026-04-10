@@ -3,6 +3,7 @@ import type { AuthMiniApi, BrowserSdkFactoryOptions } from './types.js';
 
 export type {
   AuthMiniApi,
+  BrowserSdkFactoryOptions,
   EmailStartInput,
   EmailStartResponse,
   EmailVerifyInput,
