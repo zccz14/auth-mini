@@ -404,6 +404,7 @@ export async function verifyAuthentication(
 
     const tokens = await mintSessionTokens(db, {
       userId: storedCredential.userId,
+      authMethod: 'webauthn',
       issuer: input.issuer,
       logger: input.logger,
     });

@@ -81,6 +81,7 @@ vi.mock('../../src/infra/smtp/mailer.js', async () => {
 });
 
 import { hashValue } from '../../src/shared/crypto.js';
+import { verifyJwt } from '../../src/modules/jwks/service.js';
 import { createTestApp } from '../helpers/app.js';
 import {
   createOtpMailSeam,
@@ -240,14 +241,17 @@ describe('email auth routes', () => {
     const userCount = testApp.db
       .prepare('SELECT COUNT(*) AS count FROM users WHERE email = ?')
       .get('first@example.com') as { count: number };
+    const body = (await response.json()) as { access_token: string };
+    const payload = await verifyJwt(testApp.db, body.access_token);
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({
+    expect(body).toMatchObject({
       access_token: expect.any(String),
       token_type: 'Bearer',
       expires_in: 900,
       refresh_token: expect.any(String),
     });
+    expect(payload.amr).toEqual(['email_otp']);
     expect(userCount.count).toBe(1);
     expectLogEntry(testApp.logs, {
       event: 'email.verify.succeeded',

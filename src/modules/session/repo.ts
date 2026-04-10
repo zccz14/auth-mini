@@ -5,6 +5,7 @@ type SessionRow = {
   id: string;
   user_id: string;
   refresh_token_hash: string;
+  auth_method: Session['authMethod'];
   expires_at: string;
   created_at: string;
 };
@@ -13,19 +14,31 @@ export type Session = {
   id: string;
   userId: string;
   refreshTokenHash: string;
+  authMethod: 'email_otp' | 'webauthn';
   expiresAt: string;
   createdAt: string;
 };
 
 export function createSession(
   db: DatabaseClient,
-  input: { userId: string; refreshTokenHash: string; expiresAt: string },
+  input: {
+    userId: string;
+    refreshTokenHash: string;
+    authMethod: Session['authMethod'];
+    expiresAt: string;
+  },
 ): Session {
   const id = randomUUID();
 
   db.prepare(
-    'INSERT INTO sessions (id, user_id, refresh_token_hash, expires_at) VALUES (?, ?, ?, ?)',
-  ).run(id, input.userId, input.refreshTokenHash, input.expiresAt);
+    'INSERT INTO sessions (id, user_id, refresh_token_hash, auth_method, expires_at) VALUES (?, ?, ?, ?, ?)',
+  ).run(
+    id,
+    input.userId,
+    input.refreshTokenHash,
+    input.authMethod,
+    input.expiresAt,
+  );
 
   return getSessionById(db, id) as Session;
 }
@@ -33,7 +46,7 @@ export function createSession(
 export function getSessionById(db: DatabaseClient, id: string): Session | null {
   const row = db
     .prepare(
-      'SELECT id, user_id, refresh_token_hash, expires_at, created_at FROM sessions WHERE id = ? LIMIT 1',
+      'SELECT id, user_id, refresh_token_hash, auth_method, expires_at, created_at FROM sessions WHERE id = ? LIMIT 1',
     )
     .get(id) as SessionRow | undefined;
 
@@ -77,7 +90,7 @@ export function rotateRefreshToken(
   );
   const select = db.prepare(
     [
-      'SELECT id, user_id, refresh_token_hash, expires_at, created_at',
+      'SELECT id, user_id, refresh_token_hash, auth_method, expires_at, created_at',
       'FROM sessions',
       'WHERE id = ?',
       'LIMIT 1',
@@ -110,6 +123,7 @@ function mapSession(row: SessionRow): Session {
     id: row.id,
     userId: row.user_id,
     refreshTokenHash: row.refresh_token_hash,
+    authMethod: row.auth_method,
     expiresAt: row.expires_at,
     createdAt: row.created_at,
   };

@@ -9,6 +9,7 @@ import {
 import { runSqlFile } from './migrations.js';
 
 const requiredRuntimeSchema = {
+  sessions: ['auth_method'],
   allowed_origins: ['origin'],
   jwks_keys: ['id', 'kid', 'alg', 'public_jwk', 'private_jwk'],
   webauthn_challenges: ['rp_id', 'origin'],
@@ -66,6 +67,7 @@ export async function bootstrapDatabase(
     );
 
     if (hasExistingAppSchema(db)) {
+      addMissingSessionAuthMethodColumn(db);
       assertRequiredTablesAndColumns(db, requiredRuntimeSchema);
       assertJwksSlotSchema(db);
     }
@@ -158,6 +160,54 @@ function assertJwksSlotSchema(
 
 function normalizeSql(sql: string): string {
   return sql.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function addMissingSessionAuthMethodColumn(
+  db: ReturnType<typeof createDatabaseClient>,
+): void {
+  if (
+    tableExists(db, 'sessions') &&
+    !tableHasColumn(db, 'sessions', 'auth_method')
+  ) {
+    db.exec(
+      [
+        'ALTER TABLE sessions',
+        "ADD COLUMN auth_method TEXT NOT NULL DEFAULT 'email_otp'",
+        "CHECK (auth_method IN ('email_otp', 'webauthn'))",
+      ].join(' '),
+    );
+  }
+}
+
+function tableExists(
+  db: ReturnType<typeof createDatabaseClient>,
+  tableName: string,
+): boolean {
+  return Boolean(
+    db
+      .prepare(
+        [
+          'SELECT 1 AS present',
+          'FROM sqlite_master',
+          "WHERE type = 'table' AND name = ?",
+        ].join(' '),
+      )
+      .get(tableName),
+  );
+}
+
+function tableHasColumn(
+  db: ReturnType<typeof createDatabaseClient>,
+  tableName: string,
+  columnName: string,
+): boolean {
+  const columns = db
+    .prepare(`PRAGMA table_info('${tableName}')`)
+    .all() as Array<{
+    name: string;
+  }>;
+
+  return columns.some((column) => column.name === columnName);
 }
 
 function hasExistingAppSchema(

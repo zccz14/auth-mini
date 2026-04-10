@@ -46,7 +46,11 @@ import {
   type AppLogger,
   withErrorFields,
 } from '../shared/logger.js';
-import { requireAccessToken, type AuthVariables } from './auth.js';
+import {
+  requireAccessToken,
+  requirePasskeyManagementAuth,
+  type AuthVariables,
+} from './auth.js';
 import { renderSingletonIifeSource } from '../sdk/singleton-entry.js';
 import {
   credentialNotFoundError,
@@ -277,43 +281,53 @@ export function createApp(input: {
     return c.json({ ok: true });
   });
 
-  app.post('/webauthn/register/options', requireAccessToken, async (c) => {
-    const body = await parseJson(c.req.raw, webauthnOptionsSchema);
-    const user = getUserById(c.var.db, c.var.auth.sub);
+  app.post(
+    '/webauthn/register/options',
+    requireAccessToken,
+    requirePasskeyManagementAuth,
+    async (c) => {
+      const body = await parseJson(c.req.raw, webauthnOptionsSchema);
+      const user = getUserById(c.var.db, c.var.auth.sub);
 
-    if (!user) {
-      throw new HttpError(401, 'invalid_access_token');
-    }
+      if (!user) {
+        throw new HttpError(401, 'invalid_access_token');
+      }
 
-    return c.json(
-      await generateRegistrationOptions(c.var.db, {
-        userId: user.id,
-        email: user.email,
-        rpId: body.rp_id,
-        origin: resolveOptionsRequestOrigin(c.req.raw),
-        logger: c.var.logger,
-      }),
-    );
-  });
+      return c.json(
+        await generateRegistrationOptions(c.var.db, {
+          userId: user.id,
+          email: user.email,
+          rpId: body.rp_id,
+          origin: resolveOptionsRequestOrigin(c.req.raw),
+          logger: c.var.logger,
+        }),
+      );
+    },
+  );
 
-  app.post('/webauthn/register/verify', requireAccessToken, async (c) => {
-    const body = await parseJson(c.req.raw, webauthnRegisterVerifySchema);
-    const origin = c.req.header('Origin');
+  app.post(
+    '/webauthn/register/verify',
+    requireAccessToken,
+    requirePasskeyManagementAuth,
+    async (c) => {
+      const body = await parseJson(c.req.raw, webauthnRegisterVerifySchema);
+      const origin = c.req.header('Origin');
 
-    if (!origin) {
-      throw new InvalidWebauthnRegistrationError();
-    }
+      if (!origin) {
+        throw new InvalidWebauthnRegistrationError();
+      }
 
-    return c.json(
-      await verifyRegistration(c.var.db, {
-        userId: c.var.auth.sub,
-        requestId: body.request_id,
-        credential: body.credential,
-        origin,
-        logger: c.var.logger,
-      }),
-    );
-  });
+      return c.json(
+        await verifyRegistration(c.var.db, {
+          userId: c.var.auth.sub,
+          requestId: body.request_id,
+          credential: body.credential,
+          origin,
+          logger: c.var.logger,
+        }),
+      );
+    },
+  );
 
   app.post('/webauthn/authenticate/options', async (c) => {
     const body = await parseJson(c.req.raw, webauthnOptionsSchema);
@@ -351,14 +365,19 @@ export function createApp(input: {
     });
   });
 
-  app.delete('/webauthn/credentials/:id', requireAccessToken, async (c) => {
-    return c.json(
-      deleteCredential(c.var.db, {
-        credentialId: c.req.param('id'),
-        userId: c.var.auth.sub,
-      }),
-    );
-  });
+  app.delete(
+    '/webauthn/credentials/:id',
+    requireAccessToken,
+    requirePasskeyManagementAuth,
+    async (c) => {
+      return c.json(
+        deleteCredential(c.var.db, {
+          credentialId: c.req.param('id'),
+          userId: c.var.auth.sub,
+        }),
+      );
+    },
+  );
 
   app.get('/jwks', async (c) => {
     const keys = await listPublicKeys(c.var.db, { logger: c.var.logger });

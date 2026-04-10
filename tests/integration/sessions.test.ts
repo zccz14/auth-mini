@@ -45,6 +45,37 @@ afterEach(() => {
 });
 
 describe('session routes', () => {
+  it('persists and reads the session auth method', async () => {
+    const dbPath = await createTempDbPath();
+    await bootstrapDatabase(dbPath);
+    const db = createDatabaseClient(dbPath);
+
+    try {
+      db.prepare(
+        'INSERT INTO users (id, email, email_verified_at) VALUES (?, ?, ?)',
+      ).run('user-1', 'user-1@example.com', '2030-01-01T00:00:00.000Z');
+
+      const session = createSession(db, {
+        userId: 'user-1',
+        refreshTokenHash: 'refresh-hash',
+        authMethod: 'email_otp',
+        expiresAt: '2099-01-01T00:00:00.000Z',
+      });
+
+      expect(session).toMatchObject({
+        userId: 'user-1',
+        refreshTokenHash: 'refresh-hash',
+        authMethod: 'email_otp',
+      });
+      expect(getSessionById(db, session.id)).toMatchObject({
+        id: session.id,
+        authMethod: 'email_otp',
+      });
+    } finally {
+      db.close();
+    }
+  });
+
   it('refresh rotates the refresh token', async () => {
     const testApp = await createSignedInApp('rotate@example.com');
     openApps.push(testApp);
@@ -59,6 +90,10 @@ describe('session routes', () => {
     });
 
     const body = await response.json();
+    const payload = await jwksService.verifyJwt(
+      testApp.db,
+      body.access_token as string,
+    );
     const session = testApp.db
       .prepare('SELECT id, refresh_token_hash FROM sessions WHERE id = ?')
       .get(testApp.sessionId) as
@@ -71,6 +106,7 @@ describe('session routes', () => {
       refresh_token: expect.any(String),
       access_token: expect.any(String),
     });
+    expect(payload.amr).toEqual(['email_otp']);
     expect(body.refresh_token).not.toBe(testApp.tokens.refresh_token);
     expect(session).toEqual({
       id: testApp.sessionId,
@@ -160,6 +196,7 @@ describe('session routes', () => {
       const session = createSession(db, {
         userId: 'user-1',
         refreshTokenHash: hashValue('refresh-token'),
+        authMethod: 'email_otp',
         expiresAt: '2030-01-01T00:00:01.000Z',
       });
 
@@ -219,6 +256,7 @@ describe('session routes', () => {
       const session = createSession(db, {
         userId: 'user-1',
         refreshTokenHash: hashValue('refresh-token'),
+        authMethod: 'email_otp',
         expiresAt: '2099-01-01T00:00:00.000Z',
       });
       const signJwtSpy = vi
@@ -267,6 +305,7 @@ describe('session routes', () => {
       createSession(writerDb, {
         userId: 'user-1',
         refreshTokenHash: 'refresh-hash',
+        authMethod: 'email_otp',
         expiresAt: '2099-01-01T00:00:00.000Z',
       });
 
@@ -289,6 +328,7 @@ describe('session routes', () => {
         id: session.id,
         userId: 'user-1',
         refreshTokenHash: 'next-refresh-hash',
+        authMethod: 'email_otp',
       });
       expect(secondClaim).toBeNull();
     } finally {
@@ -451,6 +491,32 @@ describe('session routes', () => {
     });
   });
 
+  it('me accepts a legacy access token without amr', async () => {
+    const testApp = await createSignedInApp('legacy-me@example.com');
+    openApps.push(testApp);
+    const accessToken = await forgeLegacyAccessToken(testApp);
+
+    const response = await testApp.app.request('/me', {
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      user_id: testApp.userId,
+      email: 'legacy-me@example.com',
+      webauthn_credentials: [],
+      active_sessions: [
+        {
+          id: testApp.sessionId,
+          created_at: expect.any(String),
+          expires_at: expect.any(String),
+        },
+      ],
+    });
+  });
+
   it('me relies on expires_at for active_sessions', async () => {
     const testApp = await createSignedInApp('active@example.com');
     openApps.push(testApp);
@@ -458,25 +524,27 @@ describe('session routes', () => {
     testApp.db
       .prepare(
         [
-          'INSERT INTO sessions (id, user_id, refresh_token_hash, expires_at, revoked_at)',
-          'VALUES (?, ?, ?, ?, ?)',
+          'INSERT INTO sessions (id, user_id, refresh_token_hash, auth_method, expires_at, revoked_at)',
+          'VALUES (?, ?, ?, ?, ?, ?)',
         ].join(' '),
       )
       .run(
         'session-revoked',
         testApp.userId,
         hashValue('revoked-token'),
+        'email_otp',
         '2099-01-01T00:00:00.000Z',
         '2026-04-01T00:00:00.000Z',
       );
     testApp.db
       .prepare(
-        'INSERT INTO sessions (id, user_id, refresh_token_hash, expires_at) VALUES (?, ?, ?, ?)',
+        'INSERT INTO sessions (id, user_id, refresh_token_hash, auth_method, expires_at) VALUES (?, ?, ?, ?, ?)',
       )
       .run(
         'session-expired',
         testApp.userId,
         hashValue('expired-token'),
+        'email_otp',
         '2020-01-01T00:00:00.000Z',
       );
 
@@ -717,6 +785,24 @@ async function createSignedInApp(email: string) {
     userId: user.id,
     sessionId: session.id,
   };
+}
+
+async function forgeLegacyAccessToken(
+  testApp: Awaited<ReturnType<typeof createSignedInApp>>,
+) {
+  const payload = await jwksService.verifyJwt(
+    testApp.db,
+    testApp.tokens.access_token,
+  );
+  const legacyPayload = { ...payload };
+
+  delete legacyPayload.amr;
+
+  return jwksService.signJwt(testApp.db, {
+    ...legacyPayload,
+    sid: testApp.sessionId,
+    sub: testApp.userId,
+  });
 }
 
 function getCurrentOtpSeam(): OtpMailSeam {
