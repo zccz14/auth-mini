@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 
-const sdkBuildWatchCommand = 'npm run build -- --watch';
+const sdkBuildWatchCommand =
+  'tsc -p tsconfig.build.json --declaration --watch --preserveWatchOutput';
 const demoDevCommand = 'npm --prefix examples/demo run dev';
 const processes = [];
 let shuttingDown = false;
