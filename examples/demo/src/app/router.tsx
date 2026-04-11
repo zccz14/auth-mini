@@ -1,32 +1,11 @@
 import { Route, Routes } from 'react-router-dom';
-import { FlowCard } from '@/components/app/flow-card';
-import { JsonPanel } from '@/components/app/json-panel';
-import { Separator } from '@/components/ui/separator';
 import { AppShell } from '@/components/app/app-shell';
-import { DemoProvider, useDemo } from '@/app/providers/demo-provider';
+import { DemoProvider } from '@/app/providers/demo-provider';
 import { EmailRoute } from '@/routes/email';
 import { HomeRoute } from '@/routes/home';
 import { PasskeyRoute } from '@/routes/passkey';
+import { SessionRoute } from '@/routes/session';
 import { SetupRoute } from '@/routes/setup';
-
-function Placeholder({ title }: { title: string }) {
-  const demo = useDemo();
-
-  return (
-    <FlowCard
-      title={title}
-      description="Task 2 keeps route content intentionally minimal while provider wiring and navigation land."
-    >
-      <div className="space-y-4">
-        <p className="text-sm text-slate-600">
-          Interactive flow controls will be added in follow-up tasks.
-        </p>
-        <Separator />
-        <JsonPanel title="demo context" value={demo.config} />
-      </div>
-    </FlowCard>
-  );
-}
 
 export function AppRouter() {
   return (
@@ -37,7 +16,7 @@ export function AppRouter() {
           <Route path="/setup" element={<SetupRoute />} />
           <Route path="/email" element={<EmailRoute />} />
           <Route path="/passkey" element={<PasskeyRoute />} />
-          <Route path="/session" element={<Placeholder title="Session" />} />
+          <Route path="/session" element={<SessionRoute />} />
         </Route>
       </Routes>
     </DemoProvider>

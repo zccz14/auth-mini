@@ -26,6 +26,7 @@ type DemoContextValue = {
   sdk: DemoSdk | null;
   session: DemoSession;
   user: DemoSession['me'];
+  clearLocalAuthState: () => Promise<void>;
   setAuthOrigin: (authOrigin: string) => void;
 };
 
@@ -105,6 +106,15 @@ export function DemoProvider({
   const value = useMemo<DemoContextValue>(
     () => ({
       config,
+      clearLocalAuthState: async () => {
+        if (!sdk) {
+          setSession(ANONYMOUS_SESSION);
+          return;
+        }
+
+        await sdk.session.logout();
+        setSession(sdk.session.getState());
+      },
       sdk,
       session,
       setAuthOrigin: (authOrigin) => {
