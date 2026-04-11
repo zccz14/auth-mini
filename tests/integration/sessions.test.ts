@@ -866,10 +866,21 @@ describe('session routes', () => {
     const afterLogout = testApp.db
       .prepare('SELECT expires_at FROM sessions WHERE id = ?')
       .get(testApp.sessionId) as { expires_at: string };
+    const meResponse = await testApp.app.request('/me', {
+      headers: {
+        authorization: `Bearer ${testApp.tokens.access_token}`,
+      },
+    });
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: 'invalid_request' });
     expect(afterLogout).toEqual(beforeLogout);
+    expect(meResponse.status).toBe(200);
+    expect(
+      (await meResponse.json()).active_sessions.map(
+        (session: { id: string }) => session.id,
+      ),
+    ).toEqual([testApp.sessionId]);
   });
 
   it('me returns user id, email, credentials, and active sessions', async () => {
