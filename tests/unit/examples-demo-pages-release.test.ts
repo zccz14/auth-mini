@@ -61,9 +61,13 @@ describe('examples demo Pages release contract', () => {
     );
 
     expect(readme).toMatch(/\[Live demo\]\([^\n)]+\)/);
+    expect(docsSection).toMatch(/live demo/i);
     expect(docsSection).toMatch(/`docs\/`[^\n]*canonical static reference source/);
+    expect(docsSection).not.toMatch(
+      /\[`demo\/`\]\(demo\/\)\s+is an interactive companion/i,
+    );
     expect(docsSection).toMatch(
-      /`examples\/demo\/`[\s\S]*current interactive demo source[\s\S]*Pages publish target/,
+      /`docs\/`[\s\S]*`examples\/demo\/`[\s\S]*current interactive demo source[\s\S]*(live demo|Pages publish target)/i,
     );
   });
 });
