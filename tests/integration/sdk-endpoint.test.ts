@@ -5,7 +5,12 @@ import { resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { createTestApp } from '../helpers/app.js';
-import { executeServedSdk, fakeStorage } from '../helpers/sdk.js';
+import {
+  browserSdkStorageKey,
+  executeServedSdk,
+  fakeStorage,
+  seedBrowserSdkStorage,
+} from '../helpers/sdk.js';
 
 describe('singleton sdk endpoint', () => {
   const legacyGlobalName = ['Mini', 'Auth'].join('');
@@ -134,7 +139,8 @@ describe('singleton sdk endpoint', () => {
     try {
       const response = await testApp.app.request('/sdk/singleton-iife.js');
       const body = await response.text();
-      const storage = fakeStorage({
+      const storage = fakeStorage();
+      seedBrowserSdkStorage(storage, 'https://app.example.com', {
         sessionId: 'session-1',
         refreshToken: 'rt',
         expiresAt: '2026-04-03T00:00:00.000Z',
@@ -183,7 +189,8 @@ describe('singleton sdk endpoint', () => {
     try {
       const response = await testApp.app.request('/sdk/singleton-iife.js');
       const body = await response.text();
-      const storage = fakeStorage({
+      const storage = fakeStorage();
+      seedBrowserSdkStorage(storage, 'https://app.example.com', {
         sessionId: 'session-1',
         accessToken: 'access-1',
         refreshToken: 'refresh-1',
@@ -194,7 +201,7 @@ describe('singleton sdk endpoint', () => {
       const windowObject = executeServedSdk(body, { storage });
 
       storage.setItem(
-        'auth-mini.sdk',
+        browserSdkStorageKey('https://app.example.com'),
         JSON.stringify({
           sessionId: 'session-1',
           accessToken: 'access-2',
@@ -209,7 +216,7 @@ describe('singleton sdk endpoint', () => {
           dispatchStorageEvent: (event: StorageEvent) => void;
         }
       ).dispatchStorageEvent({
-        key: 'auth-mini.sdk',
+        key: browserSdkStorageKey('https://app.example.com'),
         storageArea: storage,
       } as StorageEvent);
 
