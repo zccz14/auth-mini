@@ -43,6 +43,29 @@ async function waitForExit(child: ReturnType<typeof spawn>, timeoutMs: number) {
   });
 }
 
+function hasWatchReadySignal(output: string) {
+  return output.includes('Watching for file changes');
+}
+
+async function stopChild(child: ReturnType<typeof spawn>, timeoutMs: number) {
+  if (child.exitCode !== null) {
+    return;
+  }
+
+  child.kill('SIGTERM');
+
+  try {
+    await waitForExit(child, timeoutMs);
+  } catch {
+    if (child.exitCode !== null) {
+      return;
+    }
+
+    child.kill('SIGKILL');
+    await waitForExit(child, timeoutMs);
+  }
+}
+
 describe('examples demo dev helper script', () => {
   it('uses npm run build -- --watch for demo orchestration and backs it with a real sdk watch pipeline', () => {
     const devScript = readFileSync(
@@ -115,7 +138,7 @@ describe('examples demo dev helper script', () => {
 
         try {
           await Promise.all([stat(singletonIifePath), stat(singletonDtsPath)]);
-          return true;
+          return hasWatchReadySignal(output);
         } catch {
           return false;
         }
@@ -146,8 +169,7 @@ describe('examples demo dev helper script', () => {
     } finally {
       try {
         if (child.exitCode === null) {
-          child.kill('SIGTERM');
-          await waitForExit(child, 5000);
+          await stopChild(child, 5000);
         }
       } finally {
         await writeFile(singletonGlobalPath, originalSource, 'utf8');
