@@ -592,9 +592,32 @@ describe('session routes', () => {
         authorization: `Bearer ${accessToken}`,
       },
     });
+    const meResponse = await testApp.app.request('/me', {
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+      },
+    });
+    const refreshResponse = await testApp.app.request('/session/refresh', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: json({
+        session_id: peer.id,
+        refresh_token: 'webauthn-peer-refresh-token',
+      }),
+    });
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
+    expect(meResponse.status).toBe(200);
+    expect(
+      (await meResponse.json()).active_sessions.map(
+        (session: { id: string }) => session.id,
+      ),
+    ).toEqual([testApp.sessionId]);
+    expect(refreshResponse.status).toBe(401);
+    expect(await refreshResponse.json()).toEqual({
+      error: 'session_invalidated',
+    });
   });
 
   it('rejects ed25519 peer logout with insufficient_authentication_method and keeps the target active', async () => {
@@ -762,6 +785,9 @@ describe('session routes', () => {
   it('returns 400 when the target session id matches the current session id', async () => {
     const testApp = await createSignedInApp('peer-logout-self@example.com');
     openApps.push(testApp);
+    const beforeLogout = testApp.db
+      .prepare('SELECT expires_at FROM sessions WHERE id = ?')
+      .get(testApp.sessionId) as { expires_at: string };
 
     const response = await testApp.app.request(
       `/session/${testApp.sessionId}/logout`,
@@ -772,9 +798,13 @@ describe('session routes', () => {
         },
       },
     );
+    const afterLogout = testApp.db
+      .prepare('SELECT expires_at FROM sessions WHERE id = ?')
+      .get(testApp.sessionId) as { expires_at: string };
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: 'invalid_request' });
+    expect(afterLogout).toEqual(beforeLogout);
   });
 
   it('me returns user id, email, credentials, and active sessions', async () => {
