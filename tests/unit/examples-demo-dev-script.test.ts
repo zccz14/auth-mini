@@ -23,6 +23,26 @@ async function waitFor(check: () => Promise<boolean>, timeoutMs: number) {
   throw new Error(`timed out after ${timeoutMs}ms`);
 }
 
+async function waitForExit(child: ReturnType<typeof spawn>, timeoutMs: number) {
+  if (child.exitCode !== null) {
+    return;
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      child.off('exit', handleExit);
+      reject(new Error(`child did not exit within ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    const handleExit = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+
+    child.once('exit', handleExit);
+  });
+}
+
 describe('examples demo dev helper script', () => {
   it('uses npm run build -- --watch for demo orchestration and backs it with a real sdk watch pipeline', () => {
     const devScript = readFileSync(
@@ -88,13 +108,11 @@ describe('examples demo dev helper script', () => {
     child.stderr.on('data', appendOutput);
 
     try {
-      await waitFor(
-        async () =>
-          output.includes('Found 0 errors. Watching for file changes.'),
-        20000,
-      );
-
       await waitFor(async () => {
+        if (child.exitCode !== null) {
+          throw new Error(`build watch exited early:\n${output}`);
+        }
+
         try {
           await Promise.all([stat(singletonIifePath), stat(singletonDtsPath)]);
           return true;
@@ -111,6 +129,10 @@ describe('examples demo dev helper script', () => {
       await writeFile(singletonGlobalPath, `${originalSource}\n`, 'utf8');
 
       await waitFor(async () => {
+        if (child.exitCode !== null) {
+          throw new Error(`build watch exited before rebuild:\n${output}`);
+        }
+
         const [nextIifeStat, nextDtsStat] = await Promise.all([
           stat(singletonIifePath),
           stat(singletonDtsPath),
@@ -122,11 +144,14 @@ describe('examples demo dev helper script', () => {
         );
       }, 20000);
     } finally {
-      child.kill('SIGTERM');
-      await new Promise<void>((resolve) => {
-        child.once('exit', () => resolve());
-      });
-      await writeFile(singletonGlobalPath, originalSource, 'utf8');
+      try {
+        if (child.exitCode === null) {
+          child.kill('SIGTERM');
+          await waitForExit(child, 5000);
+        }
+      } finally {
+        await writeFile(singletonGlobalPath, originalSource, 'utf8');
+      }
     }
   }, 30000);
 });
