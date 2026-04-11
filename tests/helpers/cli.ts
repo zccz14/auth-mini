@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { cp, mkdtemp, rm, stat, symlink, unlink } from 'node:fs/promises';
+import { cp, mkdtemp, rm, stat, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { runCreateCommand } from '../../src/app/commands/create.js';
@@ -83,20 +83,16 @@ async function ensurePackedCliInstall(): Promise<string> {
 }
 
 async function preparePackedCliInstall(): Promise<string> {
+  await ensurePackedArtifactSource();
+
   const stageDir = await mkdtemp(join(tmpdir(), 'auth-mini-stage-'));
   const installDir = await mkdtemp(join(tmpdir(), 'auth-mini-pack-'));
 
   try {
     await preparePackedWorkspace(stageDir);
 
-    const packResult = await runCommand(npmCommand, ['run', 'build'], {
+    const packResult = await runCommand(npmCommand, ['pack', '--json'], {
       cwd: stageDir,
-    }).then(async (result) => {
-      if (result.exitCode !== 0) {
-        throw new Error(result.stderr || result.stdout || 'CLI build failed');
-      }
-
-      return runCommand(npmCommand, ['pack', '--json'], { cwd: stageDir });
     });
 
     if (packResult.exitCode !== 0) {
@@ -282,10 +278,8 @@ async function preparePackedWorkspace(stageDir: string): Promise<void> {
     'README.md',
     'package.json',
     'package-lock.json',
-    'tsconfig.json',
-    'tsconfig.build.json',
   ];
-  const directoriesToCopy = ['src'];
+  const directoriesToCopy = ['dist'];
 
   for (const file of filesToCopy) {
     await cp(resolve(repoRoot, file), resolve(stageDir, file));
@@ -296,11 +290,20 @@ async function preparePackedWorkspace(stageDir: string): Promise<void> {
       recursive: true,
     });
   }
+}
 
-  await symlink(
-    resolve(repoRoot, 'node_modules'),
-    resolve(stageDir, 'node_modules'),
-  );
+async function ensurePackedArtifactSource(): Promise<void> {
+  if (await hasBuiltCliArtifacts()) {
+    return;
+  }
+
+  const buildResult = await runCommand(npmCommand, ['run', 'build']);
+
+  if (buildResult.exitCode !== 0) {
+    throw new Error(
+      buildResult.stderr || buildResult.stdout || 'CLI build failed',
+    );
+  }
 }
 
 function resolveShellCommand(command: 'npm' | 'npx'): string {
