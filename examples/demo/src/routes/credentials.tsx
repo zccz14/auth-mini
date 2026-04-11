@@ -83,9 +83,10 @@ function getUserEd25519Credentials(user: unknown) {
 export function CredentialsRoute() {
   const { config, sdk, session, user } = useDemo();
   const [currentUser, setCurrentUser] = useState(user);
-  const [deletingSection, setDeletingSection] = useState<
-    'passkey' | 'ed25519' | null
-  >(null);
+  const [pendingSections, setPendingSections] = useState({
+    passkey: false,
+    ed25519: false,
+  });
   const [passkeyError, setPasskeyError] = useState('');
   const [ed25519Error, setEd25519Error] = useState('');
 
@@ -103,7 +104,6 @@ export function CredentialsRoute() {
   const email = getUserEmail(currentUser);
   const passkeys = getUserPasskeys(currentUser);
   const ed25519Credentials = getUserEd25519Credentials(currentUser);
-  const isDeleting = deletingSection !== null;
 
   async function deleteCredential(input: {
     section: 'passkey' | 'ed25519';
@@ -113,7 +113,7 @@ export function CredentialsRoute() {
     if (
       !authenticated ||
       !sdk ||
-      isDeleting ||
+      pendingSections[input.section] ||
       !window.confirm(input.confirmMessage)
     ) {
       return;
@@ -122,7 +122,10 @@ export function CredentialsRoute() {
     const setError =
       input.section === 'passkey' ? setPasskeyError : setEd25519Error;
 
-    setDeletingSection(input.section);
+    setPendingSections((current) => ({
+      ...current,
+      [input.section]: true,
+    }));
     setError('');
 
     try {
@@ -141,7 +144,10 @@ export function CredentialsRoute() {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Delete failed');
     } finally {
-      setDeletingSection(null);
+      setPendingSections((current) => ({
+        ...current,
+        [input.section]: false,
+      }));
     }
   }
 
@@ -227,7 +233,7 @@ export function CredentialsRoute() {
                       <td className="py-3 pr-4">{row.created_at}</td>
                       <td className="py-3">
                         <Button
-                          disabled={isDeleting}
+                          disabled={pendingSections.passkey}
                           aria-label={`Delete passkey ${row.credential_id}`}
                           onClick={() =>
                             void deleteCredential({
@@ -237,7 +243,7 @@ export function CredentialsRoute() {
                             })
                           }
                         >
-                          {deletingSection === 'passkey' ? 'Deleting…' : 'Delete'}
+                          {pendingSections.passkey ? 'Deleting…' : 'Delete'}
                         </Button>
                       </td>
                     </tr>
@@ -295,7 +301,7 @@ export function CredentialsRoute() {
                       <td className="py-3 pr-4">{row.created_at}</td>
                       <td className="py-3">
                         <Button
-                          disabled={isDeleting}
+                          disabled={pendingSections.ed25519}
                           aria-label={`Delete device key ${row.name}`}
                           onClick={() =>
                             void deleteCredential({
@@ -305,7 +311,7 @@ export function CredentialsRoute() {
                             })
                           }
                         >
-                          {deletingSection === 'ed25519' ? 'Deleting…' : 'Delete'}
+                          {pendingSections.ed25519 ? 'Deleting…' : 'Delete'}
                         </Button>
                       </td>
                     </tr>

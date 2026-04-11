@@ -383,7 +383,7 @@ describe('CredentialsRoute', () => {
     expect(sdkMocks.reloadMe).not.toHaveBeenCalled();
   });
 
-  it('blocks a second delete while another credential delete is in flight', async () => {
+  it('blocks a second delete in the same section while passkey delete is in flight', async () => {
     const user = userEvent.setup();
     localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
     sdkMocks.sessionState.current = authenticatedSession({
@@ -392,6 +392,11 @@ describe('CredentialsRoute', () => {
           id: 'passkey-row-1',
           credential_id: 'passkey-credential-abcdef123456',
           created_at: '2026-04-10T12:00:00.000Z',
+        },
+        {
+          id: 'passkey-row-2',
+          credential_id: 'passkey-credential-xyz987654321',
+          created_at: '2026-04-11T12:00:00.000Z',
         },
       ],
       ed25519_credentials: [
@@ -424,6 +429,9 @@ describe('CredentialsRoute', () => {
     const passkeyDeleteButton = screen.getByRole('button', {
       name: 'Delete passkey passkey-credential-abcdef123456',
     });
+    const secondPasskeyDeleteButton = screen.getByRole('button', {
+      name: 'Delete passkey passkey-credential-xyz987654321',
+    });
     const deviceDeleteButton = screen.getByRole('button', {
       name: 'Delete device key Build runner',
     });
@@ -432,9 +440,10 @@ describe('CredentialsRoute', () => {
 
     expect(confirmSpy).toHaveBeenCalledTimes(1);
     expect(sdkMocks.fetch).toHaveBeenCalledTimes(1);
-    expect(deviceDeleteButton).toBeDisabled();
+    expect(secondPasskeyDeleteButton).toBeDisabled();
+    expect(deviceDeleteButton).not.toBeDisabled();
 
-    await user.click(deviceDeleteButton);
+    await user.click(secondPasskeyDeleteButton);
 
     expect(confirmSpy).toHaveBeenCalledTimes(1);
     expect(sdkMocks.fetch).toHaveBeenCalledTimes(1);
