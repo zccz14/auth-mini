@@ -70,6 +70,12 @@ describe('examples demo Pages release contract', () => {
     expect(uploadArtifactStep).not.toContain(['path', 'demo'].join(': '));
   });
 
+  it('keeps the demo Vite build on relative asset paths for project Pages', () => {
+    const viteConfig = readRepoFile('examples/demo/vite.config.ts');
+
+    expect(viteConfig).toMatch(/base:\s*['"]\.\/?['"]/);
+  });
+
   it('documents docs as canonical and examples/demo as the live Pages source', () => {
     const readme = readRepoFile('README.md');
     const docsSectionStart = readme.indexOf('## Docs and next steps');
@@ -106,6 +112,8 @@ describe('examples demo Pages release contract', () => {
 
     expect(browserSdkDoc).toContain('`auth-origin`');
     expect(browserSdkDoc).not.toContain('sdk-origin=');
+    expect(browserSdkDoc).not.toMatch(/import map/i);
+    expect(browserSdkDoc).not.toContain('../dist/sdk/browser.js');
     expect(browserSdkDoc).toContain(
       '/#/setup?auth-origin=https://auth.zccz14.com',
     );

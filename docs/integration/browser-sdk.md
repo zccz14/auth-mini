@@ -15,7 +15,7 @@ import { createBrowserSdk } from 'auth-mini/sdk/browser';
 const AuthMini = createBrowserSdk('https://auth.zccz14.com');
 ```
 
-The hosted demo/docs page follows that module path. It imports `auth-mini/sdk/browser`, uses an import map to resolve that specifier to `../dist/sdk/browser.js`, and feeds the hash query `/#/setup?auth-origin=https://your-auth-origin` into `createBrowserSdk(serverBaseUrl)`. The page reads `auth-origin` from `window.location.hash`; `window.location.search` is ignored.
+The current `examples/demo/` app follows that module path as a Vite + React bundle. It imports `auth-mini/sdk/browser` at build time, mounts under a `HashRouter`, stays docs-only until you provide `/#/setup?auth-origin=https://your-auth-origin`, then reads `auth-origin` from `window.location.hash` and passes that origin into `createBrowserSdk(serverBaseUrl)`. The published demo now uses the bundled app entrypoint instead of any hand-wired browser bundle path.
 
 ## Singleton script usage
 
