@@ -285,4 +285,43 @@ describe('DemoProvider', () => {
     expect(screen.getByTestId('session-status')).toHaveTextContent('anonymous');
     expect(localStorage.getItem(AUTH_ORIGIN_KEY)).toBeNull();
   });
+
+  it('clears hash auth-origin when local auth state is cleared', async () => {
+    const user = userEvent.setup();
+
+    window.history.replaceState(
+      {},
+      '',
+      '/#/session?auth-origin=https%3A%2F%2Fauth.example.com',
+    );
+
+    sdkMocks.sessionState.current = {
+      status: 'authenticated',
+      authenticated: true,
+      sessionId: 'session-1',
+      accessToken: 'access-token',
+      refreshToken: 'refresh-token',
+      receivedAt: '2026-04-11T00:00:00.000Z',
+      expiresAt: '2026-04-11T01:00:00.000Z',
+      me: {
+        user_id: 'user-1',
+        email: 'first@example.com',
+        webauthn_credentials: [],
+        active_sessions: [],
+      },
+    };
+
+    render(
+      <DemoProvider>
+        <Probe />
+      </DemoProvider>,
+    );
+
+    await user.click(
+      screen.getByRole('button', { name: 'Clear local auth state' }),
+    );
+
+    expect(screen.getByTestId('config-status')).toHaveTextContent('waiting');
+    expect(window.location.hash).toBe('#/session');
+  });
 });

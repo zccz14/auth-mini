@@ -19,6 +19,20 @@ const ANONYMOUS_SESSION = {
   me: null,
 } as const;
 
+function clearHashAuthOrigin(hash: string) {
+  const queryIndex = hash.indexOf('?');
+  if (queryIndex < 0) {
+    return hash;
+  }
+
+  const pathname = hash.slice(0, queryIndex);
+  const params = new URLSearchParams(hash.slice(queryIndex + 1));
+  params.delete('auth-origin');
+  const nextQuery = params.toString();
+
+  return nextQuery ? `${pathname}?${nextQuery}` : pathname;
+}
+
 type DemoSession = ReturnType<DemoSdk['session']['getState']>;
 
 type DemoContextValue = {
@@ -53,6 +67,7 @@ export function DemoProvider({
   const [authOriginOverride, setAuthOriginOverride] = useState<string | null>(
     null,
   );
+  const [hashOverride, setHashOverride] = useState<string | null>(null);
 
   let storage: Storage | undefined;
   if (typeof window !== 'undefined') {
@@ -67,8 +82,9 @@ export function DemoProvider({
     authOriginOverride === null
       ? getStoredAuthOrigin(storage)
       : authOriginOverride;
+  const hash = hashOverride ?? location.hash;
   const config = getInitialDemoConfig({
-    hash: location.hash,
+    hash,
     search: location.search,
     storageOrigin,
     pageOrigin: location.origin,
@@ -107,7 +123,23 @@ export function DemoProvider({
     () => ({
       config,
       clearLocalAuthState: async () => {
+        const nextHash = clearHashAuthOrigin(
+          typeof window === 'undefined' ? hash : window.location.hash,
+        );
+
+        if (
+          typeof window !== 'undefined' &&
+          nextHash !== window.location.hash
+        ) {
+          window.history.replaceState(
+            window.history.state,
+            '',
+            `${window.location.pathname}${window.location.search}${nextHash}`,
+          );
+        }
+
         setAuthOriginOverride('');
+        setHashOverride(nextHash);
         clearStoredAuthOrigin(storage);
 
         if (!sdk) {
