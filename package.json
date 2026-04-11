@@ -44,7 +44,7 @@
     "test:unit": "node scripts/run-tests.js",
     "demo:build": "npm run build && npm --prefix examples/demo run build",
     "demo:dev": "node scripts/dev-examples-demo.mjs",
-    "demo:typecheck": "npm run typecheck && npm --prefix examples/demo run typecheck",
+    "demo:typecheck": "npm --prefix examples/demo run typecheck",
     "test:integration": "npm run build && vitest run tests/integration",
     "lint": "eslint .",
     "format": "prettier --write .",

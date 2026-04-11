@@ -12,4 +12,16 @@ describe('examples demo dev helper script', () => {
     expect(script).toContain('npm run build -- --watch');
     expect(script).toContain('npm --prefix examples/demo run dev');
   });
+
+  it('keeps demo:typecheck scoped to the demo app only', () => {
+    const packageJson = JSON.parse(
+      readFileSync(resolve(process.cwd(), 'package.json'), 'utf8'),
+    ) as {
+      scripts?: Record<string, string>;
+    };
+
+    expect(packageJson.scripts?.['demo:typecheck']).toBe(
+      'npm --prefix examples/demo run typecheck',
+    );
+  });
 });
