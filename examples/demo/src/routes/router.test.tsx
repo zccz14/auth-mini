@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { AppRouter } from '../app/router';
+import { AUTH_ORIGIN_KEY } from '@/lib/demo-storage';
 
 describe('AppRouter', () => {
   it('renders top-level nav entries for the app shell', () => {
@@ -17,6 +18,12 @@ describe('AppRouter', () => {
     expect(screen.getByRole('link', { name: 'Email' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Passkey' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Session' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', {
+        level: 1,
+        name: 'Minimal Self-Hosted Auth Server for your Apps',
+      }),
+    ).toBeInTheDocument();
   });
 
   it('renders the setup route with an auth origin form', () => {
@@ -73,8 +80,6 @@ describe('AppRouter', () => {
     expect(
       await screen.findByText('Connected to https://auth.example.com'),
     ).toBeInTheDocument();
-    expect(localStorage.getItem('auth-mini-demo.auth-origin')).toBe(
-      'https://auth.example.com',
-    );
+    expect(localStorage.getItem(AUTH_ORIGIN_KEY)).toBe('https://auth.example.com');
   });
 });
