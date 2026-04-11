@@ -38,8 +38,12 @@ describe('AppRouter', () => {
     );
 
     expect(screen.getByRole('heading', { name: 'ED25519' })).toBeInTheDocument();
-    expect(screen.getByText('Register credential')).toBeInTheDocument();
-    expect(screen.getByText('Sign in with private key')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Register credential' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Sign in with private key' }),
+    ).toBeInTheDocument();
   });
 
   it('renders the setup route with an auth origin form', () => {

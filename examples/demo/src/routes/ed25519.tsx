@@ -5,7 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useDemo } from '@/app/providers/demo-provider';
 import {
+  deriveEd25519PublicKey,
   generateDemoEd25519Keypair,
+  signEd25519Challenge,
   validateBase64Url32,
 } from '@/lib/demo-ed25519';
 
@@ -18,9 +20,12 @@ function readCurrentCredentials(user: unknown) {
 }
 
 export function Ed25519Route() {
-  const { config, sdk, session, user } = useDemo();
+  const { adoptDemoSession, config, sdk, session, user } = useDemo();
   const [credentialName, setCredentialName] = useState('');
   const [publicKey, setPublicKey] = useState('');
+  const [credentialId, setCredentialId] = useState('');
+  const [seed, setSeed] = useState('');
+  const [seedPublicKey, setSeedPublicKey] = useState('');
   const [generatedSeed, setGeneratedSeed] = useState('');
   const [generatedPublicKey, setGeneratedPublicKey] = useState('');
   const [currentCredentials, setCurrentCredentials] = useState<unknown>(
@@ -32,6 +37,7 @@ export function Ed25519Route() {
     'generate' | 'register' | 'signin' | null
   >(null);
   const [registerError, setRegisterError] = useState('');
+  const [signInError, setSignInError] = useState('');
   const [lastResponses, setLastResponses] = useState<{
     register: unknown;
     signIn: unknown;
@@ -45,12 +51,19 @@ export function Ed25519Route() {
     session.authenticated && typeof session.accessToken === 'string';
   const registerPublicKeyError =
     publicKey.trim() === '' ? '' : validateBase64Url32(publicKey);
+  const seedValidationError = validateBase64Url32(seed);
+  const seedError = seed.trim() === '' ? '' : seedValidationError;
   const canRegister =
     setupReady &&
     hasRegisterSession &&
     credentialName.trim() !== '' &&
     publicKey.trim() !== '' &&
     registerPublicKeyError === '' &&
+    pendingAction === null;
+  const canSignIn =
+    setupReady &&
+    credentialId.trim() !== '' &&
+    seedValidationError === '' &&
     pendingAction === null;
 
   useEffect(() => {
@@ -78,8 +91,46 @@ export function Ed25519Route() {
       setGeneratedSeed(keypair.seed);
       setGeneratedPublicKey(keypair.publicKey);
       setPublicKey(keypair.publicKey);
+      setSeed(keypair.seed);
+      setSeedPublicKey(keypair.publicKey);
     } catch (cause) {
       setRegisterError(formatDemoError(cause));
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function handleSignIn(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!sdk || !canSignIn) {
+      return;
+    }
+
+    setPendingAction('signin');
+    setSignInError('');
+
+    try {
+      const normalizedSeed = seed.trim();
+      const derivedPublicKey = await deriveEd25519PublicKey(normalizedSeed);
+      setSeedPublicKey(derivedPublicKey);
+
+      const challenge = await sdk.ed25519.start({
+        credential_id: credentialId.trim(),
+      });
+      const signature = await signEd25519Challenge(
+        normalizedSeed,
+        challenge.challenge,
+      );
+      const result = await sdk.ed25519.verify({
+        request_id: challenge.request_id,
+        signature,
+      });
+
+      setLastResponses((current) => ({ ...current, signIn: result }));
+      await adoptDemoSession(result);
+    } catch (cause) {
+      setSignInError(formatDemoError(cause));
+      setLastResponses((current) => ({ ...current, signIn: cause }));
     } finally {
       setPendingAction(null);
     }
@@ -206,9 +257,72 @@ export function Ed25519Route() {
 
         <section className="space-y-4">
           <h2 className="text-lg font-semibold">Sign in with private key</h2>
-          <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-            Direct challenge signing controls will appear here in the next task.
+
+          {!setupReady ? (
+            <p className="text-sm text-slate-600">
+              Complete setup before using ED25519 actions.
+            </p>
+          ) : null}
+
+          <form className="space-y-4" onSubmit={handleSignIn}>
+            <label className="grid gap-2 text-sm font-medium text-slate-700">
+              <span>Credential id</span>
+              <Input
+                aria-label="Credential id"
+                value={credentialId}
+                onChange={(event) => setCredentialId(event.currentTarget.value)}
+                placeholder="cred_123"
+              />
+            </label>
+
+            <label className="grid gap-2 text-sm font-medium text-slate-700">
+              <span>Seed (base64url 32-byte)</span>
+              <Input
+                aria-label="Seed (base64url 32-byte)"
+                value={seed}
+                onChange={(event) => setSeed(event.currentTarget.value)}
+                placeholder="7rANewlCLceTsUo9feN0DLjnu-ayYsdhkVWvHT4FelM"
+              />
+            </label>
+
+            {seedError ? <p className="text-sm text-rose-600">{seedError}</p> : null}
+
+            <div className="flex flex-wrap gap-3">
+              <Button
+                type="button"
+                disabled={generatedSeed === '' || pendingAction !== null}
+                onClick={() => {
+                  setSeed(generatedSeed);
+                  setSeedPublicKey(generatedPublicKey);
+                }}
+              >
+                Use current generated seed
+              </Button>
+              <Button
+                type="button"
+                disabled={lastRegisteredCredentialId === '' || pendingAction !== null}
+                onClick={() => setCredentialId(lastRegisteredCredentialId)}
+              >
+                Use last registered credential id
+              </Button>
+              <Button type="submit" disabled={!canSignIn}>
+                {pendingAction === 'signin'
+                  ? 'Signing in…'
+                  : 'Sign in with private key'}
+              </Button>
+            </div>
+          </form>
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+            <div className="font-medium text-slate-950">Derived public key</div>
+            <div className="mt-1 break-all font-mono text-xs">
+              {seedPublicKey || 'No seed-derived public key yet.'}
+            </div>
           </div>
+
+          {signInError ? (
+            <p className="text-sm text-rose-600">{signInError}</p>
+          ) : null}
         </section>
 
         <div className="grid gap-4 xl:grid-cols-3">
