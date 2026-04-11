@@ -1,3 +1,6 @@
+import Database from 'better-sqlite3';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { hashValue } from '../../src/shared/crypto.js';
 
@@ -136,5 +139,102 @@ describe('session service', () => {
     ).toThrow(SessionPeerLogoutSelfTargetError);
 
     expect(expireOtherActiveSessionById).not.toHaveBeenCalled();
+  });
+});
+
+describe('session repo expireOtherActiveSessionById', () => {
+  it('expires only a same-user active non-current target session', async () => {
+    const { createSession, expireOtherActiveSessionById, getSessionById } =
+      await vi.importActual<typeof import('../../src/modules/session/repo.js')>(
+        '../../src/modules/session/repo.js',
+      );
+    const db = new Database(':memory:');
+
+    db.exec(
+      readFileSync(
+        fileURLToPath(new URL('../../sql/schema.sql', import.meta.url)),
+        'utf8',
+      ),
+    );
+    db.prepare('INSERT INTO users (id, email) VALUES (?, ?), (?, ?)').run(
+      'user-1',
+      'user-1@example.com',
+      'user-2',
+      'user-2@example.com',
+    );
+
+    const currentSession = createSession(db, {
+      userId: 'user-1',
+      refreshTokenHash: hashValue('refresh-current'),
+      authMethod: 'email_otp',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+    });
+    const peerSession = createSession(db, {
+      userId: 'user-1',
+      refreshTokenHash: hashValue('refresh-peer'),
+      authMethod: 'email_otp',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+    });
+    const foreignSession = createSession(db, {
+      userId: 'user-2',
+      refreshTokenHash: hashValue('refresh-foreign'),
+      authMethod: 'email_otp',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+    });
+    const expiredSession = createSession(db, {
+      userId: 'user-1',
+      refreshTokenHash: hashValue('refresh-expired'),
+      authMethod: 'email_otp',
+      expiresAt: '2000-01-01T00:00:00.000Z',
+    });
+    const now = '2026-04-12T00:00:00.000Z';
+
+    expect(
+      expireOtherActiveSessionById(db, {
+        currentSessionId: currentSession.id,
+        targetSessionId: peerSession.id,
+        userId: 'user-1',
+        now,
+      }),
+    ).toBe(true);
+    expect(getSessionById(db, peerSession.id)?.expiresAt).toBe(now);
+
+    expect(
+      expireOtherActiveSessionById(db, {
+        currentSessionId: currentSession.id,
+        targetSessionId: currentSession.id,
+        userId: 'user-1',
+        now,
+      }),
+    ).toBe(false);
+    expect(getSessionById(db, currentSession.id)?.expiresAt).toBe(
+      '2099-01-01T00:00:00.000Z',
+    );
+
+    expect(
+      expireOtherActiveSessionById(db, {
+        currentSessionId: currentSession.id,
+        targetSessionId: foreignSession.id,
+        userId: 'user-1',
+        now,
+      }),
+    ).toBe(false);
+    expect(getSessionById(db, foreignSession.id)?.expiresAt).toBe(
+      '2099-01-01T00:00:00.000Z',
+    );
+
+    expect(
+      expireOtherActiveSessionById(db, {
+        currentSessionId: currentSession.id,
+        targetSessionId: expiredSession.id,
+        userId: 'user-1',
+        now,
+      }),
+    ).toBe(false);
+    expect(getSessionById(db, expiredSession.id)?.expiresAt).toBe(
+      '2000-01-01T00:00:00.000Z',
+    );
+
+    db.close();
   });
 });
