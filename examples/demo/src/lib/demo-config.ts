@@ -7,14 +7,29 @@ export type DemoConfig = {
   status: DemoConfigStatus;
 };
 
+const DEFAULT_AUTH_ORIGIN = 'https://auth.zccz14.com';
+
 function readHashAuthOrigin(hash: string) {
   const queryIndex = hash.indexOf('?');
   if (queryIndex < 0) {
-    return '';
+    return {
+      isPresent: false,
+      value: '',
+    };
   }
 
   const params = new URLSearchParams(hash.slice(queryIndex + 1));
-  return params.get('auth-origin') ?? '';
+  if (!params.has('auth-origin')) {
+    return {
+      isPresent: false,
+      value: '',
+    };
+  }
+
+  return {
+    isPresent: true,
+    value: params.get('auth-origin') ?? '',
+  };
 }
 
 function parseConfiguredOrigin(candidateOrigin: string) {
@@ -80,7 +95,10 @@ export function getInitialDemoConfig({
 }): DemoConfig {
   void search;
 
-  const candidateOrigin = readHashAuthOrigin(hash) || storageOrigin;
+  const hashOrigin = readHashAuthOrigin(hash);
+  const candidateOrigin = hashOrigin.isPresent
+    ? hashOrigin.value
+    : storageOrigin || DEFAULT_AUTH_ORIGIN;
   const configState = parseConfiguredOrigin(candidateOrigin);
 
   return {

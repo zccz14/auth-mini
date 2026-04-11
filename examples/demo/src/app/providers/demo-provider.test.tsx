@@ -108,7 +108,7 @@ describe('DemoProvider', () => {
     };
   });
 
-  it('keeps the app disabled when auth origin is missing', () => {
+  it('defaults the app to the hosted auth origin when no override is present', () => {
     render(
       <DemoProvider
         initialLocation={{
@@ -121,9 +121,31 @@ describe('DemoProvider', () => {
       </DemoProvider>,
     );
 
-    expect(screen.getByTestId('config-status')).toHaveTextContent('waiting');
+    expect(screen.getByTestId('config-status')).toHaveTextContent('ready');
     expect(screen.getByTestId('session-status')).toHaveTextContent('anonymous');
     expect(screen.getByTestId('user-email')).toHaveTextContent('none');
+    expect(sdkMocks.createBrowserSdk).toHaveBeenCalledWith(
+      'https://auth.zccz14.com',
+    );
+  });
+
+  it('keeps the app waiting when the hash contains an empty auth-origin', () => {
+    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
+
+    render(
+      <DemoProvider
+        initialLocation={{
+          hash: '#/setup?auth-origin=',
+          search: '',
+          origin: 'https://demo.example.com',
+        }}
+      >
+        <Probe />
+      </DemoProvider>,
+    );
+
+    expect(screen.getByTestId('config-status')).toHaveTextContent('waiting');
+    expect(screen.getByTestId('session-status')).toHaveTextContent('anonymous');
     expect(sdkMocks.createBrowserSdk).not.toHaveBeenCalled();
   });
 
@@ -210,7 +232,7 @@ describe('DemoProvider', () => {
     expect(screen.getByTestId('config-status')).toHaveTextContent('ready');
   });
 
-  it('falls back to waiting state when localStorage access throws', () => {
+  it('falls back to the hosted auth origin when localStorage access throws', () => {
     const localStorageDescriptor = Object.getOwnPropertyDescriptor(
       window,
       'localStorage',
@@ -236,8 +258,10 @@ describe('DemoProvider', () => {
         </DemoProvider>,
       );
 
-      expect(screen.getByTestId('config-status')).toHaveTextContent('waiting');
-      expect(sdkMocks.createBrowserSdk).not.toHaveBeenCalled();
+      expect(screen.getByTestId('config-status')).toHaveTextContent('ready');
+      expect(sdkMocks.createBrowserSdk).toHaveBeenCalledWith(
+        'https://auth.zccz14.com',
+      );
     } finally {
       if (localStorageDescriptor) {
         Object.defineProperty(window, 'localStorage', localStorageDescriptor);
@@ -309,12 +333,17 @@ describe('DemoProvider', () => {
     );
 
     expect(sdkMocks.logout).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId('config-status')).toHaveTextContent('waiting');
+    expect(screen.getByTestId('config-status')).toHaveTextContent('ready');
     expect(screen.getByTestId('session-status')).toHaveTextContent('anonymous');
-    expect(localStorage.getItem(AUTH_ORIGIN_KEY)).toBeNull();
+    expect(localStorage.getItem(AUTH_ORIGIN_KEY)).toBe(
+      'https://auth.zccz14.com',
+    );
+    expect(sdkMocks.createBrowserSdk).toHaveBeenLastCalledWith(
+      'https://auth.zccz14.com',
+    );
   });
 
-  it('clears hash auth-origin when local auth state is cleared', async () => {
+  it('clears hash auth-origin and falls back to the hosted origin', async () => {
     const user = userEvent.setup();
 
     window.history.replaceState(
@@ -349,7 +378,10 @@ describe('DemoProvider', () => {
       screen.getByRole('button', { name: 'Clear local auth state' }),
     );
 
-    expect(screen.getByTestId('config-status')).toHaveTextContent('waiting');
+    expect(screen.getByTestId('config-status')).toHaveTextContent('ready');
+    expect(sdkMocks.createBrowserSdk).toHaveBeenLastCalledWith(
+      'https://auth.zccz14.com',
+    );
     expect(window.location.hash).toBe('#/session');
   });
 });
