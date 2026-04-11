@@ -1,6 +1,6 @@
 {
   "name": "auth-mini",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Minimal, opinionated auth server for apps that just need auth.",
   "license": "MIT",
   "repository": {
@@ -40,7 +40,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json --declaration && node dist/sdk/build-singleton-iife.js && node dist/sdk/build-singleton-dts.js",
-    "test": "node scripts/run-tests.js",
+    "test": "npm typecheck && npm run test:unit && npm run test:integration",
+    "test:unit": "node scripts/run-tests.js",
     "test:integration": "npm run build && vitest run tests/integration",
     "lint": "eslint .",
     "format": "prettier --write .",
