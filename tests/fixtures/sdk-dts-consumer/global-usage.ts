@@ -1,9 +1,15 @@
 window.AuthMini.session.onChange((state) => {
   const status = state.status;
   const email = state.me?.email;
+  const credentialId = state.me?.webauthn_credentials[0].credential_id;
+  const publicKey = state.me?.ed25519_credentials[0].public_key;
+  const expiresAt = state.me?.active_sessions[0].expires_at;
 
   void status;
   void email;
+  void credentialId;
+  void publicKey;
+  void expiresAt;
 });
 
 window.AuthMini.email.start({ email: 'user@example.com' });

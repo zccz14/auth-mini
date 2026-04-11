@@ -5,12 +5,33 @@ export type FetchLike = (
   init?: RequestInit,
 ) => Promise<Response>;
 
+export type MeWebauthnCredential = {
+  id: string;
+  credential_id: string;
+  transports: string[];
+  created_at: string;
+};
+
+export type MeEd25519Credential = {
+  id: string;
+  name: string;
+  public_key: string;
+  last_used_at: string | null;
+  created_at: string;
+};
+
+export type MeActiveSession = {
+  id: string;
+  created_at: string;
+  expires_at: string;
+};
+
 export type MeResponse = {
   user_id: string;
   email: string;
-  webauthn_credentials: Array<unknown>;
-  ed25519_credentials: Array<unknown>;
-  active_sessions: Array<unknown>;
+  webauthn_credentials: MeWebauthnCredential[];
+  ed25519_credentials: MeEd25519Credential[];
+  active_sessions: MeActiveSession[];
 };
 
 export type SessionSnapshot = {
