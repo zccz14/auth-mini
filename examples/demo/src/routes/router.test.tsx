@@ -5,6 +5,9 @@ import { MemoryRouter } from 'react-router-dom';
 import { AppRouter } from '../app/router';
 import { AUTH_ORIGIN_KEY } from '@/lib/demo-storage';
 
+const hasExactText = (value: string) => (_: string, node: Element | null) =>
+  node?.textContent === value;
+
 describe('AppRouter', () => {
   it('renders top-level nav entries for the app shell', () => {
     render(
@@ -37,9 +40,10 @@ describe('AppRouter', () => {
     expect(screen.getByText('Page origin')).toBeInTheDocument();
     expect(screen.getByText('Startup commands')).toBeInTheDocument();
     expect(
-      screen.getByText(
-        /launch the auth server and this demo from separate terminals/i,
-      ),
+      screen.getByText(/only need this page when you want to self-host/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/official demo backend already works by default/i),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
@@ -48,19 +52,25 @@ describe('AppRouter', () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        'npx auth-mini start ./auth-mini.sqlite --host 127.0.0.1 --port 7777 --issuer http://127.0.0.1:7777',
+        'npx auth-mini start ./auth-mini.sqlite --issuer https://auth.zccz14.com',
       ),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        'npm --prefix examples/demo run dev -- --host 127.0.0.1 --port 3000',
+        hasExactText(
+          "npx auth-mini smtp add ./auth-mini.sqlite  --from-email 'sample@your-domain.com' --from-name 'sample-name' --host 'smtp.sample.com' --port 465 --secure --username 'sample@your-domain.com' --password '<smtp-password>'",
+        ),
       ),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(
-        /configure smtp and real email delivery before using email start\/verify/i,
-      ),
-    ).toBeInTheDocument();
+      screen.queryByText(/npm --prefix examples\/demo run dev/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/npx auth-mini start .*--host\s/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/npx auth-mini start .*--port\s/i),
+    ).not.toBeInTheDocument();
   });
 
   it('lets setup save an auth origin into app state', async () => {

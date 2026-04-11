@@ -6,28 +6,26 @@ import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { useDemo } from '@/app/providers/demo-provider';
 
-const LOCAL_AUTH_ORIGIN_FALLBACK = 'http://127.0.0.1:7777';
+const DEFAULT_AUTH_ORIGIN = 'https://auth.zccz14.com';
 const INSTANCE_PATH = './auth-mini.sqlite';
+const SMTP_SETUP_COMMAND =
+  "npx auth-mini smtp add ./auth-mini.sqlite  --from-email 'sample@your-domain.com' --from-name 'sample-name' --host 'smtp.sample.com' --port 465 --secure --username 'sample@your-domain.com' --password '<smtp-password>'";
 
 function getStartupCommands(pageOrigin: string, authOriginCandidate: string) {
   const pageUrl = new URL(pageOrigin);
   let authUrl: URL;
 
   try {
-    authUrl = new URL(authOriginCandidate.trim() || LOCAL_AUTH_ORIGIN_FALLBACK);
+    authUrl = new URL(authOriginCandidate.trim() || DEFAULT_AUTH_ORIGIN);
   } catch {
-    authUrl = new URL(LOCAL_AUTH_ORIGIN_FALLBACK);
+    authUrl = new URL(DEFAULT_AUTH_ORIGIN);
   }
 
   return [
     `npx auth-mini init ${INSTANCE_PATH}`,
+    SMTP_SETUP_COMMAND,
     `npx auth-mini origin add ${INSTANCE_PATH} --value ${pageUrl.origin}`,
-    `npx auth-mini start ${INSTANCE_PATH} --host ${authUrl.hostname} --port ${
-      authUrl.port || (authUrl.protocol === 'https:' ? '443' : '80')
-    } --issuer ${authUrl.origin}`,
-    `npm --prefix examples/demo run dev -- --host 127.0.0.1 --port ${
-      pageUrl.port || (pageUrl.protocol === 'https:' ? '443' : '80')
-    }`,
+    `npx auth-mini start ${INSTANCE_PATH} --issuer ${authUrl.origin}`,
   ];
 }
 
@@ -61,7 +59,7 @@ export function SetupRoute() {
   return (
     <FlowCard
       title="Setup"
-      description="Configure the auth origin before running browser flows."
+      description="Only need this page when you want to self-host auth-mini for this demo."
     >
       <form className="space-y-6" onSubmit={handleSubmit}>
         <label className="grid gap-2 text-sm font-medium text-slate-700">
@@ -79,13 +77,27 @@ export function SetupRoute() {
         <div className="flex items-center gap-3">
           <Button type="submit">Save origin</Button>
           <p className="text-sm text-slate-500">
-            Save to enable the shared demo SDK configuration.
+            Save an override if you want this demo to target your own auth
+            server.
           </p>
         </div>
 
-        <div className="space-y-1 text-sm text-slate-600">
-          <strong className="block text-slate-950">Page origin</strong>
-          <div>{config.pageOrigin}</div>
+        <div className="space-y-3 text-sm text-slate-600">
+          <p>
+            The official demo backend already works by default. Only change the
+            auth origin here when you want to point the browser demo at your own
+            self-hosted deployment.
+          </p>
+
+          <div className="space-y-1">
+            <strong className="block text-slate-950">Page origin</strong>
+            <div>{config.pageOrigin}</div>
+          </div>
+
+          <div className="space-y-1">
+            <strong className="block text-slate-950">Current auth origin</strong>
+            <div>{config.authOrigin}</div>
+          </div>
         </div>
 
         <Separator />
@@ -94,13 +106,14 @@ export function SetupRoute() {
           <div className="space-y-1">
             <strong className="block text-slate-950">Startup commands</strong>
             <p>
-              Launch the auth server and this demo from separate terminals, then
-              keep the auth server origin in sync with the value saved above.
+              Use these commands only for the self-hosted path. The browser demo
+              already points at the official backend unless you save a different
+              auth origin above.
             </p>
             <p>
-              Configure SMTP and real email delivery before using email
-              start/verify, otherwise the email flow cannot deliver one-time
-              codes to the address you enter.
+              Keep the origin allowlist aligned with the current page origin,
+              and configure SMTP before trying the email flow from your own
+              server.
             </p>
           </div>
 

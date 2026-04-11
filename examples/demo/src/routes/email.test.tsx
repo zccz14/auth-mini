@@ -79,16 +79,29 @@ describe('EmailRoute', () => {
     };
   });
 
-  it('disables the start button until auth origin is configured', () => {
+  it('uses the hosted default auth origin to start email sign-in without a local override', async () => {
+    const user = userEvent.setup();
+    sdkMocks.emailStart.mockResolvedValueOnce({ ok: true, requestId: 'otp-default' });
+
     render(
       <MemoryRouter initialEntries={['/email']}>
         <AppRouter />
       </MemoryRouter>,
     );
 
-    expect(
+    expect(sdkMocks.createBrowserSdk).toHaveBeenCalledWith(
+      'https://auth.zccz14.com',
+    );
+
+    await user.type(screen.getByLabelText('Email address'), 'user@example.com');
+    await user.click(
       screen.getByRole('button', { name: 'Start email sign-in' }),
-    ).toBeDisabled();
+    );
+
+    expect(sdkMocks.emailStart).toHaveBeenCalledWith({
+      email: 'user@example.com',
+    });
+    expect(await screen.findByText(/"requestId": "otp-default"/)).toBeInTheDocument();
   });
 
   it('renders email start results after a successful submit', async () => {

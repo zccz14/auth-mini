@@ -132,7 +132,7 @@ describe('SessionRoute', () => {
     expect(screen.getAllByText(/"email": "user@example.com"/)).toHaveLength(2);
   });
 
-  it('clears stored auth state and returns the session route to waiting/anonymous', async () => {
+  it('clears stored auth state and falls back to the hosted default auth origin', async () => {
     const user = userEvent.setup();
     sdkMocks.sessionState.current = {
       status: 'authenticated',
@@ -161,12 +161,12 @@ describe('SessionRoute', () => {
     );
 
     expect(sdkMocks.logout).toHaveBeenCalledTimes(1);
-    expect(localStorage.getItem(AUTH_ORIGIN_KEY)).toBeNull();
-    expect(
-      await screen.findByText(
-        'auth-origin must be configured before interactive flows are enabled.',
-      ),
-    ).toBeInTheDocument();
+    expect(localStorage.getItem(AUTH_ORIGIN_KEY)).toBe(
+      'https://auth.zccz14.com',
+    );
+    expect(sdkMocks.createBrowserSdk).toHaveBeenLastCalledWith(
+      'https://auth.zccz14.com',
+    );
     expect(screen.getByText(/"status": "anonymous"/)).toBeInTheDocument();
     expect(screen.getAllByText('null').length).toBeGreaterThan(0);
   });
