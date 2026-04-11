@@ -78,6 +78,27 @@ sequenceDiagram
 
 ### Device sign-in with Ed25519 keys
 
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Device
+    participant Auth as Auth Mini Server
+
+    Note over User,Device: User may generate an Ed25519 key pair and keep the private key on the device
+    Note over User,Auth: While already signed in via email OTP or passkey
+    Device->>Auth: POST /ed25519/credentials (public_key)
+    Auth-->>Device: credential_id
+
+    Note over Device,Auth: Later sign in with the saved private key + credential_id
+    Device->>Auth: POST /ed25519/start
+    Auth-->>Device: request_id + challenge
+    Device->>Device: Sign challenge with saved private key
+    Device->>Auth: Complete auth flow with request_id + signature + credential_id
+    Auth->>Auth: Verify signature with stored public key
+    Auth-->>Device: Ed25519 session_id + access token + refresh token
+```
+
 ### Frontend -> backend -> `/jwks` verification
 
 ```mermaid
