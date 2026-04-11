@@ -62,7 +62,7 @@ describe('examples demo Pages release contract', () => {
     expect(deployJob).toContain('run: npm run demo:build');
     expect(uploadArtifactStep).toContain('uses: actions/upload-pages-artifact');
     expect(uploadArtifactStep).toContain('path: examples/demo/dist');
-    expect(uploadArtifactStep).not.toContain('path: demo');
+    expect(uploadArtifactStep).not.toContain(['path', 'demo'].join(': '));
   });
 
   it('documents docs as canonical and examples/demo as the live Pages source', () => {
