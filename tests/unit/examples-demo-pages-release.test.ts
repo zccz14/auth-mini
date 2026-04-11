@@ -30,7 +30,9 @@ describe('examples demo Pages release contract', () => {
       'run: npm run demo:build',
       'path: examples/demo/dist',
     ];
-    const sequenceIndexes = expectedSequence.map((snippet) => deployJob.indexOf(snippet));
+    const sequenceIndexes = expectedSequence.map((snippet) =>
+      deployJob.indexOf(snippet),
+    );
     const uploadArtifactActionStart = deployJob.indexOf(
       'uses: actions/upload-pages-artifact',
     );
@@ -48,7 +50,10 @@ describe('examples demo Pages release contract', () => {
       '      - ',
       uploadArtifactActionStart,
     );
-    const nextStepStart = deployJob.indexOf('\n      - ', uploadArtifactActionStart + 1);
+    const nextStepStart = deployJob.indexOf(
+      '\n      - ',
+      uploadArtifactActionStart + 1,
+    );
     const uploadArtifactStep = deployJob.slice(
       uploadArtifactStepStart,
       nextStepStart === -1 ? undefined : nextStepStart,
@@ -79,10 +84,31 @@ describe('examples demo Pages release contract', () => {
 
     expect(readme).toMatch(/\[Live demo\]\([^\n)]+\)/);
     expect(readme).not.toMatch(/\[`demo\/`\]\(demo\/\)/);
-    expect(docsSection).toMatch(/`docs\/`[\s\S]*canonical static reference source/i);
+    expect(docsSection).toMatch(
+      /`docs\/`[\s\S]*canonical static reference source/i,
+    );
     expect(docsSection).toMatch(
       /`examples\/demo\/`[\s\S]*current interactive demo source/i,
     );
-    expect(docsSection).toMatch(/`examples\/demo\/`[\s\S]*Pages publish target/i);
+    expect(docsSection).toMatch(
+      /`examples\/demo\/`[\s\S]*Pages publish target/i,
+    );
+  });
+
+  it('documents the published demo with hash auth-origin links instead of sdk-origin or /demo/ paths', () => {
+    const readme = readRepoFile('README.md');
+    const browserSdkDoc = readRepoFile('docs/integration/browser-sdk.md');
+
+    expect(readme).toContain(
+      '[Live demo](https://auth-mini.zccz14.com/#/setup?auth-origin=https%3A%2F%2Fauth.zccz14.com)',
+    );
+    expect(readme).not.toContain('sdk-origin=');
+
+    expect(browserSdkDoc).toContain('`auth-origin`');
+    expect(browserSdkDoc).not.toContain('sdk-origin=');
+    expect(browserSdkDoc).toContain(
+      '/#/setup?auth-origin=https://auth.zccz14.com',
+    );
+    expect(browserSdkDoc).not.toMatch(/https?:\/\/[^\s)`]+\/demo\/(?:\?|\b)/);
   });
 });

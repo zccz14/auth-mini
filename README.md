@@ -4,7 +4,7 @@
 
 Minimal, opinionated authentication server for apps that just need a solid authentication core.
 
-[Live demo](https://auth-mini.zccz14.com/?sdk-origin=https%3A%2F%2Fauth.zccz14.com) | [Docs](docs/) | [GitHub](https://github.com/zccz14/auth-mini)
+[Live demo](https://auth-mini.zccz14.com/#/setup?auth-origin=https%3A%2F%2Fauth.zccz14.com) | [Docs](docs/) | [GitHub](https://github.com/zccz14/auth-mini)
 
 ✅ Good fit for authentication system needs:
 
