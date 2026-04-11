@@ -17,6 +17,12 @@ describe('AppRouter', () => {
     expect(screen.getByRole('link', { name: 'Email' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Passkey' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Session' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', {
+        level: 1,
+        name: 'Minimal Self-Hosted Auth Server for your Apps',
+      }),
+    ).toBeInTheDocument();
   });
 
   it('renders the setup route with an auth origin form', () => {
