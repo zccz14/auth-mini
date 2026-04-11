@@ -100,10 +100,10 @@ function authenticatedSession(overrides?: Partial<MockMe>): MockSessionState {
 }
 
 function expectDeleteConfirmation(
-  confirmSpy: ReturnType<typeof vi.spyOn>,
+  confirmSpy: { mock: { calls: Array<[string?]> } },
   credentialLabel: string,
 ) {
-  expect(confirmSpy).toHaveBeenCalledTimes(1);
+  expect(confirmSpy.mock.calls).toHaveLength(1);
   expect(confirmSpy.mock.calls[0]?.[0]).toEqual(expect.any(String));
   expect(confirmSpy.mock.calls[0]?.[0]).toContain('Delete');
   expect(confirmSpy.mock.calls[0]?.[0]).toContain(credentialLabel);
