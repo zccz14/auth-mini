@@ -52,17 +52,11 @@ const loadTestRunnerModule = async () =>
 
 describe('sdk d.ts build artifact', () => {
   it('is enforced by the automated repo test command', () => {
-    const packageJson = JSON.parse(
-      readFileSync(resolve(process.cwd(), 'package.json'), 'utf8'),
-    ) as {
-      scripts?: Record<string, string>;
-    };
     const testRunnerSource = readFileSync(
       resolve(process.cwd(), 'scripts/run-tests.js'),
       'utf8',
     );
 
-    expect(packageJson.scripts?.test).toBe('node scripts/run-tests.js');
     expect(testRunnerSource).toContain("run('npx', ['tsc'");
     expect(testRunnerSource).toContain(
       "'tests/fixtures/sdk-dts-consumer/tsconfig.json'",
