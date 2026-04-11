@@ -2,6 +2,8 @@ import type { ReactElement } from 'react';
 import { HashRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const appRouterSpy = vi.fn(() => null);
+
 type WithChildren = {
   children: ReactElement;
 };
@@ -15,10 +17,16 @@ vi.mock('react-dom/client', () => ({
   },
 }));
 
+vi.mock('./app/router', () => ({
+  AppRouter: appRouterSpy,
+}));
+
 describe('demo bootstrap', () => {
   beforeEach(() => {
     renderSpy.mockReset();
     createRootSpy.mockClear();
+    appRouterSpy.mockClear();
+    vi.resetModules();
     document.body.innerHTML = '<div id="root"></div>';
   });
 
@@ -28,8 +36,9 @@ describe('demo bootstrap', () => {
     expect(createRootSpy).toHaveBeenCalledWith(document.getElementById('root'));
 
     const tree = renderSpy.mock.calls[0]?.[0] as ReactElement<WithChildren>;
-    const strictModeChild = tree.props.children;
+    const strictModeChild = tree.props.children as ReactElement<WithChildren>;
 
     expect(strictModeChild.type).toBe(HashRouter);
+    expect(strictModeChild.props.children.type).toBe(appRouterSpy);
   });
 });

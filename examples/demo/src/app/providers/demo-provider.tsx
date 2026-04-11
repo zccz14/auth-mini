@@ -1,12 +1,27 @@
-import { createContext, useContext, useMemo } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { PropsWithChildren } from 'react';
 import { getInitialDemoConfig } from '@/lib/demo-config';
 import { createDemoSdk, type DemoSdk } from '@/lib/demo-sdk';
 import { getStoredAuthOrigin } from '@/lib/demo-storage';
 
+const ANONYMOUS_SESSION = {
+  status: 'anonymous',
+  authenticated: false,
+  sessionId: null,
+  accessToken: null,
+  refreshToken: null,
+  receivedAt: null,
+  expiresAt: null,
+  me: null,
+} as const;
+
+type DemoSession = ReturnType<DemoSdk['session']['getState']>;
+
 type DemoContextValue = {
   config: ReturnType<typeof getInitialDemoConfig>;
   sdk: DemoSdk | null;
+  session: DemoSession;
+  user: DemoSession['me'];
 };
 
 const DemoContext = createContext<DemoContextValue | null>(null);
@@ -37,12 +52,35 @@ export function DemoProvider({
     pageOrigin: location.origin,
   });
 
+  const sdk = useMemo(
+    () => (config.status === 'ready' ? createDemoSdk(config.authOrigin) : null),
+    [config.authOrigin, config.status],
+  );
+
+  const [session, setSession] = useState<DemoSession>(() =>
+    sdk ? sdk.session.getState() : ANONYMOUS_SESSION,
+  );
+
+  useEffect(() => {
+    if (!sdk) {
+      setSession(ANONYMOUS_SESSION);
+      return;
+    }
+
+    setSession(sdk.session.getState());
+    return sdk.session.onChange((nextSession) => {
+      setSession(nextSession);
+    });
+  }, [sdk]);
+
   const value = useMemo<DemoContextValue>(
     () => ({
       config,
-      sdk: config.status === 'ready' ? createDemoSdk(config.authOrigin) : null,
+      sdk,
+      session,
+      user: session.me,
     }),
-    [config],
+    [config, sdk, session],
   );
 
   return <DemoContext.Provider value={value}>{children}</DemoContext.Provider>;
