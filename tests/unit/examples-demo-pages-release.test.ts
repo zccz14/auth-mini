@@ -60,7 +60,7 @@ describe('examples demo Pages release contract', () => {
     );
 
     expect(deployJob).toContain('uses: actions/setup-node@v4');
-    expect(deployJob).toContain("node-version: '20.10.0'");
+    expect(deployJob).toContain("node-version: '24'");
     expect(deployJob).toContain('cache: npm');
     expect(deployJob).toContain('run: npm ci');
     expect(deployJob).toContain('run: npm --prefix examples/demo ci');
