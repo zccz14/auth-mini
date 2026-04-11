@@ -1,11 +1,7 @@
 import { createBrowserSdk } from 'auth-mini/sdk/browser';
 
 type DemoEd25519Api = {
-  register(input: {
-    accessToken: string;
-    name: string;
-    public_key: string;
-  }): Promise<unknown>;
+  register(input: { name: string; public_key: string }): Promise<unknown>;
   start(input: { credential_id: string }): Promise<{
     request_id: string;
     challenge: string;
@@ -62,6 +58,36 @@ export function persistDemoSession(
 export function createDemoSdk(authOrigin: string): DemoSdk {
   const sdk = createBrowserSdk(authOrigin);
 
+  function isRetryableAuthError(error: unknown): boolean {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'status' in error &&
+      error.status === 401 &&
+      (!('error' in error) || error.error !== 'session_superseded')
+    );
+  }
+
+  async function requireAccessToken(forceRefresh = false): Promise<string> {
+    const snapshot = sdk.session.getState();
+
+    if (!snapshot.refreshToken && !snapshot.accessToken) {
+      throw new Error('Missing authenticated session');
+    }
+
+    if (!forceRefresh && snapshot.accessToken) {
+      return snapshot.accessToken;
+    }
+
+    const refreshed = await sdk.session.refresh();
+
+    if (!refreshed.accessToken) {
+      throw new Error('Missing authenticated session');
+    }
+
+    return refreshed.accessToken;
+  }
+
   async function postJson<T>(
     path: string,
     body: unknown,
@@ -79,7 +105,11 @@ export function createDemoSdk(authOrigin: string): DemoSdk {
 
     const payload = (await response.json()) as T | { error?: string };
     if (!response.ok) {
-      throw payload;
+      if (typeof payload === 'object' && payload !== null) {
+        throw { status: response.status, ...payload };
+      }
+
+      throw { status: response.status, error: 'request_failed' };
     }
 
     return payload as T;
@@ -88,12 +118,32 @@ export function createDemoSdk(authOrigin: string): DemoSdk {
   return {
     ...sdk,
     ed25519: {
-      register(input: {
-        accessToken: string;
-        name: string;
-        public_key: string;
-      }) {
-        return postJson('/ed25519/credentials', input, input.accessToken);
+      async register(input: { name: string; public_key: string }) {
+        const requestBody = {
+          name: input.name,
+          public_key: input.public_key,
+        };
+
+        try {
+          return await postJson(
+            '/ed25519/credentials',
+            requestBody,
+            await requireAccessToken(),
+          );
+        } catch (error) {
+          if (
+            !isRetryableAuthError(error) ||
+            !sdk.session.getState().refreshToken
+          ) {
+            throw error;
+          }
+
+          return await postJson(
+            '/ed25519/credentials',
+            requestBody,
+            await requireAccessToken(true),
+          );
+        }
       },
       start(input: { credential_id: string }) {
         return postJson<{ request_id: string; challenge: string }>(
