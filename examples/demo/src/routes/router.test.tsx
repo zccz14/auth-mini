@@ -45,7 +45,14 @@ describe('AppRouter', () => {
       ),
     ).toBeInTheDocument();
     expect(
-      screen.getByText('npm run dev -- --host 127.0.0.1 --port 3000'),
+      screen.getByText(
+        'npm --prefix examples/demo run dev -- --host 127.0.0.1 --port 3000',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /configure smtp and real email delivery before using email start\/verify/i,
+      ),
     ).toBeInTheDocument();
   });
 

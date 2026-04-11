@@ -25,7 +25,7 @@ function getStartupCommands(pageOrigin: string, authOriginCandidate: string) {
     `npx auth-mini start ${INSTANCE_PATH} --host ${authUrl.hostname} --port ${
       authUrl.port || (authUrl.protocol === 'https:' ? '443' : '80')
     } --issuer ${authUrl.origin}`,
-    `npm run dev -- --host 127.0.0.1 --port ${
+    `npm --prefix examples/demo run dev -- --host 127.0.0.1 --port ${
       pageUrl.port || (pageUrl.protocol === 'https:' ? '443' : '80')
     }`,
   ];
@@ -96,6 +96,11 @@ export function SetupRoute() {
             <p>
               Launch the auth server and this demo from separate terminals, then
               keep the auth server origin in sync with the value saved above.
+            </p>
+            <p>
+              Configure SMTP and real email delivery before using email
+              start/verify, otherwise the email flow cannot deliver one-time
+              codes to the address you enter.
             </p>
           </div>
 
