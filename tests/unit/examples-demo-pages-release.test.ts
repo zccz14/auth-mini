@@ -24,14 +24,31 @@ describe('examples demo Pages release contract', () => {
     expect(deployJobStart).toBeGreaterThanOrEqual(0);
 
     const deployJob = workflow.slice(deployJobStart);
-    const uploadArtifactStepStart = deployJob.indexOf('- name: Upload demo artifact');
-
-    expect(uploadArtifactStepStart).toBeGreaterThanOrEqual(0);
-
-    const nextStepStart = deployJob.indexOf(
-      '\n      - name:',
-      uploadArtifactStepStart + 1,
+    const expectedSequence = [
+      'run: npm ci',
+      'run: npm --prefix examples/demo ci',
+      'run: npm run demo:build',
+      'path: examples/demo/dist',
+    ];
+    const sequenceIndexes = expectedSequence.map((snippet) => deployJob.indexOf(snippet));
+    const uploadArtifactActionStart = deployJob.indexOf(
+      'uses: actions/upload-pages-artifact',
     );
+
+    sequenceIndexes.forEach((index) => {
+      expect(index).toBeGreaterThanOrEqual(0);
+    });
+    expect(uploadArtifactActionStart).toBeGreaterThanOrEqual(0);
+
+    for (let i = 1; i < sequenceIndexes.length; i += 1) {
+      expect(sequenceIndexes[i - 1]).toBeLessThan(sequenceIndexes[i]);
+    }
+
+    const uploadArtifactStepStart = deployJob.lastIndexOf(
+      '      - ',
+      uploadArtifactActionStart,
+    );
+    const nextStepStart = deployJob.indexOf('\n      - ', uploadArtifactActionStart + 1);
     const uploadArtifactStep = deployJob.slice(
       uploadArtifactStepStart,
       nextStepStart === -1 ? undefined : nextStepStart,
