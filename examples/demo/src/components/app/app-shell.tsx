@@ -8,6 +8,7 @@ const links = [
   ['/email', 'Email'],
   ['/ed25519', 'ED25519'],
   ['/passkey', 'Passkey'],
+  ['/credentials', 'Credentials'],
   ['/session', 'Session'],
 ] as const;
 

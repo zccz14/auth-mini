@@ -1,6 +1,7 @@
 import { Route, Routes } from 'react-router-dom';
 import { AppShell } from '@/components/app/app-shell';
 import { DemoProvider } from '@/app/providers/demo-provider';
+import { CredentialsRoute } from '@/routes/credentials';
 import { EmailRoute } from '@/routes/email';
 import { Ed25519Route } from '@/routes/ed25519';
 import { HomeRoute } from '@/routes/home';
@@ -18,6 +19,7 @@ export function AppRouter() {
           <Route path="/email" element={<EmailRoute />} />
           <Route path="/ed25519" element={<Ed25519Route />} />
           <Route path="/passkey" element={<PasskeyRoute />} />
+          <Route path="/credentials" element={<CredentialsRoute />} />
           <Route path="/session" element={<SessionRoute />} />
         </Route>
       </Routes>
