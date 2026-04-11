@@ -57,9 +57,9 @@ describe('AppRouter', () => {
     expect(
       screen.getByRole('heading', { name: 'Credentials' }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Email' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Passkey' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Ed25519' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Email' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Passkey' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Ed25519' })).toBeInTheDocument();
   });
 
   it('renders the setup route with an auth origin form', () => {
