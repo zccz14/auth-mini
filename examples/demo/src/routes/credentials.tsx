@@ -80,6 +80,31 @@ function getUserEd25519Credentials(user: unknown) {
   return asEd25519Rows(asRecord(user)?.ed25519_credentials);
 }
 
+function decodeBase64Url(value: string) {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padding = (4 - (normalized.length % 4)) % 4;
+  return atob(`${normalized}${'='.repeat(padding)}`);
+}
+
+function getAccessTokenAmr(accessToken: string): string[] {
+  const [, payloadSegment] = accessToken.split('.');
+  if (!payloadSegment) return [];
+
+  try {
+    const payload = asRecord(JSON.parse(decodeBase64Url(payloadSegment)));
+    return Array.isArray(payload?.amr)
+      ? payload.amr.filter((value: unknown): value is string => typeof value === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function canManageCredentials(accessToken: string) {
+  const amr = getAccessTokenAmr(accessToken);
+  return amr.includes('email_otp') || amr.includes('webauthn');
+}
+
 export function CredentialsRoute() {
   const { config, sdk, session, user } = useDemo();
   const [currentUser, setCurrentUser] = useState(user);
@@ -104,6 +129,9 @@ export function CredentialsRoute() {
     session.authenticated &&
     typeof session.accessToken === 'string' &&
     session.accessToken.length > 0;
+  const accessToken = typeof session.accessToken === 'string' ? session.accessToken : '';
+  const credentialManageable =
+    authenticated && canManageCredentials(accessToken);
 
   const email = getUserEmail(currentUser);
   const passkeys = getUserPasskeys(currentUser);
@@ -115,7 +143,7 @@ export function CredentialsRoute() {
     path: string;
   }) {
     if (
-      !authenticated ||
+      !credentialManageable ||
       !sdk ||
       pendingSectionsRef.current[input.section] ||
       !window.confirm(input.confirmMessage)
@@ -137,7 +165,7 @@ export function CredentialsRoute() {
       const response = await fetch(new URL(input.path, config.authOrigin), {
         method: 'DELETE',
         headers: {
-          authorization: `Bearer ${session.accessToken}`,
+          authorization: `Bearer ${accessToken}`,
         },
       });
 
@@ -227,7 +255,9 @@ export function CredentialsRoute() {
                   <tr className="border-b border-slate-200 text-slate-500">
                     <th className="py-2 pr-4 font-medium">Credential ID</th>
                     <th className="py-2 pr-4 font-medium">Created At</th>
-                    <th className="py-2 font-medium">Action</th>
+                    {credentialManageable ? (
+                      <th className="py-2 font-medium">Action</th>
+                    ) : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -237,21 +267,23 @@ export function CredentialsRoute() {
                         {truncateMiddle(row.credential_id)}
                       </td>
                       <td className="py-3 pr-4">{row.created_at}</td>
-                      <td className="py-3">
-                        <Button
-                          disabled={pendingSections.passkey}
-                          aria-label={`Delete passkey ${row.credential_id}`}
-                          onClick={() =>
-                            void deleteCredential({
-                              section: 'passkey',
-                              confirmMessage: `Delete passkey ${row.credential_id} from the current account? This cannot be undone.`,
-                              path: `/webauthn/credentials/${row.id}`,
-                            })
-                          }
-                        >
-                          {pendingSections.passkey ? 'Deleting…' : 'Delete'}
-                        </Button>
-                      </td>
+                      {credentialManageable ? (
+                        <td className="py-3">
+                          <Button
+                            disabled={pendingSections.passkey}
+                            aria-label={`Delete passkey ${row.credential_id}`}
+                            onClick={() =>
+                              void deleteCredential({
+                                section: 'passkey',
+                                confirmMessage: `Delete passkey ${row.credential_id} from the current account? This cannot be undone.`,
+                                path: `/webauthn/credentials/${row.id}`,
+                              })
+                            }
+                          >
+                            {pendingSections.passkey ? 'Deleting…' : 'Delete'}
+                          </Button>
+                        </td>
+                      ) : null}
                     </tr>
                   ))}
                 </tbody>
@@ -293,7 +325,9 @@ export function CredentialsRoute() {
                     <th className="py-2 pr-4 font-medium">Public Key</th>
                     <th className="py-2 pr-4 font-medium">Last Used</th>
                     <th className="py-2 pr-4 font-medium">Created At</th>
-                    <th className="py-2 font-medium">Action</th>
+                    {credentialManageable ? (
+                      <th className="py-2 font-medium">Action</th>
+                    ) : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -305,21 +339,23 @@ export function CredentialsRoute() {
                       </td>
                       <td className="py-3 pr-4">{row.last_used_at ?? 'Never'}</td>
                       <td className="py-3 pr-4">{row.created_at}</td>
-                      <td className="py-3">
-                        <Button
-                          disabled={pendingSections.ed25519}
-                          aria-label={`Delete device key ${row.name}`}
-                          onClick={() =>
-                            void deleteCredential({
-                              section: 'ed25519',
-                              confirmMessage: `Delete Ed25519 credential ${row.name} from the current account? This cannot be undone.`,
-                              path: `/ed25519/credentials/${row.id}`,
-                            })
-                          }
-                        >
-                          {pendingSections.ed25519 ? 'Deleting…' : 'Delete'}
-                        </Button>
-                      </td>
+                      {credentialManageable ? (
+                        <td className="py-3">
+                          <Button
+                            disabled={pendingSections.ed25519}
+                            aria-label={`Delete device key ${row.name}`}
+                            onClick={() =>
+                              void deleteCredential({
+                                section: 'ed25519',
+                                confirmMessage: `Delete Ed25519 credential ${row.name} from the current account? This cannot be undone.`,
+                                path: `/ed25519/credentials/${row.id}`,
+                              })
+                            }
+                          >
+                            {pendingSections.ed25519 ? 'Deleting…' : 'Delete'}
+                          </Button>
+                        </td>
+                      ) : null}
                     </tr>
                   ))}
                 </tbody>
