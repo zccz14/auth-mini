@@ -91,18 +91,18 @@ If a refresh token is already stored, startup enters `recovering` first and then
 
 ## Demo and publishing guidance
 
-`demo/` is an interactive companion for trying the browser flow. `docs/` is the canonical static reference source.
+`examples/demo/` is the interactive browser-flow demo source. `docs/` remains the canonical static reference source.
 
 The published demo/docs page does **not** auto-target localhost anymore. It stays in a neutral docs-only state until you provide `?sdk-origin=https://your-auth-origin`, which becomes the `createBrowserSdk(serverBaseUrl)` value for the playground.
 
-The published static site keeps both `demo/` and `dist/` in the artifact.
+The current publish flow builds the demo with the root-level `demo:build` script and deploys `examples/demo/dist` as the static site root.
 
-- Publish a static site root that includes both `demo/` and `dist/sdk/browser.js`, then serve the interactive page from `/demo/` so its import map can keep resolving `auth-mini/sdk/browser` to `../dist/sdk/browser.js`.
-- For GitHub Pages, that means the Pages artifact/root should contain sibling `demo/` and `dist/` directories rather than only the contents of `demo/`.
-- Project Pages subpaths such as `https://<user>.github.io/auth-mini/demo/` are fine because the demo uses relative local assets.
+- Treat `examples/demo/` as the source for the interactive demo and `examples/demo/dist` as the publish artifact.
+- For GitHub Pages, upload `examples/demo/dist` directly rather than a sibling `demo/` + `dist/` artifact layout.
+- The published page should be served from the site root for that artifact, such as `https://<user>.github.io/auth-mini/` for project Pages or `https://your-domain.example/` for a custom domain.
 - `npx auth-mini origin add <instance> --value ...` must use the final **page origin** (`window.location.origin`), not the auth server origin.
-- If the docs page and auth server live on different origins, keep the docs page on its static host under `/demo/` and append `?sdk-origin=https://your-auth-origin` so the page still imports the local module bundle while `createBrowserSdk(...)` points API calls at the auth host.
-- If you attach a custom GitHub Pages domain, publish a matching `CNAME` file at the static site root so GitHub serves that domain consistently; then store `https://your-domain.example` with `npx auth-mini origin add <instance> --value https://your-domain.example`.
+- If the docs page and auth server live on different origins, keep the page on its static host and append `?sdk-origin=https://your-auth-origin` so the published demo continues calling `createBrowserSdk(...)` against the auth host.
+- If you attach a custom GitHub Pages domain, publish a matching `CNAME` file in the deployed site root so GitHub serves that domain consistently; then store `https://your-domain.example` with `npx auth-mini origin add <instance> --value https://your-domain.example`.
 
 Example:
 
@@ -112,7 +112,7 @@ Example:
 Open:
 
 ```text
-https://example.github.io/auth-mini/demo/?sdk-origin=https://auth.zccz14.com
+https://example.github.io/auth-mini/?sdk-origin=https://auth.zccz14.com
 ```
 
 Configure the published docs origin, then start auth-mini with:
