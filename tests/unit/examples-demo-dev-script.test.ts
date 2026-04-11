@@ -70,15 +70,6 @@ function killProcessGroup(pid: number, signal: NodeJS.Signals) {
   }
 }
 
-async function sdkArtifactsExist() {
-  try {
-    await Promise.all([stat(singletonIifePath), stat(singletonDtsPath)]);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 async function readArtifactMtimes() {
   const [iifeStat, dtsStat] = await Promise.all([
     stat(singletonIifePath),
@@ -91,9 +82,19 @@ async function readArtifactMtimes() {
   };
 }
 
+async function sdkArtifactsReadySince(sinceMs: number) {
+  try {
+    const mtimes = await readArtifactMtimes();
+    return mtimes.iife >= sinceMs && mtimes.dts >= sinceMs;
+  } catch {
+    return false;
+  }
+}
+
 async function waitForWatchStartup(
   child: ReturnType<typeof spawn>,
   getOutput: () => string,
+  watchStartedAt: number,
   timeoutMs: number,
 ) {
   await waitFor(async () => {
@@ -101,7 +102,7 @@ async function waitForWatchStartup(
       throw new Error(`build watch exited early:\n${getOutput()}`);
     }
 
-    return getOutput().length > 0 || (await sdkArtifactsExist());
+    return await sdkArtifactsReadySince(watchStartedAt);
   }, timeoutMs);
 }
 
@@ -230,6 +231,7 @@ describe('examples demo dev helper script', () => {
     }
 
     const originalSource = readFileSync(singletonGlobalPath, 'utf8');
+    const watchStartedAt = Date.now();
     const child = spawn('npm', ['run', 'build', '--', '--watch'], {
       cwd: repoRoot,
       detached: true,
@@ -245,7 +247,7 @@ describe('examples demo dev helper script', () => {
     child.stderr.on('data', appendOutput);
 
     try {
-      await waitForWatchStartup(child, () => output, 20000);
+      await waitForWatchStartup(child, () => output, watchStartedAt, 20000);
 
       expect(child.exitCode).toBeNull();
 
