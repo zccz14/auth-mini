@@ -168,7 +168,7 @@ From there, typical integration looks like this:
 
 ## Docs and next steps
 
-`docs/` is the canonical static reference source. [`demo/`](demo/) is an interactive companion and playground, not the sole detailed docs surface.
+`docs/` is the canonical static reference source. `examples/demo/` is the current interactive demo source and Pages publish target, while the deployed live demo remains the easiest way to try the browser flows end-to-end.
 
 - Browser SDK integration: [docs/integration/browser-sdk.md](docs/integration/browser-sdk.md)
 - WebAuthn integration: [docs/integration/webauthn.md](docs/integration/webauthn.md)
