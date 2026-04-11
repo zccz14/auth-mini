@@ -2,13 +2,14 @@ import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { DemoProvider } from '@/app/providers/demo-provider';
+import { AUTH_ORIGIN_KEY } from '@/lib/demo-storage';
 import { HomeRoute } from './home';
 
 function renderHomeRoute(authOrigin?: string) {
   localStorage.clear();
 
   if (authOrigin) {
-    localStorage.setItem('auth-mini-demo.auth-origin', authOrigin);
+    localStorage.setItem(AUTH_ORIGIN_KEY, authOrigin);
   }
 
   render(
@@ -33,6 +34,22 @@ describe('HomeRoute', () => {
 
   it('renders the approved homepage positioning and section order', () => {
     renderHomeRoute();
+
+    const approvedHeadingOrder = [
+      'Minimal Self-Hosted Auth Server for your Apps',
+      'Why teams pick auth-mini',
+      'Auth server capabilities',
+      'Good fit',
+      'Not included',
+      'Validate the browser flows when you are ready',
+    ];
+
+    const renderedHeadingOrder = screen
+      .getAllByRole('heading')
+      .map((heading) => heading.textContent)
+      .filter((text): text is string =>
+        approvedHeadingOrder.includes(text ?? ''),
+      );
 
     expect(
       screen.getByRole('heading', {
@@ -80,6 +97,7 @@ describe('HomeRoute', () => {
         'Demo setup status: visit Setup to connect an auth origin before trying live browser flows.',
       ),
     ).toBeInTheDocument();
+    expect(renderedHeadingOrder).toEqual(approvedHeadingOrder);
   });
 
   it('demotes setup readiness to helper copy when an auth origin exists', () => {
