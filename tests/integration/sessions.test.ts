@@ -655,6 +655,11 @@ describe('session routes', () => {
         refresh_token: 'ed25519-peer-refresh-token',
       }),
     });
+    const meResponse = await testApp.app.request('/me', {
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+      },
+    });
 
     expect(logoutResponse.status).toBe(403);
     expect(await logoutResponse.json()).toEqual({
@@ -666,6 +671,12 @@ describe('session routes', () => {
       access_token: expect.any(String),
       refresh_token: expect.any(String),
     });
+    expect(meResponse.status).toBe(200);
+    expect(
+      (await meResponse.json()).active_sessions.map(
+        (session: { id: string }) => session.id,
+      ),
+    ).toEqual(expect.arrayContaining([testApp.sessionId, peer.id]));
   });
 
   it('rejects missing or invalid bearer token for peer logout', async () => {
