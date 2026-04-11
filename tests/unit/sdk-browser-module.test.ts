@@ -8,7 +8,10 @@ import { fakeStorage, jsonResponse } from '../helpers/sdk.js';
 describe('browser module sdk', () => {
   it('preserves base-path prefixes in browser sdk requests without window side effects', async () => {
     const storage = fakeStorage();
-    const fetch = vi.fn(async () => jsonResponse({ ok: true }));
+    const fetch = vi.fn<typeof globalThis.fetch>(async (...args) => {
+      void args;
+      return jsonResponse({ ok: true });
+    });
     vi.stubGlobal('fetch', fetch);
     vi.stubGlobal('localStorage', storage);
 
@@ -25,10 +28,19 @@ describe('browser module sdk', () => {
 
       expect(fetch).toHaveBeenCalledTimes(1);
 
-      const [requestUrl, requestInit] = fetch.mock.calls[0] ?? [];
+      const firstCall = fetch.mock.calls[0];
+
+      expect(firstCall).toBeDefined();
+      if (!firstCall) {
+        throw new Error('expected fetch to be called');
+      }
+
+      const [requestUrl, requestInit] = firstCall;
+      const normalizedRequestUrl =
+        requestUrl instanceof URL ? requestUrl : new URL(String(requestUrl));
 
       expect(requestUrl).toBeInstanceOf(URL);
-      expect(requestUrl.href).toBe(
+      expect(normalizedRequestUrl.href).toBe(
         'https://sdk.example.test:9443/auth/base/email/start',
       );
       expect(requestInit).toMatchObject({
