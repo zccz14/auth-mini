@@ -40,7 +40,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json --declaration && node dist/sdk/build-singleton-iife.js && node dist/sdk/build-singleton-dts.js",
-    "test": "npm typecheck && npm run test:unit && npm run test:integration",
+    "test": "npm run typecheck && npm run test:unit && npm run test:integration",
     "test:unit": "node scripts/run-tests.js",
     "test:integration": "npm run build && vitest run tests/integration",
     "lint": "eslint .",
