@@ -46,6 +46,7 @@
     "demo:dev": "node scripts/dev-examples-demo.mjs",
     "demo:typecheck": "npm --prefix examples/demo run typecheck",
     "test:integration": "npm run build && vitest run tests/integration",
+    "gco:main": "git fetch && git checkout origin/main",
     "lint": "eslint .",
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit",
