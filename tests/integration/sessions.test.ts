@@ -597,6 +597,168 @@ describe('session routes', () => {
     expect(await response.json()).toEqual({ ok: true });
   });
 
+  it('rejects ed25519 peer logout with insufficient_authentication_method and keeps the target active', async () => {
+    const testApp = await createSignedInApp('peer-logout-ed25519@example.com');
+    openApps.push(testApp);
+    const peer = createSession(testApp.db, {
+      userId: testApp.userId,
+      refreshTokenHash: hashValue('ed25519-peer-refresh-token'),
+      authMethod: 'email_otp',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+    });
+
+    testApp.db
+      .prepare('UPDATE sessions SET auth_method = ? WHERE id = ?')
+      .run('ed25519', testApp.sessionId);
+    const accessToken = await jwksService.signJwt(testApp.db, {
+      sub: testApp.userId,
+      sid: testApp.sessionId,
+      iss: 'https://issuer.example',
+      amr: ['ed25519'],
+      typ: 'access',
+    });
+
+    const logoutResponse = await testApp.app.request(`/session/${peer.id}/logout`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+      },
+    });
+    const refreshResponse = await testApp.app.request('/session/refresh', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: json({
+        session_id: peer.id,
+        refresh_token: 'ed25519-peer-refresh-token',
+      }),
+    });
+
+    expect(logoutResponse.status).toBe(403);
+    expect(await logoutResponse.json()).toEqual({
+      error: 'insufficient_authentication_method',
+    });
+    expect(refreshResponse.status).toBe(200);
+    expect(await refreshResponse.json()).toMatchObject({
+      session_id: peer.id,
+      access_token: expect.any(String),
+      refresh_token: expect.any(String),
+    });
+  });
+
+  it('rejects missing or invalid bearer token for peer logout', async () => {
+    const testApp = await createSignedInApp('peer-logout-auth@example.com');
+    openApps.push(testApp);
+
+    const missingResponse = await testApp.app.request(
+      '/session/00000000-0000-0000-0000-000000000000/logout',
+      {
+        method: 'POST',
+      },
+    );
+    const invalidResponse = await testApp.app.request(
+      '/session/00000000-0000-0000-0000-000000000000/logout',
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer not-a-token',
+        },
+      },
+    );
+
+    expect(missingResponse.status).toBe(401);
+    expect(await missingResponse.json()).toEqual({
+      error: 'invalid_access_token',
+    });
+    expect(invalidResponse.status).toBe(401);
+    expect(await invalidResponse.json()).toEqual({
+      error: 'invalid_access_token',
+    });
+  });
+
+  it('returns ok for a foreign user session id without expiring it', async () => {
+    const testApp = await createSignedInApp('peer-logout-owner@example.com');
+    openApps.push(testApp);
+    testApp.db
+      .prepare(
+        'INSERT INTO users (id, email, email_verified_at) VALUES (?, ?, ?)',
+      )
+      .run(
+        'user-foreign',
+        'peer-logout-other@example.com',
+        '2030-01-01T00:00:00.000Z',
+      );
+    const foreignSession = createSession(testApp.db, {
+      userId: 'user-foreign',
+      refreshTokenHash: hashValue('foreign-refresh-token'),
+      authMethod: 'email_otp',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+    });
+
+    const logoutResponse = await testApp.app.request(
+      `/session/${foreignSession.id}/logout`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${testApp.tokens.access_token}`,
+        },
+      },
+    );
+    const refreshResponse = await testApp.app.request('/session/refresh', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: json({
+        session_id: foreignSession.id,
+        refresh_token: 'foreign-refresh-token',
+      }),
+    });
+
+    expect(logoutResponse.status).toBe(200);
+    expect(await logoutResponse.json()).toEqual({ ok: true });
+    expect(refreshResponse.status).toBe(200);
+    expect(await refreshResponse.json()).toMatchObject({
+      session_id: foreignSession.id,
+    });
+  });
+
+  it('returns ok for a missing target session id', async () => {
+    const testApp = await createSignedInApp('peer-logout-missing@example.com');
+    openApps.push(testApp);
+
+    const response = await testApp.app.request(
+      '/session/00000000-0000-0000-0000-000000000000/logout',
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${testApp.tokens.access_token}`,
+        },
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+  });
+
+  it('returns ok for an already expired target session id', async () => {
+    const testApp = await createSignedInApp('peer-logout-expired@example.com');
+    openApps.push(testApp);
+    const expiredPeer = createSession(testApp.db, {
+      userId: testApp.userId,
+      refreshTokenHash: hashValue('expired-peer-refresh-token'),
+      authMethod: 'email_otp',
+      expiresAt: '2020-01-01T00:00:00.000Z',
+    });
+
+    const response = await testApp.app.request(`/session/${expiredPeer.id}/logout`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${testApp.tokens.access_token}`,
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+  });
+
   it('returns 400 when the target session id matches the current session id', async () => {
     const testApp = await createSignedInApp('peer-logout-self@example.com');
     openApps.push(testApp);
