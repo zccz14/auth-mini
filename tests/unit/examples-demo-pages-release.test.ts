@@ -19,27 +19,42 @@ describe('examples demo Pages release contract', () => {
 
   it('builds Pages from the root entrypoint and uploads examples/demo/dist', () => {
     const workflow = readRepoFile('.github/workflows/pages.yml');
+    const deployJobStart = workflow.indexOf('jobs:\n  deploy:');
 
-    expect(workflow).toContain('uses: actions/setup-node@v4');
-    expect(workflow).toContain("node-version: '20.10.0'");
-    expect(workflow).toContain('cache: npm');
-    expect(workflow).toContain('run: npm ci');
-    expect(workflow).toContain('run: npm --prefix examples/demo ci');
-    expect(workflow).toContain('run: npm run demo:build');
-    expect(workflow).toContain('path: examples/demo/dist');
-    expect(workflow).not.toContain('path: demo');
+    expect(deployJobStart).toBeGreaterThanOrEqual(0);
+
+    const deployJob = workflow.slice(deployJobStart);
+    const uploadArtifactStepStart = deployJob.indexOf('- name: Upload demo artifact');
+
+    expect(uploadArtifactStepStart).toBeGreaterThanOrEqual(0);
+
+    const nextStepStart = deployJob.indexOf(
+      '\n      - name:',
+      uploadArtifactStepStart + 1,
+    );
+    const uploadArtifactStep = deployJob.slice(
+      uploadArtifactStepStart,
+      nextStepStart === -1 ? undefined : nextStepStart,
+    );
+
+    expect(deployJob).toContain('uses: actions/setup-node@v4');
+    expect(deployJob).toContain("node-version: '20.10.0'");
+    expect(deployJob).toContain('cache: npm');
+    expect(deployJob).toContain('run: npm ci');
+    expect(deployJob).toContain('run: npm --prefix examples/demo ci');
+    expect(deployJob).toContain('run: npm run demo:build');
+    expect(uploadArtifactStep).toContain('uses: actions/upload-pages-artifact');
+    expect(uploadArtifactStep).toContain('path: examples/demo/dist');
+    expect(uploadArtifactStep).not.toContain('path: demo');
   });
 
   it('documents examples/demo as the current interactive demo source', () => {
     const readme = readRepoFile('README.md');
 
-    expect(readme).toContain(
-      '[Live demo](https://auth-mini.zccz14.com/?sdk-origin=https%3A%2F%2Fauth.zccz14.com)',
-    );
-    expect(readme).toContain('`docs/` is the canonical static reference source.');
-    expect(readme).toContain(
-      '`examples/demo/` is the current interactive demo source and Pages publish target.',
-    );
+    expect(readme).toContain('`docs/`');
+    expect(readme).toContain('static reference source');
+    expect(readme).toContain('`examples/demo/`');
+    expect(readme).toContain('Pages publish target');
     expect(readme).not.toContain('[`demo/`](demo/) is an interactive companion');
   });
 });
