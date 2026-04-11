@@ -392,6 +392,7 @@ function createMe(overrides: Partial<MeResponse> = {}): MeResponse {
     user_id: 'user-1',
     email: 'u@example.com',
     webauthn_credentials: [],
+    ed25519_credentials: [],
     active_sessions: [],
     ...overrides,
   };

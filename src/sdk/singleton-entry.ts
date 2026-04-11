@@ -1102,6 +1102,9 @@ function createRuntime() {
       user_id: value.user_id,
       email: value.email,
       webauthn_credentials: [...value.webauthn_credentials],
+      ed25519_credentials: Array.isArray(value.ed25519_credentials)
+        ? [...value.ed25519_credentials]
+        : [],
       active_sessions: [...value.active_sessions],
     };
   }
@@ -1131,6 +1134,9 @@ function createRuntime() {
             user_id: snapshot.me.user_id,
             email: snapshot.me.email,
             webauthn_credentials: [...snapshot.me.webauthn_credentials],
+            ed25519_credentials: Array.isArray(snapshot.me.ed25519_credentials)
+              ? [...snapshot.me.ed25519_credentials]
+              : [],
             active_sessions: [...snapshot.me.active_sessions],
           }
         : null,
@@ -1140,6 +1146,7 @@ function createRuntime() {
   function freezeSnapshot(snapshot) {
     if (snapshot.me) {
       Object.freeze(snapshot.me.webauthn_credentials);
+      Object.freeze(snapshot.me.ed25519_credentials);
       Object.freeze(snapshot.me.active_sessions);
       Object.freeze(snapshot.me);
     }

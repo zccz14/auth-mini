@@ -84,6 +84,9 @@ export function readPersistedSdkState(
       user_id: value.user_id,
       email: value.email,
       webauthn_credentials: [...value.webauthn_credentials],
+      ed25519_credentials: Array.isArray(value.ed25519_credentials)
+        ? [...value.ed25519_credentials]
+        : [],
       active_sessions: [...value.active_sessions],
     };
   }

@@ -149,6 +149,48 @@ describe('sdk session flows', () => {
     expect(sdk.me.get()?.email).toBe('updated@example.com');
   });
 
+  it('retains ed25519 credentials on cached me state after reload', async () => {
+    const sdk = createAuthMiniForTest({
+      storage: fakeAuthenticatedStorageWithMe(),
+      fetch: vi.fn().mockResolvedValueOnce(
+        jsonResponse({
+          user_id: 'u1',
+          email: 'updated@example.com',
+          webauthn_credentials: [],
+          ed25519_credentials: [
+            {
+              id: 'cred-1',
+              name: 'Laptop signer',
+              public_key: 'public-key',
+              created_at: '2026-04-12T00:00:00.000Z',
+              last_used_at: null,
+            },
+          ],
+          active_sessions: [],
+        }),
+      ),
+    });
+
+    const me = (await sdk.me.reload()) as {
+      ed25519_credentials?: Array<{ id: string }>;
+    };
+
+    expect(me.ed25519_credentials).toEqual([
+      expect.objectContaining({ id: 'cred-1' }),
+    ]);
+    expect(
+      (sdk.me.get() as { ed25519_credentials?: Array<{ id: string }> } | null)
+        ?.ed25519_credentials,
+    ).toEqual([expect.objectContaining({ id: 'cred-1' })]);
+    expect(
+      (
+        sdk.session.getState().me as {
+          ed25519_credentials?: Array<{ id: string }>;
+        } | null
+      )?.ed25519_credentials,
+    ).toEqual([expect.objectContaining({ id: 'cred-1' })]);
+  });
+
   it('preserves recoverable state when refresh succeeds but me reload fails transiently', async () => {
     const sdk = createAuthMiniForTest({
       storage: fakeAuthenticatedStorage(),

@@ -11,14 +11,6 @@ import {
   validateBase64Url32,
 } from '@/lib/demo-ed25519';
 
-function readCurrentCredentials(user: unknown) {
-  if (!user || typeof user !== 'object' || !('ed25519_credentials' in user)) {
-    return null;
-  }
-
-  return (user as { ed25519_credentials?: unknown }).ed25519_credentials ?? null;
-}
-
 export function Ed25519Route() {
   const { adoptDemoSession, config, sdk, session, user } = useDemo();
   const [credentialName, setCredentialName] = useState('');
@@ -28,8 +20,8 @@ export function Ed25519Route() {
   const [seedPublicKey, setSeedPublicKey] = useState('');
   const [generatedSeed, setGeneratedSeed] = useState('');
   const [generatedPublicKey, setGeneratedPublicKey] = useState('');
-  const [currentCredentials, setCurrentCredentials] = useState<unknown>(
-    readCurrentCredentials(user),
+  const [currentCredentials, setCurrentCredentials] = useState(
+    user?.ed25519_credentials ?? null,
   );
   const [lastRegisteredCredentialId, setLastRegisteredCredentialId] =
     useState('');
@@ -67,7 +59,7 @@ export function Ed25519Route() {
     pendingAction === null;
 
   useEffect(() => {
-    setCurrentCredentials(readCurrentCredentials(session.me));
+    setCurrentCredentials(session.me?.ed25519_credentials ?? null);
   }, [session.me]);
 
   function formatDemoError(cause: unknown): string {
@@ -150,9 +142,7 @@ export function Ed25519Route() {
         name: credentialName.trim(),
         public_key: publicKey.trim(),
       });
-      const me = (await sdk.me.reload()) as {
-        ed25519_credentials?: Array<unknown>;
-      } | null;
+      const me = await sdk.me.reload();
 
       setLastResponses((current) => ({ ...current, register: result }));
       setCurrentCredentials(me?.ed25519_credentials ?? []);
