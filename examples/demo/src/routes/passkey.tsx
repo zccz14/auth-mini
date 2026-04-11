@@ -13,12 +13,15 @@ export function PasskeyRoute() {
   const [error, setError] = useState('');
 
   const setupReady = config.status === 'ready' && Boolean(sdk);
+  const canRegister =
+    setupReady && session.authenticated && session.me !== null;
 
   async function runAction(action: 'register' | 'authenticate') {
-    if (!sdk) return;
+    if (!sdk || (action === 'register' && !canRegister)) return;
 
     setPendingAction(action);
     setError('');
+    setLastResult(null);
 
     try {
       const result =
@@ -48,7 +51,7 @@ export function PasskeyRoute() {
 
         <div className="flex flex-wrap gap-3">
           <Button
-            disabled={!setupReady || pendingAction !== null}
+            disabled={!canRegister || pendingAction !== null}
             onClick={() => void runAction('register')}
           >
             {pendingAction === 'register' ? 'Registering…' : 'Register passkey'}
@@ -62,6 +65,12 @@ export function PasskeyRoute() {
               : 'Sign in with passkey'}
           </Button>
         </div>
+
+        {!canRegister ? (
+          <p className="text-sm text-slate-600">
+            Register a passkey after signing in with an existing session.
+          </p>
+        ) : null}
 
         {error ? <p className="text-sm text-rose-600">{error}</p> : null}
 
