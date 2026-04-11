@@ -1,7 +1,19 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { PropsWithChildren } from 'react';
 import { getInitialDemoConfig } from '@/lib/demo-config';
-import { createDemoSdk, type DemoSdk } from '@/lib/demo-sdk';
+import {
+  createDemoSdk,
+  persistDemoSession,
+  type DemoSdk,
+  type DemoSessionTokens,
+} from '@/lib/demo-sdk';
 import {
   clearStoredAuthOrigin,
   getStoredAuthOrigin,
@@ -40,6 +52,7 @@ type DemoContextValue = {
   sdk: DemoSdk | null;
   session: DemoSession;
   user: DemoSession['me'];
+  adoptDemoSession: (tokens: DemoSessionTokens) => Promise<void>;
   clearLocalAuthState: () => Promise<void>;
   setAuthOrigin: (authOrigin: string) => void;
 };
@@ -68,6 +81,7 @@ export function DemoProvider({
     null,
   );
   const [hashOverride, setHashOverride] = useState<string | null>(null);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
 
   let storage: Storage | undefined;
   if (typeof window !== 'undefined') {
@@ -90,6 +104,15 @@ export function DemoProvider({
     pageOrigin: location.origin,
   });
 
+  function attachSdk(nextSdk: DemoSdk) {
+    unsubscribeRef.current?.();
+    setSdk(nextSdk);
+    setSession(nextSdk.session.getState());
+    unsubscribeRef.current = nextSdk.session.onChange((nextSession) => {
+      setSession(nextSession);
+    });
+  }
+
   useEffect(() => {
     if (!storage) {
       return;
@@ -105,23 +128,35 @@ export function DemoProvider({
 
   useEffect(() => {
     if (config.status !== 'ready') {
+      unsubscribeRef.current?.();
+      unsubscribeRef.current = null;
       setSdk(null);
       setSession(ANONYMOUS_SESSION);
       return;
     }
 
     const nextSdk = createDemoSdk(config.authOrigin);
-    setSdk(nextSdk);
-    setSession(nextSdk.session.getState());
+    attachSdk(nextSdk);
 
-    return nextSdk.session.onChange((nextSession) => {
-      setSession(nextSession);
-    });
+    return () => {
+      unsubscribeRef.current?.();
+      unsubscribeRef.current = null;
+    };
   }, [config.authOrigin, config.status]);
 
   const value = useMemo<DemoContextValue>(
     () => ({
       config,
+      adoptDemoSession: async (tokens) => {
+        if (!storage || config.status !== 'ready') {
+          throw new Error('Demo setup is not ready');
+        }
+
+        persistDemoSession(storage, config.authOrigin, tokens);
+        const nextSdk = createDemoSdk(config.authOrigin);
+        await nextSdk.me.reload();
+        attachSdk(nextSdk);
+      },
       clearLocalAuthState: async () => {
         const nextHash = clearHashAuthOrigin(
           typeof window === 'undefined' ? hash : window.location.hash,

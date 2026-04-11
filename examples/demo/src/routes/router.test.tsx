@@ -19,6 +19,7 @@ describe('AppRouter', () => {
     expect(screen.getByRole('link', { name: 'Home' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Setup' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Email' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'ED25519' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Passkey' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Session' })).toBeInTheDocument();
     expect(
@@ -26,6 +27,22 @@ describe('AppRouter', () => {
         level: 1,
         name: 'Minimal Self-Hosted Auth Server for your Apps',
       }),
+    ).toBeInTheDocument();
+  });
+
+  it('renders the ed25519 route skeleton', () => {
+    render(
+      <MemoryRouter initialEntries={['/ed25519']}>
+        <AppRouter />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('heading', { name: 'ED25519' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Register credential' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Sign in with private key' }),
     ).toBeInTheDocument();
   });
 
