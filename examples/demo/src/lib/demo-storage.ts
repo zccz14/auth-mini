@@ -1,7 +1,11 @@
 const AUTH_ORIGIN_KEY = 'auth-mini-demo.auth-origin';
 
 export function getStoredAuthOrigin(storage?: Pick<Storage, 'getItem'>) {
-  return storage?.getItem(AUTH_ORIGIN_KEY) ?? '';
+  try {
+    return storage?.getItem(AUTH_ORIGIN_KEY) ?? '';
+  } catch {
+    return '';
+  }
 }
 
 export function setStoredAuthOrigin(

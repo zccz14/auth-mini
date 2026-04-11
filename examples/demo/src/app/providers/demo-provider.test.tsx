@@ -1,3 +1,4 @@
+import React from 'react';
 import { act, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AUTH_ORIGIN_KEY } from '@/lib/demo-storage';
@@ -21,6 +22,7 @@ type DemoSessionSnapshot = {
 
 const sdkMocks = vi.hoisted(() => {
   const listeners: Array<(state: DemoSessionSnapshot) => void> = [];
+  const unsubscribe = vi.fn();
   const sessionState = {
     current: {
       status: 'anonymous',
@@ -36,7 +38,7 @@ const sdkMocks = vi.hoisted(() => {
 
   const onChange = vi.fn((listener: (state: DemoSessionSnapshot) => void) => {
     listeners.push(listener);
-    return vi.fn();
+    return unsubscribe;
   });
 
   const createBrowserSdk = vi.fn(() => ({
@@ -44,7 +46,7 @@ const sdkMocks = vi.hoisted(() => {
     me: { get: () => sessionState.current.me, reload: vi.fn() },
   }));
 
-  return { createBrowserSdk, listeners, onChange, sessionState };
+  return { createBrowserSdk, listeners, onChange, sessionState, unsubscribe };
 });
 
 vi.mock('auth-mini/sdk/browser', () => ({
@@ -67,6 +69,7 @@ describe('DemoProvider', () => {
     localStorage.clear();
     sdkMocks.createBrowserSdk.mockClear();
     sdkMocks.onChange.mockClear();
+    sdkMocks.unsubscribe.mockClear();
     sdkMocks.listeners.length = 0;
     sdkMocks.sessionState.current = {
       status: 'anonymous',
@@ -158,5 +161,62 @@ describe('DemoProvider', () => {
 
     expect(screen.getByTestId('session-status')).toHaveTextContent('anonymous');
     expect(screen.getByTestId('user-email')).toHaveTextContent('none');
+  });
+
+  it('creates the sdk from effect lifecycle and cleans subscriptions under StrictMode replay', () => {
+    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
+
+    render(
+      <React.StrictMode>
+        <DemoProvider
+          initialLocation={{
+            hash: '#/',
+            search: '',
+            origin: 'https://demo.example.com',
+          }}
+        >
+          <Probe />
+        </DemoProvider>
+      </React.StrictMode>,
+    );
+
+    expect(sdkMocks.createBrowserSdk).toHaveBeenCalled();
+    expect(sdkMocks.unsubscribe).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('config-status')).toHaveTextContent('ready');
+  });
+
+  it('falls back to waiting state when localStorage access throws', () => {
+    const localStorageDescriptor = Object.getOwnPropertyDescriptor(
+      window,
+      'localStorage',
+    );
+
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      get() {
+        throw new Error('denied');
+      },
+    });
+
+    try {
+      render(
+        <DemoProvider
+          initialLocation={{
+            hash: '#/',
+            search: '',
+            origin: 'https://demo.example.com',
+          }}
+        >
+          <Probe />
+        </DemoProvider>,
+      );
+
+      expect(screen.getByTestId('config-status')).toHaveTextContent('waiting');
+      expect(sdkMocks.createBrowserSdk).not.toHaveBeenCalled();
+    } finally {
+      if (localStorageDescriptor) {
+        Object.defineProperty(window, 'localStorage', localStorageDescriptor);
+      }
+    }
   });
 });

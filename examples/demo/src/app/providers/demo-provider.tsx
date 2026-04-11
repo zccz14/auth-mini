@@ -42,9 +42,19 @@ export function DemoProvider({
     origin: window.location.origin,
   };
 
-  const storageOrigin = getStoredAuthOrigin(
-    typeof window === 'undefined' ? undefined : window.localStorage,
-  );
+  const [sdk, setSdk] = useState<DemoSdk | null>(null);
+  const [session, setSession] = useState<DemoSession>(ANONYMOUS_SESSION);
+
+  let storage: Storage | undefined;
+  if (typeof window !== 'undefined') {
+    try {
+      storage = window.localStorage;
+    } catch {
+      storage = undefined;
+    }
+  }
+
+  const storageOrigin = getStoredAuthOrigin(storage);
   const config = getInitialDemoConfig({
     hash: location.hash,
     search: location.search,
@@ -52,26 +62,21 @@ export function DemoProvider({
     pageOrigin: location.origin,
   });
 
-  const sdk = useMemo(
-    () => (config.status === 'ready' ? createDemoSdk(config.authOrigin) : null),
-    [config.authOrigin, config.status],
-  );
-
-  const [session, setSession] = useState<DemoSession>(() =>
-    sdk ? sdk.session.getState() : ANONYMOUS_SESSION,
-  );
-
   useEffect(() => {
-    if (!sdk) {
+    if (config.status !== 'ready') {
+      setSdk(null);
       setSession(ANONYMOUS_SESSION);
       return;
     }
 
-    setSession(sdk.session.getState());
-    return sdk.session.onChange((nextSession) => {
+    const nextSdk = createDemoSdk(config.authOrigin);
+    setSdk(nextSdk);
+    setSession(nextSdk.session.getState());
+
+    return nextSdk.session.onChange((nextSession) => {
       setSession(nextSession);
     });
-  }, [sdk]);
+  }, [config.authOrigin, config.status]);
 
   const value = useMemo<DemoContextValue>(
     () => ({
