@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -59,6 +59,33 @@ function isProcessGroupAlive(pid: number) {
 function killProcessGroup(pid: number, signal: NodeJS.Signals) {
   try {
     process.kill(-pid, signal);
+  } catch (error) {
+    if (
+      !(error instanceof Error) ||
+      !('code' in error) ||
+      error.code !== 'ESRCH'
+    ) {
+      throw error;
+    }
+  }
+}
+
+function isProcessAlive(pid: number) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return !(
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'ESRCH'
+    );
+  }
+}
+
+function killProcess(pid: number, signal: NodeJS.Signals) {
+  try {
+    process.kill(pid, signal);
   } catch (error) {
     if (
       !(error instanceof Error) ||
@@ -161,20 +188,77 @@ async function stopChild(child: ReturnType<typeof spawn>, timeoutMs: number) {
 
 describe('examples demo dev helper script', () => {
   it('stops the full watch process group during cleanup', async () => {
-    const child = spawn('sh', ['-c', 'sleep 30 & wait'], {
+    const tempRoot = resolve(repoRoot, '.tmp-vitest');
+    const tempDir = resolve(
+      tempRoot,
+      `examples-demo-dev-script-${process.pid}-${Date.now()}`,
+    );
+    const fakeBinDir = resolve(tempDir, 'bin');
+    const fakeNpmPath = resolve(fakeBinDir, 'npm');
+    const backgroundPidPath = resolve(tempDir, 'build-sleep.pid');
+
+    await mkdir(fakeBinDir, { recursive: true });
+    await writeFile(
+      fakeNpmPath,
+      `#!/bin/sh
+set -eu
+
+case "$*" in
+  "run build -- --watch")
+    TEST_TMP="${tempDir}" exec sh -c 'sleep 30 >/dev/null 2>&1 & bg=$!; printf "%s" "$bg" > "$TEST_TMP/build-sleep.pid"; trap "exit 0" TERM INT; while :; do sleep 1; done'
+    ;;
+  "--prefix examples/demo run dev")
+    sleep 0.2
+    exit 23
+    ;;
+  *)
+    printf "unexpected fake npm argv: %s\n" "$*" >&2
+    exit 99
+    ;;
+esac
+`,
+      'utf8',
+    );
+    await chmod(fakeNpmPath, 0o755);
+
+    const child = spawn(process.execPath, ['scripts/dev-examples-demo.mjs'], {
       cwd: repoRoot,
-      detached: true,
+      env: {
+        ...process.env,
+        PATH: `${fakeBinDir}:${process.env.PATH ?? ''}`,
+      },
       stdio: 'ignore',
     });
+    let backgroundPid: number | undefined;
 
     try {
-      await waitFor(async () => isProcessGroupAlive(child.pid!), 2000);
-      await stopChild(child, 1000);
-      await waitFor(async () => !isProcessGroupAlive(child.pid!), 2000);
+      await waitFor(async () => {
+        try {
+          backgroundPid = Number.parseInt(
+            (await readFile(backgroundPidPath, 'utf8')).trim(),
+            10,
+          );
+          return Number.isInteger(backgroundPid) && backgroundPid > 0;
+        } catch {
+          return false;
+        }
+      }, 3000);
+
+      await waitForExit(child, 5000);
+
+      expect(child.exitCode).toBe(23);
+
+      await waitFor(async () => !isProcessAlive(backgroundPid!), 2000);
     } finally {
-      if (child.exitCode === null && isProcessGroupAlive(child.pid!)) {
-        killProcessGroup(child.pid!, 'SIGKILL');
+      if (child.exitCode === null) {
+        child.kill('SIGKILL');
       }
+
+      if (backgroundPid && isProcessAlive(backgroundPid)) {
+        killProcess(backgroundPid, 'SIGKILL');
+      }
+
+      await rm(tempDir, { force: true, recursive: true });
     }
   });
 
