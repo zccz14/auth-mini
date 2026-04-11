@@ -132,7 +132,7 @@ export function HomeRoute() {
       <section className="grid gap-4 lg:grid-cols-2">
         <Card className="h-full">
           <CardHeader>
-            <CardTitle>Good fit</CardTitle>
+            <h3 className="text-lg font-semibold text-slate-950">Good fit</h3>
             <CardDescription>
               Choose auth-mini when you want a self-hosted authentication core with
               clear scope and a backend-friendly verification story.
@@ -151,7 +151,7 @@ export function HomeRoute() {
         </Card>
         <Card className="h-full border-amber-200 bg-amber-50/60">
           <CardHeader>
-            <CardTitle>Not included</CardTitle>
+            <h3 className="text-lg font-semibold text-slate-950">Not included</h3>
             <CardDescription>
               Keep the boundary explicit so the homepage does not imply a full identity
               platform or broader product suite.
