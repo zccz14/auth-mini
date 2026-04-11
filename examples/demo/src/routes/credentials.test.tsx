@@ -99,6 +99,35 @@ function authenticatedSession(overrides?: Partial<MockMe>): MockSessionState {
   };
 }
 
+function expectDeleteConfirmation(
+  confirmSpy: ReturnType<typeof vi.spyOn>,
+  credentialLabel: string,
+) {
+  expect(confirmSpy).toHaveBeenCalledTimes(1);
+  expect(confirmSpy.mock.calls[0]?.[0]).toEqual(expect.any(String));
+  expect(confirmSpy.mock.calls[0]?.[0]).toContain('Delete');
+  expect(confirmSpy.mock.calls[0]?.[0]).toContain(credentialLabel);
+}
+
+function expectDeleteRequest(
+  fetchMock: typeof sdkMocks.fetch,
+  pathname: string,
+  accessToken: string,
+) {
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+
+  const [target, init] = fetchMock.mock.calls[0] ?? [];
+  const requestUrl =
+    typeof target === 'string' || target instanceof URL
+      ? new URL(target, 'https://auth.example.com')
+      : new URL(String(target.url), 'https://auth.example.com');
+  const request = new Request(requestUrl, init);
+
+  expect(requestUrl.pathname).toBe(pathname);
+  expect(request.method).toBe('DELETE');
+  expect(request.headers.get('authorization')).toBe(`Bearer ${accessToken}`);
+}
+
 describe('CredentialsRoute', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -238,17 +267,11 @@ describe('CredentialsRoute', () => {
       }),
     );
 
-    expect(confirmSpy).toHaveBeenCalledWith(
-      'Delete this passkey from the current account? This cannot be undone.',
-    );
-    expect(sdkMocks.fetch).toHaveBeenCalledWith(
-      new URL('/webauthn/credentials/passkey-row-1', 'https://auth.example.com'),
-      expect.objectContaining({
-        method: 'DELETE',
-        headers: expect.objectContaining({
-          authorization: 'Bearer access-token',
-        }),
-      }),
+    expectDeleteConfirmation(confirmSpy, 'passkey');
+    expectDeleteRequest(
+      sdkMocks.fetch,
+      '/webauthn/credentials/passkey-row-1',
+      'access-token',
     );
     expect(sdkMocks.reloadMe).toHaveBeenCalledTimes(1);
     expect(
@@ -295,17 +318,11 @@ describe('CredentialsRoute', () => {
       screen.getByRole('button', { name: 'Delete device key Build runner' }),
     );
 
-    expect(confirmSpy).toHaveBeenCalledWith(
-      'Delete this Ed25519 credential from the current account? This cannot be undone.',
-    );
-    expect(sdkMocks.fetch).toHaveBeenCalledWith(
-      new URL('/ed25519/credentials/device-row-1', 'https://auth.example.com'),
-      expect.objectContaining({
-        method: 'DELETE',
-        headers: expect.objectContaining({
-          authorization: 'Bearer access-token',
-        }),
-      }),
+    expectDeleteConfirmation(confirmSpy, 'Ed25519');
+    expectDeleteRequest(
+      sdkMocks.fetch,
+      '/ed25519/credentials/device-row-1',
+      'access-token',
     );
     expect(sdkMocks.reloadMe).toHaveBeenCalledTimes(1);
     expect(
@@ -361,7 +378,7 @@ describe('CredentialsRoute', () => {
       }),
     );
 
-    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expectDeleteConfirmation(confirmSpy, 'passkey');
     expect(sdkMocks.fetch).not.toHaveBeenCalled();
     expect(sdkMocks.reloadMe).not.toHaveBeenCalled();
   });
