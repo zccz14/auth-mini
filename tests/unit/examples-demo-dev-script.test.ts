@@ -43,31 +43,143 @@ async function waitForExit(child: ReturnType<typeof spawn>, timeoutMs: number) {
   });
 }
 
-function hasWatchReadySignal(output: string) {
-  return output.includes('Watching for file changes');
+function isProcessGroupAlive(pid: number) {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (error) {
+    return !(
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'ESRCH'
+    );
+  }
+}
+
+function killProcessGroup(pid: number, signal: NodeJS.Signals) {
+  try {
+    process.kill(-pid, signal);
+  } catch (error) {
+    if (
+      !(error instanceof Error) ||
+      !('code' in error) ||
+      error.code !== 'ESRCH'
+    ) {
+      throw error;
+    }
+  }
+}
+
+async function sdkArtifactsExist() {
+  try {
+    await Promise.all([stat(singletonIifePath), stat(singletonDtsPath)]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readArtifactMtimes() {
+  const [iifeStat, dtsStat] = await Promise.all([
+    stat(singletonIifePath),
+    stat(singletonDtsPath),
+  ]);
+
+  return {
+    iife: iifeStat.mtimeMs,
+    dts: dtsStat.mtimeMs,
+  };
+}
+
+async function waitForWatchStartup(
+  child: ReturnType<typeof spawn>,
+  getOutput: () => string,
+  timeoutMs: number,
+) {
+  await waitFor(async () => {
+    if (child.exitCode !== null) {
+      throw new Error(`build watch exited early:\n${getOutput()}`);
+    }
+
+    return getOutput().length > 0 || (await sdkArtifactsExist());
+  }, timeoutMs);
+}
+
+async function waitForArtifactRebuild(
+  child: ReturnType<typeof spawn>,
+  getOutput: () => string,
+  baseline: { iife: number; dts: number },
+  timeoutMs: number,
+) {
+  await waitFor(async () => {
+    if (child.exitCode !== null) {
+      throw new Error(`build watch exited before rebuild:\n${getOutput()}`);
+    }
+
+    const nextMtimes = await readArtifactMtimes();
+
+    return nextMtimes.iife > baseline.iife && nextMtimes.dts > baseline.dts;
+  }, timeoutMs);
 }
 
 async function stopChild(child: ReturnType<typeof spawn>, timeoutMs: number) {
-  if (child.exitCode !== null) {
-    return;
-  }
-
-  child.kill('SIGTERM');
-
-  try {
-    await waitForExit(child, timeoutMs);
-  } catch {
+  if (!child.pid) {
     if (child.exitCode !== null) {
       return;
     }
 
-    child.kill('SIGKILL');
+    child.kill('SIGTERM');
     await waitForExit(child, timeoutMs);
+    return;
+  }
+
+  const waitForShutdown = async () => {
+    await Promise.all([
+      waitForExit(child, timeoutMs),
+      waitFor(async () => !isProcessGroupAlive(child.pid!), timeoutMs),
+    ]);
+  };
+
+  if (!isProcessGroupAlive(child.pid) && child.exitCode !== null) {
+    return;
+  }
+
+  killProcessGroup(child.pid, 'SIGTERM');
+
+  try {
+    await waitForShutdown();
+  } catch {
+    if (!isProcessGroupAlive(child.pid) && child.exitCode !== null) {
+      return;
+    }
+
+    killProcessGroup(child.pid, 'SIGKILL');
+    await waitForShutdown();
   }
 }
 
 describe('examples demo dev helper script', () => {
+  it('stops the full watch process group during cleanup', async () => {
+    const child = spawn('sh', ['-c', 'sleep 30 & wait'], {
+      cwd: repoRoot,
+      detached: true,
+      stdio: 'ignore',
+    });
+
+    try {
+      await waitFor(async () => isProcessGroupAlive(child.pid!), 2000);
+      await stopChild(child, 1000);
+      await waitFor(async () => !isProcessGroupAlive(child.pid!), 2000);
+    } finally {
+      if (child.exitCode === null && isProcessGroupAlive(child.pid!)) {
+        killProcessGroup(child.pid!, 'SIGKILL');
+      }
+    }
+  });
+
   it('uses npm run build -- --watch for demo orchestration and backs it with a real sdk watch pipeline', () => {
+    const testSource = readFileSync(new URL(import.meta.url), 'utf8');
+    const legacyReadySignal = ['Watching for file', 'changes'].join(' ');
     const devScript = readFileSync(
       resolve(process.cwd(), 'scripts/dev-examples-demo.mjs'),
       'utf8',
@@ -97,6 +209,7 @@ describe('examples demo dev helper script', () => {
     );
     expect(buildScript).toContain('node dist/sdk/build-singleton-iife.js');
     expect(buildScript).toContain('node dist/sdk/build-singleton-dts.js');
+    expect(testSource).not.toContain(legacyReadySignal);
   });
 
   it('keeps demo:typecheck scoped to the demo app only', () => {
@@ -119,6 +232,7 @@ describe('examples demo dev helper script', () => {
     const originalSource = readFileSync(singletonGlobalPath, 'utf8');
     const child = spawn('npm', ['run', 'build', '--', '--watch'], {
       cwd: repoRoot,
+      detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let output = '';
@@ -131,46 +245,36 @@ describe('examples demo dev helper script', () => {
     child.stderr.on('data', appendOutput);
 
     try {
-      await waitFor(async () => {
-        if (child.exitCode !== null) {
-          throw new Error(`build watch exited early:\n${output}`);
-        }
-
-        try {
-          await Promise.all([stat(singletonIifePath), stat(singletonDtsPath)]);
-          return hasWatchReadySignal(output);
-        } catch {
-          return false;
-        }
-      }, 20000);
+      await waitForWatchStartup(child, () => output, 20000);
 
       expect(child.exitCode).toBeNull();
 
-      const initialIifeMtime = (await stat(singletonIifePath)).mtimeMs;
-      const initialDtsMtime = (await stat(singletonDtsPath)).mtimeMs;
+      const watchProbes = ['watch probe 1', 'watch probe 2'];
+      let rebuildError: unknown;
 
-      await writeFile(singletonGlobalPath, `${originalSource}\n`, 'utf8');
-
-      await waitFor(async () => {
-        if (child.exitCode !== null) {
-          throw new Error(`build watch exited before rebuild:\n${output}`);
-        }
-
-        const [nextIifeStat, nextDtsStat] = await Promise.all([
-          stat(singletonIifePath),
-          stat(singletonDtsPath),
-        ]);
-
-        return (
-          nextIifeStat.mtimeMs > initialIifeMtime &&
-          nextDtsStat.mtimeMs > initialDtsMtime
+      for (const probe of watchProbes) {
+        const baseline = await readArtifactMtimes();
+        await writeFile(
+          singletonGlobalPath,
+          `${originalSource}\n// ${probe}`,
+          'utf8',
         );
-      }, 20000);
+
+        try {
+          await waitForArtifactRebuild(child, () => output, baseline, 10000);
+          rebuildError = undefined;
+          break;
+        } catch (error) {
+          rebuildError = error;
+        }
+      }
+
+      if (rebuildError) {
+        throw rebuildError;
+      }
     } finally {
       try {
-        if (child.exitCode === null) {
-          await stopChild(child, 5000);
-        }
+        await stopChild(child, 5000);
       } finally {
         await writeFile(singletonGlobalPath, originalSource, 'utf8');
       }
