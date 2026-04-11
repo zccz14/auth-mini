@@ -59,6 +59,7 @@ describe('sdk state store', () => {
         user_id: 'u',
         email: 'u@example.com',
         webauthn_credentials: [],
+        ed25519_credentials: [],
         active_sessions: [],
       },
     });
@@ -117,6 +118,7 @@ describe('sdk state store', () => {
         user_id: 'u',
         email: 'u@example.com',
         webauthn_credentials: [],
+        ed25519_credentials: [],
         active_sessions: [],
       },
     });
@@ -145,6 +147,7 @@ describe('sdk state store', () => {
       user_id: 'u',
       email: 'u@example.com',
       webauthn_credentials: [],
+      ed25519_credentials: [],
       active_sessions: [],
     };
 

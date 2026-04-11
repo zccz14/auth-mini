@@ -120,6 +120,9 @@ export function createStateStore(storage: Storage) {
             user_id: snapshot.me.user_id,
             email: snapshot.me.email,
             webauthn_credentials: [...snapshot.me.webauthn_credentials],
+            ed25519_credentials: Array.isArray(snapshot.me.ed25519_credentials)
+              ? [...snapshot.me.ed25519_credentials]
+              : [],
             active_sessions: [...snapshot.me.active_sessions],
           }
         : null,
@@ -129,6 +132,7 @@ export function createStateStore(storage: Storage) {
   function freezeSnapshot(snapshot: SessionSnapshot): SessionSnapshot {
     if (snapshot.me) {
       Object.freeze(snapshot.me.webauthn_credentials);
+      Object.freeze(snapshot.me.ed25519_credentials);
       Object.freeze(snapshot.me.active_sessions);
       Object.freeze(snapshot.me);
     }
@@ -150,6 +154,11 @@ export function createStateStore(storage: Storage) {
             user_id: currentState.me.user_id,
             email: currentState.me.email,
             webauthn_credentials: [...currentState.me.webauthn_credentials],
+            ed25519_credentials: Array.isArray(
+              currentState.me.ed25519_credentials,
+            )
+              ? [...currentState.me.ed25519_credentials]
+              : [],
             active_sessions: [...currentState.me.active_sessions],
           }
         : null,

@@ -9,6 +9,7 @@ export type MeResponse = {
   user_id: string;
   email: string;
   webauthn_credentials: Array<unknown>;
+  ed25519_credentials: Array<unknown>;
   active_sessions: Array<unknown>;
 };
 
