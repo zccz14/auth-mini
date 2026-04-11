@@ -7,6 +7,12 @@ import type {
   InternalSdkDeps,
 } from './types.js';
 
+type BrowserSdkFactoryOptions = {
+  fetch?: FetchLike;
+  now?: () => number;
+  storage?: Storage;
+};
+
 type BootstrapInput = {
   currentScript: { src?: string | null } | null;
   fetch?: FetchLike;
@@ -14,11 +20,8 @@ type BootstrapInput = {
   storage?: Storage;
 };
 
-type SingletonInput = {
+type SingletonInput = BrowserSdkFactoryOptions & {
   baseUrl: string;
-  fetch?: FetchLike;
-  now?: () => number;
-  storage?: Storage;
 };
 
 declare global {
@@ -36,7 +39,17 @@ export function createAuthMiniInternal(
 }
 
 export function createSingletonSdk(input: SingletonInput): AuthMiniInternal {
-  return getRuntime().createSingletonSdk(input) as AuthMiniInternal;
+  return createBrowserSdkInternal(input.baseUrl, input);
+}
+
+export function createBrowserSdkInternal(
+  baseUrl: string,
+  options: BrowserSdkFactoryOptions = {},
+): AuthMiniInternal {
+  return getRuntime().createSingletonSdk({
+    ...options,
+    baseUrl,
+  }) as AuthMiniInternal;
 }
 
 export function bootstrapSingletonSdk(input: BootstrapInput) {
@@ -116,8 +129,22 @@ function createRuntime() {
     return resolved;
   }
 
-  function readPersistedSdkState(storage) {
-    const raw = storage.getItem(SDK_STORAGE_KEY);
+  function getStorageKey(baseUrl) {
+    return `${SDK_STORAGE_KEY}:${normalizeBaseUrl(baseUrl).toString()}`;
+  }
+
+  function normalizeBaseUrl(baseUrl) {
+    const url = new URL(baseUrl);
+    url.search = '';
+    url.hash = '';
+    url.pathname = url.pathname.endsWith('/')
+      ? url.pathname
+      : `${url.pathname}/`;
+    return url;
+  }
+
+  function readPersistedSdkState(storage, storageKey) {
+    const raw = storage.getItem(storageKey);
     if (!raw) {
       return null;
     }
@@ -158,15 +185,15 @@ function createRuntime() {
     }
   }
 
-  function writePersistedSdkState(storage, snapshot) {
-    storage.setItem(SDK_STORAGE_KEY, JSON.stringify(snapshot));
+  function writePersistedSdkState(storage, storageKey, snapshot) {
+    storage.setItem(storageKey, JSON.stringify(snapshot));
   }
 
-  function clearPersistedSdkState(storage) {
-    storage.removeItem(SDK_STORAGE_KEY);
+  function clearPersistedSdkState(storage, storageKey) {
+    storage.removeItem(storageKey);
   }
 
-  function createStateStore(storage) {
+  function createStateStore(storage, storageKey) {
     const listeners = new Set();
     let state = hydrateState();
 
@@ -193,7 +220,7 @@ function createRuntime() {
         });
       },
       setAnonymous() {
-        clearPersistedSdkState(storage);
+        clearPersistedSdkState(storage, storageKey);
         updateState(createSnapshot('anonymous'));
       },
       applyPersistedState(next) {
@@ -205,7 +232,7 @@ function createRuntime() {
     };
 
     function hydrateState() {
-      return hydrateSnapshot(readPersistedSdkState(storage));
+      return hydrateSnapshot(readPersistedSdkState(storage, storageKey));
     }
 
     function hydrateSnapshot(persisted) {
@@ -221,7 +248,7 @@ function createRuntime() {
 
     function updatePersisted(next) {
       const persisted = clonePersisted(next);
-      writePersistedSdkState(storage, persisted);
+      writePersistedSdkState(storage, storageKey, persisted);
       updateState({
         status: next.status,
         authenticated: next.authenticated,
@@ -248,15 +275,18 @@ function createRuntime() {
     };
 
     async function sendJson(method, path, options) {
-      const response = await input.fetch(new URL(path, input.baseUrl), {
-        method,
-        headers: createHeaders(options),
-        ...(options.body === undefined
-          ? {}
-          : {
-              body: JSON.stringify(options.body),
-            }),
-      });
+      const response = await input.fetch(
+        new URL(path.replace(/^\//, ''), input.baseUrl),
+        {
+          method,
+          headers: createHeaders(options),
+          ...(options.body === undefined
+            ? {}
+            : {
+                body: JSON.stringify(options.body),
+              }),
+        },
+      );
       const payload = await readJson(response);
       if (!response.ok) {
         throw createRequestError(response.status, payload);
@@ -711,7 +741,8 @@ function createRuntime() {
   }
 
   function createAuthMiniInternal(input) {
-    const state = createStateStore(input.storage);
+    const storageKey = input.storageKey ?? SDK_STORAGE_KEY;
+    const state = createStateStore(input.storage, storageKey);
     const externalStorageListeners = new Set();
     const http = createHttpClient({
       baseUrl: input.baseUrl,
@@ -764,7 +795,7 @@ function createRuntime() {
       now: input.now ?? (() => Date.now()),
       readSharedState: () =>
         input.storageSync?.getSnapshot?.() ??
-        readPersistedSdkState(input.storage),
+        readPersistedSdkState(input.storage, storageKey),
       recoveryTimeoutMs: input.recoveryTimeoutMs,
       state,
       waitForExternalStorage(timeoutMs) {
@@ -835,39 +866,43 @@ function createRuntime() {
       throw createSdkError('sdk_init_failed', 'Cannot determine SDK base URL');
     }
 
+    const normalizedBaseUrl = normalizeBaseUrl(baseUrl).toString();
+    const storageKey = getStorageKey(normalizedBaseUrl);
+
     const storage = resolveSdkStorage({
       storage: input.storage,
       getDefaultStorage: () => browser.localStorage,
     });
 
     return createAuthMiniInternal({
-      baseUrl,
+      baseUrl: normalizedBaseUrl,
       fetch: resolveFetch(input.fetch),
       navigatorCredentials: browser.navigator?.credentials,
       now: input.now,
       publicKeyCredential: browser.PublicKeyCredential,
       recoveryTimeoutMs: input.recoveryTimeoutMs,
       storage,
-      storageSync: createBrowserStorageSync(browser, storage),
+      storageKey,
+      storageSync: createBrowserStorageSync(browser, storage, storageKey),
     });
   }
 
-  function createBrowserStorageSync(browser, storage) {
+  function createBrowserStorageSync(browser, storage, storageKey) {
     if (typeof browser?.addEventListener !== 'function') {
       return null;
     }
 
     return {
       getSnapshot() {
-        return readPersistedSdkState(storage);
+        return readPersistedSdkState(storage, storageKey);
       },
       subscribe(listener) {
         const handleStorage = (event) => {
-          if (event.key !== SDK_STORAGE_KEY || event.storageArea !== storage) {
+          if (event.key !== storageKey || event.storageArea !== storage) {
             return;
           }
 
-          listener(readPersistedSdkState(storage));
+          listener(readPersistedSdkState(storage, storageKey));
         };
 
         browser.addEventListener('storage', handleStorage);

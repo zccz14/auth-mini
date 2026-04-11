@@ -21,6 +21,33 @@ type TestSdkOptions = Partial<InternalSdkDeps> & {
   storageSync?: TestStorageSync;
 };
 
+export function browserSdkStorageKey(baseUrl: string): string {
+  const url = new URL(baseUrl);
+  url.search = '';
+  url.hash = '';
+  url.pathname = url.pathname.endsWith('/') ? url.pathname : `${url.pathname}/`;
+  return `auth-mini.sdk:${url.toString()}`;
+}
+
+export function seedBrowserSdkStorage(
+  storage: Storage,
+  baseUrl: string,
+  seed: StorageSeed,
+): void {
+  storage.setItem(
+    browserSdkStorageKey(baseUrl),
+    JSON.stringify({
+      sessionId: null,
+      accessToken: null,
+      refreshToken: null,
+      receivedAt: null,
+      expiresAt: null,
+      me: null,
+      ...seed,
+    }),
+  );
+}
+
 export function fakeStorage(seed: StorageSeed = {}): Storage {
   const data = new Map<string, string>();
 

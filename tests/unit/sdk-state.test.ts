@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { createSingletonSdk } from '../../src/sdk/singleton-entry.js';
 import { createStateStore } from '../../src/sdk/state.js';
 import type { MeResponse } from '../../src/sdk/types.js';
-import { createSharedStorageHarness, fakeStorage } from '../helpers/sdk.js';
+import {
+  createSharedStorageHarness,
+  fakeStorage,
+  seedBrowserSdkStorage,
+} from '../helpers/sdk.js';
 
 describe('sdk state store', () => {
   it('hydrates anonymous state when storage is empty', () => {
@@ -79,13 +83,16 @@ describe('sdk state store', () => {
   });
 
   it('exposes session.getState and session.onChange on the public singleton api', () => {
+    const storage = fakeStorage();
+    seedBrowserSdkStorage(storage, 'https://auth.example.com', {
+      sessionId: 'session-1',
+      refreshToken: 'rt',
+      expiresAt: '2026-04-03T00:00:00.000Z',
+    });
+
     const sdk = createSingletonSdk({
       baseUrl: 'https://auth.example.com',
-      storage: fakeStorage({
-        sessionId: 'session-1',
-        refreshToken: 'rt',
-        expiresAt: '2026-04-03T00:00:00.000Z',
-      }),
+      storage,
     });
     const listener = vi.fn();
     const unsubscribe = sdk.session.onChange(listener);

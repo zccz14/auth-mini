@@ -15,6 +15,12 @@
   "files": [
     "dist"
   ],
+  "exports": {
+    "./sdk/browser": {
+      "types": "./dist/sdk/browser.d.ts",
+      "import": "./dist/sdk/browser.js"
+    }
+  },
   "bin": {
     "auth-mini": "dist/index.js"
   },
@@ -33,7 +39,7 @@
     "node": ">=20.10.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && node dist/sdk/build-singleton-iife.js && node dist/sdk/build-singleton-dts.js",
+    "build": "tsc -p tsconfig.build.json --declaration && node dist/sdk/build-singleton-iife.js && node dist/sdk/build-singleton-dts.js",
     "test": "node scripts/run-tests.js",
     "test:integration": "npm run build && vitest run tests/integration",
     "lint": "eslint .",

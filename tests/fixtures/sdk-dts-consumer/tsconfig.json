@@ -8,5 +8,9 @@
     "noEmit": true,
     "types": []
   },
-  "files": ["../../../dist/sdk/singleton-iife.d.ts", "./global-usage.ts"]
+  "files": [
+    "../../../dist/sdk/singleton-iife.d.ts",
+    "./global-usage.ts",
+    "./module-browser-usage.ts"
+  ]
 }

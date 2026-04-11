@@ -53,6 +53,27 @@ export async function runPackedCli(
   return result;
 }
 
+export async function importPackedModule(
+  specifier: string,
+): Promise<Record<string, unknown>> {
+  const installDir = await ensurePackedCliInstall();
+  const script = `import * as mod from ${JSON.stringify(specifier)}; console.log(JSON.stringify(Object.fromEntries(Object.entries(mod).map(([key, value]) => [key, typeof value]))));`;
+  const result = await runCommand(
+    process.execPath,
+    ['--input-type=module', '--eval', script],
+    {
+      cwd: installDir,
+      env: { NODE_ENV: 'production' },
+    },
+  );
+
+  if (result.exitCode !== 0) {
+    throw new Error(result.stderr || result.stdout || 'module import failed');
+  }
+
+  return JSON.parse(result.stdout.trim()) as Record<string, unknown>;
+}
+
 async function ensurePackedCliInstall(): Promise<string> {
   if (!packedInstallPromise) {
     packedInstallPromise = preparePackedCliInstall();
