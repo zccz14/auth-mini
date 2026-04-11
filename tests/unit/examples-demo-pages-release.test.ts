@@ -48,7 +48,7 @@ describe('examples demo Pages release contract', () => {
     expect(uploadArtifactStep).not.toContain('path: demo');
   });
 
-  it('documents examples/demo as the current interactive demo source', () => {
+  it('documents docs as canonical and examples/demo as the live Pages source', () => {
     const readme = readRepoFile('README.md');
     const docsSectionStart = readme.indexOf('## Docs and next steps');
 
@@ -61,13 +61,11 @@ describe('examples demo Pages release contract', () => {
     );
 
     expect(readme).toMatch(/\[Live demo\]\([^\n)]+\)/);
-    expect(docsSection).toMatch(/live demo/i);
-    expect(docsSection).toMatch(/`docs\/`[^\n]*canonical static reference source/);
-    expect(docsSection).not.toMatch(
-      /\[`demo\/`\]\(demo\/\)\s+is an interactive companion/i,
-    );
+    expect(readme).not.toMatch(/\[`demo\/`\]\(demo\/\)/);
+    expect(docsSection).toMatch(/`docs\/`[\s\S]*canonical static reference source/i);
     expect(docsSection).toMatch(
-      /`docs\/`[\s\S]*`examples\/demo\/`[\s\S]*current interactive demo source[\s\S]*(live demo|Pages publish target)/i,
+      /`examples\/demo\/`[\s\S]*current interactive demo source/i,
     );
+    expect(docsSection).toMatch(/`examples\/demo\/`[\s\S]*Pages publish target/i);
   });
 });
