@@ -66,9 +66,11 @@ type FakeSdk = {
 };
 
 type FakeWindow = {
+  AuthMini?: FakeSdk;
   __AUTH_MINI_TEST_HOOKS__?: {
-    loadSdkScript?: () => Promise<FakeSdk>;
+    loadSdkScript?: () => Promise<void>;
   };
+  __AUTH_MINI_SDK_URL__?: string;
   PublicKeyCredential?: unknown;
   location: FakeLocation;
   history: FakeHistory;
@@ -100,6 +102,7 @@ type TestGlobals = {
   location?: unknown;
   Event?: unknown;
   __AUTH_MINI_TEST_HOOKS__?: FakeWindow['__AUTH_MINI_TEST_HOOKS__'];
+  AuthMini?: FakeSdk;
 };
 
 const testGlobals = globalThis as unknown as TestGlobals;
@@ -135,6 +138,7 @@ describe('demo bootstrap', () => {
     restoreGlobal('location', previousLocation);
     restoreGlobal('Event', previousEvent);
     Reflect.deleteProperty(testGlobals, '__AUTH_MINI_TEST_HOOKS__');
+    Reflect.deleteProperty(testGlobals, 'AuthMini');
   });
 
   it('boots the page from window.location and renders docs even when sdk loading fails', async () => {
@@ -175,23 +179,31 @@ describe('demo bootstrap', () => {
     ).toContain('AuthMini SDK did not load');
   });
 
-  it('builds the sdk from an injected factory without appending a script tag', async () => {
+  it('shows docs and disables actions when the default script element fails to load', async () => {
     const env = createTestEnvironment(
       'https://docs.example.com/demo/?sdk-origin=https://auth.example.com',
+      { autoFailScript: true },
     );
-    const { loadSdkScript } = await import('../../demo/main.js');
-    const sdk = createFakeSdk();
-    const createSdk = vi.fn(() => sdk);
+    const { bootstrapDemoPage } = await import('../../demo/bootstrap.js');
 
-    await expect(
-      loadSdkScript(
-        { sdkOrigin: 'https://auth.example.com' },
-        { createSdk, document: env.document },
-      ),
-    ).resolves.toBe(sdk);
+    await runBootstrap(bootstrapDemoPage, env);
 
-    expect(createSdk).toHaveBeenCalledWith('https://auth.example.com');
-    expect(env.document.body.children).toHaveLength(0);
+    expect(
+      env.document.querySelector('#api-reference-list')?.textContent,
+    ).toContain('/jwks');
+    expect(
+      env.document.querySelector('#api-reference-list')?.textContent,
+    ).toContain('rp_id');
+    expect(
+      env.document.querySelector('#latest-response')?.textContent,
+    ).toContain('AuthMini SDK did not load');
+    expect(env.document.querySelector('#email-start-button')?.disabled).toBe(
+      true,
+    );
+    expect(
+      env.document.querySelector('#api-reference-list article details pre')
+        ?.tagName,
+    ).toBe('PRE');
   });
 
   it('keeps actions safe before sdk is attached', async () => {
@@ -218,6 +230,38 @@ describe('demo bootstrap', () => {
     );
 
     void startup;
+  });
+
+  it('uses the injected window for fallback sdk url reads', async () => {
+    const env = createTestEnvironment('https://docs.example.com/demo/');
+    const { bootstrapDemoPage } = await import('../../demo/bootstrap.js');
+    setTestGlobal('window', {
+      location: Object.assign(new URL('https://global.example.com/demo/'), {
+        reload: vi.fn(),
+      }),
+      __AUTH_MINI_SDK_URL__: 'https://global.example.com/sdk/singleton-iife.js',
+      history: env.history,
+      localStorage: env.localStorage,
+    } as FakeWindow);
+
+    env.window.__AUTH_MINI_SDK_URL__ =
+      'https://injected-window.example.com/sdk/singleton-iife.js';
+
+    await runBootstrap(bootstrapDemoPage, env, {
+      loadSdkScript: async () => {
+        throw new Error('network down');
+      },
+      location: undefined,
+    });
+
+    expect(
+      env.document.querySelector('#sdk-script-snippet')?.textContent,
+    ).toContain('https://injected-window.example.com/sdk/singleton-iife.js');
+    expect(
+      env.document.querySelector('#origin-command')?.textContent,
+    ).toContain(
+      'npx auth-mini origin add ./auth-mini.sqlite --value https://docs.example.com',
+    );
   });
 
   it('stays neutral when no sdk-origin is configured', async () => {
@@ -249,10 +293,10 @@ describe('demo bootstrap', () => {
     );
     const { bootstrapDemoPage } = await import('../../demo/bootstrap.js');
     const ready = createDeferred();
-    const sdk = createFakeSdk({ ready: ready.promise });
+    env.window.AuthMini = createFakeSdk({ ready: ready.promise });
 
     const startup = runBootstrap(bootstrapDemoPage, env, {
-      loadSdkScript: async () => sdk,
+      loadSdkScript: async () => {},
     });
 
     expect(env.document.querySelector('#email-start-button')?.disabled).toBe(
@@ -281,10 +325,10 @@ describe('demo bootstrap', () => {
       'https://docs.example.com/demo/?sdk-origin=https://auth.example.com',
     );
     const { bootstrapDemoPage } = await import('../../demo/bootstrap.js');
-    const sdk = createFakeSdk();
+    env.window.AuthMini = createFakeSdk();
 
     await runBootstrap(bootstrapDemoPage, env, {
-      loadSdkScript: async () => sdk,
+      loadSdkScript: async () => {},
     });
 
     expect(env.document.querySelector('#email-start-button')?.disabled).toBe(
@@ -301,7 +345,7 @@ describe('demo bootstrap', () => {
     );
     const { bootstrapDemoPage } = await import('../../demo/bootstrap.js');
 
-    const sdk = createFakeSdk({
+    env.window.AuthMini = createFakeSdk({
       email: {
         start: async () => {
           throw new TypeError('Failed to fetch');
@@ -310,7 +354,7 @@ describe('demo bootstrap', () => {
     });
 
     await runBootstrap(bootstrapDemoPage, env, {
-      loadSdkScript: async () => sdk,
+      loadSdkScript: async () => {},
     });
 
     env.document.querySelector('#email')!.value = 'user@example.com';
@@ -330,10 +374,10 @@ describe('demo bootstrap', () => {
       { publicKeyCredential: undefined },
     );
     const { bootstrapDemoPage } = await import('../../demo/bootstrap.js');
-    const sdk = createFakeSdk();
+    env.window.AuthMini = createFakeSdk();
 
     await runBootstrap(bootstrapDemoPage, env, {
-      loadSdkScript: async () => sdk,
+      loadSdkScript: async () => {},
     });
 
     expect(env.document.querySelector('#register-output')?.textContent).toMatch(
@@ -349,10 +393,10 @@ describe('demo bootstrap', () => {
       'http://127.0.0.1:8080/demo/?sdk-origin=http://127.0.0.1:7777',
     );
     const { bootstrapDemoPage } = await import('../../demo/bootstrap.js');
-    const sdk = createFakeSdk();
+    env.window.AuthMini = createFakeSdk();
 
     await runBootstrap(bootstrapDemoPage, env, {
-      loadSdkScript: async () => sdk,
+      loadSdkScript: async () => {},
     });
 
     expect(env.document.querySelector('#register-button')?.disabled).toBe(
@@ -375,7 +419,9 @@ describe('demo bootstrap', () => {
     );
     applyGlobals(env);
     env.window.__AUTH_MINI_TEST_HOOKS__ = {
-      loadSdkScript: async () => createFakeSdk(),
+      loadSdkScript: async () => {
+        env.window.AuthMini = createFakeSdk();
+      },
     };
 
     vi.resetModules();
@@ -388,13 +434,7 @@ describe('demo bootstrap', () => {
     );
     expect(
       env.document.querySelector('#sdk-script-snippet')?.textContent,
-    ).toContain("import { createBrowserSdk } from 'auth-mini/sdk/browser';");
-    expect(
-      env.document.querySelector('#sdk-script-snippet')?.textContent,
-    ).toContain("createBrowserSdk('https://auth.example.com')");
-    expect(
-      env.document.querySelector('#deployment-notes-list')?.textContent,
-    ).toContain('auth-mini/sdk/browser');
+    ).toContain('https://auth.example.com/sdk/singleton-iife.js');
     expect(env.document.querySelector('#hero-capabilities li')?.tagName).toBe(
       'LI',
     );
@@ -405,10 +445,10 @@ describe('demo bootstrap', () => {
       'https://docs.example.com/demo/index.html?sdk-origin=https://auth-a.example.com#playground',
     );
     const { bootstrapDemoPage } = await import('../../demo/bootstrap.js');
-    const sdk = createFakeSdk();
+    env.window.AuthMini = createFakeSdk();
 
     await runBootstrap(bootstrapDemoPage, env, {
-      loadSdkScript: async () => sdk,
+      loadSdkScript: async () => {},
     });
 
     env.document.querySelector('#sdk-origin-input')!.value =
@@ -425,29 +465,6 @@ describe('demo bootstrap', () => {
     expect(env.window.location.hash).toBe('#playground');
     expect(env.window.location.reload).toHaveBeenCalledTimes(1);
   });
-
-  it('clearing sdk-origin removes the query param before reload', async () => {
-    const env = createTestEnvironment(
-      'https://docs.example.com/demo/index.html?sdk-origin=https://auth-a.example.com#playground',
-    );
-    const { bootstrapDemoPage } = await import('../../demo/bootstrap.js');
-    const sdk = createFakeSdk();
-
-    await runBootstrap(bootstrapDemoPage, env, {
-      loadSdkScript: async () => sdk,
-    });
-
-    env.document.querySelector('#sdk-origin-input')!.value = '   ';
-    await env.document.querySelector('#sdk-origin-input')!.dispatchEvent({
-      type: 'change',
-      preventDefault() {},
-    });
-
-    expect(env.window.location.search).toBe('');
-    expect(env.window.location.pathname).toBe('/demo/index.html');
-    expect(env.window.location.hash).toBe('#playground');
-    expect(env.window.location.reload).toHaveBeenCalledTimes(1);
-  });
 });
 
 function runBootstrap(
@@ -455,7 +472,7 @@ function runBootstrap(
   env: TestEnvironment,
   overrides: Partial<{
     location: FakeLocation | undefined;
-    loadSdkScript: () => Promise<FakeSdk>;
+    loadSdkScript: () => Promise<void>;
   }> = {},
 ) {
   return (
@@ -472,7 +489,7 @@ function runBootstrap(
 
 function createTestEnvironment(
   urlString: string,
-  options: { publicKeyCredential?: unknown } = {},
+  options: { autoFailScript?: boolean; publicKeyCredential?: unknown } = {},
 ): TestEnvironment {
   const location = Object.assign(new URL(urlString), { reload: vi.fn() });
   const localStorage = createStorage();
@@ -620,11 +637,19 @@ function createFakeSdk(
   return { ...sdk, ...overrides } as FakeSdk;
 }
 
-function createFakeDocument(): FakeDocument {
+function createFakeDocument(options: {
+  autoFailScript?: boolean;
+  publicKeyCredential?: unknown;
+}): FakeDocument {
   const elements = new Map<string, FakeElement>();
   const body = createElement('body');
   body.append = (...nodes: FakeElement[]) => {
     body.children.push(...nodes);
+    for (const node of nodes) {
+      if (options.autoFailScript && node.tagName === 'SCRIPT') {
+        queueMicrotask(() => node.dispatchEvent({ type: 'error' }));
+      }
+    }
   };
   body.appendChild = (node: FakeElement) => {
     body.append(node);

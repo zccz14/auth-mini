@@ -57,14 +57,14 @@
           </div>
 
           <details class="doc-details">
-            <summary>Show browser SDK base URL</summary>
+            <summary>Show SDK runtime target</summary>
             <label class="field compact-field">
-              <span>SDK base URL</span>
+              <span>SDK script URL</span>
               <input
                 id="base-url"
                 type="text"
                 readonly
-                placeholder="http://127.0.0.1:7777"
+                placeholder="http://127.0.0.1:7777/sdk/singleton-iife.js"
               />
             </label>
           </details>
@@ -97,10 +97,10 @@ npx auth-mini start ... --issuer https://auth.zccz14.com</pre
           </article>
 
           <details class="doc-details panel inset-panel">
-             <summary>Show browser module snippet</summary>
-             <pre id="sdk-script-snippet" class="doc-code">
- Runtime snippet target: Task 4 renders the config-derived auth-mini/sdk/browser import + createBrowserSdk(...) snippet here.</pre
-             >
+            <summary>Show browser script snippet</summary>
+            <pre id="sdk-script-snippet" class="doc-code">
+Runtime snippet target: Task 4 renders the config-derived script tag here.</pre
+            >
           </details>
         </div>
       </section>
@@ -129,8 +129,8 @@ npx auth-mini start ... --issuer https://auth.zccz14.com</pre
               </div>
 
               <p class="card-copy">
-                This page constructs the browser SDK from the auth server origin
-                so the SDK base URL and API origin stay aligned.
+                This page loads the singleton SDK from the auth server origin so
+                the script origin stays equal to the API origin.
               </p>
 
               <details class="doc-details inline-details">
@@ -212,7 +212,7 @@ No request yet.</pre
               </div>
 
               <p class="card-copy">
-                Uses <code>AuthMini.webauthn.register()</code> to fetch
+                Uses <code>window.AuthMini.webauthn.register()</code> to fetch
                 options, complete the browser passkey prompt, and verify the
                 credential.
               </p>
@@ -237,7 +237,7 @@ No request yet.</pre
 
               <p class="card-copy">
                 Starts a username-less passkey login through
-                <code>AuthMini.webauthn.authenticate()</code> and waits
+                <code>window.AuthMini.webauthn.authenticate()</code> and waits
                 until session + <code>/me</code> state are ready.
               </p>
 
@@ -330,8 +330,7 @@ No request yet.</pre
               <code>origin add</code> value.
             </li>
             <li>
-              The auth origin becomes the browser SDK base URL and the API
-              origin.
+              The auth origin becomes the SDK script origin and the API origin.
             </li>
             <li>
               WebAuthn and CORS depend on those values being configured
@@ -424,11 +423,9 @@ Runtime snippet target: Task 4 renders the jose JWT verification example here.</
         <div class="panel inset-panel">
           <ul id="deployment-notes-list" class="doc-list">
             <li>
-              Publish a static site root with sibling <code>demo/</code> and
-              <code>dist/</code> directories, then keep the demo page at
-              <code>/demo/</code> with its import map resolving
-              <code>auth-mini/sdk/browser</code> to
-              <code>../dist/sdk/browser.js</code> in the browser.
+              Publish the contents of <code>demo/</code> so
+              <code>index.html</code>, <code>./style.css</code>, and
+              <code>./main.js</code> stay path-safe on GitHub Pages.
             </li>
             <li>
               Store the final browser page origin with
@@ -446,13 +443,6 @@ Runtime snippet target: Task 4 renders the jose JWT verification example here.</
       </section>
     </main>
 
-    <script type="importmap">
-      {
-        "imports": {
-          "auth-mini/sdk/browser": "../dist/sdk/browser.js"
-        }
-      }
-    </script>
     <script type="module" src="./main.js"></script>
   </body>
 </html>

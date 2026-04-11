@@ -4,6 +4,7 @@ import { buildDemoContent } from '../../demo/content.js';
 const sampleState = {
   currentOrigin: 'https://docs.example.com',
   sdkOrigin: 'https://auth.zccz14.com',
+  sdkScriptUrl: 'https://auth.zccz14.com/sdk/singleton-iife.js',
   issuer: 'https://auth.zccz14.com',
   jwksUrl: 'https://auth.zccz14.com/jwks',
   suggestedOrigin: 'https://docs.example.com',
@@ -14,14 +15,11 @@ const sampleState = {
 };
 
 describe('demo content builders', () => {
-  it('builds browser sdk and jose snippets from the shared setup state', () => {
+  it('builds sdk script and jose snippets from the shared setup state', () => {
     const content = buildDemoContent(sampleState);
 
-    expect(content.sdkModuleSnippet).toContain(
-      "import { createBrowserSdk } from 'auth-mini/sdk/browser';",
-    );
-    expect(content.sdkModuleSnippet).toContain(
-      "const AuthMini = createBrowserSdk('https://auth.zccz14.com');",
+    expect(content.sdkScriptTag).toContain(
+      'https://auth.zccz14.com/sdk/singleton-iife.js',
     );
     expect(content.joseSnippet).toContain("new URL('/jwks', issuer)");
     expect(content.joseSnippet).toContain(
@@ -36,6 +34,7 @@ describe('demo content builders', () => {
     const content = buildDemoContent({
       ...sampleState,
       sdkOrigin: '',
+      sdkScriptUrl: '',
       issuer: '',
       jwksUrl: '',
     });
@@ -87,6 +86,7 @@ describe('demo content builders', () => {
       sdkOrigin: 'https://staging-auth.example.com',
       issuer: 'https://staging-auth.example.com',
       jwksUrl: 'https://staging-auth.example.com/jwks',
+      sdkScriptUrl: 'https://staging-auth.example.com/sdk/singleton-iife.js',
     });
 
     for (const entry of content.apiReference) {
@@ -99,12 +99,7 @@ describe('demo content builders', () => {
     const deploymentText = content.deploymentNotes.join('\n');
 
     expect(deploymentText).toContain('GitHub Pages');
-    expect(deploymentText).toContain(
-      'publish a static site root that keeps sibling demo/ and dist/ directories',
-    );
-    expect(deploymentText).toContain('auth-mini/sdk/browser');
-    expect(deploymentText).toContain('../dist/sdk/browser.js');
-    expect(deploymentText).toContain('/demo/');
+    expect(deploymentText).toContain('publish the contents of demo/');
     expect(deploymentText).toContain('CNAME');
     expect(deploymentText).toContain('origin add');
     expect(deploymentText).toContain('?sdk-origin=https://your-auth-origin');
@@ -221,9 +216,8 @@ describe('demo content builders', () => {
         'self-hosted',
       ]),
     );
-    expect(content.howItWorks.join('\n')).toContain('module construction');
+    expect(content.howItWorks.join('\n')).toContain('script origin');
     expect(content.howItWorks.join('\n')).toContain('origin add');
-    expect(content.howItWorks.join('\n')).toContain('import map');
     expect(content.howItWorks.join('\n')).toContain('WebAuthn');
   });
 

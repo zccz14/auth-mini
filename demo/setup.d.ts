@@ -3,10 +3,12 @@ export function getDemoSetupState(locationLike: {
   protocol: string;
   hostname: string;
   sdkOriginInput?: string;
+  sdkUrl?: string;
 }): {
   currentOrigin: string;
   suggestedOrigin: string;
   sdkOrigin: string;
+  sdkScriptUrl: string;
   issuer: string;
   jwksUrl: string;
   configStatus: string;

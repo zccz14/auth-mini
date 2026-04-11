@@ -44,8 +44,8 @@ export async function bootstrapDemoPage({
   }
 
   try {
-    const sdk = await loadSdkScript(setupState, { document });
-    runtime.attachSdk(sdk);
+    await loadSdkScript(setupState, { document });
+    runtime.attachSdk(windowObject.AuthMini);
     await runtime.completeStartup();
   } catch (error) {
     disableFlowButtons(document);
