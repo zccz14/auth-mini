@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FlowCard } from '@/components/app/flow-card';
 import { Button } from '@/components/ui/button';
 import { useDemo } from '@/app/providers/demo-provider';
@@ -87,6 +87,10 @@ export function CredentialsRoute() {
     passkey: false,
     ed25519: false,
   });
+  const pendingSectionsRef = useRef({
+    passkey: false,
+    ed25519: false,
+  });
   const [passkeyError, setPasskeyError] = useState('');
   const [ed25519Error, setEd25519Error] = useState('');
 
@@ -113,7 +117,7 @@ export function CredentialsRoute() {
     if (
       !authenticated ||
       !sdk ||
-      pendingSections[input.section] ||
+      pendingSectionsRef.current[input.section] ||
       !window.confirm(input.confirmMessage)
     ) {
       return;
@@ -122,6 +126,7 @@ export function CredentialsRoute() {
     const setError =
       input.section === 'passkey' ? setPasskeyError : setEd25519Error;
 
+    pendingSectionsRef.current[input.section] = true;
     setPendingSections((current) => ({
       ...current,
       [input.section]: true,
@@ -144,6 +149,7 @@ export function CredentialsRoute() {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Delete failed');
     } finally {
+      pendingSectionsRef.current[input.section] = false;
       setPendingSections((current) => ({
         ...current,
         [input.section]: false,

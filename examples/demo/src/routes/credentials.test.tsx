@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -436,17 +436,15 @@ describe('CredentialsRoute', () => {
       name: 'Delete device key Build runner',
     });
 
-    await user.click(passkeyDeleteButton);
+    act(() => {
+      fireEvent.click(passkeyDeleteButton);
+      fireEvent.click(secondPasskeyDeleteButton);
+    });
 
     expect(confirmSpy).toHaveBeenCalledTimes(1);
     expect(sdkMocks.fetch).toHaveBeenCalledTimes(1);
     expect(secondPasskeyDeleteButton).toBeDisabled();
     expect(deviceDeleteButton).not.toBeDisabled();
-
-    await user.click(secondPasskeyDeleteButton);
-
-    expect(confirmSpy).toHaveBeenCalledTimes(1);
-    expect(sdkMocks.fetch).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       resolveFetch?.(
