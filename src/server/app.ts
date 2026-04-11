@@ -13,8 +13,10 @@ import {
 } from '../modules/email-auth/service.js';
 import {
   logoutSession,
+  logoutPeerSession,
   refreshSessionTokens,
   SessionInvalidatedError,
+  SessionPeerLogoutSelfTargetError,
   SessionSupersededError,
 } from '../modules/session/service.js';
 import {
@@ -78,6 +80,7 @@ import {
   invalidRequestError,
   invalidWebauthnAuthenticationError,
   invalidWebauthnRegistrationError,
+  sessionPeerLogoutSelfTargetError,
   sessionInvalidatedError,
   sessionSupersededError,
   smtpNotConfiguredError,
@@ -299,6 +302,30 @@ export function createApp(input: {
     });
     return c.json({ ok: true });
   });
+
+  app.post(
+    '/session/:session_id/logout',
+    requireAccessToken,
+    requirePasskeyManagementAuth,
+    async (c) => {
+      try {
+        return c.json(
+          logoutPeerSession(c.var.db, {
+            currentSessionId: c.var.auth.sid,
+            targetSessionId: c.req.param('session_id'),
+            userId: c.var.auth.sub,
+            logger: c.var.logger,
+          }),
+        );
+      } catch (error) {
+        if (error instanceof SessionPeerLogoutSelfTargetError) {
+          throw sessionPeerLogoutSelfTargetError();
+        }
+
+        throw error;
+      }
+    },
+  );
 
   app.post(
     '/ed25519/credentials',

@@ -525,6 +525,96 @@ describe('session routes', () => {
     });
   });
 
+  it('email_otp can logout another active session without logging itself out', async () => {
+    const testApp = await createSignedInApp('peer-logout-email@example.com');
+    openApps.push(testApp);
+    const peer = createSession(testApp.db, {
+      userId: testApp.userId,
+      refreshTokenHash: hashValue('peer-refresh-token'),
+      authMethod: 'email_otp',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+    });
+
+    const logoutResponse = await testApp.app.request(`/session/${peer.id}/logout`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${testApp.tokens.access_token}`,
+      },
+    });
+    const meResponse = await testApp.app.request('/me', {
+      headers: {
+        authorization: `Bearer ${testApp.tokens.access_token}`,
+      },
+    });
+    const refreshResponse = await testApp.app.request('/session/refresh', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: json({ session_id: peer.id, refresh_token: 'peer-refresh-token' }),
+    });
+
+    expect(logoutResponse.status).toBe(200);
+    expect(await logoutResponse.json()).toEqual({ ok: true });
+    expect(meResponse.status).toBe(200);
+    expect(
+      (await meResponse.json()).active_sessions.map(
+        (session: { id: string }) => session.id,
+      ),
+    ).toEqual([testApp.sessionId]);
+    expect(refreshResponse.status).toBe(401);
+    expect(await refreshResponse.json()).toEqual({
+      error: 'session_invalidated',
+    });
+  });
+
+  it('webauthn can logout another active session', async () => {
+    const testApp = await createSignedInApp('peer-logout-webauthn@example.com');
+    openApps.push(testApp);
+    testApp.db
+      .prepare('UPDATE sessions SET auth_method = ? WHERE id = ?')
+      .run('webauthn', testApp.sessionId);
+    const accessToken = await jwksService.signJwt(testApp.db, {
+      sub: testApp.userId,
+      sid: testApp.sessionId,
+      iss: 'https://issuer.example',
+      amr: ['webauthn'],
+      typ: 'access',
+    });
+    const peer = createSession(testApp.db, {
+      userId: testApp.userId,
+      refreshTokenHash: hashValue('webauthn-peer-refresh-token'),
+      authMethod: 'email_otp',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+    });
+
+    const response = await testApp.app.request(`/session/${peer.id}/logout`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+  });
+
+  it('returns 400 when the target session id matches the current session id', async () => {
+    const testApp = await createSignedInApp('peer-logout-self@example.com');
+    openApps.push(testApp);
+
+    const response = await testApp.app.request(
+      `/session/${testApp.sessionId}/logout`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${testApp.tokens.access_token}`,
+        },
+      },
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'invalid_request' });
+  });
+
   it('me returns user id, email, credentials, and active sessions', async () => {
     const testApp = await createSignedInApp('me@example.com');
     openApps.push(testApp);
