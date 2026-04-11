@@ -3,7 +3,33 @@ import { useNavigate } from 'react-router-dom';
 import { FlowCard } from '@/components/app/flow-card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Separator } from '@/components/ui/separator';
 import { useDemo } from '@/app/providers/demo-provider';
+
+const LOCAL_AUTH_ORIGIN_FALLBACK = 'http://127.0.0.1:7777';
+const INSTANCE_PATH = './auth-mini.sqlite';
+
+function getStartupCommands(pageOrigin: string, authOriginCandidate: string) {
+  const pageUrl = new URL(pageOrigin);
+  let authUrl: URL;
+
+  try {
+    authUrl = new URL(authOriginCandidate.trim() || LOCAL_AUTH_ORIGIN_FALLBACK);
+  } catch {
+    authUrl = new URL(LOCAL_AUTH_ORIGIN_FALLBACK);
+  }
+
+  return [
+    `npx auth-mini init ${INSTANCE_PATH}`,
+    `npx auth-mini origin add ${INSTANCE_PATH} --value ${pageUrl.origin}`,
+    `npx auth-mini start ${INSTANCE_PATH} --host ${authUrl.hostname} --port ${
+      authUrl.port || (authUrl.protocol === 'https:' ? '443' : '80')
+    } --issuer ${authUrl.origin}`,
+    `npm run dev -- --host 127.0.0.1 --port ${
+      pageUrl.port || (pageUrl.protocol === 'https:' ? '443' : '80')
+    }`,
+  ];
+}
 
 export function SetupRoute() {
   const navigate = useNavigate();
@@ -13,6 +39,11 @@ export function SetupRoute() {
   useEffect(() => {
     setDraftAuthOrigin(config.authOrigin);
   }, [config.authOrigin]);
+
+  const startupCommands = getStartupCommands(
+    config.pageOrigin,
+    draftAuthOrigin || config.authOrigin,
+  );
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -56,6 +87,28 @@ export function SetupRoute() {
           <strong className="block text-slate-950">Page origin</strong>
           <div>{config.pageOrigin}</div>
         </div>
+
+        <Separator />
+
+        <section className="space-y-3 text-sm text-slate-600">
+          <div className="space-y-1">
+            <strong className="block text-slate-950">Startup commands</strong>
+            <p>
+              Launch the auth server and this demo from separate terminals, then
+              keep the auth server origin in sync with the value saved above.
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-slate-950 p-4 text-xs text-slate-100">
+            <pre className="space-y-2 whitespace-pre-wrap break-all font-mono">
+              {startupCommands.map((command) => (
+                <code className="block" key={command}>
+                  {command}
+                </code>
+              ))}
+            </pre>
+          </div>
+        </section>
       </form>
     </FlowCard>
   );

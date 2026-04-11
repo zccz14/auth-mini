@@ -17,6 +17,56 @@ function readHashAuthOrigin(hash: string) {
   return params.get('auth-origin') ?? '';
 }
 
+function parseConfiguredOrigin(candidateOrigin: string) {
+  const trimmedOrigin = candidateOrigin.trim();
+
+  if (!trimmedOrigin) {
+    return {
+      authOrigin: '',
+      configError:
+        'auth-origin must be configured before interactive flows are enabled.',
+      status: 'waiting' as const,
+    };
+  }
+
+  let parsedOrigin: URL;
+  try {
+    parsedOrigin = new URL(trimmedOrigin);
+  } catch {
+    return {
+      authOrigin: '',
+      configError: 'auth-origin must be a valid http or https origin.',
+      status: 'waiting' as const,
+    };
+  }
+
+  if (!['http:', 'https:'].includes(parsedOrigin.protocol)) {
+    return {
+      authOrigin: '',
+      configError: 'auth-origin must be a valid http or https origin.',
+      status: 'waiting' as const,
+    };
+  }
+
+  const hasOriginOnlyShape =
+    parsedOrigin.pathname === '/' && !parsedOrigin.search && !parsedOrigin.hash;
+
+  if (!hasOriginOnlyShape) {
+    return {
+      authOrigin: '',
+      configError:
+        'auth-origin must be an origin without a path, search, or hash.',
+      status: 'waiting' as const,
+    };
+  }
+
+  return {
+    authOrigin: parsedOrigin.origin,
+    configError: '',
+    status: 'ready' as const,
+  };
+}
+
 export function getInitialDemoConfig({
   hash,
   search,
@@ -31,21 +81,12 @@ export function getInitialDemoConfig({
   void search;
 
   const candidateOrigin = readHashAuthOrigin(hash) || storageOrigin;
-
-  if (!candidateOrigin) {
-    return {
-      authOrigin: '',
-      configError:
-        'auth-origin must be configured before interactive flows are enabled.',
-      pageOrigin,
-      status: 'waiting',
-    };
-  }
+  const configState = parseConfiguredOrigin(candidateOrigin);
 
   return {
-    authOrigin: candidateOrigin,
-    configError: '',
+    authOrigin: configState.authOrigin,
+    configError: configState.configError,
     pageOrigin,
-    status: 'ready',
+    status: configState.status,
   };
 }

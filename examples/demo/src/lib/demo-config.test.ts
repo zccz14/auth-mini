@@ -32,4 +32,58 @@ describe('getInitialDemoConfig', () => {
       status: 'ready',
     });
   });
+
+  it('treats an invalid hash auth-origin as blocking even when storage is valid', () => {
+    expect(
+      getInitialDemoConfig({
+        hash: '#/setup?auth-origin=ftp://auth.example.com',
+        search: '',
+        storageOrigin: 'https://auth.example.com',
+        pageOrigin: 'https://demo.example.com',
+      }),
+    ).toEqual({
+      authOrigin: '',
+      configError: 'auth-origin must be a valid http or https origin.',
+      pageOrigin: 'https://demo.example.com',
+      status: 'waiting',
+    });
+  });
+
+  it.each([
+    [
+      '',
+      'auth-origin must be configured before interactive flows are enabled.',
+    ],
+    ['not a url', 'auth-origin must be a valid http or https origin.'],
+    [
+      'ftp://auth.example.com',
+      'auth-origin must be a valid http or https origin.',
+    ],
+    [
+      'https://auth.example.com/path',
+      'auth-origin must be an origin without a path, search, or hash.',
+    ],
+    [
+      'https://auth.example.com?foo=bar',
+      'auth-origin must be an origin without a path, search, or hash.',
+    ],
+    [
+      'https://auth.example.com#fragment',
+      'auth-origin must be an origin without a path, search, or hash.',
+    ],
+  ])('rejects invalid auth origin %p', (storageOrigin, configError) => {
+    expect(
+      getInitialDemoConfig({
+        hash: '#/setup',
+        search: '',
+        storageOrigin,
+        pageOrigin: 'https://demo.example.com',
+      }),
+    ).toEqual({
+      authOrigin: '',
+      configError,
+      pageOrigin: 'https://demo.example.com',
+      status: 'waiting',
+    });
+  });
 });

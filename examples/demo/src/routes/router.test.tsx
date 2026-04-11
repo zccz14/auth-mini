@@ -28,6 +28,25 @@ describe('AppRouter', () => {
 
     expect(screen.getByLabelText('Auth server origin')).toBeInTheDocument();
     expect(screen.getByText('Page origin')).toBeInTheDocument();
+    expect(screen.getByText('Startup commands')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /launch the auth server and this demo from separate terminals/i,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'npx auth-mini origin add ./auth-mini.sqlite --value http://localhost:3000',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'npx auth-mini start ./auth-mini.sqlite --host 127.0.0.1 --port 7777 --issuer http://127.0.0.1:7777',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('npm run dev -- --host 127.0.0.1 --port 3000'),
+    ).toBeInTheDocument();
   });
 
   it('lets setup save an auth origin into app state', async () => {

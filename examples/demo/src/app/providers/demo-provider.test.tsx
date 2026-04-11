@@ -245,6 +245,34 @@ describe('DemoProvider', () => {
     }
   });
 
+  it.each([
+    'not a url',
+    'ftp://auth.example.com',
+    'https://auth.example.com/path',
+    'https://auth.example.com?foo=bar',
+    'https://auth.example.com#fragment',
+  ])(
+    'does not create the sdk when persisted auth origin is invalid: %s',
+    (authOrigin) => {
+      localStorage.setItem(AUTH_ORIGIN_KEY, authOrigin);
+
+      render(
+        <DemoProvider
+          initialLocation={{
+            hash: '#/',
+            search: '',
+            origin: 'https://demo.example.com',
+          }}
+        >
+          <Probe />
+        </DemoProvider>,
+      );
+
+      expect(screen.getByTestId('config-status')).toHaveTextContent('waiting');
+      expect(sdkMocks.createBrowserSdk).not.toHaveBeenCalled();
+    },
+  );
+
   it('clears persisted auth origin when local auth state is cleared', async () => {
     const user = userEvent.setup();
     localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
