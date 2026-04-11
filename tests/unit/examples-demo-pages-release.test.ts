@@ -50,11 +50,20 @@ describe('examples demo Pages release contract', () => {
 
   it('documents examples/demo as the current interactive demo source', () => {
     const readme = readRepoFile('README.md');
+    const docsSectionStart = readme.indexOf('## Docs and next steps');
 
-    expect(readme).toContain('`docs/`');
-    expect(readme).toContain('static reference source');
-    expect(readme).toContain('`examples/demo/`');
-    expect(readme).toContain('Pages publish target');
-    expect(readme).not.toContain('[`demo/`](demo/) is an interactive companion');
+    expect(docsSectionStart).toBeGreaterThanOrEqual(0);
+
+    const docsSectionEnd = readme.indexOf('\n## ', docsSectionStart + 1);
+    const docsSection = readme.slice(
+      docsSectionStart,
+      docsSectionEnd === -1 ? undefined : docsSectionEnd,
+    );
+
+    expect(readme).toMatch(/\[Live demo\]\([^\n)]+\)/);
+    expect(docsSection).toMatch(/`docs\/`[^\n]*canonical static reference source/);
+    expect(docsSection).toMatch(
+      /`examples\/demo\/`[\s\S]*current interactive demo source[\s\S]*Pages publish target/,
+    );
   });
 });
