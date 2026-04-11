@@ -110,7 +110,7 @@ describe('Ed25519Route', () => {
     ).toBeInTheDocument();
   });
 
-  it('registers a credential for the current signed-in user and refreshes credentials', async () => {
+  it('uses the last registered credential id to populate the sign-in input', async () => {
     const user = userEvent.setup();
     localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
     sdkMocks.sessionState.current = {
@@ -165,9 +165,18 @@ describe('Ed25519Route', () => {
     });
     expect(sdkMocks.meReload).toHaveBeenCalledTimes(1);
     expect(await screen.findAllByText(/"id": "cred-1"/)).toHaveLength(2);
-    expect(
-      screen.getByRole('button', { name: 'Use last registered credential id' }),
-    ).toBeEnabled();
+
+    const useLastRegisteredCredentialId = screen.getByRole('button', {
+      name: 'Use last registered credential id',
+    });
+    expect(useLastRegisteredCredentialId).toBeEnabled();
+
+    const credentialIdInput = screen.getByLabelText('Credential id');
+    expect(credentialIdInput).toHaveValue('');
+
+    await user.click(useLastRegisteredCredentialId);
+
+    expect(credentialIdInput).toHaveValue('cred-1');
   });
 
   it('keeps register disabled for invalid public key text', async () => {
