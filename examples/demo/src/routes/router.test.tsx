@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { AppRouter } from '../app/router';
+import { AUTH_ORIGIN_KEY } from '@/lib/demo-storage';
 
 describe('AppRouter', () => {
   it('renders top-level nav entries for the app shell', () => {
@@ -79,8 +80,6 @@ describe('AppRouter', () => {
     expect(
       await screen.findByText('Connected to https://auth.example.com'),
     ).toBeInTheDocument();
-    expect(localStorage.getItem('auth-mini-demo.auth-origin')).toBe(
-      'https://auth.example.com',
-    );
+    expect(localStorage.getItem(AUTH_ORIGIN_KEY)).toBe('https://auth.example.com');
   });
 });
