@@ -26,6 +26,7 @@ type DemoContextValue = {
   sdk: DemoSdk | null;
   session: DemoSession;
   user: DemoSession['me'];
+  setAuthOrigin: (authOrigin: string) => void;
 };
 
 const DemoContext = createContext<DemoContextValue | null>(null);
@@ -48,6 +49,9 @@ export function DemoProvider({
 
   const [sdk, setSdk] = useState<DemoSdk | null>(null);
   const [session, setSession] = useState<DemoSession>(ANONYMOUS_SESSION);
+  const [authOriginOverride, setAuthOriginOverride] = useState<string | null>(
+    null,
+  );
 
   let storage: Storage | undefined;
   if (typeof window !== 'undefined') {
@@ -58,7 +62,10 @@ export function DemoProvider({
     }
   }
 
-  const storageOrigin = getStoredAuthOrigin(storage);
+  const storageOrigin =
+    authOriginOverride === null
+      ? getStoredAuthOrigin(storage)
+      : authOriginOverride;
   const config = getInitialDemoConfig({
     hash: location.hash,
     search: location.search,
@@ -100,6 +107,9 @@ export function DemoProvider({
       config,
       sdk,
       session,
+      setAuthOrigin: (authOrigin) => {
+        setAuthOriginOverride(authOrigin.trim());
+      },
       user: session.me,
     }),
     [config, sdk, session],

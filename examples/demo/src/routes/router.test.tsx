@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { AppRouter } from '../app/router';
@@ -27,5 +28,27 @@ describe('AppRouter', () => {
 
     expect(screen.getByLabelText('Auth server origin')).toBeInTheDocument();
     expect(screen.getByText('Page origin')).toBeInTheDocument();
+  });
+
+  it('lets setup save an auth origin into app state', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <MemoryRouter initialEntries={['/setup']}>
+        <AppRouter />
+      </MemoryRouter>,
+    );
+
+    const input = screen.getByLabelText('Auth server origin');
+    await user.clear(input);
+    await user.type(input, 'https://auth.example.com');
+    await user.click(screen.getByRole('button', { name: 'Save origin' }));
+
+    expect(
+      await screen.findByText('Connected to https://auth.example.com'),
+    ).toBeInTheDocument();
+    expect(localStorage.getItem('auth-mini-demo.auth-origin')).toBe(
+      'https://auth.example.com',
+    );
   });
 });

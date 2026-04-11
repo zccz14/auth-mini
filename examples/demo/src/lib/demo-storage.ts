@@ -12,11 +12,19 @@ export function setStoredAuthOrigin(
   authOrigin: string,
   storage?: Pick<Storage, 'setItem'>,
 ) {
-  storage?.setItem(AUTH_ORIGIN_KEY, authOrigin);
+  try {
+    storage?.setItem(AUTH_ORIGIN_KEY, authOrigin);
+  } catch {
+    // ignore storage write failures and keep the app usable
+  }
 }
 
 export function clearStoredAuthOrigin(storage?: Pick<Storage, 'removeItem'>) {
-  storage?.removeItem(AUTH_ORIGIN_KEY);
+  try {
+    storage?.removeItem(AUTH_ORIGIN_KEY);
+  } catch {
+    // ignore storage write failures and keep the app usable
+  }
 }
 
 export { AUTH_ORIGIN_KEY };
