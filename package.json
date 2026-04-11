@@ -39,7 +39,7 @@
     "node": ">=20.10.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json --declaration && node dist/sdk/build-singleton-iife.js && node dist/sdk/build-singleton-dts.js",
+    "build": "node scripts/build-sdk.mjs",
     "test": "npm run typecheck && npm run test:unit && npm run test:integration",
     "test:unit": "node scripts/run-tests.js",
     "demo:build": "npm run build && npm --prefix examples/demo run build",
