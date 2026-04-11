@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -381,5 +381,71 @@ describe('CredentialsRoute', () => {
     expectDeleteConfirmation(confirmSpy, 'passkey');
     expect(sdkMocks.fetch).not.toHaveBeenCalled();
     expect(sdkMocks.reloadMe).not.toHaveBeenCalled();
+  });
+
+  it('blocks a second delete while another credential delete is in flight', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
+    sdkMocks.sessionState.current = authenticatedSession({
+      webauthn_credentials: [
+        {
+          id: 'passkey-row-1',
+          credential_id: 'passkey-credential-abcdef123456',
+          created_at: '2026-04-10T12:00:00.000Z',
+        },
+      ],
+      ed25519_credentials: [
+        {
+          id: 'device-row-1',
+          name: 'Build runner',
+          public_key: 'MCowBQYDK2VwAyEAlongPublicKeyValueForTesting1234567890=',
+          last_used_at: null,
+          created_at: '2026-04-09T09:15:00.000Z',
+        },
+      ],
+    });
+
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    let resolveFetch: ((value: Response) => void) | undefined;
+    sdkMocks.fetch.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+    sdkMocks.reloadMe.mockImplementationOnce(async () => sdkMocks.sessionState.current.me!);
+
+    render(
+      <MemoryRouter initialEntries={['/credentials']}>
+        <AppRouter />
+      </MemoryRouter>,
+    );
+
+    const passkeyDeleteButton = screen.getByRole('button', {
+      name: 'Delete passkey passkey-credential-abcdef123456',
+    });
+    const deviceDeleteButton = screen.getByRole('button', {
+      name: 'Delete device key Build runner',
+    });
+
+    await user.click(passkeyDeleteButton);
+
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(sdkMocks.fetch).toHaveBeenCalledTimes(1);
+    expect(deviceDeleteButton).toBeDisabled();
+
+    await user.click(deviceDeleteButton);
+
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(sdkMocks.fetch).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveFetch?.(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+    });
   });
 });

@@ -83,7 +83,7 @@ function getUserEd25519Credentials(user: unknown) {
 export function CredentialsRoute() {
   const { config, sdk, session, user } = useDemo();
   const [currentUser, setCurrentUser] = useState(user);
-  const [pendingSection, setPendingSection] = useState<
+  const [deletingSection, setDeletingSection] = useState<
     'passkey' | 'ed25519' | null
   >(null);
   const [passkeyError, setPasskeyError] = useState('');
@@ -103,20 +103,26 @@ export function CredentialsRoute() {
   const email = getUserEmail(currentUser);
   const passkeys = getUserPasskeys(currentUser);
   const ed25519Credentials = getUserEd25519Credentials(currentUser);
+  const isDeleting = deletingSection !== null;
 
   async function deleteCredential(input: {
     section: 'passkey' | 'ed25519';
     confirmMessage: string;
     path: string;
   }) {
-    if (!authenticated || !sdk || !window.confirm(input.confirmMessage)) {
+    if (
+      !authenticated ||
+      !sdk ||
+      isDeleting ||
+      !window.confirm(input.confirmMessage)
+    ) {
       return;
     }
 
     const setError =
       input.section === 'passkey' ? setPasskeyError : setEd25519Error;
 
-    setPendingSection(input.section);
+    setDeletingSection(input.section);
     setError('');
 
     try {
@@ -135,7 +141,7 @@ export function CredentialsRoute() {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Delete failed');
     } finally {
-      setPendingSection(null);
+      setDeletingSection(null);
     }
   }
 
@@ -221,7 +227,7 @@ export function CredentialsRoute() {
                       <td className="py-3 pr-4">{row.created_at}</td>
                       <td className="py-3">
                         <Button
-                          disabled={pendingSection === 'passkey'}
+                          disabled={isDeleting}
                           aria-label={`Delete passkey ${row.credential_id}`}
                           onClick={() =>
                             void deleteCredential({
@@ -231,7 +237,7 @@ export function CredentialsRoute() {
                             })
                           }
                         >
-                          {pendingSection === 'passkey' ? 'Deleting…' : 'Delete'}
+                          {deletingSection === 'passkey' ? 'Deleting…' : 'Delete'}
                         </Button>
                       </td>
                     </tr>
@@ -289,7 +295,7 @@ export function CredentialsRoute() {
                       <td className="py-3 pr-4">{row.created_at}</td>
                       <td className="py-3">
                         <Button
-                          disabled={pendingSection === 'ed25519'}
+                          disabled={isDeleting}
                           aria-label={`Delete device key ${row.name}`}
                           onClick={() =>
                             void deleteCredential({
@@ -299,7 +305,7 @@ export function CredentialsRoute() {
                             })
                           }
                         >
-                          {pendingSection === 'ed25519' ? 'Deleting…' : 'Delete'}
+                          {deletingSection === 'ed25519' ? 'Deleting…' : 'Delete'}
                         </Button>
                       </td>
                     </tr>
