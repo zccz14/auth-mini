@@ -74,8 +74,6 @@ describe('examples demo dev helper script', () => {
     }
 
     const originalSource = readFileSync(singletonGlobalPath, 'utf8');
-    const initialIifeMtime = (await stat(singletonIifePath)).mtimeMs;
-    const initialDtsMtime = (await stat(singletonDtsPath)).mtimeMs;
     const child = spawn('npm', ['run', 'build', '--', '--watch'], {
       cwd: repoRoot,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -96,7 +94,19 @@ describe('examples demo dev helper script', () => {
         20000,
       );
 
+      await waitFor(async () => {
+        try {
+          await Promise.all([stat(singletonIifePath), stat(singletonDtsPath)]);
+          return true;
+        } catch {
+          return false;
+        }
+      }, 20000);
+
       expect(child.exitCode).toBeNull();
+
+      const initialIifeMtime = (await stat(singletonIifePath)).mtimeMs;
+      const initialDtsMtime = (await stat(singletonDtsPath)).mtimeMs;
 
       await writeFile(singletonGlobalPath, `${originalSource}\n`, 'utf8');
 
