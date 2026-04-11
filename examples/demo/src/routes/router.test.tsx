@@ -18,6 +18,7 @@ describe('AppRouter', () => {
 
     expect(screen.getByRole('link', { name: 'Home' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Setup' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Credentials' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Email' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'ED25519' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Passkey' })).toBeInTheDocument();
@@ -44,6 +45,21 @@ describe('AppRouter', () => {
     expect(
       screen.getByRole('button', { name: 'Sign in with private key' }),
     ).toBeInTheDocument();
+  });
+
+  it('renders the credentials route', () => {
+    render(
+      <MemoryRouter initialEntries={['/credentials']}>
+        <AppRouter />
+      </MemoryRouter>,
+    );
+
+    expect(
+      screen.getByRole('heading', { name: 'Credentials' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Email')).toBeInTheDocument();
+    expect(screen.getByText('Passkey')).toBeInTheDocument();
+    expect(screen.getByText('Ed25519')).toBeInTheDocument();
   });
 
   it('renders the setup route with an auth origin form', () => {
