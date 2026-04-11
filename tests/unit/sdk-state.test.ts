@@ -105,6 +105,45 @@ describe('sdk state store', () => {
     expect(typeof unsubscribe).toBe('function');
   });
 
+  it('returns nested immutable me snapshots from the public singleton api', () => {
+    const storage = fakeStorage();
+    seedBrowserSdkStorage(storage, 'https://auth.example.com', {
+      sessionId: 'session-1',
+      refreshToken: 'rt',
+      expiresAt: '2026-04-03T00:00:00.000Z',
+      me: {
+        user_id: 'u',
+        email: 'u@example.com',
+        webauthn_credentials: [
+          {
+            id: 'cred-1',
+            credential_id: 'device-1',
+            transports: ['usb'],
+            created_at: '2026-04-03T00:00:00.000Z',
+          },
+        ],
+        ed25519_credentials: [],
+        active_sessions: [],
+      },
+    });
+
+    const sdk = createSingletonSdk({
+      baseUrl: 'https://auth.example.com',
+      storage,
+    });
+    const snapshot = sdk.session.getState();
+
+    expect(() => {
+      if (!snapshot.me) {
+        throw new Error('expected me snapshot');
+      }
+      snapshot.me.webauthn_credentials[0].credential_id = 'mutated-device';
+    }).toThrow();
+    expect(sdk.session.getState().me?.webauthn_credentials).toEqual([
+      expect.objectContaining({ credential_id: 'device-1' }),
+    ]);
+  });
+
   it('returns immutable snapshots from the state store', () => {
     const sdk = createStateStore(fakeStorage());
 
@@ -146,7 +185,14 @@ describe('sdk state store', () => {
     const me: MeResponse = {
       user_id: 'u',
       email: 'u@example.com',
-      webauthn_credentials: [],
+      webauthn_credentials: [
+        {
+          id: 'cred-1',
+          credential_id: 'device-1',
+          transports: ['usb'],
+          created_at: '2026-04-03T00:00:00.000Z',
+        },
+      ],
       ed25519_credentials: [],
       active_sessions: [],
     };
@@ -161,11 +207,13 @@ describe('sdk state store', () => {
     });
 
     me.email = 'mutated@example.com';
-    me.webauthn_credentials.push('new-device');
+    me.webauthn_credentials[0].credential_id = 'mutated-device';
 
     expect(Object.isFrozen(me)).toBe(false);
     expect(sdk.getState().me).toMatchObject({ email: 'u@example.com' });
-    expect(sdk.getState().me?.webauthn_credentials).toEqual([]);
+    expect(sdk.getState().me?.webauthn_credentials).toEqual([
+      expect.objectContaining({ credential_id: 'device-1' }),
+    ]);
   });
 
   it('adopts external persisted session updates through the store api', () => {
