@@ -734,6 +734,11 @@ describe('session routes', () => {
         refresh_token: 'foreign-refresh-token',
       }),
     });
+    const meResponse = await testApp.app.request('/me', {
+      headers: {
+        authorization: `Bearer ${testApp.tokens.access_token}`,
+      },
+    });
 
     expect(logoutResponse.status).toBe(200);
     expect(await logoutResponse.json()).toEqual({ ok: true });
@@ -741,11 +746,20 @@ describe('session routes', () => {
     expect(await refreshResponse.json()).toMatchObject({
       session_id: foreignSession.id,
     });
+    expect(meResponse.status).toBe(200);
+    expect(
+      (await meResponse.json()).active_sessions.map(
+        (session: { id: string }) => session.id,
+      ),
+    ).toEqual([testApp.sessionId]);
   });
 
   it('returns ok for a missing target session id', async () => {
     const testApp = await createSignedInApp('peer-logout-missing@example.com');
     openApps.push(testApp);
+    const beforeLogout = testApp.db
+      .prepare('SELECT expires_at FROM sessions WHERE id = ?')
+      .get(testApp.sessionId) as { expires_at: string };
 
     const response = await testApp.app.request(
       '/session/00000000-0000-0000-0000-000000000000/logout',
@@ -756,9 +770,24 @@ describe('session routes', () => {
         },
       },
     );
+    const afterLogout = testApp.db
+      .prepare('SELECT expires_at FROM sessions WHERE id = ?')
+      .get(testApp.sessionId) as { expires_at: string };
+    const meResponse = await testApp.app.request('/me', {
+      headers: {
+        authorization: `Bearer ${testApp.tokens.access_token}`,
+      },
+    });
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
+    expect(afterLogout).toEqual(beforeLogout);
+    expect(meResponse.status).toBe(200);
+    expect(
+      (await meResponse.json()).active_sessions.map(
+        (session: { id: string }) => session.id,
+      ),
+    ).toEqual([testApp.sessionId]);
   });
 
   it('returns ok for an already expired target session id', async () => {
@@ -770,6 +799,12 @@ describe('session routes', () => {
       authMethod: 'email_otp',
       expiresAt: '2020-01-01T00:00:00.000Z',
     });
+    const beforeCurrentSession = testApp.db
+      .prepare('SELECT expires_at FROM sessions WHERE id = ?')
+      .get(testApp.sessionId) as { expires_at: string };
+    const beforeExpiredPeer = testApp.db
+      .prepare('SELECT expires_at FROM sessions WHERE id = ?')
+      .get(expiredPeer.id) as { expires_at: string };
 
     const response = await testApp.app.request(`/session/${expiredPeer.id}/logout`, {
       method: 'POST',
@@ -777,9 +812,28 @@ describe('session routes', () => {
         authorization: `Bearer ${testApp.tokens.access_token}`,
       },
     });
+    const afterCurrentSession = testApp.db
+      .prepare('SELECT expires_at FROM sessions WHERE id = ?')
+      .get(testApp.sessionId) as { expires_at: string };
+    const afterExpiredPeer = testApp.db
+      .prepare('SELECT expires_at FROM sessions WHERE id = ?')
+      .get(expiredPeer.id) as { expires_at: string };
+    const meResponse = await testApp.app.request('/me', {
+      headers: {
+        authorization: `Bearer ${testApp.tokens.access_token}`,
+      },
+    });
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
+    expect(afterCurrentSession).toEqual(beforeCurrentSession);
+    expect(afterExpiredPeer).toEqual(beforeExpiredPeer);
+    expect(meResponse.status).toBe(200);
+    expect(
+      (await meResponse.json()).active_sessions.map(
+        (session: { id: string }) => session.id,
+      ),
+    ).toEqual([testApp.sessionId]);
   });
 
   it('returns 400 when the target session id matches the current session id', async () => {
