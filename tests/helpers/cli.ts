@@ -106,14 +106,7 @@ async function preparePackedCliInstall(): Promise<string> {
     try {
       const installResult = await runCommand(
         npmCommand,
-        [
-          'install',
-          '--ignore-scripts',
-          '--no-package-lock',
-          '--prefix',
-          installDir,
-          tarball,
-        ],
+        getPackedInstallArgs(installDir, tarball),
         { cwd: stageDir },
       );
 
@@ -304,6 +297,13 @@ async function ensurePackedArtifactSource(): Promise<void> {
       buildResult.stderr || buildResult.stdout || 'CLI build failed',
     );
   }
+}
+
+export function getPackedInstallArgs(
+  installDir: string,
+  tarball: string,
+): string[] {
+  return ['install', '--no-package-lock', '--prefix', installDir, tarball];
 }
 
 function resolveShellCommand(command: 'npm' | 'npx'): string {
