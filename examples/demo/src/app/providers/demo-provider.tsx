@@ -107,6 +107,9 @@ export function DemoProvider({
     () => ({
       config,
       clearLocalAuthState: async () => {
+        setAuthOriginOverride('');
+        clearStoredAuthOrigin(storage);
+
         if (!sdk) {
           setSession(ANONYMOUS_SESSION);
           return;

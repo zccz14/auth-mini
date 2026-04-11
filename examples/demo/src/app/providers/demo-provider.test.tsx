@@ -1,5 +1,6 @@
 import React from 'react';
 import { act, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AUTH_ORIGIN_KEY } from '@/lib/demo-storage';
 import { DemoProvider, useDemo } from './demo-provider';
@@ -41,12 +42,32 @@ const sdkMocks = vi.hoisted(() => {
     return unsubscribe;
   });
 
+  const logout = vi.fn(async () => {
+    sessionState.current = {
+      status: 'anonymous',
+      authenticated: false,
+      sessionId: null,
+      accessToken: null,
+      refreshToken: null,
+      receivedAt: null,
+      expiresAt: null,
+      me: null,
+    };
+  });
+
   const createBrowserSdk = vi.fn(() => ({
-    session: { getState: () => sessionState.current, onChange },
+    session: { getState: () => sessionState.current, onChange, logout },
     me: { get: () => sessionState.current.me, reload: vi.fn() },
   }));
 
-  return { createBrowserSdk, listeners, onChange, sessionState, unsubscribe };
+  return {
+    createBrowserSdk,
+    listeners,
+    logout,
+    onChange,
+    sessionState,
+    unsubscribe,
+  };
 });
 
 vi.mock('auth-mini/sdk/browser', () => ({
@@ -60,6 +81,9 @@ function Probe() {
       <span data-testid="config-status">{demo.config.status}</span>
       <span data-testid="session-status">{demo.session.status}</span>
       <span data-testid="user-email">{demo.user?.email ?? 'none'}</span>
+      <button onClick={() => void demo.clearLocalAuthState()}>
+        Clear local auth state
+      </button>
     </div>
   );
 }
@@ -69,6 +93,7 @@ describe('DemoProvider', () => {
     localStorage.clear();
     sdkMocks.createBrowserSdk.mockClear();
     sdkMocks.onChange.mockClear();
+    sdkMocks.logout.mockClear();
     sdkMocks.unsubscribe.mockClear();
     sdkMocks.listeners.length = 0;
     sdkMocks.sessionState.current = {
@@ -218,5 +243,46 @@ describe('DemoProvider', () => {
         Object.defineProperty(window, 'localStorage', localStorageDescriptor);
       }
     }
+  });
+
+  it('clears persisted auth origin when local auth state is cleared', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
+    sdkMocks.sessionState.current = {
+      status: 'authenticated',
+      authenticated: true,
+      sessionId: 'session-1',
+      accessToken: 'access-token',
+      refreshToken: 'refresh-token',
+      receivedAt: '2026-04-11T00:00:00.000Z',
+      expiresAt: '2026-04-11T01:00:00.000Z',
+      me: {
+        user_id: 'user-1',
+        email: 'first@example.com',
+        webauthn_credentials: [],
+        active_sessions: [],
+      },
+    };
+
+    render(
+      <DemoProvider
+        initialLocation={{
+          hash: '#/session',
+          search: '',
+          origin: 'https://demo.example.com',
+        }}
+      >
+        <Probe />
+      </DemoProvider>,
+    );
+
+    await user.click(
+      screen.getByRole('button', { name: 'Clear local auth state' }),
+    );
+
+    expect(sdkMocks.logout).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('config-status')).toHaveTextContent('waiting');
+    expect(screen.getByTestId('session-status')).toHaveTextContent('anonymous');
+    expect(localStorage.getItem(AUTH_ORIGIN_KEY)).toBeNull();
   });
 });
