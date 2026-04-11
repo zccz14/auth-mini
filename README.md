@@ -10,8 +10,9 @@ Minimal, opinionated authentication server for apps that just need a solid authe
 
 - 🔒 Password-less Authentication
   - 📧 Email One-Time Password (OTP) sign-in
-  - 🔑 Passkey (WebAuthn) registration and sign-in
-- 🔐 Session Management
+  - 🔑 Passkey (WebAuthn) sign-in
+  - 🔐 Ed25519 (EdDSA) sign-in for non-browser clients without WebAuthn support
+- 🔄 Session Management
   - Issue JSON Web Token (JWT) access tokens for backend stateless verification
   - CURRENT/STANDBY JWKS key pairs for smooth key rotation
   - Issue opaque refresh tokens for long-term sessions and easy revocation while keeping JWTs short-lived
@@ -74,6 +75,8 @@ sequenceDiagram
     Frontend->>Auth: POST /webauthn/authenticate/verify
     Auth-->>Frontend: session_id + access token + refresh token
 ```
+
+### Device sign-in with Ed25519 keys
 
 ### Frontend -> backend -> `/jwks` verification
 
