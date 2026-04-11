@@ -2,7 +2,11 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { PropsWithChildren } from 'react';
 import { getInitialDemoConfig } from '@/lib/demo-config';
 import { createDemoSdk, type DemoSdk } from '@/lib/demo-sdk';
-import { getStoredAuthOrigin } from '@/lib/demo-storage';
+import {
+  clearStoredAuthOrigin,
+  getStoredAuthOrigin,
+  setStoredAuthOrigin,
+} from '@/lib/demo-storage';
 
 const ANONYMOUS_SESSION = {
   status: 'anonymous',
@@ -61,6 +65,19 @@ export function DemoProvider({
     storageOrigin,
     pageOrigin: location.origin,
   });
+
+  useEffect(() => {
+    if (!storage) {
+      return;
+    }
+
+    if (config.status === 'ready') {
+      setStoredAuthOrigin(config.authOrigin, storage);
+      return;
+    }
+
+    clearStoredAuthOrigin(storage);
+  }, [config.authOrigin, config.status, storage]);
 
   useEffect(() => {
     if (config.status !== 'ready') {

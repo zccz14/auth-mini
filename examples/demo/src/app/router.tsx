@@ -4,6 +4,8 @@ import { JsonPanel } from '@/components/app/json-panel';
 import { Separator } from '@/components/ui/separator';
 import { AppShell } from '@/components/app/app-shell';
 import { DemoProvider, useDemo } from '@/app/providers/demo-provider';
+import { HomeRoute } from '@/routes/home';
+import { SetupRoute } from '@/routes/setup';
 
 function Placeholder({ title }: { title: string }) {
   const demo = useDemo();
@@ -29,8 +31,8 @@ export function AppRouter() {
     <DemoProvider>
       <Routes>
         <Route element={<AppShell />}>
-          <Route path="/" element={<Placeholder title="Home" />} />
-          <Route path="/setup" element={<Placeholder title="Setup" />} />
+          <Route path="/" element={<HomeRoute />} />
+          <Route path="/setup" element={<SetupRoute />} />
           <Route path="/email" element={<Placeholder title="Email" />} />
           <Route path="/passkey" element={<Placeholder title="Passkey" />} />
           <Route path="/session" element={<Placeholder title="Session" />} />

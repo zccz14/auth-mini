@@ -17,4 +17,15 @@ describe('AppRouter', () => {
     expect(screen.getByRole('link', { name: 'Passkey' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Session' })).toBeInTheDocument();
   });
+
+  it('renders the setup route with an auth origin form', () => {
+    render(
+      <MemoryRouter initialEntries={['/setup']}>
+        <AppRouter />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByLabelText('Auth server origin')).toBeInTheDocument();
+    expect(screen.getByText('Page origin')).toBeInTheDocument();
+  });
 });

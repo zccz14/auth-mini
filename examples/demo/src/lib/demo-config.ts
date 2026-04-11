@@ -7,6 +7,16 @@ export type DemoConfig = {
   status: DemoConfigStatus;
 };
 
+function readHashAuthOrigin(hash: string) {
+  const queryIndex = hash.indexOf('?');
+  if (queryIndex < 0) {
+    return '';
+  }
+
+  const params = new URLSearchParams(hash.slice(queryIndex + 1));
+  return params.get('auth-origin') ?? '';
+}
+
 export function getInitialDemoConfig({
   hash,
   search,
@@ -18,10 +28,11 @@ export function getInitialDemoConfig({
   storageOrigin: string;
   pageOrigin: string;
 }): DemoConfig {
-  void hash;
   void search;
 
-  if (!storageOrigin) {
+  const candidateOrigin = readHashAuthOrigin(hash) || storageOrigin;
+
+  if (!candidateOrigin) {
     return {
       authOrigin: '',
       configError:
@@ -32,7 +43,7 @@ export function getInitialDemoConfig({
   }
 
   return {
-    authOrigin: storageOrigin,
+    authOrigin: candidateOrigin,
     configError: '',
     pageOrigin,
     status: 'ready',

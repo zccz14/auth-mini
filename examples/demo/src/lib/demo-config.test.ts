@@ -18,4 +18,18 @@ describe('getInitialDemoConfig', () => {
       status: 'waiting',
     });
   });
+
+  it('prefers the hash auth-origin query over storage', () => {
+    expect(
+      getInitialDemoConfig({
+        hash: '#/setup?auth-origin=https://auth.example.com',
+        search: '',
+        storageOrigin: 'https://stale.example.com',
+        pageOrigin: 'https://demo.example.com',
+      }),
+    ).toMatchObject({
+      authOrigin: 'https://auth.example.com',
+      status: 'ready',
+    });
+  });
 });
