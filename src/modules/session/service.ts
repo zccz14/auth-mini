@@ -9,6 +9,7 @@ import {
 import { generateOpaqueToken, hashValue } from '../../shared/crypto.js';
 import {
   createSession,
+  expireOtherActiveSessionById,
   expireSessionById,
   getSessionById,
   rotateRefreshToken,
@@ -32,6 +33,12 @@ export class SessionInvalidatedError extends Error {
 export class SessionSupersededError extends Error {
   constructor() {
     super('session_superseded');
+  }
+}
+
+export class SessionPeerLogoutSelfTargetError extends Error {
+  constructor() {
+    super('session_peer_logout_self_target');
   }
 }
 
@@ -267,4 +274,39 @@ export function logoutSession(
     },
     'Session logout succeeded',
   );
+}
+
+export function logoutPeerSession(
+  db: DatabaseClient,
+  input: {
+    currentSessionId: string;
+    targetSessionId: string;
+    userId: string;
+    logger?: AppLogger;
+  },
+): { ok: true } {
+  if (input.targetSessionId === input.currentSessionId) {
+    throw new SessionPeerLogoutSelfTargetError();
+  }
+
+  const expired = expireOtherActiveSessionById(db, {
+    currentSessionId: input.currentSessionId,
+    targetSessionId: input.targetSessionId,
+    userId: input.userId,
+    now: new Date().toISOString(),
+  });
+
+  if (expired) {
+    input.logger?.info(
+      {
+        event: 'session.peer_logout.succeeded',
+        session_id: input.targetSessionId,
+        actor_session_id: input.currentSessionId,
+        user_id: input.userId,
+      },
+      'Session peer logout succeeded',
+    );
+  }
+
+  return { ok: true };
 }
