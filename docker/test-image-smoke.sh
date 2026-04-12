@@ -2,10 +2,10 @@
 set -euo pipefail
 
 REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
-IMAGE_TAG="auth-mini:test"
+IMAGE_TAG="${IMAGE_TAG:-auth-mini:test}"
 IMAGE_PLATFORM="${IMAGE_PLATFORM:-linux/amd64}"
 DEFAULT_START_ARGS=(auth-mini start /data/auth.sqlite --port 7777)
-DOCKERFILE_PATH="$REPO_ROOT/Dockerfile"
+DOCKERFILE_PATH="$REPO_ROOT/build/Dockerfile"
 RUN_CONTAINERS=()
 RUN_VOLUMES=()
 RUN_DIRS=()
@@ -183,11 +183,9 @@ except urllib.error.HTTPError as error:
 PY
 }
 
-python3 -c 'import os, subprocess, sys; cmd=["docker","build","--platform",os.getenv("IMAGE_PLATFORM", "linux/amd64"),"-t","auth-mini:test",sys.argv[1]]
-try:
- subprocess.run(cmd, check=True, timeout=180)
-except subprocess.TimeoutExpired:
- print("docker build timed out; check Docker Hub connectivity for node:24.14.1-trixie-slim", file=sys.stderr); raise SystemExit(1)' "$REPO_ROOT"
+if [[ "${SKIP_IMAGE_BUILD:-0}" != "1" ]]; then
+	bash "$REPO_ROOT/scripts/build-runtime-image.sh" "$IMAGE_TAG"
+fi
 
 start_image() {
 	local dir="$1"

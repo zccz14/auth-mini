@@ -8,7 +8,7 @@ if [[ "$MODE" != "validation" && "$MODE" != "supervision" ]]; then
 fi
 
 REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
-IMAGE_TAG="auth-mini:test-entrypoint"
+IMAGE_TAG="${IMAGE_TAG:-auth-mini:test-entrypoint}"
 IMAGE_PLATFORM="${IMAGE_PLATFORM:-linux/amd64}"
 DEFAULT_START_ARGS=(auth-mini start /data/auth.sqlite --port 7777)
 RUN_CONTAINERS=()
@@ -146,11 +146,9 @@ assert_status_eq() {
 	fi
 }
 
-python3 -c 'import os, subprocess, sys; cmd=["docker","build","--platform",os.getenv("IMAGE_PLATFORM", "linux/amd64"),"-t","auth-mini:test-entrypoint",sys.argv[1]]
-try:
- subprocess.run(cmd, check=True, timeout=180)
-except subprocess.TimeoutExpired:
- print("docker build timed out; check Docker Hub connectivity for node:24.14.1-trixie-slim", file=sys.stderr); raise SystemExit(1)' "$REPO_ROOT"
+if [[ "${SKIP_IMAGE_BUILD:-0}" != "1" ]]; then
+	bash "$REPO_ROOT/scripts/build-runtime-image.sh" "$IMAGE_TAG"
+fi
 
 start_stub_container() {
 	local dir="$1"

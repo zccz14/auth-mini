@@ -81,6 +81,8 @@ out
 # Nuxt.js build / generate output
 .nuxt
 dist
+build/runtime/
+build/.tmp/
 .worktrees/
 *.sqlite
 *.sqlite-shm

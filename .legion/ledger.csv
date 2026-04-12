@@ -31,3 +31,12 @@
 2026-04-09T10:14:21.989Z,legion_update_context,docker-runtime-slim-entrypoint,Docker runtime slim + entrypoint 评估,Claude,addDecision: 用 Node launcher 取代 shell entrypoint,success
 2026-04-09T12:28:13.897Z,legion_update_context,docker-runtime-slim-entrypoint,Docker runtime slim + entrypoint 评估,Claude,addDecision: 不再新增 launcher 或 index.ts 级包装逻辑,success
 2026-04-09T12:28:19.515Z,legion_update_tasks,docker-runtime-slim-entrypoint,Docker runtime slim + entrypoint 评估,Claude,completeTask: 为 auth-mini stub 增加 token 不继承的安全回归断言,success
+2026-04-10T14:49:59.202Z,legion_list_tasks,docker-runtime-slim-entrypoint,Docker runtime slim + entrypoint 评估,Claude,,success
+2026-04-10T14:49:59.209Z,legion_get_status,docker-runtime-slim-entrypoint,Docker runtime slim + entrypoint 评估,Claude,,success
+2026-04-10T14:50:05.375Z,legion_archive_task,docker-runtime-slim-entrypoint,Docker runtime slim + entrypoint 评估,Claude,taskId: docker-runtime-slim-entrypoint,success
+2026-04-10T14:50:26.217Z,legion_create_task,,,Claude,goal: 将 Docker 镜像构建从应用编译流程中解耦，让 CI 先产出 Linux runtime artifact，Dockerfile 只负责 copy + 封装运行时。,failed
+2026-04-10T14:50:42.785Z,legion_propose_task,,,Claude,name: docker-runtime-copy-only-packaging,success
+2026-04-10T14:50:52.032Z,legion_approve_proposal,docker-runtime-copy-only-packaging,docker-runtime-copy-only-packaging,Claude,proposalId: proposal-mnt0wkpq-f9e9bb,success
+2026-04-10T14:51:05.865Z,legion_switch_task,docker-runtime-copy-only-packaging,docker-runtime-copy-only-packaging,Claude,taskId: docker-runtime-copy-only-packaging,success
+2026-04-10T14:51:05.866Z,legion_list_tasks,docker-runtime-copy-only-packaging,docker-runtime-copy-only-packaging,Claude,,success
+2026-04-11T09:34:24.183Z,legion_get_status,docker-runtime-copy-only-packaging,docker-runtime-copy-only-packaging,Claude,,success

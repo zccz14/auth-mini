@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "currentTask": "docker-runtime-slim-entrypoint",
+  "currentTask": "docker-runtime-copy-only-packaging",
   "settings": {
     "autoRemind": true,
     "remindBeforeReset": true,
@@ -10,9 +10,16 @@
     {
       "id": "docker-runtime-slim-entrypoint",
       "name": "Docker runtime slim + entrypoint 评估",
-      "status": "active",
+      "status": "archived",
       "createdAt": "2026-04-09T08:59:25.936Z",
-      "updatedAt": "2026-04-09T12:28:19.515Z"
+      "updatedAt": "2026-04-10T14:50:05.374Z"
+    },
+    {
+      "id": "docker-runtime-copy-only-packaging",
+      "name": "docker-runtime-copy-only-packaging",
+      "status": "active",
+      "createdAt": "2026-04-10T14:50:52.027Z",
+      "updatedAt": "2026-04-10T14:51:05.864Z"
     }
   ],
   "pendingProposals": [
@@ -73,6 +80,74 @@
       "decidedAt": "2026-04-09T08:59:25.936Z",
       "decidedBy": "Claude",
       "createdTaskId": "docker-runtime-slim-entrypoint"
+    },
+    {
+      "id": "proposal-mnt0wkpq-f9e9bb",
+      "name": "docker-runtime-copy-only-packaging",
+      "goal": "将 Docker 镜像构建从应用编译流程中解耦，让 CI 先产出 Linux runtime artifact，Dockerfile 只负责 copy + 封装运行时。",
+      "rationale": "当前 release-image workflow 在 Docker build 内执行 `npm ci` / build / prune，导致镜像构建过重、错误信号混入镜像封装阶段，也不符合“尽量多 copy、尽量少在 Dockerfile 里 build”的目标。需要开新 task 专门把构建职责前移到 CI runner，并保持现有容器契约与 smoke test。",
+      "points": [
+        "Docker build 内尽量不执行 `npm ci` / `npm run build`，而是在 CI 外先准备 runtime bundle。",
+        "保持现有镜像契约：`tini -> auth-mini start`、`USER node`、最小 runtime 内容与 smoke test 覆盖。",
+        "确保 native 依赖与目标平台兼容，避免把宿主机产物直接塞进 Linux 镜像。",
+        "发布流程要仍然支持版本 bump 后的 GHCR 镜像构建与验证。"
+      ],
+      "scope": [
+        "Dockerfile",
+        ".github/workflows/release-image.yml",
+        "docker/test-entrypoint.sh",
+        "docker/test-image-smoke.sh",
+        ".dockerignore",
+        "package.json",
+        "scripts/**"
+      ],
+      "phases": [
+        {
+          "name": "设计运行时产物契约",
+          "tasks": [
+            {
+              "description": "明确 Docker runtime bundle 应包含的文件、平台假设与构建边界",
+              "acceptance": "plan.md 写清 runtime bundle 组成、平台约束、风险与回滚口径"
+            },
+            {
+              "description": "确认 workflow 与 Dockerfile 的职责拆分",
+              "acceptance": "plan.md phase map 明确哪些步骤在 CI 外执行、哪些步骤留在 Docker build 内"
+            }
+          ]
+        },
+        {
+          "name": "实现 copy-only 打包链路",
+          "tasks": [
+            {
+              "description": "新增/调整脚本与 workflow，在 runner 上先产出 Linux runtime artifact",
+              "acceptance": "release-image workflow 能在 docker build 前准备运行时 bundle，且不依赖宿主机非 Linux 产物"
+            },
+            {
+              "description": "简化 Dockerfile 为 copy-oriented runtime 封装",
+              "acceptance": "Dockerfile 不再在镜像构建阶段执行完整应用编译，仍保持 tini 校验、权限设置、入口契约"
+            }
+          ]
+        },
+        {
+          "name": "验证与交付",
+          "tasks": [
+            {
+              "description": "更新 Docker smoke tests 以适配新的打包路径",
+              "acceptance": "容器 contract / supervision / image smoke 继续通过"
+            },
+            {
+              "description": "完成 task 文档、测试结论与 PR 汇报材料",
+              "acceptance": "产出 test-report、review 结果与 pr-body，可直接用于 review"
+            }
+          ]
+        }
+      ],
+      "proposedBy": "Claude",
+      "proposedAt": "2026-04-10T14:50:42.784Z",
+      "status": "approved",
+      "decidedAt": "2026-04-10T14:50:52.027Z",
+      "decidedBy": "Claude",
+      "createdTaskId": "docker-runtime-copy-only-packaging"
     }
   ]
 }
