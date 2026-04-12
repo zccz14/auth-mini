@@ -103,38 +103,134 @@ describe('device module sdk', () => {
     }
   });
 
-  it('does not expose disposal APIs in the task 2 device sdk surface', async () => {
+  it('dispose is idempotent, clears local state, and blocks session-dependent APIs', async () => {
     const sdk = createDeviceSdk({
       serverBaseUrl: 'https://auth.example.com',
       credentialId: '550e8400-e29b-41d4-a716-446655440000',
       privateKey: createDevicePrivateKey(),
-      fetch: vi
-        .fn()
-        .mockResolvedValueOnce(
-          jsonResponse({ request_id: 'request-1', challenge: 'challenge-1' }),
-        )
-        .mockResolvedValueOnce(
-          jsonResponse({
+      fetch: vi.fn(async (input: URL | RequestInfo) => {
+        const url = input instanceof URL ? input : new URL(String(input));
+
+        if (url.pathname === '/ed25519/start') {
+          return jsonResponse({ request_id: 'request-1', challenge: 'challenge-1' });
+        }
+
+        if (url.pathname === '/ed25519/verify') {
+          return jsonResponse({
             session_id: 'session-1',
             access_token: 'access-1',
             refresh_token: 'refresh-1',
             expires_in: 900,
-          }),
-        )
-        .mockResolvedValueOnce(
-          jsonResponse({
+          });
+        }
+
+        if (url.pathname === '/me') {
+          return jsonResponse({
             user_id: 'user-1',
             email: 'device@example.com',
             webauthn_credentials: [],
             ed25519_credentials: [],
             active_sessions: [],
-          }),
-        ),
+          });
+        }
+
+        if (url.pathname === '/session/logout') {
+          return jsonResponse({ ok: true });
+        }
+
+        throw new Error(`Unhandled path: ${url.pathname}`);
+      }),
     });
 
     await sdk.ready;
 
-    expect('dispose' in sdk).toBe(false);
-    expect(Symbol.asyncDispose in sdk).toBe(false);
+    expect('dispose' in sdk).toBe(true);
+    expect(Symbol.asyncDispose in sdk).toBe(true);
+
+    await sdk.dispose();
+    await sdk.dispose();
+
+    await expect(sdk.me.reload()).rejects.toMatchObject({
+      code: 'disposed_session',
+    });
+    await expect(sdk.session.refresh()).rejects.toMatchObject({
+      code: 'disposed_session',
+    });
+    await expect(sdk.session.logout()).rejects.toMatchObject({
+      code: 'disposed_session',
+    });
+    expect(sdk.me.get()).toBeNull();
+    expect(sdk.session.getState()).toMatchObject({
+      status: 'anonymous',
+      authenticated: false,
+      sessionId: null,
+      accessToken: null,
+      refreshToken: null,
+      me: null,
+    });
+  });
+
+  it('async dispose keeps pending auth completion from reviving the instance', async () => {
+    let resolveMe!: (value: Response) => void;
+    const meGate = new Promise<Response>((resolve) => {
+      resolveMe = resolve;
+    });
+
+    const fetch = vi.fn(async (input: URL | RequestInfo) => {
+      const url = input instanceof URL ? input : new URL(String(input));
+
+      if (url.pathname === '/ed25519/start') {
+        return jsonResponse({ request_id: 'request-1', challenge: 'challenge-1' });
+      }
+
+      if (url.pathname === '/ed25519/verify') {
+        return jsonResponse({
+          session_id: 'session-1',
+          access_token: 'access-1',
+          refresh_token: 'refresh-1',
+          expires_in: 900,
+        });
+      }
+
+      if (url.pathname === '/me') {
+        return meGate;
+      }
+
+      if (url.pathname === '/session/logout') {
+        return jsonResponse({ ok: true });
+      }
+
+      throw new Error(`Unhandled path: ${url.pathname}`);
+    });
+
+    const sdk = createDeviceSdk({
+      serverBaseUrl: 'https://auth.example.com',
+      credentialId: '550e8400-e29b-41d4-a716-446655440000',
+      privateKey: createDevicePrivateKey(),
+      fetch,
+      now: () => Date.parse('2026-04-12T00:30:00.000Z'),
+    });
+
+    await sdk[Symbol.asyncDispose]();
+
+    resolveMe(
+      jsonResponse({
+        user_id: 'user-1',
+        email: 'device@example.com',
+        webauthn_credentials: [],
+        ed25519_credentials: [],
+        active_sessions: [],
+      }),
+    );
+
+    await expect(sdk.ready).resolves.toBeUndefined();
+    expect(sdk.session.getState()).toMatchObject({
+      status: 'anonymous',
+      authenticated: false,
+      sessionId: null,
+      accessToken: null,
+      refreshToken: null,
+      me: null,
+    });
   });
 });

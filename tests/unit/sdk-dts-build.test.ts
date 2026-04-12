@@ -9,6 +9,15 @@ const readBuiltDeclaration = () =>
 const readBrowserModuleDeclaration = () =>
   readFileSync(resolve(process.cwd(), 'dist/sdk/browser.d.ts'), 'utf8');
 
+const readDeviceModuleDeclaration = () =>
+  readFileSync(resolve(process.cwd(), 'dist/sdk/device.d.ts'), 'utf8');
+
+const readSharedTypesDeclaration = () =>
+  readFileSync(resolve(process.cwd(), 'dist/sdk/types.d.ts'), 'utf8');
+
+const readSdkErrorsDeclaration = () =>
+  readFileSync(resolve(process.cwd(), 'dist/sdk/errors.d.ts'), 'utf8');
+
 const getWindowAuthMiniType = (source: string) => {
   const file = ts.createSourceFile(
     'singleton-iife.d.ts',
@@ -191,5 +200,17 @@ describe('sdk d.ts build artifact', () => {
     expect(output).toContain('createBrowserSdk');
     expect(output).toContain('AuthMiniApi');
     expect(output).toContain('SessionSnapshot');
+  });
+
+  it('emits device sdk module declarations with disposal support', () => {
+    const output = readDeviceModuleDeclaration();
+    const sharedTypes = readSharedTypesDeclaration();
+    const errors = readSdkErrorsDeclaration();
+
+    expect(output).toContain('export declare function createDeviceSdk');
+    expect(output).toContain('DeviceSdkApi');
+    expect(sharedTypes).toContain('dispose(): Promise<void>');
+    expect(sharedTypes).toContain('[Symbol.asyncDispose](): Promise<void>');
+    expect(errors).toContain("'disposed_session'");
   });
 });

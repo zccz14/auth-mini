@@ -19,6 +19,10 @@
     "./sdk/browser": {
       "types": "./dist/sdk/browser.d.ts",
       "import": "./dist/sdk/browser.js"
+    },
+    "./sdk/device": {
+      "types": "./dist/sdk/device.d.ts",
+      "import": "./dist/sdk/device.js"
     }
   },
   "bin": {

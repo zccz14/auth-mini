@@ -3,7 +3,7 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": ["ES2022", "DOM"],
+    "lib": ["ES2022", "DOM", "ESNext.Disposable"],
     "strict": true,
     "noEmit": true,
     "types": []
@@ -11,6 +11,7 @@
   "files": [
     "../../../dist/sdk/singleton-iife.d.ts",
     "./global-usage.ts",
-    "./module-browser-usage.ts"
+    "./module-browser-usage.ts",
+    "./module-device-usage.ts"
   ]
 }
