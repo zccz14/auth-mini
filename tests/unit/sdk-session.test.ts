@@ -189,6 +189,37 @@ describe('sdk session flows', () => {
     });
   });
 
+  it('rejects startup recovery when /me payload is invalid and clears to anonymous', async () => {
+    const sdk = createAuthMiniForTest({
+      autoRecover: true,
+      storage: fakeAuthenticatedStorageWithMe(),
+      fetch: vi.fn().mockResolvedValueOnce(
+        jsonResponse({
+          user_id: 'u1',
+          email: 'updated@example.com',
+          webauthn_credentials: [],
+          active_sessions: [],
+        }),
+      ),
+    });
+    const ready = sdk.ready;
+
+    void ready.catch(() => {});
+
+    await expect(ready).rejects.toMatchObject({
+      error: 'request_failed',
+      message: 'request_failed: Invalid /me payload',
+    });
+    expect(sdk.session.getState()).toMatchObject({
+      status: 'anonymous',
+      authenticated: false,
+      sessionId: null,
+      accessToken: null,
+      refreshToken: null,
+      me: null,
+    });
+  });
+
   it('retains ed25519 credentials on cached me state after reload', async () => {
     const sdk = createAuthMiniForTest({
       storage: fakeAuthenticatedStorageWithMe(),

@@ -106,7 +106,10 @@ export function createSessionController(input: {
                 supersededRecoveryPromise = null;
               }
             });
-          } else if (isAuthInvalidatingError(error)) {
+          } else if (
+            isAuthInvalidatingError(error) ||
+            isContractDriftError(error)
+          ) {
             input.state.setAnonymous();
           }
           throw error;
@@ -159,8 +162,12 @@ export function createSessionController(input: {
           return;
         }
 
-        if (isAuthInvalidatingError(error)) {
+        if (isAuthInvalidatingError(error) || isContractDriftError(error)) {
           input.state.setAnonymous();
+
+          if (isContractDriftError(error)) {
+            throw error;
+          }
         }
       }
     },
@@ -394,9 +401,24 @@ function isAuthInvalidatingError(error: unknown): boolean {
   return (
     candidate.error === 'invalid_refresh_token' ||
     candidate.error === 'session_invalidated' ||
-    (candidate.status === 401 && candidate.error !== 'session_superseded') ||
-    (candidate.code === 'request_failed' &&
-      candidate.message === 'request_failed: Invalid session payload')
+    (candidate.status === 401 && candidate.error !== 'session_superseded')
+  );
+}
+
+function isContractDriftError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const candidate = error as {
+    code?: unknown;
+    message?: unknown;
+  };
+
+  return (
+    candidate.code === 'request_failed' &&
+    (candidate.message === 'request_failed: Invalid session payload' ||
+      candidate.message === 'request_failed: Invalid /me payload')
   );
 }
 

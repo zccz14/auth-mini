@@ -421,7 +421,10 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
                   supersededRecoveryPromise = null;
                 }
               });
-            } else if (isAuthInvalidatingError(error)) {
+            } else if (
+              isAuthInvalidatingError(error) ||
+              isContractDriftError(error)
+            ) {
               input.state.setAnonymous();
             }
             throw error;
@@ -466,8 +469,12 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
             return;
           }
 
-          if (isAuthInvalidatingError(error)) {
+          if (isAuthInvalidatingError(error) || isContractDriftError(error)) {
             input.state.setAnonymous();
+
+            if (isContractDriftError(error)) {
+              throw error;
+            }
           }
         }
       },
@@ -857,8 +864,11 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     };
     const ready =
       input.autoRecover !== false && state.getState().status === 'recovering'
-        ? session.recover()
+        ? Promise.resolve().then(() => session.recover())
         : Promise.resolve();
+
+    void ready.catch(() => {});
+
     return Object.assign(api, { ready });
   }
 
@@ -1034,9 +1044,15 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     return (
       error?.error === 'invalid_refresh_token' ||
       error?.error === 'session_invalidated' ||
-      (error?.status === 401 && error?.error !== 'session_superseded') ||
-      (error?.code === 'request_failed' &&
-        error?.message === 'request_failed: Invalid session payload')
+      (error?.status === 401 && error?.error !== 'session_superseded')
+    );
+  }
+
+  function isContractDriftError(error) {
+    return (
+      error?.code === 'request_failed' &&
+      (error?.message === 'request_failed: Invalid session payload' ||
+        error?.message === 'request_failed: Invalid /me payload')
     );
   }
 

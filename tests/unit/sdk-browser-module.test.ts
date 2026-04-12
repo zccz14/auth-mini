@@ -165,6 +165,60 @@ describe('browser module sdk', () => {
     }
   });
 
+  it('rejects browser startup recovery when /me payload is invalid and clears to anonymous', async () => {
+    const storage = fakeStorage();
+
+    seedBrowserSdkStorage(storage, 'https://auth.example.com', {
+      sessionId: 'session-1',
+      accessToken: 'access-1',
+      refreshToken: 'refresh-1',
+      receivedAt: '2036-04-03T00:00:00.000Z',
+      expiresAt: '2036-04-03T00:15:00.000Z',
+      me: null,
+    });
+    const fetch = vi.fn(async (input: string | URL) => {
+      const requestUrl = new URL(String(input));
+
+      if (requestUrl.pathname.endsWith('/me')) {
+        return jsonResponse({
+          user_id: 'user-1',
+          email: 'user@example.com',
+          webauthn_credentials: [],
+          active_sessions: [],
+        });
+      }
+
+      return jsonResponse({ error: 'unexpected' }, 500);
+    });
+
+    vi.stubGlobal('fetch', fetch);
+    vi.stubGlobal('localStorage', storage);
+
+    try {
+      const sdk = createBrowserSdk('https://auth.example.com') as AuthMiniApi & {
+        ready: Promise<void>;
+      };
+      const ready = sdk.ready;
+
+      void ready.catch(() => {});
+
+      await expect(ready).rejects.toMatchObject({
+        error: 'request_failed',
+        message: 'request_failed: Invalid /me payload',
+      });
+      expect(sdk.session.getState()).toMatchObject({
+        status: 'anonymous',
+        authenticated: false,
+        sessionId: null,
+        accessToken: null,
+        refreshToken: null,
+        me: null,
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('rejects browser /me payloads when nested credential items are malformed', async () => {
     const storage = fakeStorage();
 
@@ -250,6 +304,62 @@ describe('browser module sdk', () => {
 
       await expect(windowObject.AuthMini.me.reload()).rejects.toMatchObject({
         error: 'request_failed',
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('rejects singleton startup recovery when /me payload is invalid and clears to anonymous', async () => {
+    const storage = fakeStorage();
+
+    seedBrowserSdkStorage(storage, 'https://app.example.com', {
+      sessionId: 'session-1',
+      accessToken: 'access-1',
+      refreshToken: 'refresh-1',
+      receivedAt: '2036-04-03T00:00:00.000Z',
+      expiresAt: '2036-04-03T00:15:00.000Z',
+      me: null,
+    });
+
+    const fetch = vi.fn(async (input: string | URL) => {
+      const requestUrl = new URL(String(input));
+
+      if (requestUrl.pathname.endsWith('/me')) {
+        return jsonResponse({
+          user_id: 'user-1',
+          email: 'user@example.com',
+          webauthn_credentials: [],
+          active_sessions: [],
+        });
+      }
+
+      return jsonResponse({ error: 'unexpected' }, 500);
+    });
+
+    vi.stubGlobal('fetch', fetch);
+
+    try {
+      const windowObject = executeServedSdk(renderSingletonIifeSource(), {
+        currentScriptSrc: 'https://app.example.com/sdk/singleton-iife.js',
+        storage,
+      });
+      const ready = (windowObject.AuthMini as AuthMiniApi & { ready: Promise<void> })
+        .ready;
+
+      void ready.catch(() => {});
+
+      await expect(ready).rejects.toMatchObject({
+        error: 'request_failed',
+        message: 'request_failed: Invalid /me payload',
+      });
+      expect(windowObject.AuthMini.session.getState()).toMatchObject({
+        status: 'anonymous',
+        authenticated: false,
+        sessionId: null,
+        accessToken: null,
+        refreshToken: null,
+        me: null,
       });
     } finally {
       vi.unstubAllGlobals();
