@@ -5,6 +5,7 @@ import {
   writePersistedSdkState,
 } from '../../src/sdk/storage.js';
 import type {
+  DevicePrivateKeyJwk,
   InternalSdkDeps,
   MeResponse,
   PersistedSdkState,
@@ -126,6 +127,15 @@ export function jsonResponse(body: unknown, status = 200): Response {
       'content-type': 'application/json; charset=utf-8',
     },
   });
+}
+
+export function createDevicePrivateKey(): DevicePrivateKeyJwk {
+  return {
+    crv: 'Ed25519',
+    d: '7rANewlCLceTsUo9feN0DLjnu-ayYsdhkVWvHT4FelM',
+    kty: 'OKP',
+    x: 'jt2HpVJxALeSteTe7QlqBRiOxVeloHMMImehYhZc9Rg',
+  };
 }
 
 export function createAuthMiniForTest(options: TestSdkOptions = {}) {
