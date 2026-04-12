@@ -286,7 +286,7 @@ describe('CredentialsRoute', () => {
     expect(screen.getByText(/MCowBQYDK2VwAyEA/i)).toBeInTheDocument();
   });
 
-  it('reflects the latest shared me snapshot after reload without route-local user state', async () => {
+  it('keeps the page pinned to the shared session until reload emits an updated snapshot', async () => {
     const user = userEvent.setup();
     localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
 
@@ -301,16 +301,14 @@ describe('CredentialsRoute', () => {
       ed25519_credentials: [],
     });
 
-    const staleMe = sdkMocks.sessionState.current.me!;
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     sdkMocks.fetch.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const refreshedSession = authenticatedSession({
+      webauthn_credentials: [],
+      ed25519_credentials: [],
+    });
     sdkMocks.reloadMe.mockImplementationOnce(async () => {
-      sdkMocks.sessionState.current = authenticatedSession({
-        webauthn_credentials: [],
-        ed25519_credentials: [],
-      });
-      sdkMocks.emitSession();
-      return staleMe;
+      return refreshedSession.me!;
     });
 
     render(
@@ -324,6 +322,23 @@ describe('CredentialsRoute', () => {
     );
 
     expectDeleteConfirmation(confirmSpy, 'passkey');
+    await expect(sdkMocks.reloadMe.mock.results[0]?.value).resolves.toEqual(
+      expect.objectContaining({
+        webauthn_credentials: [],
+      }),
+    );
+    expect(
+      screen.getByRole('button', { name: 'Delete passkey first-passkey' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('No passkeys are currently bound to this account.'),
+    ).not.toBeInTheDocument();
+
+    act(() => {
+      sdkMocks.sessionState.current = refreshedSession;
+      sdkMocks.emitSession();
+    });
+
     expect(
       await screen.findByText('No passkeys are currently bound to this account.'),
     ).toBeInTheDocument();
