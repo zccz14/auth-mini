@@ -24,7 +24,7 @@
 6. 主工作区禁止执行任何开发相关操作。主工作区仅允许执行仓库准备操作，以及做只读检查、协调、派发、状态汇总。
 7. 主 Agent 可以在主工作区执行仓库准备操作；Sub Agent 也可以在主工作区执行其被派发任务所必需的仓库准备操作。除仓库准备操作外，Sub Agent 的开发执行必须在 worktree 中完成。
 8. spec、implementation plan 与对应代码变更必须位于同一个 worktree、同一个分支、同一个 PR 中。禁止拆分到不同 PR。
-9. push 代码前，必须先执行 `git rebase origin/main`，确保当前开发分支基于最新 `origin/main`；禁止基于过时基线直接 push。
+9. push 代码前，必须先执行 `git fetch origin`、 `git rebase origin/main`，确保当前开发分支基于最新 `origin/main`；禁止基于过时基线直接 push。
 10. 所有代码合并必须通过 PR 完成。禁止直接向 `main` 分支提交或推送任何变更。
 11. 不使用本地 `main` 分支进行开发、提交、验证或承载临时改动。
 12. 对应 PR 已合并、关闭或确认废弃，且后续 review 处理已完成后，必须删除对应的 git worktree。禁止过早删除仍需处理 review 的 worktree，也禁止保留已完成、已废弃或失去用途的 worktree。
@@ -38,9 +38,10 @@
    4. 如果任务需要 implementation plan，在 worktree 中编写或更新 implementation plan
    5. 如果任务涉及代码变更或需要执行验证，在 worktree 中执行实现与验证；如果任务仅涉及 spec、plan 或其他文档修改，可跳过实现，按任务需要执行相应文档校验或最小必要验证
    6. 在 worktree 中提交 commit
-   7. 在 worktree 中执行 `git rebase origin/main`
-   8. 在 worktree 中 push 分支并创建 PR
-   9. 在 PR 合并、关闭或确认废弃，且 review 处理完成后删除 worktree
+   7. 在 worktree 中执行 `git fetch origin`
+   8. 在 worktree 中执行 `git rebase origin/main`
+   9. 在 worktree 中 push 分支并创建 PR
+   10. 在 PR 合并、关闭或确认废弃，且 review 处理完成后删除 worktree
 2. 如果任务不涉及代码、文档、spec、plan、commit、push、PR 变更，可不进入完整开发流程；但只要涉及上述任一项，就必须进入完整开发流程。
 3. 是否需要 spec、implementation plan、实现与验证，必须按任务类型判定，不得机械地对所有任务强制执行同一套子步骤。
 
