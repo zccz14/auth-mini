@@ -1,6 +1,6 @@
 import { createSdkError } from './errors.js';
 import { createHttpClient } from './http.js';
-import { createSessionController } from './session.js';
+import { createSessionController, normalizeTokenResponse } from './session.js';
 import { createStateStore } from './state.js';
 import { authenticateDevice } from './device-auth.js';
 import type {
@@ -95,9 +95,10 @@ export function createDeviceSdk(options: DeviceSdkOptions): DeviceSdkApi {
     baseUrl: options.serverBaseUrl,
     fetch,
   });
+  const now = options.now ?? (() => Date.now());
   const session = createSessionController({
     http,
-    now: options.now ?? (() => Date.now()),
+    now,
     state: guardedState,
   });
 
@@ -106,7 +107,24 @@ export function createDeviceSdk(options: DeviceSdkOptions): DeviceSdkApi {
       credentialId: options.credentialId,
       http,
       privateKey: options.privateKey,
-      session,
+      session: {
+        async acceptSessionResponse(response) {
+          const acceptedSession = normalizeTokenResponse(response, now);
+
+          if (disposed) {
+            await bestEffortLogout(acceptedSession.accessToken);
+            return;
+          }
+
+          try {
+            await session.acceptSessionResponse(response);
+          } finally {
+            if (disposed) {
+              await bestEffortLogout(acceptedSession.accessToken);
+            }
+          }
+        },
+      },
     });
   })();
 
@@ -176,5 +194,19 @@ export function createDeviceSdk(options: DeviceSdkOptions): DeviceSdkApi {
     })();
 
     return disposePromise;
+  }
+
+  async function bestEffortLogout(accessToken: string | null): Promise<void> {
+    if (!accessToken) {
+      return;
+    }
+
+    try {
+      await http.postJson('/session/logout', undefined, {
+        accessToken,
+      });
+    } catch {
+      // Disposal should still clear local state when remote logout fails.
+    }
   }
 }
