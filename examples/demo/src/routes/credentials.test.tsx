@@ -246,6 +246,35 @@ describe('CredentialsRoute', () => {
     ).toBeInTheDocument();
   });
 
+  it('shows the existing ed25519 credential row from the current snapshot without local row filtering', () => {
+    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
+    sdkMocks.sessionState.current = {
+      ...authenticatedSession(),
+      me: {
+        user_id: 'user-1',
+        email: 'user@example.com',
+        webauthn_credentials: [],
+        ed25519_credentials: [
+          {
+            id: 'device-row-1',
+            name: 'Build runner',
+            public_key: 'MCowBQYDK2VwAyEAlongPublicKeyValueForTesting1234567890=',
+          },
+        ],
+        active_sessions: [],
+      } as MockMe,
+    };
+
+    render(
+      <MemoryRouter initialEntries={['/credentials']}>
+        <AppRouter />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Build runner')).toBeInTheDocument();
+    expect(screen.getByText(/MCowBQYDK2VwAyEA/i)).toBeInTheDocument();
+  });
+
   it('deletes a passkey after confirm and reloads /me from the server', async () => {
     const user = userEvent.setup();
     localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
