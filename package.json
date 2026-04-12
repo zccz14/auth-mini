@@ -1,6 +1,6 @@
 {
   "name": "auth-mini",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Minimal, opinionated auth server for apps that just need auth.",
   "license": "MIT",
   "repository": {
