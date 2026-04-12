@@ -11,16 +11,16 @@ type MockMe = {
   webauthn_credentials: Array<{
     id: string;
     credential_id: string;
-    rp_id?: string;
-    last_used_at?: string | null;
+    rp_id: string;
+    last_used_at: string | null;
     created_at: string;
   }>;
   ed25519_credentials: Array<{
     id: string;
     name: string;
     public_key: string;
-    last_used_at?: string | null;
-    created_at?: string;
+    last_used_at: string | null;
+    created_at: string;
   }>;
   active_sessions: Array<unknown>;
 };
@@ -248,16 +248,25 @@ describe('CredentialsRoute', () => {
     expect(screen.getByRole('cell', { name: 'user@example.com' })).toBeInTheDocument();
     expect(screen.getByText('Primary email')).toBeInTheDocument();
     expect(screen.getByText('Read-only')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Credential ID' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'RP ID' })).toBeInTheDocument();
+    expect(screen.getAllByRole('columnheader', { name: 'Last Used' })).toHaveLength(2);
+    expect(screen.getAllByRole('columnheader', { name: 'Created At' })).toHaveLength(2);
     expect(screen.getByText(/passkey-credential-abc/i)).toBeInTheDocument();
     expect(screen.getByText('example.com')).toBeInTheDocument();
     expect(screen.getByText('Never')).toBeInTheDocument();
+    expect(screen.getByText('2026-04-10T12:00:00.000Z')).toBeInTheDocument();
     expect(
       screen.getByRole('button', {
         name: 'Delete passkey passkey-credential-abcdef123456',
       }),
     ).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Name' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Public Key' })).toBeInTheDocument();
     expect(screen.getByText('Build runner')).toBeInTheDocument();
     expect(screen.getByText(/MCowBQYDK2VwAyEA/i)).toBeInTheDocument();
+    expect(screen.getByText('2026-04-11T08:30:00.000Z')).toBeInTheDocument();
+    expect(screen.getByText('2026-04-09T09:15:00.000Z')).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Delete device key Build runner' }),
     ).toBeInTheDocument();
@@ -276,10 +285,12 @@ describe('CredentialsRoute', () => {
             id: 'device-row-1',
             name: 'Build runner',
             public_key: 'MCowBQYDK2VwAyEAlongPublicKeyValueForTesting1234567890=',
+            last_used_at: null,
+            created_at: '2026-04-09T09:15:00.000Z',
           },
         ],
         active_sessions: [],
-      } as MockMe,
+      },
     };
 
     render(
@@ -358,6 +369,8 @@ describe('CredentialsRoute', () => {
         {
           id: 'passkey-row-1',
           credential_id: 'passkey-credential-abcdef123456',
+          rp_id: 'example.com',
+          last_used_at: null,
           created_at: '2026-04-10T12:00:00.000Z',
         },
       ],
@@ -464,6 +477,8 @@ describe('CredentialsRoute', () => {
           {
             id: 'passkey-row-1',
             credential_id: 'passkey-credential-abcdef123456',
+            rp_id: 'example.com',
+            last_used_at: null,
             created_at: '2026-04-10T12:00:00.000Z',
           },
         ],
@@ -525,6 +540,8 @@ describe('CredentialsRoute', () => {
         {
           id: 'passkey-row-1',
           credential_id: 'passkey-credential-abcdef123456',
+          rp_id: 'example.com',
+          last_used_at: null,
           created_at: '2026-04-10T12:00:00.000Z',
         },
       ],
@@ -556,11 +573,15 @@ describe('CredentialsRoute', () => {
         {
           id: 'passkey-row-1',
           credential_id: 'passkey-credential-abcdef123456',
+          rp_id: 'example.com',
+          last_used_at: null,
           created_at: '2026-04-10T12:00:00.000Z',
         },
         {
           id: 'passkey-row-2',
           credential_id: 'passkey-credential-xyz987654321',
+          rp_id: 'example.com',
+          last_used_at: '2026-04-11T13:00:00.000Z',
           created_at: '2026-04-11T12:00:00.000Z',
         },
       ],
