@@ -22,7 +22,6 @@ export type {
 
 export function createDeviceSdk(options: DeviceSdkOptions): DeviceSdkApi {
   let persisted: PersistedSdkState | null = null;
-  let disposed = false;
 
   const state = createStateStore({
     clear() {
@@ -52,17 +51,7 @@ export function createDeviceSdk(options: DeviceSdkOptions): DeviceSdkApi {
     state,
   });
 
-  const assertUsable = () => {
-    if (disposed) {
-      throw createSdkError(
-        'disposed_session',
-        'Device SDK instance has been disposed',
-      );
-    }
-  };
-
   const ready = (async () => {
-    assertUsable();
     await authenticateDevice({
       credentialId: options.credentialId,
       http,
@@ -71,32 +60,13 @@ export function createDeviceSdk(options: DeviceSdkOptions): DeviceSdkApi {
     });
   })();
 
-  async function dispose(): Promise<void> {
-    if (disposed) {
-      return;
-    }
-
-    disposed = true;
-
-    try {
-      await session.logout();
-    } finally {
-      state.setAnonymous();
-    }
-  }
-
   return {
     ready,
-    dispose,
-    async [Symbol.asyncDispose]() {
-      await dispose();
-    },
     me: {
       get() {
         return state.getState().me;
       },
       async reload() {
-        assertUsable();
         const me = await session.reloadMe();
 
         if (!me) {
@@ -114,11 +84,9 @@ export function createDeviceSdk(options: DeviceSdkOptions): DeviceSdkApi {
         return state.onChange(listener);
       },
       refresh() {
-        assertUsable();
         return session.refresh();
       },
       logout() {
-        assertUsable();
         return session.logout();
       },
     },

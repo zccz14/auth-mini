@@ -102,4 +102,39 @@ describe('device module sdk', () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it('does not expose disposal APIs in the task 2 device sdk surface', async () => {
+    const sdk = createDeviceSdk({
+      serverBaseUrl: 'https://auth.example.com',
+      credentialId: '550e8400-e29b-41d4-a716-446655440000',
+      privateKey: createDevicePrivateKey(),
+      fetch: vi
+        .fn()
+        .mockResolvedValueOnce(
+          jsonResponse({ request_id: 'request-1', challenge: 'challenge-1' }),
+        )
+        .mockResolvedValueOnce(
+          jsonResponse({
+            session_id: 'session-1',
+            access_token: 'access-1',
+            refresh_token: 'refresh-1',
+            expires_in: 900,
+          }),
+        )
+        .mockResolvedValueOnce(
+          jsonResponse({
+            user_id: 'user-1',
+            email: 'device@example.com',
+            webauthn_credentials: [],
+            ed25519_credentials: [],
+            active_sessions: [],
+          }),
+        ),
+    });
+
+    await sdk.ready;
+
+    expect('dispose' in sdk).toBe(false);
+    expect(Symbol.asyncDispose in sdk).toBe(false);
+  });
 });

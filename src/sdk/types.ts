@@ -111,8 +111,6 @@ export type DeviceSdkOptions = {
 
 export type DeviceSdkApi = {
   ready: Promise<void>;
-  dispose(): Promise<void>;
-  [Symbol.asyncDispose](): Promise<void>;
   me: {
     get(): MeResponse | null;
     reload(): Promise<MeResponse>;
