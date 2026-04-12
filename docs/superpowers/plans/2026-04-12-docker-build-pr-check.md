@@ -2,20 +2,24 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a new PR-only GitHub Actions workflow that performs the minimal approved Docker build check on `ubuntu-latest` without changing any release workflow behavior.
+**Goal:** Add a pull-request-only Docker build workflow and the minimal Dockerfile input fix needed for `docker build --platform linux/amd64 -t auth-mini:pr-check .` to pass on the current baseline.
 
-**Architecture:** Keep the change isolated to one new workflow file under `.github/workflows/` so the PR validation path stays separate from `release-image.yml`. Verify the workflow contract with focused text assertions and the exact local `docker build` command, which is sufficient for this CI-only change without introducing any new scripts or test harness files.
+**Architecture:** Keep PR validation isolated in a new `.github/workflows/docker-build-pr-check.yml` file so it does not change `release-image.yml` responsibilities. Apply the smallest Dockerfile change possible by copying `scripts/` into the builder stage before `RUN npm run build`, because `package.json` already defines `build` as `node scripts/build-sdk.mjs`.
 
-**Tech Stack:** GitHub Actions YAML, Docker CLI, bash, Python 3 for local workflow assertions, git
+**Tech Stack:** GitHub Actions YAML, Dockerfile, Docker CLI, Python 3, git
 
 ---
 
 ## File Structure
 
 - Create: `.github/workflows/docker-build-pr-check.yml`
-  - independent workflow that triggers only on `pull_request`, runs one `ubuntu-latest` job, checks out the repository, and runs the exact approved Docker build command
+  - standalone PR-only workflow that checks out the repo and runs `docker build --platform linux/amd64 -t auth-mini:pr-check .` on `ubuntu-latest`
+- Modify: `Dockerfile`
+  - add the minimal missing builder input so `npm run build` can execute `node scripts/build-sdk.mjs` during image build
 - Keep unchanged: `.github/workflows/release-image.yml`
-  - existing release/publish workflow must not be edited, repurposed, or partially inlined into the new PR workflow
+  - release/publish workflow remains untouched and continues owning login, smoke test, and publish behavior
+- Reference for verification: `package.json`
+  - confirms the existing build entrypoint remains `node scripts/build-sdk.mjs`
 
 ## Task 1: Add The Dedicated PR Docker Build Workflow
 
@@ -24,7 +28,7 @@
 - Create: `.github/workflows/docker-build-pr-check.yml`
 - Keep unchanged: `.github/workflows/release-image.yml`
 
-- [ ] **Step 1: Prove the new workflow file does not exist before implementation**
+- [ ] **Step 1: Prove the workflow does not already exist**
 
 Run:
 
@@ -33,14 +37,15 @@ python - <<'PY'
 from pathlib import Path
 
 path = Path('.github/workflows/docker-build-pr-check.yml')
-if not path.exists():
-    raise SystemExit(f'missing workflow: {path}')
+if path.exists():
+    raise SystemExit(f'unexpected existing workflow: {path}')
+print('workflow file absent as expected')
 PY
 ```
 
-Expected: FAIL with `missing workflow: .github/workflows/docker-build-pr-check.yml`.
+Expected: PASS with `workflow file absent as expected`.
 
-- [ ] **Step 2: Create the minimal PR-only workflow with the exact approved Docker build step**
+- [ ] **Step 2: Create the pull-request-only workflow with the exact approved build command**
 
 Create `.github/workflows/docker-build-pr-check.yml` with exactly:
 
@@ -62,7 +67,7 @@ jobs:
         run: docker build --platform linux/amd64 -t auth-mini:pr-check .
 ```
 
-- [ ] **Step 3: Run a focused assertion script to verify the workflow contract and guard against scope drift**
+- [ ] **Step 3: Verify the workflow contract and forbidden scope boundaries**
 
 Run:
 
@@ -70,44 +75,33 @@ Run:
 python - <<'PY'
 from pathlib import Path
 
-path = Path('.github/workflows/docker-build-pr-check.yml')
-workflow = path.read_text()
+workflow = Path('.github/workflows/docker-build-pr-check.yml').read_text(encoding='utf-8')
 
 checks = [
     ('workflow name', 'name: Docker build PR check' in workflow),
     ('pull_request trigger', 'pull_request:' in workflow),
     ('no push trigger', 'push:' not in workflow),
     ('no workflow_dispatch trigger', 'workflow_dispatch:' not in workflow),
-    ('single ubuntu job', 'jobs:\n  docker-build-pr-check:\n    runs-on: ubuntu-latest' in workflow),
+    ('ubuntu-latest runner', 'runs-on: ubuntu-latest' in workflow),
     ('checkout step', 'uses: actions/checkout@v4' in workflow),
-    ('docker build step', 'run: docker build --platform linux/amd64 -t auth-mini:pr-check .' in workflow),
-    ('no GHCR login', 'docker/login-action' not in workflow),
-    ('no buildx publish', '--push' not in workflow and 'docker buildx build' not in workflow),
+    ('exact docker build command', 'run: docker build --platform linux/amd64 -t auth-mini:pr-check .' in workflow),
+    ('no ghcr login', 'docker/login-action' not in workflow),
+    ('no publish', 'docker buildx build' not in workflow and '--push' not in workflow),
     ('no smoke tests', 'docker/test-image-smoke.sh' not in workflow),
-    ('no entrypoint validation drift', 'docker/test-entrypoint.sh' not in workflow),
+    ('no entrypoint tests', 'docker/test-entrypoint.sh' not in workflow),
 ]
 
-missing = [name for name, ok in checks if not ok]
-if missing:
-    raise SystemExit('docker-build-pr-check workflow is missing required behavior:\n- ' + '\n- '.join(missing))
+failed = [name for name, ok in checks if not ok]
+if failed:
+    raise SystemExit('workflow contract failed:\n- ' + '\n- '.join(failed))
 
-print('docker-build-pr-check workflow checks passed')
+print('workflow contract checks passed')
 PY
 ```
 
-Expected: PASS with `docker-build-pr-check workflow checks passed`.
+Expected: PASS with `workflow contract checks passed`.
 
-- [ ] **Step 4: Run the exact local Docker build command used by the workflow**
-
-Run:
-
-```bash
-docker build --platform linux/amd64 -t auth-mini:pr-check .
-```
-
-Expected: PASS with a successful Docker image build for tag `auth-mini:pr-check`.
-
-- [ ] **Step 5: Confirm the change is isolated to the new workflow and does not modify the release workflow**
+- [ ] **Step 4: Confirm only the new workflow is changed under `.github/workflows/`**
 
 Run:
 
@@ -121,21 +115,21 @@ Expected:
 .github/workflows/docker-build-pr-check.yml
 ```
 
-- [ ] **Step 6: Commit only the new workflow after the focused checks pass**
+- [ ] **Step 5: Commit the workflow-only change**
 
 ```bash
 git add .github/workflows/docker-build-pr-check.yml
-git commit -m "ci: add Docker build PR check"
+git commit -m "ci: add Docker build PR check workflow"
 ```
 
-## Task 2: Run Final Verification On The Workflow Contract
+## Task 2: Apply The Minimal Dockerfile Build Input Fix
 
 **Files:**
 
-- Test: `.github/workflows/docker-build-pr-check.yml`
-- Keep unchanged: `.github/workflows/release-image.yml`
+- Modify: `Dockerfile`
+- Reference for verification: `package.json`
 
-- [ ] **Step 1: Re-run a final assertion pass against the committed workflow file**
+- [ ] **Step 1: Verify the current build contract and missing Dockerfile input**
 
 Run:
 
@@ -143,19 +137,145 @@ Run:
 python - <<'PY'
 from pathlib import Path
 
-workflow = Path('.github/workflows/docker-build-pr-check.yml').read_text()
+package_json = Path('package.json').read_text(encoding='utf-8')
+dockerfile = Path('Dockerfile').read_text(encoding='utf-8')
 
-required_lines = [
+checks = [
+    ('package build script', '"build": "node scripts/build-sdk.mjs"' in package_json),
+    ('dockerfile copies package manifests', 'COPY package.json package-lock.json ./' in dockerfile),
+    ('dockerfile copies tsconfig files', 'COPY tsconfig.json tsconfig.build.json ./' in dockerfile),
+    ('dockerfile copies src', 'COPY src ./src' in dockerfile),
+    ('dockerfile missing scripts copy before build', 'COPY scripts ./scripts' not in dockerfile and 'RUN npm run build' in dockerfile),
+]
+
+failed = [name for name, ok in checks if not ok]
+if failed:
+    raise SystemExit('unexpected baseline:\n- ' + '\n- '.join(failed))
+
+print('baseline confirms scripts input is missing before npm run build')
+PY
+```
+
+Expected: PASS with `baseline confirms scripts input is missing before npm run build`.
+
+- [ ] **Step 2: Prove the current Docker build fails before the fix**
+
+Run:
+
+```bash
+docker build --platform linux/amd64 -t auth-mini:pr-check .
+```
+
+Expected: FAIL during `RUN npm run build` because the container cannot resolve `scripts/build-sdk.mjs` from `/app/scripts/build-sdk.mjs`.
+
+- [ ] **Step 3: Add only the missing `scripts/` build input before `RUN npm run build`**
+
+Update the builder stage in `Dockerfile` to:
+
+```dockerfile
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY tsconfig.json tsconfig.build.json ./
+COPY scripts ./scripts
+COPY src ./src
+RUN npm run build
+RUN npm prune --omit=dev
+```
+
+- [ ] **Step 4: Verify the Dockerfile fix is minimal and does not refactor the build**
+
+Run:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+
+dockerfile = Path('Dockerfile').read_text(encoding='utf-8')
+
+required = [
+    'COPY package.json package-lock.json ./',
+    'RUN npm ci',
+    'COPY tsconfig.json tsconfig.build.json ./',
+    'COPY scripts ./scripts',
+    'COPY src ./src',
+    'RUN npm run build',
+    'RUN npm prune --omit=dev',
+]
+
+missing = [line for line in required if line not in dockerfile]
+if missing:
+    raise SystemExit('missing Dockerfile lines:\n- ' + '\n- '.join(missing))
+
+if dockerfile.count('COPY scripts ./scripts') != 1:
+    raise SystemExit('expected exactly one COPY scripts ./scripts line')
+
+print('Dockerfile minimal fix checks passed')
+PY
+```
+
+Expected: PASS with `Dockerfile minimal fix checks passed`.
+
+- [ ] **Step 5: Re-run the exact Docker build command and confirm it succeeds**
+
+Run:
+
+```bash
+docker build --platform linux/amd64 -t auth-mini:pr-check .
+```
+
+Expected: PASS with a successful image build tagged `auth-mini:pr-check`.
+
+- [ ] **Step 6: Confirm the implementation only touched the approved files**
+
+Run:
+
+```bash
+git diff --name-only -- .github/workflows Dockerfile
+```
+
+Expected:
+
+```text
+.github/workflows/docker-build-pr-check.yml
+Dockerfile
+```
+
+- [ ] **Step 7: Commit the minimal Dockerfile enablement fix**
+
+```bash
+git add Dockerfile
+git commit -m "fix: copy scripts for Docker build"
+```
+
+## Task 3: Run Final Verification Before Push Or PR
+
+**Files:**
+
+- Test: `.github/workflows/docker-build-pr-check.yml`
+- Test: `Dockerfile`
+- Keep unchanged: `.github/workflows/release-image.yml`
+
+- [ ] **Step 1: Re-run the workflow contract assertion after both commits**
+
+Run:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+
+workflow = Path('.github/workflows/docker-build-pr-check.yml').read_text(encoding='utf-8')
+
+required = [
     'name: Docker build PR check',
     'pull_request:',
-    'jobs:',
     'docker-build-pr-check:',
     'runs-on: ubuntu-latest',
     'uses: actions/checkout@v4',
     'run: docker build --platform linux/amd64 -t auth-mini:pr-check .',
 ]
 
-forbidden_lines = [
+forbidden = [
     'push:',
     'workflow_dispatch:',
     'docker/login-action',
@@ -165,21 +285,41 @@ forbidden_lines = [
     'docker/test-entrypoint.sh',
 ]
 
-missing = [line for line in required_lines if line not in workflow]
-forbidden = [line for line in forbidden_lines if line in workflow]
+missing = [line for line in required if line not in workflow]
+present_forbidden = [line for line in forbidden if line in workflow]
 
 if missing:
-    raise SystemExit('missing required lines:\n- ' + '\n- '.join(missing))
-if forbidden:
-    raise SystemExit('found forbidden lines:\n- ' + '\n- '.join(forbidden))
+    raise SystemExit('missing required workflow lines:\n- ' + '\n- '.join(missing))
+if present_forbidden:
+    raise SystemExit('found forbidden workflow lines:\n- ' + '\n- '.join(present_forbidden))
 
-print('final docker-build-pr-check verification passed')
+print('final workflow verification passed')
 PY
 ```
 
-Expected: PASS with `final docker-build-pr-check verification passed`.
+Expected: PASS with `final workflow verification passed`.
 
-- [ ] **Step 2: Confirm the working tree is clean after commit**
+- [ ] **Step 2: Re-run the exact local Docker build used by the workflow**
+
+Run:
+
+```bash
+docker build --platform linux/amd64 -t auth-mini:pr-check .
+```
+
+Expected: PASS with a successful image build tagged `auth-mini:pr-check`.
+
+- [ ] **Step 3: Confirm `release-image.yml` remains unchanged**
+
+Run:
+
+```bash
+git diff --name-only origin/main -- .github/workflows/release-image.yml
+```
+
+Expected: no output.
+
+- [ ] **Step 4: Confirm the working tree is clean before `git rebase origin/main`**
 
 Run: `git status --short`
 
