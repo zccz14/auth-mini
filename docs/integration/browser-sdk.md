@@ -1,9 +1,10 @@
 # Browser SDK integration
 
-auth-mini supports two browser SDK integration paths:
+auth-mini supports two SDK integration paths:
 
-- Recommended module path: import `createBrowserSdk` from `auth-mini/sdk/browser` and pass the auth server origin explicitly.
-- Singleton script path: load `GET /sdk/singleton-iife.js`, which exposes `window.AuthMini` and infers its API base URL from the script `src`.
+- Browser SDK: import `createBrowserSdk` from `auth-mini/sdk/browser` for browser storage + cross-tab semantics.
+- Device SDK: import `createDeviceSdk` from `auth-mini/sdk/device` for isolated memory-only sessions in non-browser clients. See [Device SDK integration](./device-sdk.md).
+- Browser singleton script path: load `GET /sdk/singleton-iife.js`, which exposes `window.AuthMini` and infers its API base URL from the script `src`.
 
 ## Recommended: module/browser-subpath usage
 
@@ -16,6 +17,8 @@ const AuthMini = createBrowserSdk('https://auth.zccz14.com');
 ```
 
 The current `examples/demo/` app follows that module path as a Vite + React bundle. It imports `auth-mini/sdk/browser` at build time, mounts under a `HashRouter`, stays docs-only until you provide `/#/setup?auth-origin=https://your-auth-origin`, then reads `auth-origin` from `window.location.hash` and passes that origin into `createBrowserSdk(serverBaseUrl)`. The published demo now uses the bundled app entrypoint instead of any hand-wired browser bundle path.
+
+Browser SDK persistence semantics remain browser-only: the module and singleton browser paths still use browser storage and browser-oriented recovery behavior. The new device SDK does not change those semantics.
 
 ## Singleton script usage
 

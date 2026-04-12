@@ -165,6 +165,25 @@ Minimal browser SDK usage:
 </script>
 ```
 
+Minimal device SDK usage:
+
+```ts
+import { createDeviceSdk } from 'auth-mini/sdk/device';
+
+const sdk = createDeviceSdk({
+  serverBaseUrl: 'https://auth.your-domain.com',
+  credentialId: '550e8400-e29b-41d4-a716-446655440000',
+  privateKey: {
+    crv: 'Ed25519',
+    d: '7rANewlCLceTsUo9feN0DLjnu-ayYsdhkVWvHT4FelM',
+    kty: 'OKP',
+    x: 'jt2HpVJxALeSteTe7QlqBRiOxVeloHMMImehYhZc9Rg',
+  },
+});
+
+await sdk.ready;
+```
+
 Minimal backend JWT verification (jose example):
 
 ```js
@@ -194,6 +213,7 @@ From there, typical integration looks like this:
 
 `docs/` is the canonical static reference source. `examples/demo/` is the current interactive demo source and Pages publish target, while the deployed live demo remains the easiest way to try the browser flows end-to-end.
 
+- Device SDK integration: [docs/integration/device-sdk.md](docs/integration/device-sdk.md)
 - Browser SDK integration: [docs/integration/browser-sdk.md](docs/integration/browser-sdk.md)
 - WebAuthn integration: [docs/integration/webauthn.md](docs/integration/webauthn.md)
 - Backend JWT verification: [docs/integration/backend-jwt-verification.md](docs/integration/backend-jwt-verification.md)
