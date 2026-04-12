@@ -182,6 +182,8 @@ export function CredentialsRoute() {
                 <thead>
                   <tr className="border-b border-slate-200 text-slate-500">
                     <th className="py-2 pr-4 font-medium">Credential ID</th>
+                    <th className="py-2 pr-4 font-medium">RP ID</th>
+                    <th className="py-2 pr-4 font-medium">Last Used</th>
                     <th className="py-2 pr-4 font-medium">Created At</th>
                     {credentialManageable ? (
                       <th className="py-2 font-medium">Action</th>
@@ -194,6 +196,8 @@ export function CredentialsRoute() {
                       <td className="py-3 pr-4" title={row.credential_id}>
                         {truncateMiddle(row.credential_id)}
                       </td>
+                      <td className="py-3 pr-4">{row.rp_id}</td>
+                      <td className="py-3 pr-4">{row.last_used_at ?? 'Never'}</td>
                       <td className="py-3 pr-4">{row.created_at}</td>
                       {credentialManageable ? (
                         <td className="py-3">
