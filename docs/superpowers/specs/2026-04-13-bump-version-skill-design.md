@@ -11,7 +11,7 @@
 
 - 提供一个本地项目技能 `bump-version`，用于发布当前包的下一个稳定版本。
 - 支持三种输入方式：显式版本号（如 `0.1.9`）、`patch` / `minor` / `major` bump 类型、无参数交互模式。
-- 默认只修改 `package.json` 中的版本号，并围绕该变更走完整 worktree + PR 闭环。
+- 默认只同步修改根目录 `package.json` 与根目录 `package-lock.json` 中的版本元数据，并围绕该变更走完整 worktree + PR 闭环。
 - 在 PR 阶段主动持续跟进 checks、review 与 mergeability；若存在当前任务 scope 内的基线失败，继续在同一 worktree / 分支 / PR 中修复并推进。
 - 合并后轮询 npm registry，确认新版本已经可见；若外部发布链路阻塞，则停止并明确报告阻塞点。
 
@@ -25,7 +25,7 @@
 
 ## 核心决策
 
-`bump-version` 是一个面向当前仓库的发布编排技能，而不是通用 npm 发布工具。它只负责生成稳定版本号、在隔离 worktree 中更新 `package.json`、按仓库强制流程创建并持续推进 PR、在同一 PR 内处理 scope 内检查失败，最终在 PR 合并后轮询 npm registry 确认新版本已上线。真正的 npm 发布仍由仓库既有 CI 在 `main` 合并后完成；技能不得在本地直接执行发布命令，也不得扩展到 prerelease、tag 策略或其他发布治理功能。
+`bump-version` 是一个面向当前仓库的发布编排技能，而不是通用 npm 发布工具。它只负责生成稳定版本号、在隔离 worktree 中同步更新根目录 `package.json` 与根目录 `package-lock.json` 的版本元数据、按仓库强制流程创建并持续推进 PR、在同一 PR 内处理 scope 内检查失败，最终在 PR 合并后轮询 npm registry 确认新版本已上线。真正的 npm 发布仍由仓库既有 CI 在 `main` 合并后完成；技能不得在本地直接执行发布命令，也不得扩展到 prerelease、tag 策略或其他发布治理功能。
 
 ## 用户体验
 
@@ -56,8 +56,8 @@
 
 - 读取当前 `package.json` 的 `name` 与 `version`。
 - 根据显式版本或 bump 类型计算目标版本。
-- 拒绝以下输入：非法 semver、prerelease、目标版本不大于当前版本。
-- 在进入开发流程前，明确本轮只围绕 `package.json` 版本 bump 与其直接引出的发布闭环开展工作。
+- 拒绝以下输入：非法 semver、prerelease、build metadata、目标版本不大于当前版本。
+- 在进入开发流程前，明确本轮只围绕根目录 `package.json` 与根目录 `package-lock.json` 的版本元数据 bump 及其直接引出的发布闭环开展工作。
 
 ### 2. worktree 开发流
 
@@ -67,8 +67,8 @@
 
 ### 3. 版本修改与最小变更边界
 
-- 只对 `package.json` 的 `version` 做最小必要改动。
-- 若仓库未来存在与版本号直接绑定、且已由现有约束明确要求同步更新的发布元数据，可作为“直接伴随版本 bump 的必要联动”处理；若无明确现有约束，则本轮默认不扩展。
+- 只对根目录 `package.json` 与根目录 `package-lock.json` 中与版本号直接对应的元数据做最小必要改动。
+- 不改写 lockfile 中的依赖解析结果，也不扩展到非根目录 lockfile；本轮允许的 lockfile 变更仅限根目录版本元数据同步。
 - 提交内容应保持聚焦于版本 bump 本身，不混入无关重构或文档修改。
 
 ### 4. 提交、push 与 PR 创建
@@ -111,9 +111,9 @@
 
 后续实现至少应验证以下行为：
 
-- 输入校验：显式稳定版本、`patch` / `minor` / `major`、无参数交互模式都能正确收敛到合法目标版本；非法 semver、prerelease、非递增版本会被拒绝。
+- 输入校验：显式稳定版本、`patch` / `minor` / `major`、无参数交互模式都能正确收敛到合法目标版本；非法 semver、prerelease、build metadata、非递增版本会被拒绝。
 - worktree 合规性：技能在执行开发动作前会 `git fetch origin`，并在 `.worktrees/` 下基于 `origin/main` 创建新 worktree。
-- 变更边界：版本 bump 仅修改允许范围内文件，默认至少包含 `package.json` 的 `version` 变化。
+- 变更边界：版本 bump 仅修改允许范围内文件，默认包含根目录 `package.json` 的 `version` 变化与根目录 `package-lock.json` 的对应版本元数据同步。
 - PR 闭环：技能不会在“已创建 PR”时提前结束；会继续跟进 checks / review / mergeability，并在满足条件时完成 merge 与 worktree cleanup。
 - 失败分流：scope 内基线失败会在同一 PR 中继续修复；超出 scope 或外部平台阻塞会停止并输出 blocker。
 - npm 可见性确认：合并后会在有限窗口内重试查询 registry，并仅在目标版本实际可见时报告成功。

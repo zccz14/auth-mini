@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a project-local `bump-version` skill that safely bumps `package.json` to the next stable version and drives the full worktree, PR, merge, and npm-registry confirmation flow required by the approved spec.
+**Goal:** Add a project-local `bump-version` skill that safely bumps the root package version metadata to the next stable version and drives the full worktree, PR, merge, and npm-registry confirmation flow required by the approved spec.
 
 **Architecture:** Keep the implementation documentation-first and repo-local. Start with pressure-scenario fixtures plus a verifier script that fails while the skill is missing or incomplete, then add one focused `skills/bump-version/SKILL.md` that encodes version parsing, worktree-only execution, scope-limited PR follow-up, and post-merge registry polling. Avoid inventing a release framework; the skill should orchestrate existing git, GitHub, and npm commands for this single-package repo.
 
@@ -26,6 +26,8 @@
   - Reference for required worktree, rebase, PR follow-up, merge, and cleanup rules; do not modify.
 - Validate only: `package.json`
   - Source of truth for current package name/version and existing `build` / `test` scripts the skill should rely on rather than replacing.
+- Validate only: `package-lock.json`
+  - Root lockfile also carries the package version metadata, so the happy path must keep it aligned with `package.json`.
 - Validate only: `README.md`
   - Leave untouched unless implementation discovers an existing repo convention that indexes local skills.
 
@@ -52,17 +54,18 @@ Create `skills/bump-version/scenarios/explicit-version.md` with this content:
 ## Expected anchors
 
 - read `package.json` name and current version before planning any mutation
-- reject prerelease, invalid semver, and non-incrementing targets
+- reject prerelease, build metadata, invalid semver, and non-incrementing targets
 - announce the exact target version before creating a worktree
 - run `git fetch origin` before any development action
 - create a new worktree from `origin/main` under `.worktrees/`
-- modify only `package.json` `version` for the happy path
+- have the dispatched subagent perform development actions inside that worktree
+- update only the root `package.json` `version` plus matching root `package-lock.json` version metadata for the happy path
 - commit with `chore: bump version to 0.1.10`
 
 ## Drift to reject without the skill
 
-- editing `package-lock.json`, changelog, tags, or release notes by default
-- changing the main workspace instead of a worktree
+- editing changelog, tags, release notes, or non-root lockfiles by default
+- changing the main workspace instead of the dispatched worktree
 - stopping after opening a PR
 ```
 
@@ -81,10 +84,10 @@ Create `skills/bump-version/scenarios/bump-selector.md` with this content:
 ## Expected anchors
 
 - compute the next stable version from the current `package.json` version
-- keep prerelease and build metadata out of scope
-- in no-argument mode, force the user to choose explicit version input or one of `patch` / `minor` / `major`
+- reject prerelease input and build metadata as invalid stable-version targets
+- in no-argument mode, force a choice between explicit version input and one of `patch` / `minor` / `major`
 - print the resolved target version before any file change
-- keep the file diff to the minimal version bump unless a direct release blocker forces a same-PR fix
+- keep the file diff to the minimal root version-metadata bump unless a direct release blocker forces a same-PR fix
 
 ## Drift to reject without the skill
 
@@ -192,7 +195,7 @@ Create `skills/bump-version/SKILL.md` with this structure and anchor text:
 
 ## Purpose
 
-Release the next stable `auth-mini` version by changing only `package.json` `version` unless a direct release blocker in the same PR must also be fixed.
+Release the next stable `auth-mini` version by changing only the root `package.json` and root `package-lock.json` version metadata unless a direct release blocker in the same PR must also be fixed.
 
 ## Inputs
 
@@ -205,24 +208,26 @@ Release the next stable `auth-mini` version by changing only `package.json` `ver
 ## Required flow
 
 1. Read `package.json` and capture `name` plus current `version`.
-2. Resolve the target stable version and reject invalid semver, prerelease input, or non-incrementing targets.
+2. Resolve the target stable version and reject invalid semver, prerelease input, build metadata, or non-incrementing targets.
 3. Announce the exact target version.
-4. Run `git fetch origin`.
-5. Create a fresh worktree from `origin/main` under `.worktrees/` and do all development actions there.
-6. Update only `package.json` `version` on the happy path.
-7. Run the smallest required verification for the version-bump diff.
-8. Commit with `chore: bump version to <target>`.
-9. Run `git fetch origin` and `git rebase origin/main` before pushing.
-10. Push, create a PR, and state that merge-time CI performs the actual publish.
-11. Follow checks, review, and mergeability to closure instead of stopping at PR creation.
-12. Fix only failures that are directly caused by the version bump or are mandatory stable-release blockers already inside scope.
-13. Stop and report blockers outside scope, including permissions, third-party failures, and registry visibility timeouts.
-14. Merge when repository rules allow it, then delete the worktree after terminal PR state.
-15. Poll npm registry for the package name and target version inside a bounded 1-5 minute window before claiming success.
+4. In no-argument mode, force a choice between explicit version input and one of `patch` / `minor` / `major` before any mutation.
+5. Run `git fetch origin`.
+6. Create a fresh worktree from `origin/main` under `.worktrees/`, then have the dispatched subagent perform all development actions there.
+7. Update only the root `package.json` and root `package-lock.json` version metadata on the happy path.
+8. Run the smallest required verification for the version-bump diff.
+9. Commit with `chore: bump version to <target>`.
+10. Run `git fetch origin` and `git rebase origin/main` before pushing.
+11. Push, create a PR, and state that merge-time CI performs the actual publish.
+12. Follow checks, review, and mergeability to closure instead of stopping at PR creation.
+13. Fix only failures that are directly caused by the version bump or are mandatory stable-release blockers already inside scope.
+14. Stop and report blockers outside scope, including permissions, third-party failures, and registry visibility timeouts.
+15. Merge when repository rules allow it, then delete the worktree after terminal PR state.
+16. Poll npm registry for the package name and target version inside a bounded 1-5 minute window before claiming success.
 
 ## Hard bans
 
 - no prerelease versions
+- no build metadata targets
 - no local `npm publish`
 - no dist-tag customization
 - no direct edits in the main workspace
@@ -239,10 +244,11 @@ const skillText = readFileSync(skillPath, 'utf8');
 
 const skillAnchors = [
   'Read `package.json` and capture `name` plus current `version`.',
-  'reject invalid semver, prerelease input, or non-incrementing targets',
+  'reject invalid semver, prerelease input, build metadata, or non-incrementing targets',
   'Run `git fetch origin`.',
   'Create a fresh worktree from `origin/main` under `.worktrees/`',
-  'Update only `package.json` `version` on the happy path.',
+  'dispatched subagent perform all development actions there',
+  'Update only the root `package.json` and root `package-lock.json` version metadata on the happy path.',
   'Commit with `chore: bump version to <target>`.',
   'git rebase origin/main',
   'merge-time CI performs the actual publish',
@@ -272,6 +278,7 @@ Expected:
 
 - only `skills/bump-version/SKILL.md`, `skills/bump-version/scripts/verify-bump-version-skill.mjs`, and the three scenario markdown files are present
 - no new release pipeline, workflow, or CLI code was added
+- the skill text keeps the happy path limited to root version-metadata updates plus required subagent/worktree orchestration
 
 ## Task 3: Verify blocker handling and decide whether discoverability docs are actually needed
 
