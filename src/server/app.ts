@@ -1,5 +1,3 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { Hono, type Context } from 'hono';
 import type { ZodType } from 'zod';
 import type { DatabaseClient } from '../infra/db/client.js';
@@ -69,7 +67,6 @@ import {
   requirePasskeyManagementAuth,
   type AuthVariables,
 } from './auth.js';
-import { renderSingletonIifeSource } from '../sdk/singleton-entry.js';
 import {
   credentialNotFoundError,
   duplicateCredentialError,
@@ -95,21 +92,6 @@ type AppVariables = AuthVariables & {
   origins: string[];
   requestId: string;
 };
-
-const singletonIifeDtsPathCandidates = [
-  fileURLToPath(new URL('../sdk/singleton-iife.d.ts', import.meta.url)),
-  fileURLToPath(new URL('../../dist/sdk/singleton-iife.d.ts', import.meta.url)),
-];
-
-const singletonIifeDtsPath = singletonIifeDtsPathCandidates.find((path) =>
-  existsSync(path),
-);
-
-if (!singletonIifeDtsPath) {
-  throw new Error('sdk declaration artifact not found');
-}
-
-const singletonIifeDtsSource = readFileSync(singletonIifeDtsPath, 'utf8');
 
 export function createApp(input: {
   db: DatabaseClient;
@@ -215,20 +197,6 @@ export function createApp(input: {
       allowHeaders: corsAllowHeaders,
       logger: 'logger' in c.var ? c.var.logger : undefined,
       logUnhandled: true,
-    });
-  });
-
-  app.get('/sdk/singleton-iife.js', (c) => {
-    return c.body(renderSingletonIifeSource(), 200, {
-      'content-type': 'application/javascript; charset=utf-8',
-      'cache-control': 'no-cache',
-    });
-  });
-
-  app.get('/sdk/singleton-iife.d.ts', (c) => {
-    return c.body(singletonIifeDtsSource, 200, {
-      'content-type': 'text/plain; charset=utf-8',
-      'cache-control': 'no-cache',
     });
   });
 
