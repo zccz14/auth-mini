@@ -50,8 +50,9 @@
 ### Passkey 分区
 
 - Passkey 分区展示当前用户的 `webauthn_credentials`。
-- 表格列固定为 `Credential ID / Created At / Action`。
+- 表格列固定为 `Credential ID / RP ID / Last Used / Created At / Action`。
 - 每一行代表一条当前用户自己的 Passkey 记录。
+- `Last Used` 读取 `last_used_at`；当该值为 `null` 时，UI 必须显示 `Never`。
 - `Action` 只提供 unbind/delete 能力，触发前必须使用浏览器原生确认；用户取消确认时不得发起删除请求。
 - 删除成功后必须重新刷新 `/me`，以服务端返回结果作为最新列表来源。
 
