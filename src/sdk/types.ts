@@ -104,7 +104,7 @@ export type DevicePrivateKeyJwk = {
 export type DeviceSdkOptions = {
   serverBaseUrl: string;
   credentialId: string;
-  privateKey: DevicePrivateKeyJwk;
+  privateKeySeed: string;
   fetch?: FetchLike;
   now?: () => number;
 };

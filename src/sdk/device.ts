@@ -2,7 +2,7 @@ import { createSdkError } from './errors.js';
 import { createHttpClient } from './http.js';
 import { createSessionController, normalizeTokenResponse } from './session.js';
 import { createStateStore } from './state.js';
-import { authenticateDevice } from './device-auth.js';
+import { authenticateDevice, deriveDevicePrivateKey } from './device-auth.js';
 import type {
   DeviceSdkApi,
   DeviceSdkOptions,
@@ -10,7 +10,6 @@ import type {
 } from './types.js';
 
 export type {
-  DevicePrivateKeyJwk,
   DeviceSdkApi,
   DeviceSdkOptions,
   Listener,
@@ -95,6 +94,7 @@ export function createDeviceSdk(options: DeviceSdkOptions): DeviceSdkApi {
     baseUrl: options.serverBaseUrl,
     fetch,
   });
+  const privateKey = deriveDevicePrivateKey(options.privateKeySeed);
   const now = options.now ?? (() => Date.now());
   const session = createSessionController({
     http,
@@ -106,7 +106,7 @@ export function createDeviceSdk(options: DeviceSdkOptions): DeviceSdkApi {
     await authenticateDevice({
       credentialId: options.credentialId,
       http,
-      privateKey: options.privateKey,
+      privateKey,
       session: {
         async acceptSessionResponse(response) {
           const acceptedSession = normalizeTokenResponse(response, now);

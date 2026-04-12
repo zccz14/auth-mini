@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createDeviceSdk } from '../../src/sdk/device.js';
 import {
   countLogoutCalls,
-  createDevicePrivateKey,
+  createDevicePrivateKeySeed,
   jsonResponse,
   readJsonBody,
 } from '../helpers/sdk.js';
@@ -59,7 +59,7 @@ describe('device module sdk', () => {
     const sdk = createDeviceSdk({
       serverBaseUrl: 'https://sdk.example.test:9443/auth/base',
       credentialId: '550e8400-e29b-41d4-a716-446655440000',
-      privateKey: createDevicePrivateKey(),
+      privateKeySeed: createDevicePrivateKeySeed(),
       fetch,
       now: () => Date.parse('2026-04-12T00:00:00.000Z'),
     });
@@ -117,7 +117,7 @@ describe('device module sdk', () => {
     const sdk = createDeviceSdk({
       serverBaseUrl: 'https://auth.example.com',
       credentialId: '550e8400-e29b-41d4-a716-446655440000',
-      privateKey: createDevicePrivateKey(),
+      privateKeySeed: createDevicePrivateKeySeed(),
       fetch,
       now: () => Date.parse('2026-04-12T00:00:00.000Z'),
     });
@@ -141,7 +141,7 @@ describe('device module sdk', () => {
     const sdk = createDeviceSdk({
       serverBaseUrl: 'https://auth.example.com',
       credentialId: '550e8400-e29b-41d4-a716-446655440000',
-      privateKey: createDevicePrivateKey(),
+      privateKeySeed: createDevicePrivateKeySeed(),
       fetch: vi
         .fn()
         .mockResolvedValueOnce(
@@ -181,7 +181,7 @@ describe('device module sdk', () => {
     const sdk = createDeviceSdk({
       serverBaseUrl: 'https://auth.example.com',
       credentialId: '550e8400-e29b-41d4-a716-446655440000',
-      privateKey: createDevicePrivateKey(),
+      privateKeySeed: createDevicePrivateKeySeed(),
       fetch: vi.fn(async (input: URL | RequestInfo) => {
         const url = input instanceof URL ? input : new URL(String(input));
 
@@ -286,7 +286,7 @@ describe('device module sdk', () => {
     const sdk = createDeviceSdk({
       serverBaseUrl: 'https://auth.example.com',
       credentialId: '550e8400-e29b-41d4-a716-446655440000',
-      privateKey: createDevicePrivateKey(),
+      privateKeySeed: createDevicePrivateKeySeed(),
       fetch,
       now: () => Date.parse('2026-04-12T00:30:00.000Z'),
     });
@@ -352,7 +352,7 @@ describe('device module sdk', () => {
     const sdk = createDeviceSdk({
       serverBaseUrl: 'https://auth.example.com',
       credentialId: '550e8400-e29b-41d4-a716-446655440000',
-      privateKey: createDevicePrivateKey(),
+      privateKeySeed: createDevicePrivateKeySeed(),
       fetch,
     });
 
