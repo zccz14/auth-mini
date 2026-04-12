@@ -190,7 +190,11 @@ describe('sdk state store', () => {
       snapshot.me.webauthn_credentials[0].credential_id = 'mutated-device';
     }).toThrow();
     expect(sdk.session.getState().me?.webauthn_credentials).toEqual([
-      expect.objectContaining({ credential_id: 'device-1' }),
+      expect.objectContaining({
+        credential_id: 'device-1',
+        rp_id: 'app.example.com',
+        last_used_at: null,
+      }),
     ]);
   });
 
@@ -260,11 +264,17 @@ describe('sdk state store', () => {
 
     me.email = 'mutated@example.com';
     me.webauthn_credentials[0].credential_id = 'mutated-device';
+    me.webauthn_credentials[0].rp_id = 'mutated.example.com';
+    me.webauthn_credentials[0].last_used_at = '2026-04-04T00:00:00.000Z';
 
     expect(Object.isFrozen(me)).toBe(false);
     expect(sdk.getState().me).toMatchObject({ email: 'u@example.com' });
     expect(sdk.getState().me?.webauthn_credentials).toEqual([
-      expect.objectContaining({ credential_id: 'device-1' }),
+      expect.objectContaining({
+        credential_id: 'device-1',
+        rp_id: 'app.example.com',
+        last_used_at: null,
+      }),
     ]);
   });
 
@@ -298,11 +308,17 @@ describe('sdk state store', () => {
 
     me.email = 'mutated@example.com';
     me.webauthn_credentials[0].credential_id = 'mutated-device';
+    me.webauthn_credentials[0].rp_id = 'mutated.example.com';
+    me.webauthn_credentials[0].last_used_at = '2026-04-04T00:00:00.000Z';
 
     expect(Object.isFrozen(me)).toBe(false);
     expect(sdk.getState().me).toMatchObject({ email: 'u@example.com' });
     expect(sdk.getState().me?.webauthn_credentials).toEqual([
-      expect.objectContaining({ credential_id: 'device-1' }),
+      expect.objectContaining({
+        credential_id: 'device-1',
+        rp_id: 'app.example.com',
+        last_used_at: null,
+      }),
     ]);
   });
 
@@ -340,12 +356,18 @@ describe('sdk state store', () => {
 
     me.email = 'mutated@example.com';
     me.webauthn_credentials[0].credential_id = 'mutated-device';
+    me.webauthn_credentials[0].rp_id = 'mutated.example.com';
+    me.webauthn_credentials[0].last_used_at = '2026-04-04T00:00:00.000Z';
 
     expect(Object.isFrozen(me)).toBe(false);
     expect(sdk.getState().status).toBe('recovering');
     expect(sdk.getState().me).toMatchObject({ email: 'u@example.com' });
     expect(sdk.getState().me?.webauthn_credentials).toEqual([
-      expect.objectContaining({ credential_id: 'device-1' }),
+      expect.objectContaining({
+        credential_id: 'device-1',
+        rp_id: 'app.example.com',
+        last_used_at: null,
+      }),
     ]);
   });
 
