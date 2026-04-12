@@ -143,6 +143,19 @@ describe('device module sdk', () => {
     );
   });
 
+  it('throws during construction for non-canonical base64url seed text', () => {
+    expect(() =>
+      createDeviceSdk({
+        serverBaseUrl: 'https://auth.example.com',
+        credentialId: '550e8400-e29b-41d4-a716-446655440000',
+        privateKeySeed: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQB',
+        fetch: vi.fn(),
+      }),
+    ).toThrowError(
+      /sdk_init_failed: privateKeySeed must be a base64url-encoded 32-byte string/,
+    );
+  });
+
   it('throws during construction for decoded seeds that are not 32 bytes', () => {
     expect(() =>
       createDeviceSdk({

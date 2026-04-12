@@ -25,7 +25,7 @@ export function deriveDevicePrivateKey(privateKeySeed: string): KeyObject {
 
   const seed = Buffer.from(privateKeySeed, 'base64url');
 
-  if (seed.length !== 32) {
+  if (seed.length !== 32 || encodeBase64Url(seed) !== privateKeySeed) {
     throw createSdkError('sdk_init_failed', DEVICE_SEED_ERROR);
   }
 
