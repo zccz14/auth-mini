@@ -48,6 +48,15 @@ function toAmr(authMethod: Session['authMethod']): string[] {
   return amr;
 }
 
+function getRefreshTokenExpiresAt(now: string): string {
+  return new Date(
+    getExpiresAtUnixSeconds(
+      getUnixTimeSeconds(Date.parse(now)),
+      TTLS.refreshTokenSeconds,
+    ) * 1000,
+  ).toISOString();
+}
+
 export async function mintSessionTokens(
   db: DatabaseClient,
   input: {
@@ -95,6 +104,7 @@ export async function refreshSessionTokens(
     logger?: AppLogger;
   },
 ): Promise<TokenPair & { session: Session }> {
+  const maxRefreshRecoveryAttempts = 3;
   const now = new Date().toISOString();
   const submittedRefreshTokenHash = hashValue(input.refreshToken);
   const currentSession = getSessionById(db, input.sessionId);
@@ -127,73 +137,67 @@ export async function refreshSessionTokens(
 
   const refreshToken = generateOpaqueToken();
   const rotatedRefreshTokenHash = hashValue(refreshToken);
-  let rotatedSession = rotateRefreshToken(db, {
-    sessionId: input.sessionId,
-    currentRefreshTokenHash: submittedRefreshTokenHash,
-    nextRefreshTokenHash: rotatedRefreshTokenHash,
-    now,
-  });
+  const refreshedExpiresAt = getRefreshTokenExpiresAt(now);
+  for (let attempt = 0; attempt < maxRefreshRecoveryAttempts; attempt += 1) {
+    const rotatedSession = rotateRefreshToken(db, {
+      sessionId: input.sessionId,
+      currentRefreshTokenHash: submittedRefreshTokenHash,
+      nextRefreshTokenHash: rotatedRefreshTokenHash,
+      expiresAt: refreshedExpiresAt,
+      now,
+    });
 
-  if (!rotatedSession) {
-    let latestSession = getSessionById(db, input.sessionId);
-
-    if (latestSession && latestSession.expiresAt > now) {
-      rotatedSession = rotateRefreshToken(db, {
-        sessionId: input.sessionId,
-        currentRefreshTokenHash: submittedRefreshTokenHash,
-        nextRefreshTokenHash: rotatedRefreshTokenHash,
+    if (rotatedSession) {
+      return finalizeRefresh(db, {
+        input,
         now,
+        refreshToken,
+        rotatedRefreshTokenHash,
+        rotatedSession,
+        previousExpiresAt: currentSession.expiresAt,
+        submittedRefreshTokenHash,
       });
-
-      latestSession = rotatedSession
-        ? latestSession
-        : getSessionById(db, input.sessionId);
-
-      if (rotatedSession) {
-        return finalizeRefresh(db, {
-          input,
-          now,
-          refreshToken,
-          rotatedRefreshTokenHash,
-          rotatedSession,
-          submittedRefreshTokenHash,
-        });
-      }
-
-      if (latestSession && latestSession.expiresAt > now) {
-        input.logger?.warn(
-          {
-            event: 'session.refresh.failed',
-            reason: 'session_superseded',
-            session_id: input.sessionId,
-          },
-          'Session refresh failed',
-        );
-
-        throw new SessionSupersededError();
-      }
     }
 
-    input.logger?.warn(
-      {
-        event: 'session.refresh.failed',
-        reason: 'session_invalidated',
-        session_id: input.sessionId,
-      },
-      'Session refresh failed',
-    );
+    const latestSession = getSessionById(db, input.sessionId);
 
-    throw new SessionInvalidatedError();
+    if (!latestSession || latestSession.expiresAt <= now) {
+      input.logger?.warn(
+        {
+          event: 'session.refresh.failed',
+          reason: 'session_invalidated',
+          session_id: input.sessionId,
+        },
+        'Session refresh failed',
+      );
+
+      throw new SessionInvalidatedError();
+    }
+
+    if (latestSession.refreshTokenHash !== submittedRefreshTokenHash) {
+      input.logger?.warn(
+        {
+          event: 'session.refresh.failed',
+          reason: 'session_superseded',
+          session_id: input.sessionId,
+        },
+        'Session refresh failed',
+      );
+
+      throw new SessionSupersededError();
+    }
   }
 
-  return finalizeRefresh(db, {
-    input,
-    now,
-    refreshToken,
-    rotatedRefreshTokenHash,
-    rotatedSession,
-    submittedRefreshTokenHash,
-  });
+  input.logger?.warn(
+    {
+      event: 'session.refresh.failed',
+      reason: 'session_invalidated',
+      session_id: input.sessionId,
+    },
+    'Session refresh failed',
+  );
+
+  throw new SessionInvalidatedError();
 }
 
 async function finalizeRefresh(
@@ -209,6 +213,7 @@ async function finalizeRefresh(
     refreshToken: string;
     rotatedRefreshTokenHash: string;
     rotatedSession: Session;
+    previousExpiresAt: string;
     submittedRefreshTokenHash: string;
   },
 ): Promise<TokenPair & { session: Session }> {
@@ -227,6 +232,7 @@ async function finalizeRefresh(
       sessionId: params.input.sessionId,
       currentRefreshTokenHash: params.rotatedRefreshTokenHash,
       nextRefreshTokenHash: params.submittedRefreshTokenHash,
+      expiresAt: params.previousExpiresAt,
       now: params.now,
     });
 

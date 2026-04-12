@@ -105,6 +105,7 @@ export function rotateRefreshToken(
     sessionId: string;
     currentRefreshTokenHash: string;
     nextRefreshTokenHash: string;
+    expiresAt?: string;
     now?: string;
   },
 ): Session | null {
@@ -112,7 +113,7 @@ export function rotateRefreshToken(
   const update = db.prepare(
     [
       'UPDATE sessions',
-      'SET refresh_token_hash = ?',
+      'SET refresh_token_hash = ?, expires_at = COALESCE(?, expires_at)',
       'WHERE id = ? AND refresh_token_hash = ? AND expires_at > ?',
     ].join(' '),
   );
@@ -128,6 +129,7 @@ export function rotateRefreshToken(
     (params: typeof input, timestamp: string): Session | null => {
       const result = update.run(
         params.nextRefreshTokenHash,
+        params.expiresAt ?? null,
         params.sessionId,
         params.currentRefreshTokenHash,
         timestamp,
