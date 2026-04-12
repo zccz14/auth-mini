@@ -11,11 +11,16 @@ export function SessionRoute() {
   const rows = user?.active_sessions ?? [];
 
   async function kickSession(sessionId: string) {
+    if (pendingSessionId !== null) {
+      return;
+    }
+
     if (!sdk || !session.accessToken || config.status !== 'ready') {
       setTableError('Unable to kick session.');
       return;
     }
 
+    setTableError('');
     setPendingSessionId(sessionId);
 
     try {

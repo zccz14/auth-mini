@@ -339,6 +339,9 @@ describe('SessionRoute', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(screen.getAllByRole('button', { name: 'Kick' })[0]).toBeEnabled();
 
+    await user.click(screen.getAllByRole('button', { name: 'Kick' })[0]!);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
     resolveLogout?.(
       new Response(JSON.stringify({ ok: true }), {
         status: 200,
@@ -386,6 +389,11 @@ describe('SessionRoute', () => {
       },
     };
 
+    let resolveRetry: ((response: Response) => void) | undefined;
+    const retryPromise = new Promise<Response>((resolve) => {
+      resolveRetry = resolve;
+    });
+
     const fetchMock = vi
       .fn<typeof globalThis.fetch>()
       .mockResolvedValueOnce(
@@ -394,12 +402,7 @@ describe('SessionRoute', () => {
           headers: { 'content-type': 'application/json' },
         }),
       )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ ok: true }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }),
-      );
+      .mockImplementationOnce(() => retryPromise);
 
     vi.stubGlobal('fetch', fetchMock);
 
@@ -437,7 +440,23 @@ describe('SessionRoute', () => {
       },
     };
 
-    await user.click(screen.getAllByRole('button', { name: 'Kick' })[1]!);
+    const retryClickPromise = user.click(screen.getAllByRole('button', { name: 'Kick' })[1]!);
+
+    await waitFor(() => {
+      expect(
+        within(sessionsSection).queryByText('Unable to kick session.'),
+      ).not.toBeInTheDocument();
+    });
+    expect(await screen.findByRole('button', { name: 'Kicking...' })).toBeDisabled();
+
+    resolveRetry?.(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+
+    await retryClickPromise;
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(await screen.findByText('session-current')).toBeInTheDocument();
