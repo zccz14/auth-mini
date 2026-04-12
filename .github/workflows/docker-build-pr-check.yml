@@ -11,5 +11,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Prepare Linux runtime artifact
+        run: bash scripts/prepare-linux-runtime-artifact.sh
+
       - name: Build Docker image
-        run: docker build --platform linux/amd64 -t auth-mini:pr-check .
+        run: SKIP_PREPARE_RUNTIME_ARTIFACT=1 bash scripts/build-runtime-image.sh auth-mini:pr-check
