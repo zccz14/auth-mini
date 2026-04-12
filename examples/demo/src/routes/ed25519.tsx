@@ -54,7 +54,6 @@ export function Ed25519Route() {
     credentialId.trim() !== '' &&
     seedValidationError === '' &&
     pendingAction === null;
-  const currentCredentials = user?.ed25519_credentials ?? [];
 
   function formatDemoError(cause: unknown): string {
     if (cause instanceof Error) {
@@ -311,7 +310,10 @@ export function Ed25519Route() {
         <div className="grid gap-4 xl:grid-cols-3">
           <JsonPanel title="session" value={session} />
           <JsonPanel title="last responses" value={lastResponses} />
-          <JsonPanel title="current credentials" value={currentCredentials} />
+          <JsonPanel
+            title="current credentials"
+            value={user?.ed25519_credentials ?? []}
+          />
         </div>
       </div>
     </FlowCard>
