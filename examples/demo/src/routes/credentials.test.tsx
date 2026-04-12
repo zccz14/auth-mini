@@ -30,6 +30,7 @@ type MockSessionState = {
   authenticated: boolean;
   sessionId: string | null;
   accessToken: string | null;
+  authMethod?: 'email_otp' | 'webauthn' | 'ed25519' | null;
   refreshToken: string | null;
   receivedAt: string | null;
   expiresAt: string | null;
@@ -107,15 +108,27 @@ function fakeAccessToken(amr: string[]) {
   ].join('.');
 }
 
+function fakeLegacyAccessToken() {
+  return [
+    encodeJwtSegment({ alg: 'none', typ: 'JWT' }),
+    encodeJwtSegment({ sub: 'user-1' }),
+    'signature',
+  ].join('.');
+}
+
 function authenticatedSession(
   overrides?: Partial<MockMe>,
-  options?: { accessToken?: string },
+  options?: {
+    accessToken?: string;
+    authMethod?: MockSessionState['authMethod'];
+  },
 ): MockSessionState {
   return {
     status: 'authenticated',
     authenticated: true,
     sessionId: 'session-1',
     accessToken: options?.accessToken ?? fakeAccessToken(['email_otp']),
+    authMethod: options?.authMethod ?? 'email_otp',
     refreshToken: 'refresh-token',
     receivedAt: '2026-04-12T00:00:00.000Z',
     expiresAt: '2026-04-12T01:00:00.000Z',
@@ -255,6 +268,7 @@ describe('CredentialsRoute', () => {
     expect(screen.getByText(/passkey-credential-abc/i)).toBeInTheDocument();
     expect(screen.getByText('example.com')).toBeInTheDocument();
     expect(screen.getByText('Never')).toBeInTheDocument();
+    expect(screen.getByText('2026-04-11T08:30:00.000Z')).toBeInTheDocument();
     expect(screen.getByText('2026-04-10T12:00:00.000Z')).toBeInTheDocument();
     expect(
       screen.getByRole('button', {
@@ -512,6 +526,51 @@ describe('CredentialsRoute', () => {
     expect(
       screen.queryByRole('button', { name: 'Delete device key Build runner' }),
     ).not.toBeInTheDocument();
+  });
+
+  it('keeps delete actions available for legacy tokens without amr when session authMethod can manage credentials', () => {
+    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
+    sdkMocks.sessionState.current = authenticatedSession(
+      {
+        webauthn_credentials: [
+          {
+            id: 'passkey-row-1',
+            credential_id: 'passkey-credential-abcdef123456',
+            rp_id: 'example.com',
+            last_used_at: null,
+            created_at: '2026-04-10T12:00:00.000Z',
+          },
+        ],
+        ed25519_credentials: [
+          {
+            id: 'device-row-1',
+            name: 'Build runner',
+            public_key: 'MCowBQYDK2VwAyEAlongPublicKeyValueForTesting1234567890=',
+            last_used_at: null,
+            created_at: '2026-04-09T09:15:00.000Z',
+          },
+        ],
+      },
+      {
+        accessToken: fakeLegacyAccessToken(),
+        authMethod: 'email_otp',
+      },
+    );
+
+    render(
+      <MemoryRouter initialEntries={['/credentials']}>
+        <AppRouter />
+      </MemoryRouter>,
+    );
+
+    expect(
+      screen.getByRole('button', {
+        name: 'Delete passkey passkey-credential-abcdef123456',
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Delete device key Build runner' }),
+    ).toBeInTheDocument();
   });
 
   it('keeps the email section read-only even when the user has a primary email', () => {

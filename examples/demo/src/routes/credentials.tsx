@@ -33,8 +33,18 @@ function getAccessTokenAmr(accessToken: string): string[] {
   }
 }
 
-function canManageCredentials(accessToken: string) {
+function getSessionAuthMethod(session: unknown) {
+  const authMethod = asRecord(session)?.authMethod;
+  return typeof authMethod === 'string' ? authMethod : null;
+}
+
+function canManageCredentials(accessToken: string, sessionAuthMethod: string | null) {
   const amr = getAccessTokenAmr(accessToken);
+
+  if (amr.length === 0) {
+    return sessionAuthMethod === 'email_otp' || sessionAuthMethod === 'webauthn';
+  }
+
   return amr.includes('email_otp') || amr.includes('webauthn');
 }
 
@@ -59,7 +69,7 @@ export function CredentialsRoute() {
     session.accessToken.length > 0;
   const accessToken = typeof session.accessToken === 'string' ? session.accessToken : '';
   const credentialManageable =
-    authenticated && canManageCredentials(accessToken);
+    authenticated && canManageCredentials(accessToken, getSessionAuthMethod(session));
 
   const email = user?.email ?? '';
   const passkeys = user?.webauthn_credentials ?? [];
