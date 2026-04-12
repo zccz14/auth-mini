@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS webauthn_credentials (
   counter INTEGER NOT NULL DEFAULT 0,
   transports TEXT NOT NULL DEFAULT '',
   rp_id TEXT NOT NULL,
+  last_used_at TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );

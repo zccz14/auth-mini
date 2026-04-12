@@ -12,6 +12,8 @@ type WebauthnCredentialRow = {
   id: string;
   credential_id: string;
   transports: string;
+  rp_id: string;
+  last_used_at: string | null;
   created_at: string;
 };
 
@@ -40,6 +42,8 @@ export type MeCredential = {
   id: string;
   credential_id: string;
   transports: string[];
+  rp_id: string;
+  last_used_at: string | null;
   created_at: string;
 };
 
@@ -109,7 +113,7 @@ export function listUserWebauthnCredentials(
   const rows = db
     .prepare(
       [
-        'SELECT id, credential_id, transports, created_at',
+        'SELECT id, credential_id, transports, rp_id, last_used_at, created_at',
         'FROM webauthn_credentials',
         'WHERE user_id = ?',
         'ORDER BY created_at ASC, id ASC',
@@ -121,6 +125,8 @@ export function listUserWebauthnCredentials(
     id: row.id,
     credential_id: row.credential_id,
     transports: row.transports ? row.transports.split(',').filter(Boolean) : [],
+    rp_id: row.rp_id,
+    last_used_at: row.last_used_at,
     created_at: row.created_at,
   }));
 }

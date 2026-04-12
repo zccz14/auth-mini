@@ -972,12 +972,13 @@ describe('webauthn routes', () => {
     const passkey = await registerPasskey(testApp, 'signin@example.com');
     const storedCredentialBeforeAuth = testApp.db
       .prepare(
-        'SELECT credential_id, public_key, counter FROM webauthn_credentials WHERE user_id = ?',
+        'SELECT credential_id, public_key, counter, last_used_at FROM webauthn_credentials WHERE user_id = ?',
       )
       .get(testApp.userId) as {
       credential_id: string;
       public_key: string;
       counter: number;
+      last_used_at: string | null;
     };
 
     const optionsResponse = await testApp.app.request(
@@ -1004,12 +1005,13 @@ describe('webauthn routes', () => {
     );
     const storedCredential = testApp.db
       .prepare(
-        'SELECT credential_id, public_key, counter FROM webauthn_credentials WHERE user_id = ?',
+        'SELECT credential_id, public_key, counter, last_used_at FROM webauthn_credentials WHERE user_id = ?',
       )
       .get(testApp.userId) as {
       credential_id: string;
       public_key: string;
       counter: number;
+      last_used_at: string | null;
     };
     const body = (await verifyResponse.json()) as { access_token: string };
     const payload = await verifyJwt(testApp.db, body.access_token);
@@ -1018,6 +1020,7 @@ describe('webauthn routes', () => {
       credential_id: passkey.credentialId,
       public_key: expect.any(String),
       counter: 0,
+      last_used_at: null,
     });
     expect(storedCredentialBeforeAuth.public_key).not.toMatch(/^\s*\{/);
     expect(storedCredentialBeforeAuth.public_key.length).toBeGreaterThan(0);
@@ -1033,6 +1036,7 @@ describe('webauthn routes', () => {
       credential_id: passkey.credentialId,
       public_key: storedCredentialBeforeAuth.public_key,
       counter: 1,
+      last_used_at: expect.any(String),
     });
     expectLogEntry(testApp.logs, {
       event: 'webauthn.authenticate.verify.succeeded',

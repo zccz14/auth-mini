@@ -2,12 +2,16 @@ window.AuthMini.session.onChange((state) => {
   const status = state.status;
   const email = state.me?.email;
   const credentialId = state.me?.webauthn_credentials[0].credential_id;
+  const rpId = state.me?.webauthn_credentials[0].rp_id;
+  const lastUsedAt = state.me?.webauthn_credentials[0].last_used_at;
   const publicKey = state.me?.ed25519_credentials[0].public_key;
   const expiresAt = state.me?.active_sessions[0].expires_at;
 
   void status;
   void email;
   void credentialId;
+  void rpId;
+  void lastUsedAt;
   void publicKey;
   void expiresAt;
 });

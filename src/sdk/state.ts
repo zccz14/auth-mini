@@ -200,6 +200,8 @@ function cloneMeResponse(me: MeResponse): MeResponse {
       id: credential.id,
       credential_id: credential.credential_id,
       transports: [...credential.transports],
+      rp_id: credential.rp_id,
+      last_used_at: credential.last_used_at,
       created_at: credential.created_at,
     })),
     ed25519_credentials: me.ed25519_credentials.map((credential) => ({
