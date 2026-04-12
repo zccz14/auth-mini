@@ -1,7 +1,9 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FlowCard } from '@/components/app/flow-card';
 import { Button } from '@/components/ui/button';
 import { useDemo } from '@/app/providers/demo-provider';
+
+type CredentialCapability = 'manageable' | 'not-manageable' | 'legacy-token';
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null
@@ -32,14 +34,14 @@ function getAccessTokenPayload(accessToken: string) {
   }
 }
 
-function canManageCredentials(accessToken: string) {
+function getCredentialCapability(accessToken: string): CredentialCapability {
   const payload = getAccessTokenPayload(accessToken);
   if (!payload) {
-    return false;
+    return 'not-manageable';
   }
 
   if (!('amr' in payload)) {
-    return true;
+    return 'legacy-token';
   }
 
   const amr = Array.isArray(payload.amr)
@@ -47,10 +49,12 @@ function canManageCredentials(accessToken: string) {
     : [];
 
   if (amr.length === 0) {
-    return false;
+    return 'not-manageable';
   }
 
-  return amr.includes('email_otp') || amr.includes('webauthn');
+  return amr.includes('email_otp') || amr.includes('webauthn')
+    ? 'manageable'
+    : 'not-manageable';
 }
 
 export function CredentialsRoute() {
@@ -65,6 +69,11 @@ export function CredentialsRoute() {
   });
   const [passkeyError, setPasskeyError] = useState('');
   const [ed25519Error, setEd25519Error] = useState('');
+  const [accessTokenOverride, setAccessTokenOverride] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAccessTokenOverride(null);
+  }, [session.accessToken]);
 
   const authenticated =
     config.status === 'ready' &&
@@ -73,7 +82,44 @@ export function CredentialsRoute() {
     typeof session.accessToken === 'string' &&
     session.accessToken.length > 0;
   const accessToken = typeof session.accessToken === 'string' ? session.accessToken : '';
-  const credentialManageable = authenticated && canManageCredentials(accessToken);
+  const effectiveAccessToken = accessTokenOverride ?? accessToken;
+  const credentialCapability = authenticated
+    ? getCredentialCapability(effectiveAccessToken)
+    : 'not-manageable';
+  const credentialManageable = credentialCapability === 'manageable';
+
+  useEffect(() => {
+    if (
+      !authenticated ||
+      !sdk ||
+      credentialCapability !== 'legacy-token' ||
+      !session.refreshToken ||
+      accessTokenOverride
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void sdk.session
+      .refresh()
+      .then((refreshed) => {
+        if (!cancelled && typeof refreshed.accessToken === 'string') {
+          setAccessTokenOverride(refreshed.accessToken);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    accessTokenOverride,
+    authenticated,
+    credentialCapability,
+    sdk,
+    session.refreshToken,
+  ]);
 
   const email = user?.email ?? '';
   const passkeys = user?.webauthn_credentials ?? [];
@@ -107,7 +153,7 @@ export function CredentialsRoute() {
       const response = await fetch(new URL(input.path, config.authOrigin), {
         method: 'DELETE',
         headers: {
-          authorization: `Bearer ${accessToken}`,
+          authorization: `Bearer ${effectiveAccessToken}`,
         },
       });
 

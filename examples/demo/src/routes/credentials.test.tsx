@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -51,6 +51,7 @@ const sdkMocks = vi.hoisted(() => {
     } as MockSessionState,
   };
   const fetch = vi.fn();
+  const refresh = vi.fn();
   const reloadMe = vi.fn(async () => {
     if (!sessionState.current.me) {
       throw new Error('No current user');
@@ -76,13 +77,14 @@ const sdkMocks = vi.hoisted(() => {
           listeners.add(listener);
           return () => listeners.delete(listener);
         }),
-        refresh: vi.fn(),
+        refresh,
         logout: vi.fn(),
       },
       webauthn: { register: vi.fn(), authenticate: vi.fn() },
     })),
     fetch,
     emitSession,
+    refresh,
     reloadMe,
     sessionState,
   };
@@ -172,6 +174,7 @@ describe('CredentialsRoute', () => {
     localStorage.clear();
     sdkMocks.createBrowserSdk.mockClear();
     sdkMocks.fetch.mockReset();
+    sdkMocks.refresh.mockReset();
     sdkMocks.reloadMe.mockReset();
     sdkMocks.reloadMe.mockImplementation(async () => {
       if (!sdkMocks.sessionState.current.me) {
@@ -523,7 +526,7 @@ describe('CredentialsRoute', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('keeps delete actions available for legacy tokens without amr', () => {
+  it('keeps delete actions available for legacy tokens without amr after refresh yields manageable amr', async () => {
     localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
     sdkMocks.sessionState.current = authenticatedSession(
       {
@@ -548,6 +551,15 @@ describe('CredentialsRoute', () => {
       },
       { accessToken: fakeLegacyAccessToken() },
     );
+    sdkMocks.refresh.mockImplementationOnce(async () => {
+      sdkMocks.sessionState.current = authenticatedSession(
+        sdkMocks.sessionState.current.me ?? undefined,
+        { accessToken: fakeAccessToken(['email_otp']) },
+      );
+      return {
+        accessToken: sdkMocks.sessionState.current.accessToken,
+      };
+    });
 
     render(
       <MemoryRouter initialEntries={['/credentials']}>
@@ -556,13 +568,68 @@ describe('CredentialsRoute', () => {
     );
 
     expect(
-      screen.getByRole('button', {
+      await screen.findByRole('button', {
         name: 'Delete passkey passkey-credential-abcdef123456',
       }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: 'Delete device key Build runner' }),
+      await screen.findByRole('button', { name: 'Delete device key Build runner' }),
     ).toBeInTheDocument();
+    expect(sdkMocks.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps delete actions unavailable for legacy tokens when refresh yields pure ed25519 amr', async () => {
+    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
+    sdkMocks.sessionState.current = authenticatedSession(
+      {
+        webauthn_credentials: [
+          {
+            id: 'passkey-row-1',
+            credential_id: 'passkey-credential-abcdef123456',
+            rp_id: 'example.com',
+            last_used_at: null,
+            created_at: '2026-04-10T12:00:00.000Z',
+          },
+        ],
+        ed25519_credentials: [
+          {
+            id: 'device-row-1',
+            name: 'Build runner',
+            public_key: 'MCowBQYDK2VwAyEAlongPublicKeyValueForTesting1234567890=',
+            last_used_at: null,
+            created_at: '2026-04-09T09:15:00.000Z',
+          },
+        ],
+      },
+      { accessToken: fakeLegacyAccessToken() },
+    );
+    sdkMocks.refresh.mockImplementationOnce(async () => {
+      sdkMocks.sessionState.current = authenticatedSession(
+        sdkMocks.sessionState.current.me ?? undefined,
+        { accessToken: fakeAccessToken(['ed25519']) },
+      );
+      return {
+        accessToken: sdkMocks.sessionState.current.accessToken,
+      };
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/credentials']}>
+        <AppRouter />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(sdkMocks.refresh).toHaveBeenCalledTimes(1);
+    });
+    expect(
+      screen.queryByRole('button', {
+        name: 'Delete passkey passkey-credential-abcdef123456',
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Delete device key Build runner' }),
+    ).not.toBeInTheDocument();
   });
 
   it('keeps the email section read-only even when the user has a primary email', () => {
