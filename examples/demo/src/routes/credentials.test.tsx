@@ -501,6 +501,7 @@ describe('CredentialsRoute', () => {
       </MemoryRouter>,
     );
 
+    expect(screen.getByRole('columnheader', { name: 'Action' })).toBeInTheDocument();
     expect(screen.getByText(/passkey-credential-abc/i)).toBeInTheDocument();
     expect(screen.getByText('Build runner')).toBeInTheDocument();
     expect(

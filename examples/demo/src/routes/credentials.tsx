@@ -185,9 +185,7 @@ export function CredentialsRoute() {
                     <th className="py-2 pr-4 font-medium">RP ID</th>
                     <th className="py-2 pr-4 font-medium">Last Used</th>
                     <th className="py-2 pr-4 font-medium">Created At</th>
-                    {credentialManageable ? (
-                      <th className="py-2 font-medium">Action</th>
-                    ) : null}
+                    <th className="py-2 font-medium">Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -199,8 +197,8 @@ export function CredentialsRoute() {
                       <td className="py-3 pr-4">{row.rp_id}</td>
                       <td className="py-3 pr-4">{row.last_used_at ?? 'Never'}</td>
                       <td className="py-3 pr-4">{row.created_at}</td>
-                      {credentialManageable ? (
-                        <td className="py-3">
+                      <td className="py-3">
+                        {credentialManageable ? (
                           <Button
                             disabled={pendingSections.passkey}
                             aria-label={`Delete passkey ${row.credential_id}`}
@@ -214,8 +212,10 @@ export function CredentialsRoute() {
                           >
                             {pendingSections.passkey ? 'Deleting…' : 'Delete'}
                           </Button>
-                        </td>
-                      ) : null}
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
