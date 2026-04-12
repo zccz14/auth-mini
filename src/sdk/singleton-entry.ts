@@ -1111,8 +1111,41 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     try {
       return parseMeResponseImpl(value);
     } catch {
-      return undefined;
+      if (
+        typeof value.user_id !== 'string' ||
+        typeof value.email !== 'string' ||
+        !Array.isArray(value.webauthn_credentials) ||
+        !Array.isArray(value.active_sessions)
+      ) {
+        return undefined;
+      }
+      return {
+        user_id: value.user_id,
+        email: value.email,
+        webauthn_credentials: value.webauthn_credentials.map(
+          normalizeWebauthnCredential,
+        ),
+        ed25519_credentials: Array.isArray(value.ed25519_credentials)
+          ? [...value.ed25519_credentials]
+          : [],
+        active_sessions: [...value.active_sessions],
+      };
     }
+  }
+
+  function normalizeWebauthnCredential(value) {
+    if (!value || typeof value !== 'object') {
+      return value;
+    }
+
+    return {
+      ...value,
+      rp_id: typeof value.rp_id === 'string' ? value.rp_id : '',
+      last_used_at:
+        value.last_used_at === null || typeof value.last_used_at === 'string'
+          ? value.last_used_at
+          : null,
+    };
   }
 
   function createSnapshot(status) {
@@ -1149,8 +1182,12 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
         transports: Array.isArray(credential.transports)
           ? [...credential.transports]
           : [],
-        rp_id: credential.rp_id,
-        last_used_at: credential.last_used_at,
+        rp_id: typeof credential.rp_id === 'string' ? credential.rp_id : '',
+        last_used_at:
+          credential.last_used_at === null ||
+          typeof credential.last_used_at === 'string'
+            ? credential.last_used_at
+            : null,
         created_at: credential.created_at,
       })),
       ed25519_credentials: me.ed25519_credentials.map((credential) => ({

@@ -29,6 +29,44 @@ describe('sdk state store', () => {
     expect(sdk.getState().sessionId).toBe('session-1');
   });
 
+  it('normalizes legacy persisted webauthn metadata during state-store hydration', () => {
+    const storage = fakeStorage();
+    storage.setItem(
+      'auth-mini.sdk',
+      JSON.stringify({
+        sessionId: 'session-1',
+        accessToken: 'access-1',
+        refreshToken: 'refresh-1',
+        receivedAt: '2026-04-03T00:00:00.000Z',
+        expiresAt: '2026-04-03T00:15:00.000Z',
+        me: {
+          user_id: 'u',
+          email: 'u@example.com',
+          webauthn_credentials: [
+            {
+              id: 'cred-1',
+              credential_id: 'device-1',
+              transports: ['usb'],
+              created_at: '2026-04-03T00:00:00.000Z',
+            },
+          ],
+          ed25519_credentials: [],
+          active_sessions: [],
+        },
+      }),
+    );
+
+    const sdk = createStateStore(storage);
+
+    expect(sdk.getState().me?.webauthn_credentials).toEqual([
+      expect.objectContaining({
+        credential_id: 'device-1',
+        rp_id: '',
+        last_used_at: null,
+      }),
+    ]);
+  });
+
   it('treats persisted sessions without a sessionId as invalid', () => {
     const sdk = createStateStore(
       fakeStorage({
@@ -193,6 +231,42 @@ describe('sdk state store', () => {
       expect.objectContaining({
         credential_id: 'device-1',
         rp_id: 'app.example.com',
+        last_used_at: null,
+      }),
+    ]);
+  });
+
+  it('normalizes legacy persisted webauthn metadata in the public singleton api', () => {
+    const storage = fakeStorage();
+    seedBrowserSdkStorage(storage, 'https://auth.example.com', {
+      sessionId: 'session-1',
+      refreshToken: 'rt',
+      expiresAt: '2026-04-03T00:00:00.000Z',
+      me: {
+        user_id: 'u',
+        email: 'u@example.com',
+        webauthn_credentials: [
+          {
+            id: 'cred-1',
+            credential_id: 'device-1',
+            transports: ['usb'],
+            created_at: '2026-04-03T00:00:00.000Z',
+          },
+        ],
+        ed25519_credentials: [],
+        active_sessions: [],
+      },
+    });
+
+    const sdk = createSingletonSdk({
+      baseUrl: 'https://auth.example.com',
+      storage,
+    });
+
+    expect(sdk.session.getState().me?.webauthn_credentials).toEqual([
+      expect.objectContaining({
+        credential_id: 'device-1',
+        rp_id: '',
         last_used_at: null,
       }),
     ]);
