@@ -1,6 +1,6 @@
 # Device SDK integration
 
-Use `auth-mini/sdk/device` for Node.js clients (or other runtimes that provide Node's `node:crypto` APIs) that hold an Ed25519 private key locally and want an isolated memory-only session.
+Use `auth-mini/sdk/device` for Node.js clients (or other runtimes that provide Node's `node:crypto` APIs) that hold an Ed25519 private key seed locally and want an isolated memory-only session.
 
 ## Recommended: module/device-subpath usage
 
@@ -10,12 +10,7 @@ import { createDeviceSdk } from 'auth-mini/sdk/device';
 const sdk = createDeviceSdk({
   serverBaseUrl: 'https://auth.example.com',
   credentialId: '550e8400-e29b-41d4-a716-446655440000',
-  privateKey: {
-    crv: 'Ed25519',
-    d: '7rANewlCLceTsUo9feN0DLjnu-ayYsdhkVWvHT4FelM',
-    kty: 'OKP',
-    x: 'jt2HpVJxALeSteTe7QlqBRiOxVeloHMMImehYhZc9Rg',
-  },
+  privateKeySeed: '7rANewlCLceTsUo9feN0DLjnu-ayYsdhkVWvHT4FelM',
 });
 
 await sdk.ready;
@@ -30,7 +25,7 @@ await sdk.dispose();
 `createDeviceSdk(...)` starts the device sign-in flow immediately:
 
 1. `POST /ed25519/start` with the configured `credentialId`
-2. sign the returned challenge locally with `privateKey`
+2. decode the configured `privateKeySeed`, derive the Ed25519 private key locally, and sign the returned challenge
 3. `POST /ed25519/verify` with the signature payload
 4. store the resulting session in the instance's in-memory state
 5. load `/me` so `sdk.ready` resolves only after the authenticated user snapshot is available

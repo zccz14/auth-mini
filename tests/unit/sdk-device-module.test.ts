@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createDeviceSdk } from '../../src/sdk/device.js';
 import {
   countLogoutCalls,
-  createDevicePrivateKey,
+  createDevicePrivateKeySeed,
   jsonResponse,
   readJsonBody,
 } from '../helpers/sdk.js';
@@ -59,7 +59,7 @@ describe('device module sdk', () => {
     const sdk = createDeviceSdk({
       serverBaseUrl: 'https://sdk.example.test:9443/auth/base',
       credentialId: '550e8400-e29b-41d4-a716-446655440000',
-      privateKey: createDevicePrivateKey(),
+      privateKeySeed: createDevicePrivateKeySeed(),
       fetch,
       now: () => Date.parse('2026-04-12T00:00:00.000Z'),
     });
@@ -117,7 +117,7 @@ describe('device module sdk', () => {
     const sdk = createDeviceSdk({
       serverBaseUrl: 'https://auth.example.com',
       credentialId: '550e8400-e29b-41d4-a716-446655440000',
-      privateKey: createDevicePrivateKey(),
+      privateKeySeed: createDevicePrivateKeySeed(),
       fetch,
       now: () => Date.parse('2026-04-12T00:00:00.000Z'),
     });
@@ -128,6 +128,45 @@ describe('device module sdk', () => {
     expect(readJsonBody(fetch, '/ed25519/start')).toEqual({
       credential_id: '550e8400-e29b-41d4-a716-446655440000',
     });
+  });
+
+  it('throws during construction for invalid base64url seed text', () => {
+    expect(() =>
+      createDeviceSdk({
+        serverBaseUrl: 'https://auth.example.com',
+        credentialId: '550e8400-e29b-41d4-a716-446655440000',
+        privateKeySeed: 'not/base64url+',
+        fetch: vi.fn(),
+      }),
+    ).toThrowError(
+      /sdk_init_failed: privateKeySeed must be a base64url-encoded 32-byte string/,
+    );
+  });
+
+  it('throws during construction for non-canonical base64url seed text', () => {
+    expect(() =>
+      createDeviceSdk({
+        serverBaseUrl: 'https://auth.example.com',
+        credentialId: '550e8400-e29b-41d4-a716-446655440000',
+        privateKeySeed: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQB',
+        fetch: vi.fn(),
+      }),
+    ).toThrowError(
+      /sdk_init_failed: privateKeySeed must be a base64url-encoded 32-byte string/,
+    );
+  });
+
+  it('throws during construction for decoded seeds that are not 32 bytes', () => {
+    expect(() =>
+      createDeviceSdk({
+        serverBaseUrl: 'https://auth.example.com',
+        credentialId: '550e8400-e29b-41d4-a716-446655440000',
+        privateKeySeed: Buffer.alloc(31, 1).toString('base64url'),
+        fetch: vi.fn(),
+      }),
+    ).toThrowError(
+      /sdk_init_failed: privateKeySeed must be a base64url-encoded 32-byte string/,
+    );
   });
 
   it('never touches localStorage while booting a device sdk', async () => {
@@ -141,7 +180,7 @@ describe('device module sdk', () => {
     const sdk = createDeviceSdk({
       serverBaseUrl: 'https://auth.example.com',
       credentialId: '550e8400-e29b-41d4-a716-446655440000',
-      privateKey: createDevicePrivateKey(),
+      privateKeySeed: createDevicePrivateKeySeed(),
       fetch: vi
         .fn()
         .mockResolvedValueOnce(
@@ -181,7 +220,7 @@ describe('device module sdk', () => {
     const sdk = createDeviceSdk({
       serverBaseUrl: 'https://auth.example.com',
       credentialId: '550e8400-e29b-41d4-a716-446655440000',
-      privateKey: createDevicePrivateKey(),
+      privateKeySeed: createDevicePrivateKeySeed(),
       fetch: vi.fn(async (input: URL | RequestInfo) => {
         const url = input instanceof URL ? input : new URL(String(input));
 
@@ -286,7 +325,7 @@ describe('device module sdk', () => {
     const sdk = createDeviceSdk({
       serverBaseUrl: 'https://auth.example.com',
       credentialId: '550e8400-e29b-41d4-a716-446655440000',
-      privateKey: createDevicePrivateKey(),
+      privateKeySeed: createDevicePrivateKeySeed(),
       fetch,
       now: () => Date.parse('2026-04-12T00:30:00.000Z'),
     });
@@ -352,7 +391,7 @@ describe('device module sdk', () => {
     const sdk = createDeviceSdk({
       serverBaseUrl: 'https://auth.example.com',
       credentialId: '550e8400-e29b-41d4-a716-446655440000',
-      privateKey: createDevicePrivateKey(),
+      privateKeySeed: createDevicePrivateKeySeed(),
       fetch,
     });
 

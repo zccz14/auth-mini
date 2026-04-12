@@ -202,13 +202,16 @@ describe('sdk d.ts build artifact', () => {
     expect(output).toContain('SessionSnapshot');
   });
 
-  it('emits device sdk module declarations with disposal support', () => {
+  it('emits device sdk module declarations with seed input only', () => {
     const output = readDeviceModuleDeclaration();
     const sharedTypes = readSharedTypesDeclaration();
     const errors = readSdkErrorsDeclaration();
 
     expect(output).toContain('export declare function createDeviceSdk');
     expect(output).toContain('DeviceSdkApi');
+    expect(sharedTypes).toContain('privateKeySeed: string');
+    expect(sharedTypes).not.toContain('DevicePrivateKeyJwk');
+    expect(sharedTypes).not.toContain('privateKey: DevicePrivateKeyJwk');
     expect(sharedTypes).toContain('dispose(): Promise<void>');
     expect(sharedTypes).toContain('[Symbol.asyncDispose](): Promise<void>');
     expect(errors).toContain("'disposed_session'");

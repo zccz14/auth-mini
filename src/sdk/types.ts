@@ -94,17 +94,10 @@ export type NavigatorCredentialsLike = {
 
 export type Listener = (state: SessionSnapshot) => void;
 
-export type DevicePrivateKeyJwk = {
-  crv: 'Ed25519';
-  d: string;
-  kty: 'OKP';
-  x: string;
-};
-
 export type DeviceSdkOptions = {
   serverBaseUrl: string;
   credentialId: string;
-  privateKey: DevicePrivateKeyJwk;
+  privateKeySeed: string;
   fetch?: FetchLike;
   now?: () => number;
 };
