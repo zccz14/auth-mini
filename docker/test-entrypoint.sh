@@ -147,7 +147,7 @@ assert_status_eq() {
 }
 
 if [[ "${SKIP_IMAGE_BUILD:-0}" != "1" ]]; then
-	bash "$REPO_ROOT/scripts/build-runtime-image.sh" "$IMAGE_TAG"
+	FORCE_PREPARE_RUNTIME_ARTIFACT=1 bash "$REPO_ROOT/scripts/build-runtime-image.sh" "$IMAGE_TAG"
 fi
 
 start_stub_container() {
