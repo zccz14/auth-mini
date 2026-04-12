@@ -132,4 +132,11 @@ describe('browser module sdk', () => {
       'export function createBrowserSdk(serverBaseUrl: string): AuthMiniApi',
     );
   });
+
+  it('does not export createDeviceSdk from the browser module', () => {
+    expect(createBrowserSdk).toBeTypeOf('function');
+    expect(
+      readFileSync(resolve(process.cwd(), 'src/sdk/browser.ts'), 'utf8'),
+    ).not.toContain('createDeviceSdk');
+  });
 });

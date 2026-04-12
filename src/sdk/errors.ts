@@ -1,6 +1,7 @@
 import type { ServerErrorPayload } from './types.js';
 
 export type SdkErrorCode =
+  | 'disposed_session'
   | 'sdk_init_failed'
   | 'missing_session'
   | 'request_failed'

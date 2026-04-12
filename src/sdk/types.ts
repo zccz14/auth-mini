@@ -94,6 +94,37 @@ export type NavigatorCredentialsLike = {
 
 export type Listener = (state: SessionSnapshot) => void;
 
+export type DevicePrivateKeyJwk = {
+  crv: 'Ed25519';
+  d: string;
+  kty: 'OKP';
+  x: string;
+};
+
+export type DeviceSdkOptions = {
+  serverBaseUrl: string;
+  credentialId: string;
+  privateKey: DevicePrivateKeyJwk;
+  fetch?: FetchLike;
+  now?: () => number;
+};
+
+export type DeviceSdkApi = {
+  ready: Promise<void>;
+  dispose(): Promise<void>;
+  [Symbol.asyncDispose](): Promise<void>;
+  me: {
+    get(): MeResponse | null;
+    reload(): Promise<MeResponse>;
+  };
+  session: {
+    getState(): SessionSnapshot;
+    onChange(listener: Listener): () => void;
+    refresh(): Promise<SessionResult>;
+    logout(): Promise<void>;
+  };
+};
+
 export type AuthMiniApi = {
   email: {
     start(input: EmailStartInput): Promise<EmailStartResponse>;
