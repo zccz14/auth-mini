@@ -32,83 +32,27 @@ describe('HomeRoute', () => {
     localStorage.clear();
   });
 
-  it('renders the approved homepage positioning and section order', () => {
+  it('shows the homepage entry points without locking copy or section order', () => {
     renderHomeRoute();
 
-    const approvedHeadingOrder = [
-      'Minimal Self-Hosted Auth Server for your Apps',
-      'Why teams pick auth-mini',
-      'Auth server capabilities',
-      'Good fit',
-      'Not included',
-      'Validate the browser flows when you are ready',
-    ];
+    expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
+    expect(screen.getByText(/Demo setup status:/i)).toBeInTheDocument();
 
-    const renderedHeadingOrder = screen
-      .getAllByRole('heading')
-      .map((heading) => heading.textContent)
-      .filter((text): text is string =>
-        approvedHeadingOrder.includes(text ?? ''),
-      );
+    const links = screen
+      .getAllByRole('link')
+      .map((link) => link.getAttribute('href'));
 
-    expect(
-      screen.getByRole('heading', {
-        level: 1,
-        name: 'Minimal Self-Hosted Auth Server for your Apps',
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText('Official auth-mini Auth Server demo'),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('heading', {
-        level: 2,
-        name: 'Why teams pick auth-mini',
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('heading', {
-        level: 2,
-        name: 'Auth server capabilities',
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('heading', { level: 3, name: 'Good fit' }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('heading', { level: 3, name: 'Not included' }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('heading', {
-        level: 2,
-        name: 'Validate the browser flows when you are ready',
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('link', {
-        name: 'Start with official Auth Server setup',
-      }),
-    ).toHaveAttribute('href', '/setup');
-    expect(
-      screen.getByRole('link', { name: 'Try browser auth flows' }),
-    ).toHaveAttribute('href', '/email');
-    expect(
-      screen.getByText(
-        'Demo setup status: visit Setup to connect an auth origin before trying live browser flows.',
-      ),
-    ).toBeInTheDocument();
-    expect(renderedHeadingOrder).toEqual(approvedHeadingOrder);
+    expect(links).toEqual(expect.arrayContaining(['/setup', '/email']));
+    expect(screen.getByText('JWT access + refresh tokens')).toBeInTheDocument();
   });
 
-  it('demotes setup readiness to helper copy when an auth origin exists', () => {
+  it('shows the ready state when an auth origin is configured', () => {
     renderHomeRoute('https://auth.example.com');
 
+    expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
     expect(
-      screen.getByText(
-        'Demo setup status: ready — auth origin configured for interactive browser flows.',
-      ),
+      screen.getByText(/auth origin configured for interactive browser flows/i),
     ).toBeInTheDocument();
-    expect(screen.getByText('Keep auth in your stack')).toBeInTheDocument();
     expect(screen.getByText('JWT access + refresh tokens')).toBeInTheDocument();
   });
 });

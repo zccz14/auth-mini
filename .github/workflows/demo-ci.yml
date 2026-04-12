@@ -1,0 +1,45 @@
+name: Demo CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            examples/demo/package-lock.json
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install examples/demo dependencies
+        run: npm --prefix examples/demo ci
+
+      - name: Build demo
+        run: npm run demo:build
+
+      - name: Typecheck demo
+        run: npm run demo:typecheck
+
+      - name: Test demo
+        run: npm --prefix examples/demo test
