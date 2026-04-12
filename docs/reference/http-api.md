@@ -17,6 +17,7 @@ Access tokens issued by this API include an `amr` (Authentication Methods Refere
 
 - `GET /me`
 - `POST /session/logout`
+- `POST /session/:session_id/logout`
 - `GET /ed25519/credentials`
 - `POST /ed25519/credentials`
 - `PATCH /ed25519/credentials/:id`
@@ -251,6 +252,34 @@ Request: send `Authorization: Bearer <access_token>`.
 Successful response: logout confirmation with no new tokens returned.
 
 Example response:
+
+```json
+{ "ok": true }
+```
+
+### `POST /session/:session_id/logout`
+
+Invalidates one other session for the authenticated user.
+
+Request: send `Authorization: Bearer <access_token>` and pass the target session id in the route.
+
+This route requires a human-authenticated session. The presented access token must carry an `amr` that includes either `email_otp` or `webauthn`.
+
+`POST /session/logout` remains the current-session logout route. If `:session_id` matches the current session id, the server returns `400`:
+
+```json
+{ "error": "invalid_request" }
+```
+
+`ed25519` sessions cannot use this route and receive `403`:
+
+```json
+{ "error": "insufficient_authentication_method" }
+```
+
+If the target session id is foreign, missing, or already expired, the server still returns `200 { "ok": true }` without revealing ownership or existence.
+
+Response shape:
 
 ```json
 { "ok": true }

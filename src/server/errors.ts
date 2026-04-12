@@ -11,6 +11,10 @@ export function invalidRequestError(): HttpError {
   return new HttpError(400, 'invalid_request');
 }
 
+export function sessionPeerLogoutSelfTargetError(): HttpError {
+  return new HttpError(400, 'invalid_request');
+}
+
 export function invalidAccessTokenError(): HttpError {
   return new HttpError(401, 'invalid_access_token');
 }

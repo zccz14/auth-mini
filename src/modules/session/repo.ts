@@ -71,6 +71,34 @@ export function expireSessionById(
   return result.changes > 0;
 }
 
+export function expireOtherActiveSessionById(
+  db: DatabaseClient,
+  input: {
+    currentSessionId: string;
+    targetSessionId: string;
+    userId: string;
+    now: string;
+  },
+): boolean {
+  const result = db
+    .prepare(
+      [
+        'UPDATE sessions',
+        'SET expires_at = ?',
+        'WHERE id = ? AND user_id = ? AND expires_at > ? AND id <> ?',
+      ].join(' '),
+    )
+    .run(
+      input.now,
+      input.targetSessionId,
+      input.userId,
+      input.now,
+      input.currentSessionId,
+    );
+
+  return result.changes > 0;
+}
+
 export function rotateRefreshToken(
   db: DatabaseClient,
   input: {
