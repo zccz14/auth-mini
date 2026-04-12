@@ -103,7 +103,14 @@ function resolvePersistence(
 function isSdkStatePersistence(
   input: Storage | SdkStatePersistence,
 ): input is SdkStatePersistence {
-  return 'read' in input && 'write' in input && 'clear' in input;
+  return (
+    'read' in input &&
+    typeof input.read === 'function' &&
+    'write' in input &&
+    typeof input.write === 'function' &&
+    'clear' in input &&
+    typeof input.clear === 'function'
+  );
 }
 
 function hydrateSnapshot(
@@ -121,7 +128,7 @@ function hydrateSnapshot(
     refreshToken: persisted.refreshToken,
     receivedAt: persisted.receivedAt,
     expiresAt: persisted.expiresAt,
-    me: persisted.me,
+    me: persisted.me ? cloneMeResponse(persisted.me) : null,
   });
 }
 

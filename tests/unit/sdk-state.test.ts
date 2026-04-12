@@ -264,6 +264,83 @@ describe('sdk state store', () => {
     ]);
   });
 
+  it('does not freeze or alias caller-owned me objects from applyPersistedState', () => {
+    const sdk = createStateStore(fakeStorage());
+    const me: MeResponse = {
+      user_id: 'u',
+      email: 'u@example.com',
+      webauthn_credentials: [
+        {
+          id: 'cred-1',
+          credential_id: 'device-1',
+          transports: ['usb'],
+          created_at: '2026-04-03T00:00:00.000Z',
+        },
+      ],
+      ed25519_credentials: [],
+      active_sessions: [],
+    };
+
+    sdk.applyPersistedState({
+      sessionId: 'session-2',
+      accessToken: 'access-2',
+      refreshToken: 'refresh-2',
+      receivedAt: '2026-04-03T00:00:00.000Z',
+      expiresAt: '2026-04-03T00:15:00.000Z',
+      me,
+    });
+
+    me.email = 'mutated@example.com';
+    me.webauthn_credentials[0].credential_id = 'mutated-device';
+
+    expect(Object.isFrozen(me)).toBe(false);
+    expect(sdk.getState().me).toMatchObject({ email: 'u@example.com' });
+    expect(sdk.getState().me?.webauthn_credentials).toEqual([
+      expect.objectContaining({ credential_id: 'device-1' }),
+    ]);
+  });
+
+  it('does not freeze or alias adapter-owned me objects during memory adapter hydration', () => {
+    const me: MeResponse = {
+      user_id: 'u',
+      email: 'u@example.com',
+      webauthn_credentials: [
+        {
+          id: 'cred-1',
+          credential_id: 'device-1',
+          transports: ['usb'],
+          created_at: '2026-04-03T00:00:00.000Z',
+        },
+      ],
+      ed25519_credentials: [],
+      active_sessions: [],
+    };
+    const sdk = createStateStore({
+      clear() {},
+      read() {
+        return {
+          sessionId: 'session-3',
+          accessToken: 'access-3',
+          refreshToken: 'refresh-3',
+          receivedAt: '2026-04-03T00:00:00.000Z',
+          expiresAt: '2026-04-03T00:15:00.000Z',
+          me,
+        };
+      },
+      write() {},
+    });
+
+    me.email = 'mutated@example.com';
+    me.webauthn_credentials[0].credential_id = 'mutated-device';
+
+    expect(Object.isFrozen(me)).toBe(false);
+    expect(sdk.getState().status).toBe('recovering');
+    expect(sdk.getState().me).toMatchObject({ email: 'u@example.com' });
+    expect(sdk.getState().me?.webauthn_credentials).toEqual([
+      expect.objectContaining({ credential_id: 'device-1' }),
+    ]);
+  });
+
   it('adopts external persisted session updates through the store api', () => {
     const shared = createSharedStorageHarness();
     const sdk = createStateStore(fakeStorage());
