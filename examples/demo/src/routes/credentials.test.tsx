@@ -247,6 +247,7 @@ describe('CredentialsRoute', () => {
   });
 
   it('deletes a passkey after confirm and reloads /me from the server', async () => {
+    const user = userEvent.setup();
     localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
     sdkMocks.sessionState.current = authenticatedSession({
       webauthn_credentials: [
@@ -297,6 +298,7 @@ describe('CredentialsRoute', () => {
   });
 
   it('deletes an ed25519 credential after confirm and reloads /me from the server', async () => {
+    const user = userEvent.setup();
     localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
     sdkMocks.sessionState.current = authenticatedSession({
       ed25519_credentials: [

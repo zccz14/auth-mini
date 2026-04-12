@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -71,6 +71,15 @@ vi.mock('@/lib/demo-sdk', () => ({
   createDemoSdk: sdkMocks.createDemoSdk,
   persistDemoSession: sdkMocks.persistDemoSession,
 }));
+
+function getJsonPanel(title: string) {
+  const heading = screen.getByRole('heading', { level: 3, name: title });
+  const panel = heading.closest('section');
+
+  expect(panel).not.toBeNull();
+
+  return panel as HTMLElement;
+}
 
 describe('Ed25519Route', () => {
   beforeEach(() => {
@@ -164,12 +173,16 @@ describe('Ed25519Route', () => {
       public_key: 'jt2HpVJxALeSteTe7QlqBRiOxVeloHMMImehYhZc9Rg',
     });
     expect(sdkMocks.meReload).toHaveBeenCalledTimes(1);
-    expect(await screen.findAllByText(/"id": "cred-1"/)).toHaveLength(2);
 
     const useLastRegisteredCredentialId = screen.getByRole('button', {
       name: 'Use last registered credential id',
     });
-    expect(useLastRegisteredCredentialId).toBeEnabled();
+    const currentCredentialsPanel = getJsonPanel('current credentials');
+
+    await waitFor(() => {
+      expect(useLastRegisteredCredentialId).toBeEnabled();
+    });
+    expect(within(currentCredentialsPanel).getByText(/cred-1/)).toBeInTheDocument();
 
     const credentialIdInput = screen.getByLabelText('Credential id');
     expect(credentialIdInput).toHaveValue('');
@@ -307,7 +320,7 @@ describe('Ed25519Route', () => {
     ).toBeDisabled();
   });
 
-  it('keeps sign-in disabled until setup is ready', () => {
+  it('starts from the default ready demo configuration', () => {
     render(
       <MemoryRouter initialEntries={['/ed25519']}>
         <AppRouter />
@@ -318,7 +331,10 @@ describe('Ed25519Route', () => {
       screen.getByRole('button', { name: 'Sign in with private key' }),
     ).toBeDisabled();
     expect(
-      screen.getByText('Complete setup before using ED25519 actions.'),
-    ).toBeInTheDocument();
+      screen.queryByText('Complete setup before using ED25519 actions.'),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/^Connected to https:\/\//)).toBeInTheDocument();
+    expect(screen.getByText('ready')).toBeInTheDocument();
+    expect(screen.getByText('sdk ready')).toBeInTheDocument();
   });
 });
