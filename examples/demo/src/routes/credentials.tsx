@@ -1,51 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { FlowCard } from '@/components/app/flow-card';
 import { Button } from '@/components/ui/button';
 import { useDemo } from '@/app/providers/demo-provider';
-
-type PasskeyRow = {
-  id: string;
-  credential_id: string;
-  created_at: string;
-};
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === 'object' && value !== null
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function asPasskeyRows(value: unknown): PasskeyRow[] {
-  if (!Array.isArray(value)) return [];
-
-  return value.flatMap((row) => {
-    const record = asRecord(row);
-    if (
-      record &&
-      typeof record.id === 'string' &&
-      typeof record.credential_id === 'string' &&
-      typeof record.created_at === 'string'
-    ) {
-      return [record as PasskeyRow];
-    }
-
-    return [];
-  });
-}
 
 function truncateMiddle(value: string, edge = 20) {
   return value.length <= edge * 2 + 1
     ? value
     : `${value.slice(0, edge)}…${value.slice(-edge)}`;
-}
-
-function getUserEmail(user: unknown) {
-  const record = asRecord(user);
-  return record && typeof record.email === 'string' ? record.email : '';
-}
-
-function getUserPasskeys(user: unknown) {
-  return asPasskeyRows(asRecord(user)?.webauthn_credentials);
 }
 
 function decodeBase64Url(value: string) {
@@ -59,9 +20,13 @@ function getAccessTokenAmr(accessToken: string): string[] {
   if (!payloadSegment) return [];
 
   try {
-    const payload = asRecord(JSON.parse(decodeBase64Url(payloadSegment)));
-    return Array.isArray(payload?.amr)
-      ? payload.amr.filter((value: unknown): value is string => typeof value === 'string')
+    const payload = JSON.parse(decodeBase64Url(payloadSegment));
+    const amr =
+      typeof payload === 'object' && payload !== null && 'amr' in payload
+        ? (payload as { amr?: unknown }).amr
+        : undefined;
+    return Array.isArray(amr)
+      ? amr.filter((value: unknown): value is string => typeof value === 'string')
       : [];
   } catch {
     return [];
@@ -75,7 +40,6 @@ function canManageCredentials(accessToken: string) {
 
 export function CredentialsRoute() {
   const { config, sdk, session, user } = useDemo();
-  const [currentUser, setCurrentUser] = useState(user);
   const [pendingSections, setPendingSections] = useState({
     passkey: false,
     ed25519: false,
@@ -87,10 +51,6 @@ export function CredentialsRoute() {
   const [passkeyError, setPasskeyError] = useState('');
   const [ed25519Error, setEd25519Error] = useState('');
 
-  useEffect(() => {
-    setCurrentUser(user);
-  }, [user]);
-
   const authenticated =
     config.status === 'ready' &&
     Boolean(sdk) &&
@@ -101,9 +61,9 @@ export function CredentialsRoute() {
   const credentialManageable =
     authenticated && canManageCredentials(accessToken);
 
-  const email = getUserEmail(currentUser);
-  const passkeys = getUserPasskeys(currentUser);
-  const ed25519Credentials = currentUser?.ed25519_credentials ?? [];
+  const email = user?.email ?? '';
+  const passkeys = user?.webauthn_credentials ?? [];
+  const ed25519Credentials = user?.ed25519_credentials ?? [];
 
   async function deleteCredential(input: {
     section: 'passkey' | 'ed25519';
@@ -141,7 +101,7 @@ export function CredentialsRoute() {
         throw new Error(`Delete failed with status ${response.status}`);
       }
 
-      setCurrentUser(await sdk.me.reload());
+      await sdk.me.reload();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Delete failed');
     } finally {
