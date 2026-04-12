@@ -1,21 +1,12 @@
 import { createDeviceSdk } from 'auth-mini/sdk/device';
-import type {
-  DevicePrivateKeyJwk,
-  DeviceSdkApi,
-  SessionSnapshot,
-} from 'auth-mini/sdk/device';
+import type { DeviceSdkApi, SessionSnapshot } from 'auth-mini/sdk/device';
 
-const privateKey: DevicePrivateKeyJwk = {
-  crv: 'Ed25519',
-  d: '7rANewlCLceTsUo9feN0DLjnu-ayYsdhkVWvHT4FelM',
-  kty: 'OKP',
-  x: 'jt2HpVJxALeSteTe7QlqBRiOxVeloHMMImehYhZc9Rg',
-};
+const privateKeySeed = '7rANewlCLceTsUo9feN0DLjnu-ayYsdhkVWvHT4FelM';
 
 const sdk: DeviceSdkApi = createDeviceSdk({
   serverBaseUrl: 'https://auth.example.com',
   credentialId: '550e8400-e29b-41d4-a716-446655440000',
-  privateKey,
+  privateKeySeed,
 });
 
 const state: SessionSnapshot = sdk.session.getState();
