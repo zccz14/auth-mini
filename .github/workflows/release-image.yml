@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       release_ref:
-        description: Commit SHA or ref for the version-bump snapshot to recover
+        description: Commit SHA or ref to publish
         required: true
         type: string
 
@@ -25,150 +25,93 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_ref || github.sha }}
 
-      - name: Determine release gate
-        id: gate
+      - name: Validate manual recovery ref
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo 'Rejecting manual recovery because release_ref is not reachable from origin/main.' >&2
+            exit 1
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+
+      - name: Prepare Linux runtime artifact
+        run: bash scripts/prepare-linux-runtime-artifact.sh
+
+      - name: Build release candidate image
+        run: SKIP_PREPARE_RUNTIME_ARTIFACT=1 bash scripts/build-runtime-image.sh auth-mini:release-check
+
+      - name: Validate entrypoint contract
+        run: IMAGE_TAG=auth-mini:release-check SKIP_IMAGE_BUILD=1 bash docker/test-entrypoint.sh validation
+
+      - name: Validate entrypoint supervision
+        run: IMAGE_TAG=auth-mini:release-check SKIP_IMAGE_BUILD=1 bash docker/test-entrypoint.sh supervision
+
+      - name: Run container smoke test
+        run: IMAGE_TAG=auth-mini:release-check SKIP_IMAGE_BUILD=1 bash docker/test-image-smoke.sh
+
+      - name: Decide publish plan
+        id: publish
         shell: bash
         run: |
           set -euo pipefail
 
-          package_version="$(python -c "import json; print(json.load(open('package.json', encoding='utf-8'))['version'])")"
-          current_sha="$(git rev-parse HEAD)"
-          after_version="$(git show "$current_sha:package.json" | python -c "import json, sys; print(json.load(sys.stdin)['version'])")"
-          before_sha="${{ github.event.before }}"
+          current_version="$(python -c "import json; print(json.load(open('package.json', encoding='utf-8'))['version'])")"
           image_owner="$(printf '%s' "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
-          version_source_sha="$(git log --format='%H' -- package.json | while read -r candidate_sha; do
-            candidate_version="$(git show "$candidate_sha:package.json" | python -c "import json, sys; print(json.load(sys.stdin)['version'])")"
-            if [[ "$candidate_version" != "$package_version" ]]; then
-              continue
-            fi
+          image_ref="ghcr.io/${image_owner}/auth-mini:${current_version}"
 
-            parent_version=''
-            if git rev-parse "$candidate_sha^" >/dev/null 2>&1 && git cat-file -e "$candidate_sha^:package.json" 2>/dev/null; then
-              parent_version="$(git show "$candidate_sha^:package.json" | python -c "import json, sys; print(json.load(sys.stdin)['version'])")"
-            fi
-
-            if [[ "$parent_version" != "$package_version" ]]; then
-              printf '%s\n' "$candidate_sha"
-              break
-            fi
-          done)"
-          echo "package_version=$package_version" >> "$GITHUB_OUTPUT"
+          echo "current_version=$current_version" >> "$GITHUB_OUTPUT"
           echo "image_owner=$image_owner" >> "$GITHUB_OUTPUT"
-          echo "current_sha=$current_sha" >> "$GITHUB_OUTPUT"
-          echo "version_source_sha=$version_source_sha" >> "$GITHUB_OUTPUT"
-          echo "before_version=" >> "$GITHUB_OUTPUT"
-          echo "after_version=$after_version" >> "$GITHUB_OUTPUT"
-          echo "version_changed=false" >> "$GITHUB_OUTPUT"
           echo "should_publish=false" >> "$GITHUB_OUTPUT"
-          echo "recovery_path=none" >> "$GITHUB_OUTPUT"
+          echo "reason=image-exists" >> "$GITHUB_OUTPUT"
 
-          if [[ -z "$version_source_sha" ]]; then
-            echo 'Unable to locate the commit that introduced the current package.json version.' >&2
-            exit 1
-          fi
-
-          if [[ "${{ github.ref }}" != "refs/heads/main" ]]; then
-            if [[ "${{ github.event_name }}" == 'workflow_dispatch' || "${{ github.run_attempt }}" != '1' ]]; then
-              echo 'Rejecting non-main manual recovery for official publish.' >&2
-              exit 1
-            fi
-            exit 0
-          fi
+          echo "event=${{ github.event_name }}"
+          echo "ref=${{ github.ref }}"
+          echo "sha=$(git rev-parse HEAD)"
+          echo "current_version=$current_version"
+          echo "image_ref=$image_ref"
 
           if [[ "${{ github.event_name }}" == 'workflow_dispatch' ]]; then
-            if [[ "$current_sha" != "$version_source_sha" ]]; then
-              echo 'Rejecting manual recovery because release_ref must target the version-introducing commit.' >&2
-              exit 1
-            fi
-            if ! git merge-base --is-ancestor "$current_sha" origin/main; then
-              echo 'Rejecting manual recovery because release_ref is not reachable from origin/main.' >&2
-              exit 1
-            fi
             echo "should_publish=true" >> "$GITHUB_OUTPUT"
-            echo "recovery_path=workflow_dispatch" >> "$GITHUB_OUTPUT"
+            echo "reason=workflow-dispatch" >> "$GITHUB_OUTPUT"
+            echo "publish decision: workflow_dispatch -> publish"
             exit 0
           fi
 
-          if [[ "${{ github.run_attempt }}" != '1' ]]; then
-            rerun_before_version=''
-            if [[ -n "$before_sha" && ! "$before_sha" =~ ^0+$ ]] && git cat-file -e "$before_sha:package.json" 2>/dev/null; then
-              rerun_before_version="$(git show "$before_sha:package.json" | python -c "import json, sys; print(json.load(sys.stdin)['version'])")"
-            fi
-            if [[ "$rerun_before_version" == "$after_version" ]]; then
-              echo 'Rejecting rerun recovery because original push did not change package.json version.' >&2
-              exit 1
-            fi
+          if docker manifest inspect "$image_ref" >/dev/null 2>&1; then
+            echo "publish decision: image already exists -> skip publish"
+          else
             echo "should_publish=true" >> "$GITHUB_OUTPUT"
-            echo "recovery_path=rerun" >> "$GITHUB_OUTPUT"
-            exit 0
+            echo "reason=image-missing" >> "$GITHUB_OUTPUT"
+            echo "publish decision: image missing -> publish"
           fi
 
-          before_version=''
-          if [[ -n "$before_sha" && ! "$before_sha" =~ ^0+$ ]] && git cat-file -e "$before_sha:package.json" 2>/dev/null; then
-            before_version="$(git show "$before_sha:package.json" | python -c "import json, sys; print(json.load(sys.stdin)['version'])")"
-          fi
-          echo "before_version=$before_version" >> "$GITHUB_OUTPUT"
-
-          if [[ "$before_version" != "$after_version" ]]; then
-            echo "version_changed=true" >> "$GITHUB_OUTPUT"
-            echo "should_publish=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Show publish plan
+        run: |
+          echo "should_publish=${{ steps.publish.outputs.should_publish }}"
+          echo "reason=${{ steps.publish.outputs.reason }}"
+          echo "current_version=${{ steps.publish.outputs.current_version }}"
+          echo "image_owner=${{ steps.publish.outputs.image_owner }}"
 
       - name: Log in to GHCR
-        if: steps.gate.outputs.should_publish == 'true'
-        uses: docker/login-action@v3
+        if: steps.publish.outputs.should_publish == 'true'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check whether GHCR tags already exist
-        id: check_tag
-        if: steps.gate.outputs.should_publish == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          version_exists=false
-          latest_exists=false
-          if docker manifest inspect ghcr.io/${{ steps.gate.outputs.image_owner }}/auth-mini:${{ steps.gate.outputs.package_version }} >/dev/null 2>&1; then
-            version_exists=true
-          fi
-          if docker manifest inspect ghcr.io/${{ steps.gate.outputs.image_owner }}/auth-mini:latest >/dev/null 2>&1; then
-            latest_exists=true
-          fi
-          if [[ "$version_exists" == 'true' && "$latest_exists" == 'true' ]]; then
-            echo "skip_publish=true" >> "$GITHUB_OUTPUT"
-            echo "GHCR version and latest tags already exist; skipping publish."
-          else
-            echo "skip_publish=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Build release candidate image
-        run: docker build --platform linux/amd64 -t auth-mini:release-check .
-
-      - name: Validate entrypoint contract
-        run: bash docker/test-entrypoint.sh validation
-
-      - name: Validate entrypoint supervision
-        run: bash docker/test-entrypoint.sh supervision
-
-      - name: Run container smoke test
-        run: bash docker/test-image-smoke.sh
-
       - name: Publish image to GHCR
-        if: steps.gate.outputs.should_publish == 'true' && steps.check_tag.outputs.skip_publish == 'false'
+        if: steps.publish.outputs.should_publish == 'true'
         run: |
-          docker buildx build \
-            --platform linux/amd64 \
-            --push \
-            -t ghcr.io/${{ steps.gate.outputs.image_owner }}/auth-mini:${{ steps.gate.outputs.package_version }} \
-            -t ghcr.io/${{ steps.gate.outputs.image_owner }}/auth-mini:latest \
-            .
+          export IMAGE_OWNER="${{ steps.publish.outputs.image_owner }}"
+          export PACKAGE_VERSION="${{ steps.publish.outputs.current_version }}"
+          docker buildx bake -f build/docker-bake.json release --push

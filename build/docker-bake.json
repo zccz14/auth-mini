@@ -1,0 +1,25 @@
+{
+  "variable": {
+    "IMAGE_OWNER": {
+      "default": "local"
+    },
+    "PACKAGE_VERSION": {
+      "default": "dev"
+    }
+  },
+  "target": {
+    "release-check": {
+      "context": "build/runtime/linux-amd64",
+      "dockerfile": "../../../build/Dockerfile",
+      "platforms": ["linux/amd64"],
+      "tags": ["auth-mini:release-check"]
+    },
+    "release": {
+      "inherits": ["release-check"],
+      "tags": [
+        "ghcr.io/${IMAGE_OWNER}/auth-mini:${PACKAGE_VERSION}",
+        "ghcr.io/${IMAGE_OWNER}/auth-mini:latest"
+      ]
+    }
+  }
+}
