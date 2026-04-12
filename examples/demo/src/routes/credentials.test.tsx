@@ -11,6 +11,8 @@ type MockMe = {
   webauthn_credentials: Array<{
     id: string;
     credential_id: string;
+    rp_id?: string;
+    last_used_at?: string | null;
     created_at: string;
   }>;
   ed25519_credentials: Array<{
@@ -221,6 +223,8 @@ describe('CredentialsRoute', () => {
         {
           id: 'passkey-row-1',
           credential_id: 'passkey-credential-abcdef123456',
+          rp_id: 'example.com',
+          last_used_at: null,
           created_at: '2026-04-10T12:00:00.000Z',
         },
       ],
@@ -245,6 +249,8 @@ describe('CredentialsRoute', () => {
     expect(screen.getByText('Primary email')).toBeInTheDocument();
     expect(screen.getByText('Read-only')).toBeInTheDocument();
     expect(screen.getByText(/passkey-credential-abc/i)).toBeInTheDocument();
+    expect(screen.getByText('example.com')).toBeInTheDocument();
+    expect(screen.getByText('Never')).toBeInTheDocument();
     expect(
       screen.getByRole('button', {
         name: 'Delete passkey passkey-credential-abcdef123456',
