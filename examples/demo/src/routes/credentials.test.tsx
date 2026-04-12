@@ -17,8 +17,8 @@ type MockMe = {
     id: string;
     name: string;
     public_key: string;
-    last_used_at: string | null;
-    created_at: string;
+    last_used_at?: string | null;
+    created_at?: string;
   }>;
   active_sessions: Array<unknown>;
 };
