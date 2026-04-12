@@ -12,6 +12,7 @@ import { runStartCommand } from '../../src/app/commands/start.js';
 import { bootstrapKeys } from '../../src/modules/jwks/service.js';
 import * as jwksService from '../../src/modules/jwks/service.js';
 import { hashValue } from '../../src/shared/crypto.js';
+import { TTLS } from '../../src/shared/time.js';
 import {
   createSession,
   getSessionById,
@@ -265,6 +266,45 @@ describe('session routes', () => {
         user_id: 'user-1',
       });
     } finally {
+      db.close();
+    }
+  });
+
+  it('refresh extends the session expiry from refresh time', async () => {
+    const dbPath = await createTempDbPath();
+    await bootstrapDatabase(dbPath);
+    const db = createDatabaseClient(dbPath);
+
+    try {
+      await bootstrapKeys(db);
+      db.prepare(
+        'INSERT INTO users (id, email, email_verified_at) VALUES (?, ?, ?)',
+      ).run('user-1', 'user-1@example.com', '2030-01-01T00:00:00.000Z');
+
+      const session = createSession(db, {
+        userId: 'user-1',
+        refreshTokenHash: hashValue('refresh-token'),
+        authMethod: 'email_otp',
+        expiresAt: '2030-01-06T00:00:00.000Z',
+      });
+      const refreshTime = '2030-01-05T12:34:56.000Z';
+
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(refreshTime));
+
+      await refreshSessionTokens(db, {
+        sessionId: session.id,
+        refreshToken: 'refresh-token',
+        issuer: 'https://issuer.example',
+      });
+
+      expect(getSessionById(db, session.id)?.expiresAt).toBe(
+        new Date(
+          Date.parse(refreshTime) + TTLS.refreshTokenSeconds * 1000,
+        ).toISOString(),
+      );
+    } finally {
+      vi.useRealTimers();
       db.close();
     }
   });
@@ -535,12 +575,15 @@ describe('session routes', () => {
       expiresAt: '2099-01-01T00:00:00.000Z',
     });
 
-    const logoutResponse = await testApp.app.request(`/session/${peer.id}/logout`, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${testApp.tokens.access_token}`,
+    const logoutResponse = await testApp.app.request(
+      `/session/${peer.id}/logout`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${testApp.tokens.access_token}`,
+        },
       },
-    });
+    );
     const meResponse = await testApp.app.request('/me', {
       headers: {
         authorization: `Bearer ${testApp.tokens.access_token}`,
@@ -641,12 +684,15 @@ describe('session routes', () => {
       typ: 'access',
     });
 
-    const logoutResponse = await testApp.app.request(`/session/${peer.id}/logout`, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${accessToken}`,
+    const logoutResponse = await testApp.app.request(
+      `/session/${peer.id}/logout`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+        },
       },
-    });
+    );
     const refreshResponse = await testApp.app.request('/session/refresh', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -817,12 +863,15 @@ describe('session routes', () => {
       .prepare('SELECT expires_at FROM sessions WHERE id = ?')
       .get(expiredPeer.id) as { expires_at: string };
 
-    const response = await testApp.app.request(`/session/${expiredPeer.id}/logout`, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${testApp.tokens.access_token}`,
+    const response = await testApp.app.request(
+      `/session/${expiredPeer.id}/logout`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${testApp.tokens.access_token}`,
+        },
       },
-    });
+    );
     const afterCurrentSession = testApp.db
       .prepare('SELECT expires_at FROM sessions WHERE id = ?')
       .get(testApp.sessionId) as { expires_at: string };

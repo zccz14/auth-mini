@@ -71,6 +71,48 @@ describe('session service', () => {
     expect(signJwt).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps retrying when a concurrent refresh rolls back after the second failed claim', async () => {
+    const { refreshSessionTokens } =
+      await import('../../src/modules/session/service.js');
+    const currentSession = {
+      id: 'session-1',
+      userId: 'user-1',
+      refreshTokenHash: hashValue('refresh-token'),
+      authMethod: 'email_otp' as const,
+      expiresAt: '2099-01-01T00:00:00.000Z',
+      createdAt: '2026-04-10T00:00:00.000Z',
+    };
+    const rotatedSession = {
+      ...currentSession,
+      refreshTokenHash: hashValue('replacement-refresh-token'),
+    };
+
+    getSessionById
+      .mockReturnValueOnce(currentSession)
+      .mockReturnValueOnce(currentSession)
+      .mockReturnValueOnce(currentSession);
+    rotateRefreshToken
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce(rotatedSession);
+    signJwt.mockResolvedValue('access-token');
+
+    const result = await refreshSessionTokens({} as never, {
+      sessionId: currentSession.id,
+      refreshToken: 'refresh-token',
+      issuer: 'https://issuer.example',
+    });
+
+    expect(result).toMatchObject({
+      session_id: currentSession.id,
+      access_token: 'access-token',
+      refresh_token: expect.any(String),
+    });
+    expect(getSessionById).toHaveBeenCalledTimes(3);
+    expect(rotateRefreshToken).toHaveBeenCalledTimes(3);
+    expect(signJwt).toHaveBeenCalledTimes(1);
+  });
+
   it('expires a same-user peer session and logs success', async () => {
     const { logoutPeerSession } =
       await import('../../src/modules/session/service.js');
