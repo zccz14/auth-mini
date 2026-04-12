@@ -9,14 +9,6 @@ type PasskeyRow = {
   created_at: string;
 };
 
-type Ed25519Row = {
-  id: string;
-  name: string;
-  public_key: string;
-  last_used_at: string | null;
-  created_at: string;
-};
-
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null
     ? (value as Record<string, unknown>)
@@ -41,26 +33,6 @@ function asPasskeyRows(value: unknown): PasskeyRow[] {
   });
 }
 
-function asEd25519Rows(value: unknown): Ed25519Row[] {
-  if (!Array.isArray(value)) return [];
-
-  return value.flatMap((row) => {
-    const record = asRecord(row);
-    if (
-      record &&
-      typeof record.id === 'string' &&
-      typeof record.name === 'string' &&
-      typeof record.public_key === 'string' &&
-      (typeof record.last_used_at === 'string' || record.last_used_at === null) &&
-      typeof record.created_at === 'string'
-    ) {
-      return [record as Ed25519Row];
-    }
-
-    return [];
-  });
-}
-
 function truncateMiddle(value: string, edge = 20) {
   return value.length <= edge * 2 + 1
     ? value
@@ -74,10 +46,6 @@ function getUserEmail(user: unknown) {
 
 function getUserPasskeys(user: unknown) {
   return asPasskeyRows(asRecord(user)?.webauthn_credentials);
-}
-
-function getUserEd25519Credentials(user: unknown) {
-  return asEd25519Rows(asRecord(user)?.ed25519_credentials);
 }
 
 function decodeBase64Url(value: string) {
@@ -135,7 +103,7 @@ export function CredentialsRoute() {
 
   const email = getUserEmail(currentUser);
   const passkeys = getUserPasskeys(currentUser);
-  const ed25519Credentials = getUserEd25519Credentials(currentUser);
+  const ed25519Credentials = currentUser?.ed25519_credentials ?? [];
 
   async function deleteCredential(input: {
     section: 'passkey' | 'ed25519';
