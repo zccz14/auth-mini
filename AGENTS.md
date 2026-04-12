@@ -28,6 +28,12 @@
 10. 所有代码合并必须通过 PR 完成。禁止直接向 `main` 分支提交或推送任何变更。
 11. 不使用本地 `main` 分支进行开发、提交、验证或承载临时改动。
 12. 对应 PR 已合并、关闭或确认废弃，且后续 review 处理已完成后，必须删除对应的 git worktree。禁止过早删除仍需处理 review 的 worktree，也禁止保留已完成、已废弃或失去用途的 worktree。
+13. 创建 PR 只是进入 PR 跟进阶段，不是任务终态。只要 PR 仍未合并、关闭或确认废弃，且对应 worktree 尚未清理，Agent 就必须继续推进后续动作，不得把“已开 PR”视为完成。
+14. 创建 PR 后，必须主动持续跟进 checks、review 状态与 mergeability，不得等待用户再次提醒。只要 PR 仍处于可继续推进状态，Agent 就必须继续执行下一步所需动作。若当前仅剩 checks 运行中、等待 reviewer 响应或等待外部平台状态变化，且已无新的 scope 内动作可执行，则应进入待跟进状态而不是无界轮询；待外部状态变化后再继续推进。
+15. 若 checks 失败，必须先查看失败详情；若失败原因仍在当前任务 scope 内，必须在同一 worktree、同一分支、同一 PR 中继续修复、验证、push，并继续跟进后续 checks / review / mergeability。若失败原因超出当前 scope，则必须先升级决策，不得擅自扩大范围。
+16. 若存在 blocking review 或其他必须处理的 review 意见，必须继续在同一 worktree、同一分支、同一 PR 中处理、验证、push，并在阻塞解除前停止推进合并。若 review 意见与 spec、scope 或权限边界冲突，必须保持阻塞并升级决策。
+17. 当 checks 全部通过、不存在 blocking review、merge conflict 或仓库保护规则阻塞时，必须按仓库允许的合并策略主动完成合并，不得等待用户手动点击 merge，也不得绕过任何保护规则。
+18. PR 已合并、关闭或确认废弃，且后续 review 处理已完成后，必须删除对应 git worktree。只要 worktree 尚未清理，任务仍未真正完成。
 
 ## 3. 标准执行顺序
 
@@ -41,7 +47,11 @@
    7. 在 worktree 中执行 `git fetch origin`
    8. 在 worktree 中执行 `git rebase origin/main`
    9. 在 worktree 中 push 分支并创建 PR
-   10. 在 PR 合并、关闭或确认废弃，且 review 处理完成后删除 worktree
+   10. 主动跟进 PR checks、review 状态与 mergeability；若当前仅剩外部状态变化且无新的 scope 内动作可执行，则进入待跟进状态，待状态变化后再继续
+   11. 若 checks 失败且原因仍在当前 scope 内，则在同一 worktree / 分支 / PR 中修复、验证、push，并继续跟进
+   12. 若存在 blocking review，则在同一 worktree / 分支 / PR 中继续处理、验证、push，并继续跟进，直到阻塞解除或升级决策
+   13. 当 checks 通过且无 blocking review、merge conflict 或仓库规则阻塞时，按仓库允许策略主动合并 PR
+   14. 在 PR 合并、关闭或确认废弃，且 review 处理完成后删除 worktree
 2. 如果任务不涉及代码、文档、spec、plan、commit、push、PR 变更，可不进入完整开发流程；但只要涉及上述任一项，就必须进入完整开发流程。
 3. 是否需要 spec、implementation plan、实现与验证，必须按任务类型判定，不得机械地对所有任务强制执行同一套子步骤。
 
@@ -70,6 +80,8 @@
    - 审核 Sub Agent 结果。
    - 维护任务状态与上下文。
 5. 若存在多步开发任务，主 Agent 应优先将执行拆分给 Sub Agent，而不是在主上下文中直接完成。
+6. 对 PR 闭环流程，主 Agent 只负责跟踪任务是否仍处于 PR 跟进阶段、决定是否继续派发 Sub Agent、汇总最终状态；不得亲自执行 checks 修复、review 修改、merge 或 worktree 清理等开发动作。
+7. 对 PR 闭环流程，Sub Agent 在被派发后负责实际执行 scope 内的 checks 失败修复、review 处理、验证、push、PR 状态推进、允许范围内的 merge，以及 PR 终态后的 worktree 清理。
 
 ## 6. 文件系统边界
 
@@ -92,6 +104,10 @@
 11. 禁止让 spec、implementation plan 与代码变更分散到不同 PR。
 12. 禁止主 Agent 亲自执行开发任务。
 13. 禁止在 repo 外写入文件或留下持久化产物。
+14. 禁止把“已创建 PR”视为开发任务终点。
+15. 禁止在 PR checks 失败、存在 blocking review、存在 merge conflict 或存在仓库保护规则阻塞时提前合并。
+16. 禁止通过绕过审批、绕过 checks 或其他 bypass 保护规则的方式强行合并 PR。
+17. 禁止在仍需继续处理 checks / review / merge 的情况下保留悬而未决的 PR 却宣告任务完成。
 
 ## 8. 判定口径
 
@@ -100,3 +116,5 @@
 3. “Sub Agent 执行”指实际实施变更、运行验证、提交代码的执行主体必须是 Sub Agent，而不是主 Agent。
 4. “仓库准备操作”指 `git fetch origin`、`git worktree add`、`git worktree remove`，以及为协调流程所需的只读仓库检查命令；仓库准备操作不等于开发相关操作。
 5. 只要任务包含以下任一动作，就视为开发任务：写文档到仓库、改代码、改测试、跑验证、提交 commit、push、开 PR、更新 PR 内容、处理 review。
+6. “PR 跟进阶段”指 PR 创建后到 PR 合并、关闭或确认废弃且对应 worktree 清理完成之间的整个持续推进阶段；该阶段仍属于开发流程的一部分。
+7. “开发任务完成”指对应 PR 已合并、关闭或确认废弃，相关 review 处理完成，且对应 worktree 已删除；仅完成创建 PR、push 分支或等待平台状态，不构成完成。
