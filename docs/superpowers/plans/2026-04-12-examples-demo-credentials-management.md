@@ -4,7 +4,7 @@
 
 **Goal:** Add a top-level `Credentials` page to `examples/demo` that shows the current signed-in user's email, passkeys, and Ed25519 credentials in sectioned tables, supports credential deletion with confirm + `/me` reload, and stays safe/read-only for anonymous users.
 
-**Architecture:** Keep the change local to the demo app by adding a single new route component and its focused route tests, then wire that route into the existing app shell navigation and router. Reuse the shared provider's existing `session`, `user`, `config`, and `sdk.me.reload()` state instead of adding new providers or optimistic local caches; the new page should normalize the `/me` snapshot into table rows, call the existing authenticated DELETE endpoints directly with the current access token, and rely on `/me` reload to refresh the UI after mutations.
+**Architecture:** Extend the existing `/me` contract first so WebAuthn credentials expose `credential_id`, `rp_id`, `last_used_at`, and `created_at` all the way from the database-backed server response through the SDK/browser singleton types and snapshots. Then keep the UI change local to the demo app by adding a single new route component and its focused route tests, wiring that route into the existing app shell navigation and router, and reusing the shared provider's `session`, `user`, `config`, and `sdk.me.reload()` state instead of adding new providers or optimistic local caches.
 
 **Tech Stack:** React 19, React Router 7, TypeScript, Tailwind utility classes, Vitest, Testing Library, browser `fetch`, native `window.confirm`
 
@@ -12,6 +12,36 @@
 
 ## File Structure
 
+- Modify: `sql/schema.sql`
+  - add the persisted `last_used_at` column for `webauthn_credentials` so `/me` can return stable passkey usage timestamps
+- Modify: `src/infra/db/bootstrap.ts`
+  - require the `webauthn_credentials.last_used_at` runtime column during bootstrap/migration checks
+- Modify: `src/app/commands/start.ts`
+  - require the same `webauthn_credentials.last_used_at` column before the server starts serving requests
+- Modify: `src/modules/webauthn/repo.ts`
+  - extend stored WebAuthn credential row shapes with `rp_id` and `last_used_at`, and persist `last_used_at` in the successful authenticate transaction
+- Modify: `src/modules/webauthn/service.ts`
+  - keep passing `now` through the successful authenticate path so the repo transaction can stamp `last_used_at`
+- Modify: `src/modules/users/repo.ts`
+  - expose `rp_id` and `last_used_at` on `/me` WebAuthn credential rows returned from `listUserWebauthnCredentials`
+- Modify: `src/sdk/types.ts`
+  - add `rp_id` and `last_used_at` to `MeWebauthnCredential`
+- Modify: `src/sdk/state.ts`
+  - preserve the new passkey fields when cloning/freeze-protecting SDK session snapshots
+- Modify: `src/sdk/singleton-entry.ts`
+  - preserve the same passkey fields in the bundled browser singleton clone helpers
+- Modify: `tests/helpers/db.ts`
+  - update test database schemas so integration helpers include `webauthn_credentials.last_used_at`
+- Modify: `tests/integration/sessions.test.ts`
+  - lock the `/me` response contract for WebAuthn rows, including `rp_id` and `last_used_at`
+- Modify: `tests/integration/webauthn.test.ts`
+  - prove successful WebAuthn authentication updates `last_used_at`
+- Modify: `tests/unit/sdk-state.test.ts`
+  - verify SDK snapshot cloning/immutability keeps `rp_id` and `last_used_at` on WebAuthn credentials
+- Modify: `tests/fixtures/sdk-dts-consumer/module-browser-usage.ts`
+  - type-check module consumers against the widened WebAuthn `/me` shape
+- Modify: `tests/fixtures/sdk-dts-consumer/global-usage.ts`
+  - type-check global consumers against the widened WebAuthn `/me` shape
 - Create: `examples/demo/src/routes/credentials.tsx`
   - new top-level demo page with Email / Passkey / Ed25519 sections, row actions, section-scoped pending/error state, snapshot normalization, and `/me` reload after deletes
 - Create: `examples/demo/src/routes/credentials.test.tsx`
@@ -28,6 +58,7 @@
 - Use only the current demo provider state: `const { config, sdk, session, user } = useDemo()`.
 - Treat `session.authenticated`, `session.accessToken`, `config.status === 'ready'`, and `sdk` presence as the gate for destructive actions.
 - Read email from `user?.email ?? ''`.
+- Extend the server-side `/me` passkey shape to `{ id, credential_id, transports, rp_id, last_used_at, created_at }`, using `last_used_at: string | null` consistently in the repo, SDK, tests, and demo route.
 - Normalize `user?.webauthn_credentials` and `user?.ed25519_credentials` inside `examples/demo/src/routes/credentials.tsx` with narrow local TypeScript guards instead of introducing a wider refactor.
 - Call `fetch(new URL(path, config.authOrigin), { method: 'DELETE', headers: { authorization: \`Bearer ${session.accessToken}\` } })` for delete actions, then `await sdk.me.reload()` on success.
 - Keep errors local: one error/pending bucket for Passkey, one for Ed25519, none for Email.
@@ -35,7 +66,173 @@
 - Keep table formatting deterministic for tests by rendering raw ISO timestamps as-is unless an existing demo formatter is already present in the touched file.
 - Truncate long credential strings in the cell text with a small helper (for example `abcd…wxyz`) while preserving the full value in a `title` attribute.
 
-### Task 1: Lock The Router And Navigation Contract First
+### Task 1: Extend The `/me` WebAuthn Contract Before Touching The Demo UI
+
+**Files:**
+
+- Modify: `sql/schema.sql`
+- Modify: `src/infra/db/bootstrap.ts`
+- Modify: `src/app/commands/start.ts`
+- Modify: `src/modules/webauthn/repo.ts`
+- Modify: `src/modules/webauthn/service.ts`
+- Modify: `src/modules/users/repo.ts`
+- Modify: `src/sdk/types.ts`
+- Modify: `src/sdk/state.ts`
+- Modify: `src/sdk/singleton-entry.ts`
+- Modify: `tests/helpers/db.ts`
+- Modify: `tests/integration/sessions.test.ts`
+- Modify: `tests/integration/webauthn.test.ts`
+- Modify: `tests/unit/sdk-state.test.ts`
+- Modify: `tests/fixtures/sdk-dts-consumer/module-browser-usage.ts`
+- Modify: `tests/fixtures/sdk-dts-consumer/global-usage.ts`
+
+- [ ] **Step 1: Lock the `/me` contract with passkey metadata in integration coverage**
+
+Update `tests/integration/sessions.test.ts` so the `/me` response proves a WebAuthn row now includes both `rp_id` and `last_used_at`:
+
+```ts
+it('me returns user id, email, credentials, and active sessions', async () => {
+  const testApp = await createSignedInApp('me@example.com');
+  openApps.push(testApp);
+
+  testApp.db
+    .prepare(
+      [
+        'INSERT INTO webauthn_credentials',
+        '(id, user_id, credential_id, public_key, counter, transports, rp_id, last_used_at, created_at)',
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      ].join(' '),
+    )
+    .run(
+      'passkey-1',
+      testApp.userId,
+      'passkey-credential-abcdef123456',
+      'public-key',
+      0,
+      'usb,nfc',
+      'app.example.com',
+      null,
+      '2026-04-10T12:00:00.000Z',
+    );
+
+  const response = await testApp.app.request('/me', {
+    headers: {
+      authorization: `Bearer ${testApp.tokens.access_token}`,
+    },
+  });
+
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({
+    user_id: testApp.userId,
+    email: 'me@example.com',
+    webauthn_credentials: [
+      {
+        id: 'passkey-1',
+        credential_id: 'passkey-credential-abcdef123456',
+        transports: ['usb', 'nfc'],
+        rp_id: 'app.example.com',
+        last_used_at: null,
+        created_at: '2026-04-10T12:00:00.000Z',
+      },
+    ],
+    ed25519_credentials: [],
+    active_sessions: [
+      {
+        id: testApp.sessionId,
+        created_at: expect.any(String),
+        expires_at: expect.any(String),
+      },
+    ],
+  });
+});
+```
+
+- [ ] **Step 2: Add a WebAuthn auth success regression for `last_used_at`**
+
+Extend `tests/integration/webauthn.test.ts` with a focused assertion that successful authenticate verification stamps `last_used_at` on the used credential:
+
+```ts
+it('authenticate/verify updates last_used_at on the authenticated credential', async () => {
+  const testApp = await createSignedInApp('signin-last-used@example.com');
+  openApps.push(testApp);
+  const passkey = await registerPasskey(testApp, 'signin-last-used@example.com');
+
+  const options = await getAuthOptions(testApp);
+  const credential = passkey.createAuthenticationCredential(
+    options.publicKey,
+    origin,
+  );
+
+  const response = await verifyAuth(testApp, options.request_id, credential);
+
+  const storedCredential = testApp.db
+    .prepare('SELECT last_used_at FROM webauthn_credentials WHERE user_id = ? LIMIT 1')
+    .get(testApp.userId) as { last_used_at: string | null };
+
+  expect(response.status).toBe(200);
+  expect(storedCredential.last_used_at).toEqual(expect.any(String));
+});
+```
+
+- [ ] **Step 3: Implement the schema, repo, and `/me` contract changes**
+
+Update the storage and `/me` chain in these files with the exact property names shown below:
+
+```ts
+// sql/schema.sql
+last_used_at TEXT,
+
+// src/modules/users/repo.ts
+type WebauthnCredentialRow = {
+  id: string;
+  credential_id: string;
+  transports: string;
+  rp_id: string;
+  last_used_at: string | null;
+  created_at: string;
+};
+
+export type MeCredential = {
+  id: string;
+  credential_id: string;
+  transports: string[];
+  rp_id: string;
+  last_used_at: string | null;
+  created_at: string;
+};
+
+// src/sdk/types.ts
+export type MeWebauthnCredential = {
+  id: string;
+  credential_id: string;
+  transports: string[];
+  rp_id: string;
+  last_used_at: string | null;
+  created_at: string;
+};
+```
+
+In `src/modules/webauthn/repo.ts`, widen the credential row/storage types, include `last_used_at` in every credential `SELECT`, and change the successful authenticate transaction to update both `counter` and `last_used_at` in one write path.
+
+- [ ] **Step 4: Preserve the new fields through SDK cloning and type fixtures**
+
+Update `src/sdk/state.ts`, `src/sdk/singleton-entry.ts`, `tests/unit/sdk-state.test.ts`, and both `tests/fixtures/sdk-dts-consumer/*.ts` files so cloned snapshots and TypeScript consumer fixtures keep compiling with `rp_id` and `last_used_at` present on `me.webauthn_credentials[*]`.
+
+- [ ] **Step 5: Run the focused backend and SDK checks**
+
+Run: `npm run test:integration -- tests/integration/sessions.test.ts tests/integration/webauthn.test.ts`
+
+Expected: PASS with `/me` returning `rp_id` + `last_used_at` and successful WebAuthn auth updating `last_used_at`.
+
+Run: `npm run test:unit -- tests/unit/sdk-state.test.ts`
+
+Expected: PASS with the widened WebAuthn snapshot shape staying immutable.
+
+Run: `npx tsc -p tests/fixtures/sdk-dts-consumer/tsconfig.json`
+
+Expected: PASS with both browser-consumer fixtures accepting `rp_id` and `last_used_at`.
+
+### Task 2: Lock The Router And Navigation Contract First
 
 **Files:**
 
@@ -77,7 +274,7 @@ Run: `npm --prefix examples/demo run test -- src/routes/router.test.tsx`
 
 Expected: FAIL because the nav does not contain `Credentials` and `/credentials` does not resolve yet.
 
-### Task 2: Specify The Credentials Page Behaviors With Route Tests
+### Task 3: Specify The Credentials Page Behaviors With Route Tests
 
 **Files:**
 
@@ -95,6 +292,8 @@ type MockMe = {
   webauthn_credentials: Array<{
     id: string;
     credential_id: string;
+    rp_id: string;
+    last_used_at: string | null;
     created_at: string;
   }>;
   ed25519_credentials: Array<{
@@ -212,6 +411,8 @@ it('renders email, passkey, and ed25519 tables from the current /me snapshot', (
         {
           id: 'passkey-row-1',
           credential_id: 'passkey-credential-abcdef123456',
+          rp_id: 'app.example.com',
+          last_used_at: null,
           created_at: '2026-04-10T12:00:00.000Z',
         },
       ],
@@ -239,7 +440,20 @@ it('renders email, passkey, and ed25519 tables from the current /me snapshot', (
   ).toBeInTheDocument();
   expect(screen.getByText('Primary email')).toBeInTheDocument();
   expect(screen.getByText('Read-only')).toBeInTheDocument();
+  expect(
+    screen.getByRole('columnheader', { name: 'Credential ID' }),
+  ).toBeInTheDocument();
+  expect(screen.getByRole('columnheader', { name: 'RP ID' })).toBeInTheDocument();
+  expect(
+    screen.getByRole('columnheader', { name: 'Last Used' }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole('columnheader', { name: 'Created At' }),
+  ).toBeInTheDocument();
+  expect(screen.getByRole('columnheader', { name: 'Action' })).toBeInTheDocument();
   expect(screen.getByText(/passkey-credential-abc/i)).toBeInTheDocument();
+  expect(screen.getByText('app.example.com')).toBeInTheDocument();
+  expect(screen.getByText('Never')).toBeInTheDocument();
   expect(
     screen.getByRole('button', {
       name: 'Delete passkey passkey-credential-abcdef123456',
@@ -276,6 +490,8 @@ it('deletes a passkey after confirm and reloads /me from the server', async () =
         {
           id: 'passkey-row-1',
           credential_id: 'passkey-credential-abcdef123456',
+          rp_id: 'app.example.com',
+          last_used_at: null,
           created_at: '2026-04-10T12:00:00.000Z',
         },
       ],
@@ -519,7 +735,7 @@ Run: `npm --prefix examples/demo run test -- src/routes/credentials.test.tsx`
 
 Expected: FAIL because the `/credentials` page does not exist yet and the required headings / buttons / delete flow are absent.
 
-### Task 3: Implement The Credentials Route, Navigation, And Delete Flows
+### Task 4: Implement The Credentials Route, Navigation, And Delete Flows
 
 **Files:**
 
@@ -561,6 +777,8 @@ Create `examples/demo/src/routes/credentials.tsx` with a `FlowCard` page, sectio
 type PasskeyRow = {
   id: string;
   credential_id: string;
+  rp_id: string;
+  last_used_at: string | null;
   created_at: string;
 };
 
@@ -581,6 +799,9 @@ function asPasskeyRows(value: unknown): PasskeyRow[] {
       row !== null &&
       typeof (row as Record<string, unknown>).id === 'string' &&
       typeof (row as Record<string, unknown>).credential_id === 'string' &&
+      typeof (row as Record<string, unknown>).rp_id === 'string' &&
+      (typeof (row as Record<string, unknown>).last_used_at === 'string' ||
+        (row as Record<string, unknown>).last_used_at === null) &&
       typeof (row as Record<string, unknown>).created_at === 'string'
     ) {
       return [row as PasskeyRow];
@@ -704,9 +925,10 @@ Within those sections, keep these behaviors exact:
 // - helper copy: "Managed via email OTP sign-in"
 
 // Passkey section
-// - table columns: Credential ID / Created At / Action
+// - table columns: Credential ID / RP ID / Last Used / Created At / Action
 // - empty authenticated copy: "No passkeys are currently bound to this account."
 // - anonymous copy: "Sign in to inspect current passkeys."
+// - render `Never` for null last_used_at
 // - button label: `Delete passkey ${row.credential_id}`
 // - button disabled only while pendingSection === 'passkey'
 // - do not render any register/sign-in/create actions on this page
@@ -739,23 +961,54 @@ Run: `npm --prefix examples/demo run test -- src/routes/router.test.tsx src/rout
 
 Expected: PASS.
 
-### Task 4: Finish With Focused Verification And A Small Commit
+### Task 5: Finish With Focused Verification And A Small Commit
 
 **Files:**
 
+- Modify: `sql/schema.sql`
+- Modify: `src/infra/db/bootstrap.ts`
+- Modify: `src/app/commands/start.ts`
+- Modify: `src/modules/webauthn/repo.ts`
+- Modify: `src/modules/webauthn/service.ts`
+- Modify: `src/modules/users/repo.ts`
+- Modify: `src/sdk/types.ts`
+- Modify: `src/sdk/state.ts`
+- Modify: `src/sdk/singleton-entry.ts`
+- Modify: `tests/helpers/db.ts`
+- Modify: `tests/integration/sessions.test.ts`
+- Modify: `tests/integration/webauthn.test.ts`
+- Modify: `tests/unit/sdk-state.test.ts`
+- Modify: `tests/fixtures/sdk-dts-consumer/module-browser-usage.ts`
+- Modify: `tests/fixtures/sdk-dts-consumer/global-usage.ts`
 - Modify: `examples/demo/src/app/router.tsx`
 - Modify: `examples/demo/src/components/app/app-shell.tsx`
 - Create: `examples/demo/src/routes/credentials.tsx`
 - Create: `examples/demo/src/routes/credentials.test.tsx`
 - Modify: `examples/demo/src/routes/router.test.tsx`
 
-- [ ] **Step 1: Run the focused example-demo test suite one more time**
+- [ ] **Step 1: Run the focused backend, SDK, and example-demo checks one more time**
+
+Run: `npm run test:integration -- tests/integration/sessions.test.ts tests/integration/webauthn.test.ts`
+
+Expected: PASS.
+
+Run: `npm run test:unit -- tests/unit/sdk-state.test.ts`
+
+Expected: PASS.
+
+Run: `npx tsc -p tests/fixtures/sdk-dts-consumer/tsconfig.json`
+
+Expected: PASS.
 
 Run: `npm --prefix examples/demo run test -- src/routes/router.test.tsx src/routes/credentials.test.tsx`
 
 Expected: PASS with the new credentials page coverage green.
 
-- [ ] **Step 2: Run the example-demo typecheck to catch route-level typing drift**
+- [ ] **Step 2: Run the repo and demo typechecks to catch typing drift**
+
+Run: `npm run typecheck`
+
+Expected: PASS.
 
 Run: `npm --prefix examples/demo run typecheck`
 
@@ -763,16 +1016,31 @@ Expected: PASS.
 
 - [ ] **Step 3: Review the final diff for scope discipline**
 
-Run: `git diff -- examples/demo/src/app/router.tsx examples/demo/src/components/app/app-shell.tsx examples/demo/src/routes/router.test.tsx examples/demo/src/routes/credentials.tsx examples/demo/src/routes/credentials.test.tsx`
+Run: `git diff -- sql/schema.sql src/infra/db/bootstrap.ts src/app/commands/start.ts src/modules/webauthn/repo.ts src/modules/webauthn/service.ts src/modules/users/repo.ts src/sdk/types.ts src/sdk/state.ts src/sdk/singleton-entry.ts tests/helpers/db.ts tests/integration/sessions.test.ts tests/integration/webauthn.test.ts tests/unit/sdk-state.test.ts tests/fixtures/sdk-dts-consumer/module-browser-usage.ts tests/fixtures/sdk-dts-consumer/global-usage.ts examples/demo/src/app/router.tsx examples/demo/src/components/app/app-shell.tsx examples/demo/src/routes/router.test.tsx examples/demo/src/routes/credentials.tsx examples/demo/src/routes/credentials.test.tsx`
 
-Expected: only the new route, nav link, and route tests appear; no unrelated demo pages change.
+Expected: only the `/me` contract plumbing, credentials route, nav link, and focused tests appear; no unrelated auth flows change.
 
 - [ ] **Step 4: Commit the implementation in one focused changeset**
 
 Run:
 
 ```bash
-git add examples/demo/src/app/router.tsx \
+git add sql/schema.sql \
+  src/infra/db/bootstrap.ts \
+  src/app/commands/start.ts \
+  src/modules/webauthn/repo.ts \
+  src/modules/webauthn/service.ts \
+  src/modules/users/repo.ts \
+  src/sdk/types.ts \
+  src/sdk/state.ts \
+  src/sdk/singleton-entry.ts \
+  tests/helpers/db.ts \
+  tests/integration/sessions.test.ts \
+  tests/integration/webauthn.test.ts \
+  tests/unit/sdk-state.test.ts \
+  tests/fixtures/sdk-dts-consumer/module-browser-usage.ts \
+  tests/fixtures/sdk-dts-consumer/global-usage.ts \
+  examples/demo/src/app/router.tsx \
   examples/demo/src/components/app/app-shell.tsx \
   examples/demo/src/routes/router.test.tsx \
   examples/demo/src/routes/credentials.tsx \
@@ -780,4 +1048,4 @@ git add examples/demo/src/app/router.tsx \
 git commit -m "feat: add demo credentials management page"
 ```
 
-Expected: commit succeeds with only the credentials-route files staged.
+Expected: commit succeeds with only the `/me` contract plumbing and credentials-page files staged.
