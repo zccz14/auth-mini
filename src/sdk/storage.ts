@@ -1,3 +1,4 @@
+import { parseMeResponse } from './me.js';
 import type { PersistedSdkState } from './types.js';
 
 export const SDK_STORAGE_KEY = 'auth-mini.sdk';
@@ -67,28 +68,11 @@ export function readPersistedSdkState(
       return null;
     }
 
-    if (!isRecord(value)) {
+    try {
+      return parseMeResponse(value);
+    } catch {
       return undefined;
     }
-
-    if (
-      typeof value.user_id !== 'string' ||
-      typeof value.email !== 'string' ||
-      !Array.isArray(value.webauthn_credentials) ||
-      !Array.isArray(value.active_sessions)
-    ) {
-      return undefined;
-    }
-
-    return {
-      user_id: value.user_id,
-      email: value.email,
-      webauthn_credentials: [...value.webauthn_credentials],
-      ed25519_credentials: Array.isArray(value.ed25519_credentials)
-        ? [...value.ed25519_credentials]
-        : [],
-      active_sessions: [...value.active_sessions],
-    };
   }
 
   function isRecord(value: unknown): value is Record<string, unknown> {

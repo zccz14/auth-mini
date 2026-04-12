@@ -1,5 +1,6 @@
 import { createSdkError } from './errors.js';
 import type { HttpClient } from './http.js';
+import { parseMeResponse } from './me.js';
 import type {
   PersistedSdkState,
   SessionSnapshot,
@@ -231,9 +232,11 @@ export function createSessionController(input: {
       throw createSdkError('missing_session', 'Missing access token');
     }
 
-    return await input.http.getJson<SessionResult['me']>('/me', {
-      accessToken,
-    });
+    return parseMeResponse(
+      await input.http.getJson<SessionResult['me']>('/me', {
+        accessToken,
+      }),
+    );
   }
 
   async function startSupersededRecovery(snapshot: SessionSnapshot) {

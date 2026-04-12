@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createBrowserSdk } from '../../src/sdk/browser.js';
 import type { AuthMiniApi } from '../../src/sdk/types.js';
-import { fakeStorage, jsonResponse } from '../helpers/sdk.js';
+import { fakeStorage, jsonResponse, seedBrowserSdkStorage } from '../helpers/sdk.js';
 
 describe('browser module sdk', () => {
   it('preserves base-path prefixes in browser sdk requests without window side effects', async () => {
@@ -67,6 +67,7 @@ describe('browser module sdk', () => {
             user_id: 'user-a',
             email: 'user@example.com',
             webauthn_credentials: [],
+            ed25519_credentials: [],
             active_sessions: [],
           },
         });
@@ -86,6 +87,7 @@ describe('browser module sdk', () => {
           user_id: 'user-a',
           email: 'user@example.com',
           webauthn_credentials: [],
+          ed25519_credentials: [],
           active_sessions: [],
         });
       }
@@ -111,6 +113,46 @@ describe('browser module sdk', () => {
 
       expect(fetch).not.toHaveBeenCalled();
       expect(secondSdk.session.getState().status).toBe('anonymous');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('rejects malformed /me payloads instead of repairing them in the browser sdk', async () => {
+    const storage = fakeStorage();
+
+    seedBrowserSdkStorage(storage, 'https://auth.example.com', {
+      sessionId: 'session-1',
+      accessToken: 'access-1',
+      refreshToken: 'refresh-1',
+      receivedAt: '2036-04-03T00:00:00.000Z',
+      expiresAt: '2036-04-03T00:15:00.000Z',
+      me: null,
+    });
+    const fetch = vi.fn(async (input: string | URL) => {
+      const requestUrl = new URL(String(input));
+
+      if (requestUrl.pathname.endsWith('/me')) {
+        return jsonResponse({
+          user_id: 'user-1',
+          email: 'user@example.com',
+          webauthn_credentials: [],
+          active_sessions: [],
+        });
+      }
+
+      return jsonResponse({ error: 'unexpected' }, 500);
+    });
+
+    vi.stubGlobal('fetch', fetch);
+    vi.stubGlobal('localStorage', storage);
+
+    try {
+      const sdk = createBrowserSdk('https://auth.example.com');
+
+      await expect(sdk.me.reload()).rejects.toMatchObject({
+        error: 'request_failed',
+      });
     } finally {
       vi.unstubAllGlobals();
     }

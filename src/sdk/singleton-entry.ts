@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
+import { parseMeResponse, renderMeParserSource } from './me.js';
 import type {
   AuthMiniApi,
   AuthMiniInternal,
@@ -60,7 +61,7 @@ export function bootstrapSingletonSdk(input: BootstrapInput) {
 }
 
 export function renderSingletonIifeSource(): string {
-  return `(${createRuntime.toString()})().installOnWindow(window, document);`;
+  return `(()=>{${renderMeParserSource()}return (${createRuntime.toString()})().installOnWindow(window, document);})()`;
 }
 
 function getRuntime() {
@@ -530,7 +531,8 @@ function createRuntime() {
       if (!accessToken) {
         throw createSdkError('missing_session', 'Missing access token');
       }
-      return await input.http.getJson('/me', { accessToken });
+
+      return parseMeResponse(await input.http.getJson('/me', { accessToken }));
     }
 
     async function startSupersededRecovery(snapshot) {
@@ -1087,26 +1089,12 @@ function createRuntime() {
     if (value === undefined || value === null) {
       return null;
     }
-    if (!value || typeof value !== 'object') {
+
+    try {
+      return parseMeResponse(value);
+    } catch {
       return undefined;
     }
-    if (
-      typeof value.user_id !== 'string' ||
-      typeof value.email !== 'string' ||
-      !Array.isArray(value.webauthn_credentials) ||
-      !Array.isArray(value.active_sessions)
-    ) {
-      return undefined;
-    }
-    return {
-      user_id: value.user_id,
-      email: value.email,
-      webauthn_credentials: [...value.webauthn_credentials],
-      ed25519_credentials: Array.isArray(value.ed25519_credentials)
-        ? [...value.ed25519_credentials]
-        : [],
-      active_sessions: [...value.active_sessions],
-    };
   }
 
   function createSnapshot(status) {
@@ -1134,35 +1122,23 @@ function createRuntime() {
   }
 
   function cloneMeResponse(me) {
-    const webauthnCredentials = Array.isArray(me.webauthn_credentials)
-      ? me.webauthn_credentials
-      : [];
-    const ed25519Credentials = Array.isArray(me.ed25519_credentials)
-      ? me.ed25519_credentials
-      : [];
-    const activeSessions = Array.isArray(me.active_sessions)
-      ? me.active_sessions
-      : [];
-
     return {
       user_id: me.user_id,
       email: me.email,
-      webauthn_credentials: webauthnCredentials.map((credential) => ({
+      webauthn_credentials: me.webauthn_credentials.map((credential) => ({
         id: credential.id,
         credential_id: credential.credential_id,
-        transports: Array.isArray(credential.transports)
-          ? [...credential.transports]
-          : [],
+        transports: [...credential.transports],
         created_at: credential.created_at,
       })),
-      ed25519_credentials: ed25519Credentials.map((credential) => ({
+      ed25519_credentials: me.ed25519_credentials.map((credential) => ({
         id: credential.id,
         name: credential.name,
         public_key: credential.public_key,
         last_used_at: credential.last_used_at,
         created_at: credential.created_at,
       })),
-      active_sessions: activeSessions.map((session) => ({
+      active_sessions: me.active_sessions.map((session) => ({
         id: session.id,
         created_at: session.created_at,
         expires_at: session.expires_at,
