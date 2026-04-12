@@ -61,7 +61,7 @@ export function bootstrapSingletonSdk(input: BootstrapInput) {
 }
 
 export function renderSingletonIifeSource(): string {
-  return `(()=>{${renderMeParserSource()}return (${createRuntime.toString()})().installOnWindow(window, document);})()`;
+  return `(()=>{${renderMeParserSource()}return (${createRuntime.toString()})(parseMeResponse).installOnWindow(window, document);})()`;
 }
 
 function getRuntime() {
@@ -69,7 +69,7 @@ function getRuntime() {
   return runtimeCache;
 }
 
-function createRuntime() {
+function createRuntime(parseMeResponseImpl = parseMeResponse) {
   const SDK_PATH_SUFFIX = '/sdk/singleton-iife.js';
   const SDK_STORAGE_KEY = 'auth-mini.sdk';
 
@@ -532,7 +532,9 @@ function createRuntime() {
         throw createSdkError('missing_session', 'Missing access token');
       }
 
-      return parseMeResponse(await input.http.getJson('/me', { accessToken }));
+      return parseMeResponseImpl(
+        await input.http.getJson('/me', { accessToken }),
+      );
     }
 
     async function startSupersededRecovery(snapshot) {
@@ -1091,7 +1093,7 @@ function createRuntime() {
     }
 
     try {
-      return parseMeResponse(value);
+      return parseMeResponseImpl(value);
     } catch {
       return undefined;
     }
