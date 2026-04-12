@@ -6,6 +6,7 @@ import {
 import type {
   AuthenticatedStateInput,
   Listener,
+  MeResponse,
   PersistedSdkState,
   SessionSnapshot,
   SdkStatus,
@@ -115,22 +116,22 @@ export function createStateStore(storage: Storage) {
       refreshToken: snapshot.refreshToken,
       receivedAt: snapshot.receivedAt,
       expiresAt: snapshot.expiresAt,
-      me: snapshot.me
-        ? {
-            user_id: snapshot.me.user_id,
-            email: snapshot.me.email,
-            webauthn_credentials: [...snapshot.me.webauthn_credentials],
-            ed25519_credentials: Array.isArray(snapshot.me.ed25519_credentials)
-              ? [...snapshot.me.ed25519_credentials]
-              : [],
-            active_sessions: [...snapshot.me.active_sessions],
-          }
-        : null,
+      me: snapshot.me ? cloneMeResponse(snapshot.me) : null,
     });
   }
 
   function freezeSnapshot(snapshot: SessionSnapshot): SessionSnapshot {
     if (snapshot.me) {
+      for (const credential of snapshot.me.webauthn_credentials) {
+        Object.freeze(credential.transports);
+        Object.freeze(credential);
+      }
+      for (const credential of snapshot.me.ed25519_credentials) {
+        Object.freeze(credential);
+      }
+      for (const session of snapshot.me.active_sessions) {
+        Object.freeze(session);
+      }
       Object.freeze(snapshot.me.webauthn_credentials);
       Object.freeze(snapshot.me.ed25519_credentials);
       Object.freeze(snapshot.me.active_sessions);
@@ -149,19 +150,32 @@ export function createStateStore(storage: Storage) {
       refreshToken: currentState.refreshToken,
       receivedAt: currentState.receivedAt,
       expiresAt: currentState.expiresAt,
-      me: currentState.me
-        ? {
-            user_id: currentState.me.user_id,
-            email: currentState.me.email,
-            webauthn_credentials: [...currentState.me.webauthn_credentials],
-            ed25519_credentials: Array.isArray(
-              currentState.me.ed25519_credentials,
-            )
-              ? [...currentState.me.ed25519_credentials]
-              : [],
-            active_sessions: [...currentState.me.active_sessions],
-          }
-        : null,
+      me: currentState.me ? cloneMeResponse(currentState.me) : null,
+    };
+  }
+
+  function cloneMeResponse(me: MeResponse): MeResponse {
+    return {
+      user_id: me.user_id,
+      email: me.email,
+      webauthn_credentials: me.webauthn_credentials.map((credential) => ({
+        id: credential.id,
+        credential_id: credential.credential_id,
+        transports: [...credential.transports],
+        created_at: credential.created_at,
+      })),
+      ed25519_credentials: me.ed25519_credentials.map((credential) => ({
+        id: credential.id,
+        name: credential.name,
+        public_key: credential.public_key,
+        last_used_at: credential.last_used_at,
+        created_at: credential.created_at,
+      })),
+      active_sessions: me.active_sessions.map((session) => ({
+        id: session.id,
+        created_at: session.created_at,
+        expires_at: session.expires_at,
+      })),
     };
   }
 }

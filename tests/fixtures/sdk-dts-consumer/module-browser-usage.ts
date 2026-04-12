@@ -10,5 +10,17 @@ const sdk: AuthMiniApi = createBrowserSdk('https://auth.example.com');
 const state: SessionSnapshot = sdk.session.getState();
 const me: MeResponse | null = sdk.me.get();
 
+if (me) {
+  const credentialId: string = me.webauthn_credentials[0].credential_id;
+  const transport: string = me.webauthn_credentials[0].transports[0];
+  const publicKey: string = me.ed25519_credentials[0].public_key;
+  const expiresAt: string = me.active_sessions[0].expires_at;
+
+  void credentialId;
+  void transport;
+  void publicKey;
+  void expiresAt;
+}
+
 void state;
 void me;

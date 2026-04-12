@@ -1129,22 +1129,61 @@ function createRuntime() {
       refreshToken: snapshot.refreshToken,
       receivedAt: snapshot.receivedAt,
       expiresAt: snapshot.expiresAt,
-      me: snapshot.me
-        ? {
-            user_id: snapshot.me.user_id,
-            email: snapshot.me.email,
-            webauthn_credentials: [...snapshot.me.webauthn_credentials],
-            ed25519_credentials: Array.isArray(snapshot.me.ed25519_credentials)
-              ? [...snapshot.me.ed25519_credentials]
-              : [],
-            active_sessions: [...snapshot.me.active_sessions],
-          }
-        : null,
+      me: snapshot.me ? cloneMeResponse(snapshot.me) : null,
+    };
+  }
+
+  function cloneMeResponse(me) {
+    const webauthnCredentials = Array.isArray(me.webauthn_credentials)
+      ? me.webauthn_credentials
+      : [];
+    const ed25519Credentials = Array.isArray(me.ed25519_credentials)
+      ? me.ed25519_credentials
+      : [];
+    const activeSessions = Array.isArray(me.active_sessions)
+      ? me.active_sessions
+      : [];
+
+    return {
+      user_id: me.user_id,
+      email: me.email,
+      webauthn_credentials: webauthnCredentials.map((credential) => ({
+        id: credential.id,
+        credential_id: credential.credential_id,
+        transports: Array.isArray(credential.transports)
+          ? [...credential.transports]
+          : [],
+        created_at: credential.created_at,
+      })),
+      ed25519_credentials: ed25519Credentials.map((credential) => ({
+        id: credential.id,
+        name: credential.name,
+        public_key: credential.public_key,
+        last_used_at: credential.last_used_at,
+        created_at: credential.created_at,
+      })),
+      active_sessions: activeSessions.map((session) => ({
+        id: session.id,
+        created_at: session.created_at,
+        expires_at: session.expires_at,
+      })),
     };
   }
 
   function freezeSnapshot(snapshot) {
     if (snapshot.me) {
+      for (const credential of snapshot.me.webauthn_credentials) {
+        if (Array.isArray(credential.transports)) {
+          Object.freeze(credential.transports);
+        }
+        Object.freeze(credential);
+      }
+      for (const credential of snapshot.me.ed25519_credentials) {
+        Object.freeze(credential);
+      }
+      for (const session of snapshot.me.active_sessions) {
+        Object.freeze(session);
+      }
       Object.freeze(snapshot.me.webauthn_credentials);
       Object.freeze(snapshot.me.ed25519_credentials);
       Object.freeze(snapshot.me.active_sessions);
