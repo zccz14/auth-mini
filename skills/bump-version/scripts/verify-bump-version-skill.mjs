@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 const skillDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -12,12 +13,13 @@ const scenarioChecks = [
     [
       '`bump-version 0.1.10`',
       'read `package.json` name and current version before planning any mutation',
-      'reject prerelease, invalid semver, and non-incrementing targets',
+      'reject prerelease, build metadata, invalid semver, and non-incrementing targets',
       'announce the exact target version before creating a worktree',
       'run `git fetch origin` before any development action',
       'create a new worktree from `origin/main` under `.worktrees/`',
       'modify `package.json` `version` plus the tracked top-level `package-lock.json` version metadata for the happy path',
       'commit with `chore: bump version to 0.1.10`',
+      'accepting `1.2.3+meta`',
       'rewriting dependency resolutions, changelog, tags, or release notes by default',
       'changing the main workspace instead of a worktree',
       'stopping after opening a PR',
@@ -113,11 +115,11 @@ if (!existsSync(skillPath)) {
 }
 
 if (failures.length > 0) {
-  console.error('bump-version skill verification failed');
+  process.stderr.write('bump-version skill verification failed\n');
   for (const failure of failures) {
-    console.error(`- ${failure}`);
+    process.stderr.write(`- ${failure}\n`);
   }
   process.exit(1);
 }
 
-console.log('bump-version skill scenarios verified');
+process.stdout.write('bump-version skill scenarios verified\n');

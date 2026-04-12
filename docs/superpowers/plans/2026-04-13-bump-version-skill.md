@@ -396,6 +396,7 @@ Run these commands in sequence as the PR advances:
 gh pr checks --watch
 gh pr view --json url,reviewDecision,mergeStateStatus,statusCheckRollup
 gh pr merge --squash --delete-branch=false
+npm view auth-mini version
 git worktree remove .worktrees/<branch-name>
 ```
 
@@ -403,7 +404,23 @@ Expected:
 
 - checks finish green, or any scope-valid blocker is fixed in the same worktree and pushed before re-running checks
 - merge happens only after review and protection rules allow it
-- the worktree is removed only after the PR reaches a true terminal state
+- after merge, confirm the target version is visible in npm within a bounded retry window before claiming success
+- the worktree is removed only after the PR reaches a true terminal state and post-merge npm visibility is confirmed or reported as blocked
+
+- [ ] **Step 7: Confirm terminal post-merge registry visibility before final success**
+
+Run after merge inside a bounded 1-5 minute window:
+
+```bash
+gh pr checks --watch
+gh pr view --json url,reviewDecision,mergeStateStatus,statusCheckRollup
+npm view auth-mini version
+```
+
+Expected:
+
+- the published npm version matches the merged target version before claiming release success
+- if the version is still missing after the bounded retry window, stop and report the blocker with evidence instead of claiming completion
 
 ## Final Verification
 
