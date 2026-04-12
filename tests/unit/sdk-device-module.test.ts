@@ -8,6 +8,79 @@ import {
 } from '../helpers/sdk.js';
 
 describe('device module sdk', () => {
+  it('preserves base-path prefixes in device sdk bootstrap and session requests', async () => {
+    const seenHrefs: string[] = [];
+    const fetch = vi.fn(async (input: URL | RequestInfo) => {
+      const url = input instanceof URL ? input : new URL(String(input));
+      seenHrefs.push(url.href);
+
+      if (url.pathname === '/auth/base/ed25519/start') {
+        return jsonResponse({
+          request_id: 'request-1',
+          challenge: 'challenge-1',
+        });
+      }
+
+      if (url.pathname === '/auth/base/ed25519/verify') {
+        return jsonResponse({
+          session_id: 'session-1',
+          access_token: 'access-1',
+          refresh_token: 'refresh-1',
+          expires_in: 900,
+        });
+      }
+
+      if (url.pathname === '/auth/base/me') {
+        return jsonResponse({
+          user_id: 'user-1',
+          email: 'device@example.com',
+          webauthn_credentials: [],
+          ed25519_credentials: [],
+          active_sessions: [],
+        });
+      }
+
+      if (url.pathname === '/auth/base/session/refresh') {
+        return jsonResponse({
+          session_id: 'session-2',
+          access_token: 'access-2',
+          refresh_token: 'refresh-2',
+          expires_in: 900,
+        });
+      }
+
+      if (url.pathname === '/auth/base/session/logout') {
+        return jsonResponse({ ok: true });
+      }
+
+      throw new Error(`Unhandled path: ${url.pathname}`);
+    });
+
+    const sdk = createDeviceSdk({
+      serverBaseUrl: 'https://sdk.example.test:9443/auth/base',
+      credentialId: '550e8400-e29b-41d4-a716-446655440000',
+      privateKey: createDevicePrivateKey(),
+      fetch,
+      now: () => Date.parse('2026-04-12T00:00:00.000Z'),
+    });
+
+    await expect(sdk.ready).resolves.toBeUndefined();
+    await expect(sdk.session.refresh()).resolves.toMatchObject({
+      sessionId: 'session-2',
+      accessToken: 'access-2',
+    });
+    await expect(sdk.session.logout()).resolves.toBeUndefined();
+
+    expect(seenHrefs).toEqual([
+      'https://sdk.example.test:9443/auth/base/ed25519/start',
+      'https://sdk.example.test:9443/auth/base/ed25519/verify',
+      'https://sdk.example.test:9443/auth/base/me',
+      'https://sdk.example.test:9443/auth/base/session/refresh',
+      'https://sdk.example.test:9443/auth/base/me',
+      'https://sdk.example.test:9443/auth/base/session/logout',
+    ]);
+  });
+
   it('auto-authenticates on construction and resolves ready after /me', async () => {
     const fetch = vi.fn(async (input: URL | RequestInfo) => {
       const url = input instanceof URL ? input : new URL(String(input));
@@ -113,7 +186,10 @@ describe('device module sdk', () => {
         const url = input instanceof URL ? input : new URL(String(input));
 
         if (url.pathname === '/ed25519/start') {
-          return jsonResponse({ request_id: 'request-1', challenge: 'challenge-1' });
+          return jsonResponse({
+            request_id: 'request-1',
+            challenge: 'challenge-1',
+          });
         }
 
         if (url.pathname === '/ed25519/verify') {
@@ -181,7 +257,10 @@ describe('device module sdk', () => {
       const url = input instanceof URL ? input : new URL(String(input));
 
       if (url.pathname === '/ed25519/start') {
-        return jsonResponse({ request_id: 'request-1', challenge: 'challenge-1' });
+        return jsonResponse({
+          request_id: 'request-1',
+          challenge: 'challenge-1',
+        });
       }
 
       if (url.pathname === '/ed25519/verify') {
@@ -241,27 +320,34 @@ describe('device module sdk', () => {
       resolveVerify = resolve;
     });
 
-    const fetch = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
-      const url = input instanceof URL ? input : new URL(String(input));
+    const fetch = vi.fn(
+      async (input: URL | RequestInfo, init?: RequestInit) => {
+        const url = input instanceof URL ? input : new URL(String(input));
 
-      if (url.pathname === '/ed25519/start') {
-        return jsonResponse({ request_id: 'request-1', challenge: 'challenge-1' });
-      }
+        if (url.pathname === '/ed25519/start') {
+          return jsonResponse({
+            request_id: 'request-1',
+            challenge: 'challenge-1',
+          });
+        }
 
-      if (url.pathname === '/ed25519/verify') {
-        return verifyGate;
-      }
+        if (url.pathname === '/ed25519/verify') {
+          return verifyGate;
+        }
 
-      if (url.pathname === '/session/logout') {
-        return jsonResponse({ ok: true });
-      }
+        if (url.pathname === '/session/logout') {
+          return jsonResponse({ ok: true });
+        }
 
-      if (url.pathname === '/me') {
-        throw new Error(`Unexpected path after dispose: ${url.pathname} ${JSON.stringify(init ?? {})}`);
-      }
+        if (url.pathname === '/me') {
+          throw new Error(
+            `Unexpected path after dispose: ${url.pathname} ${JSON.stringify(init ?? {})}`,
+          );
+        }
 
-      throw new Error(`Unhandled path: ${url.pathname}`);
-    });
+        throw new Error(`Unhandled path: ${url.pathname}`);
+      },
+    );
 
     const sdk = createDeviceSdk({
       serverBaseUrl: 'https://auth.example.com',

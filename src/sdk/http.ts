@@ -9,6 +9,11 @@ type JsonRequestOptions = {
 export type HttpClient = ReturnType<typeof createHttpClient>;
 
 export function createHttpClient(input: { baseUrl: string; fetch: FetchLike }) {
+  const baseUrl = new URL(input.baseUrl);
+  baseUrl.pathname = baseUrl.pathname.endsWith('/')
+    ? baseUrl.pathname
+    : `${baseUrl.pathname}/`;
+
   return {
     getJson<T>(path: string, options: JsonRequestOptions = {}): Promise<T> {
       return sendJson<T>('GET', path, options);
@@ -27,15 +32,18 @@ export function createHttpClient(input: { baseUrl: string; fetch: FetchLike }) {
     path: string,
     options: JsonRequestOptions,
   ): Promise<T> {
-    const response = await input.fetch(new URL(path, input.baseUrl), {
-      method,
-      headers: createHeaders(options),
-      ...(options.body === undefined
-        ? {}
-        : {
-            body: JSON.stringify(options.body),
-          }),
-    });
+    const response = await input.fetch(
+      new URL(stripLeadingSlash(path), baseUrl),
+      {
+        method,
+        headers: createHeaders(options),
+        ...(options.body === undefined
+          ? {}
+          : {
+              body: JSON.stringify(options.body),
+            }),
+      },
+    );
     const payload = await readJson(response);
 
     if (!response.ok) {
@@ -59,6 +67,10 @@ export function createHttpClient(input: { baseUrl: string; fetch: FetchLike }) {
     }
 
     return headers;
+  }
+
+  function stripLeadingSlash(path: string): string {
+    return path.replace(/^\/+/, '');
   }
 
   async function readJson(response: Response) {

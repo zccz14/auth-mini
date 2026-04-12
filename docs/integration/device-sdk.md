@@ -1,6 +1,6 @@
 # Device SDK integration
 
-Use `auth-mini/sdk/device` for Node or other non-browser clients that hold an Ed25519 private key locally and want an isolated memory-only session.
+Use `auth-mini/sdk/device` for Node.js clients (or other runtimes that provide Node's `node:crypto` APIs) that hold an Ed25519 private key locally and want an isolated memory-only session.
 
 ## Recommended: module/device-subpath usage
 
