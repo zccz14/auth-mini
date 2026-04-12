@@ -158,6 +158,54 @@ describe('browser module sdk', () => {
     }
   });
 
+  it('rejects browser /me payloads when nested credential items are malformed', async () => {
+    const storage = fakeStorage();
+
+    seedBrowserSdkStorage(storage, 'https://auth.example.com', {
+      sessionId: 'session-1',
+      accessToken: 'access-1',
+      refreshToken: 'refresh-1',
+      receivedAt: '2036-04-03T00:00:00.000Z',
+      expiresAt: '2036-04-03T00:15:00.000Z',
+      me: null,
+    });
+    const fetch = vi.fn(async (input: string | URL) => {
+      const requestUrl = new URL(String(input));
+
+      if (requestUrl.pathname.endsWith('/me')) {
+        return jsonResponse({
+          user_id: 'user-1',
+          email: 'user@example.com',
+          webauthn_credentials: [],
+          ed25519_credentials: [
+            {
+              id: 'cred-1',
+              public_key: 'public-key',
+              created_at: '2036-04-03T00:00:00.000Z',
+              last_used_at: null,
+            },
+          ],
+          active_sessions: [],
+        });
+      }
+
+      return jsonResponse({ error: 'unexpected' }, 500);
+    });
+
+    vi.stubGlobal('fetch', fetch);
+    vi.stubGlobal('localStorage', storage);
+
+    try {
+      const sdk = createBrowserSdk('https://auth.example.com');
+
+      await expect(sdk.me.reload()).rejects.toMatchObject({
+        error: 'request_failed',
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('keeps the browser module declaration free of singleton global typings', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/sdk/browser.ts'),

@@ -171,6 +171,24 @@ describe('sdk session flows', () => {
     });
   });
 
+  it('rejects /me payloads that omit active_sessions', async () => {
+    const sdk = createAuthMiniForTest({
+      storage: fakeAuthenticatedStorageWithMe(),
+      fetch: vi.fn().mockResolvedValueOnce(
+        jsonResponse({
+          user_id: 'u1',
+          email: 'updated@example.com',
+          webauthn_credentials: [],
+          ed25519_credentials: [],
+        }),
+      ),
+    });
+
+    await expect(sdk.me.reload()).rejects.toMatchObject({
+      error: 'request_failed',
+    });
+  });
+
   it('retains ed25519 credentials on cached me state after reload', async () => {
     const sdk = createAuthMiniForTest({
       storage: fakeAuthenticatedStorageWithMe(),

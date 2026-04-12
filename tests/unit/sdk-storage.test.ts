@@ -40,6 +40,26 @@ describe('readPersistedSdkState', () => {
     ).toBeNull();
   });
 
+  it('rejects persisted me when active_sessions is missing', () => {
+    expect(
+      readPersistedSdkState(
+        createStorage({
+          sessionId: 'session-1',
+          accessToken: 'access-1',
+          refreshToken: 'refresh-1',
+          receivedAt: '2026-04-13T00:00:00.000Z',
+          expiresAt: '2026-04-13T01:00:00.000Z',
+          me: {
+            user_id: 'user-1',
+            email: 'user@example.com',
+            webauthn_credentials: [],
+            ed25519_credentials: [],
+          },
+        }),
+      ),
+    ).toBeNull();
+  });
+
   it('rejects persisted me when nested credential items are malformed', () => {
     expect(
       readPersistedSdkState(
