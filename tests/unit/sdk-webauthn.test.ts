@@ -252,6 +252,7 @@ describe('sdk webauthn flows', () => {
         return jsonResponse({
           user_id: 'u1',
           email: 'u@example.com',
+          ed25519_credentials: [],
           webauthn_credentials: [],
           active_sessions: [],
         });
