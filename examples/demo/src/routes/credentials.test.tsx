@@ -30,7 +30,6 @@ type MockSessionState = {
   authenticated: boolean;
   sessionId: string | null;
   accessToken: string | null;
-  authMethod?: 'email_otp' | 'webauthn' | 'ed25519' | null;
   refreshToken: string | null;
   receivedAt: string | null;
   expiresAt: string | null;
@@ -118,17 +117,13 @@ function fakeLegacyAccessToken() {
 
 function authenticatedSession(
   overrides?: Partial<MockMe>,
-  options?: {
-    accessToken?: string;
-    authMethod?: MockSessionState['authMethod'];
-  },
+  options?: { accessToken?: string },
 ): MockSessionState {
   return {
     status: 'authenticated',
     authenticated: true,
     sessionId: 'session-1',
     accessToken: options?.accessToken ?? fakeAccessToken(['email_otp']),
-    authMethod: options?.authMethod ?? 'email_otp',
     refreshToken: 'refresh-token',
     receivedAt: '2026-04-12T00:00:00.000Z',
     expiresAt: '2026-04-12T01:00:00.000Z',
@@ -528,7 +523,7 @@ describe('CredentialsRoute', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('keeps delete actions available for legacy tokens without amr when session authMethod can manage credentials', () => {
+  it('keeps delete actions available for legacy tokens without amr', () => {
     localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
     sdkMocks.sessionState.current = authenticatedSession(
       {
@@ -551,10 +546,7 @@ describe('CredentialsRoute', () => {
           },
         ],
       },
-      {
-        accessToken: fakeLegacyAccessToken(),
-        authMethod: 'email_otp',
-      },
+      { accessToken: fakeLegacyAccessToken() },
     );
 
     render(

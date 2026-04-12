@@ -3,6 +3,12 @@ import { FlowCard } from '@/components/app/flow-card';
 import { Button } from '@/components/ui/button';
 import { useDemo } from '@/app/providers/demo-provider';
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
 function truncateMiddle(value: string, edge = 20) {
   return value.length <= edge * 2 + 1
     ? value
@@ -15,34 +21,33 @@ function decodeBase64Url(value: string) {
   return atob(`${normalized}${'='.repeat(padding)}`);
 }
 
-function getAccessTokenAmr(accessToken: string): string[] {
+function getAccessTokenPayload(accessToken: string) {
   const [, payloadSegment] = accessToken.split('.');
-  if (!payloadSegment) return [];
+  if (!payloadSegment) return null;
 
   try {
-    const payload = JSON.parse(decodeBase64Url(payloadSegment));
-    const amr =
-      typeof payload === 'object' && payload !== null && 'amr' in payload
-        ? (payload as { amr?: unknown }).amr
-        : undefined;
-    return Array.isArray(amr)
-      ? amr.filter((value: unknown): value is string => typeof value === 'string')
-      : [];
+    return asRecord(JSON.parse(decodeBase64Url(payloadSegment)));
   } catch {
-    return [];
+    return null;
   }
 }
 
-function getSessionAuthMethod(session: unknown) {
-  const authMethod = asRecord(session)?.authMethod;
-  return typeof authMethod === 'string' ? authMethod : null;
-}
+function canManageCredentials(accessToken: string) {
+  const payload = getAccessTokenPayload(accessToken);
+  if (!payload) {
+    return false;
+  }
 
-function canManageCredentials(accessToken: string, sessionAuthMethod: string | null) {
-  const amr = getAccessTokenAmr(accessToken);
+  if (!('amr' in payload)) {
+    return true;
+  }
+
+  const amr = Array.isArray(payload.amr)
+    ? payload.amr.filter((value: unknown): value is string => typeof value === 'string')
+    : [];
 
   if (amr.length === 0) {
-    return sessionAuthMethod === 'email_otp' || sessionAuthMethod === 'webauthn';
+    return false;
   }
 
   return amr.includes('email_otp') || amr.includes('webauthn');
@@ -68,8 +73,7 @@ export function CredentialsRoute() {
     typeof session.accessToken === 'string' &&
     session.accessToken.length > 0;
   const accessToken = typeof session.accessToken === 'string' ? session.accessToken : '';
-  const credentialManageable =
-    authenticated && canManageCredentials(accessToken, getSessionAuthMethod(session));
+  const credentialManageable = authenticated && canManageCredentials(accessToken);
 
   const email = user?.email ?? '';
   const passkeys = user?.webauthn_credentials ?? [];
