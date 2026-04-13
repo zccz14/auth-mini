@@ -1486,6 +1486,98 @@ describe('session routes', () => {
     await smtpServer.close();
   });
 
+  it('runtime email verify stores the resolved proxy IP and reuses it in active sessions', async () => {
+    const smtpServer = await startMockSmtpServer();
+    const dbPath = await createTempDbPath();
+    const port = await getAvailablePort();
+
+    await bootstrapDatabase(dbPath);
+    const db = createDatabaseClient(dbPath);
+
+    await importSmtpConfigs(
+      db,
+      await writeRuntimeSmtpConfigJson({
+        host: '127.0.0.1',
+        port: smtpServer.port,
+        username: 'mailer',
+        password: 'secret',
+        from_email: 'noreply@example.com',
+        from_name: 'auth-mini',
+      }),
+    );
+    db.prepare('INSERT INTO allowed_origins (origin) VALUES (?)').run(
+      'https://app.example.com',
+    );
+    db.close();
+
+    const server = await runStartCommand({
+      dbPath,
+      host: '127.0.0.1',
+      port,
+      issuer: 'https://issuer.example',
+    });
+
+    await fetch(`http://127.0.0.1:${port}/email/start`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: json({ email: 'runtime-session@example.com' }),
+    });
+
+    const code = extractOtpCode(
+      findLatestOtpMail(smtpServer.mailbox, 'runtime-session@example.com')
+        ?.text ?? '',
+    );
+    const verifyResponse = await fetch(
+      `http://127.0.0.1:${port}/email/verify`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'user-agent': 'RuntimeProxyClient/1.0',
+          'x-forwarded-for': '198.51.100.31, 198.51.100.32',
+        },
+        body: json({ email: 'runtime-session@example.com', code }),
+      },
+    );
+    const verifyBody = (await verifyResponse.json()) as {
+      access_token: string;
+      session_id: string;
+    };
+    const verifyDb = createDatabaseClient(dbPath);
+    const storedSession = verifyDb
+      .prepare('SELECT auth_method, ip, user_agent FROM sessions WHERE id = ?')
+      .get(verifyBody.session_id);
+    verifyDb.close();
+
+    const meResponse = await fetch(`http://127.0.0.1:${port}/me`, {
+      headers: {
+        authorization: `Bearer ${verifyBody.access_token}`,
+        'x-forwarded-for': '203.0.113.88',
+      },
+    });
+
+    expect(verifyResponse.status).toBe(200);
+    expect(storedSession).toEqual({
+      auth_method: 'email_otp',
+      ip: '198.51.100.31',
+      user_agent: 'RuntimeProxyClient/1.0',
+    });
+    expect(meResponse.status).toBe(200);
+    expect(await meResponse.json()).toMatchObject({
+      active_sessions: [
+        {
+          id: verifyBody.session_id,
+          auth_method: 'email_otp',
+          ip: '198.51.100.31',
+          user_agent: 'RuntimeProxyClient/1.0',
+        },
+      ],
+    });
+
+    await server.close();
+    await smtpServer.close();
+  });
+
   it('runtime smtp negative response returns 503 and invalidates the otp', async () => {
     const smtpServer = await startConfigurableMockSmtpServer({
       onRcptTo: ['550 mailbox unavailable'],

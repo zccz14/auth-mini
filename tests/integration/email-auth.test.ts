@@ -260,7 +260,7 @@ describe('email auth routes', () => {
     expect(JSON.stringify(testApp.logs)).not.toContain('refresh_token');
   });
 
-  it('email verify stores request snapshot fields on the created session', async () => {
+  it('email verify stores the resolved client IP and user agent on the created session', async () => {
     otpSeam.current = createOtpMailSeam();
     const testApp = await createTestApp({ clientIp: '203.0.113.10' });
     openApps.push(testApp);
