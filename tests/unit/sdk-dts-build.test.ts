@@ -18,6 +18,12 @@ const readSharedTypesDeclaration = () =>
 const readSdkErrorsDeclaration = () =>
   readFileSync(resolve(process.cwd(), 'dist/sdk/errors.d.ts'), 'utf8');
 
+const readApiModuleDeclaration = () =>
+  readFileSync(resolve(process.cwd(), 'dist/sdk/api.d.ts'), 'utf8');
+
+const readApiModuleRuntime = () =>
+  readFileSync(resolve(process.cwd(), 'dist/sdk/api.js'), 'utf8');
+
 const getWindowAuthMiniType = (source: string) => {
   const file = ts.createSourceFile(
     'singleton-iife.d.ts',
@@ -73,6 +79,30 @@ describe('sdk d.ts build artifact', () => {
     expect(testRunnerSource).toContain('process.argv.slice(2)');
     expect(testRunnerSource).toContain('isTargetedVitestRun');
     expect(testRunnerSource).toContain('fileURLToPath(import.meta.url)');
+  });
+
+  it('runs api generation before emit and checks generated artifact drift on the standard path', () => {
+    const buildScriptSource = readFileSync(
+      resolve(process.cwd(), 'scripts/build-sdk.mjs'),
+      'utf8',
+    );
+    const testRunnerSource = readFileSync(
+      resolve(process.cwd(), 'scripts/run-tests.js'),
+      'utf8',
+    );
+
+    expect(buildScriptSource).toContain('npm run generate:api');
+    expect(buildScriptSource.indexOf('npm run generate:api')).toBeLessThan(
+      buildScriptSource.indexOf('tsc -p tsconfig.build.json --declaration'),
+    );
+    expect(testRunnerSource).toContain(
+      "run('npm', ['run', 'check:generated:api'])",
+    );
+    expect(
+      testRunnerSource.indexOf('tests/fixtures/sdk-dts-consumer/tsconfig.json'),
+    ).toBeLessThan(
+      testRunnerSource.indexOf("run('npm', ['run', 'check:generated:api'])"),
+    );
   });
 
   it('keeps explicit targeted signals while allowing bare coverage-following test paths', async () => {
@@ -200,6 +230,18 @@ describe('sdk d.ts build artifact', () => {
     expect(output).toContain('createBrowserSdk');
     expect(output).toContain('AuthMiniApi');
     expect(output).toContain('SessionSnapshot');
+  });
+
+  it('emits api sdk wrapper module artifacts', () => {
+    const declarationOutput = readApiModuleDeclaration();
+    const runtimeOutput = readApiModuleRuntime();
+
+    expect(declarationOutput).toContain('export declare function createApiSdk');
+    expect(declarationOutput).toContain(
+      "export type * from '../generated/api/index.js'",
+    );
+    expect(runtimeOutput).toContain('export function createApiSdk');
+    expect(runtimeOutput).toContain("from '../generated/api/client/index.js'");
   });
 
   it('emits device sdk module declarations with seed input only', () => {

@@ -80,6 +80,7 @@ export const main = (args) => {
 
   run('npx', ['vitest', 'run', 'tests', ...args]);
   run('npx', ['tsc', '-p', 'tests/fixtures/sdk-dts-consumer/tsconfig.json']);
+  run('npm', ['run', 'check:generated:api']);
 };
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
