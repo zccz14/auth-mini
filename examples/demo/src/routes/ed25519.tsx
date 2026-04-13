@@ -41,6 +41,7 @@ export function Ed25519Route() {
   const [me, setMe] = useState<DemoMe | null>(null);
   const [loadingMe, setLoadingMe] = useState(false);
   const [meError, setMeError] = useState('');
+  const [meWarning, setMeWarning] = useState('');
   const loadMeRequestIdRef = useRef(0);
 
   const setupReady = config.status === 'ready' && Boolean(sdk);
@@ -63,19 +64,23 @@ export function Ed25519Route() {
     seedValidationError === '' &&
     pendingAction === null;
 
-  const loadMe = useCallback(async () => {
+  const loadMe = useCallback(async (options?: { warningMessage?: string }) => {
     const requestId = loadMeRequestIdRef.current + 1;
     loadMeRequestIdRef.current = requestId;
 
     if (!sdk || config.status !== 'ready' || !session.authenticated) {
       setMe(null);
       setMeError('');
+      setMeWarning('');
       setLoadingMe(false);
       return;
     }
 
     setLoadingMe(true);
     setMeError('');
+    if (!options?.warningMessage) {
+      setMeWarning('');
+    }
 
     try {
       const nextMe = await sdk.me.fetch();
@@ -84,8 +89,14 @@ export function Ed25519Route() {
       }
 
       setMe(nextMe);
+      setMeWarning('');
     } catch (cause) {
       if (loadMeRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      if (options?.warningMessage) {
+        setMeWarning(options.warningMessage);
         return;
       }
 
@@ -186,7 +197,9 @@ export function Ed25519Route() {
         name: credentialName.trim(),
         public_key: publicKey.trim(),
       });
-      await loadMe();
+      await loadMe({
+        warningMessage: 'Credential registered, but current credential data could not be refreshed.',
+      });
 
       setLastResponses((current) => ({ ...current, register: result }));
       setLastRegisteredCredentialId(
@@ -366,6 +379,7 @@ export function Ed25519Route() {
               <p className="text-sm text-slate-600">Loading current credentials…</p>
             ) : null}
             {meError ? <p className="text-sm text-rose-600">{meError}</p> : null}
+            {meWarning ? <p className="text-sm text-amber-700">{meWarning}</p> : null}
             <JsonPanel title="current credentials" value={me?.ed25519_credentials ?? []} />
           </div>
         </div>

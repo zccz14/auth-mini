@@ -13,24 +13,29 @@ export function SessionRoute() {
   const [me, setMe] = useState<DemoMe | null>(null);
   const [loadingMe, setLoadingMe] = useState(false);
   const [meError, setMeError] = useState('');
+  const [meWarning, setMeWarning] = useState('');
   const loadMeRequestIdRef = useRef(0);
   const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
   const [tableError, setTableError] = useState('');
   const rows = me?.active_sessions ?? [];
 
-  const loadMe = useCallback(async () => {
+  const loadMe = useCallback(async (options?: { warningMessage?: string }) => {
     const requestId = loadMeRequestIdRef.current + 1;
     loadMeRequestIdRef.current = requestId;
 
     if (!sdk || config.status !== 'ready' || !session.authenticated) {
       setMe(null);
       setMeError('');
+      setMeWarning('');
       setLoadingMe(false);
       return;
     }
 
     setLoadingMe(true);
     setMeError('');
+    if (!options?.warningMessage) {
+      setMeWarning('');
+    }
 
     try {
       const nextMe = await sdk.me.fetch();
@@ -39,8 +44,14 @@ export function SessionRoute() {
       }
 
       setMe(nextMe);
+      setMeWarning('');
     } catch (cause) {
       if (loadMeRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      if (options?.warningMessage) {
+        setMeWarning(options.warningMessage);
         return;
       }
 
@@ -85,7 +96,9 @@ export function SessionRoute() {
         throw new Error('Unable to kick session.');
       }
 
-      await loadMe();
+      await loadMe({
+        warningMessage: 'Session updated, but current user data could not be refreshed.',
+      });
       setTableError('');
     } catch {
       setTableError('Unable to kick session.');
@@ -122,6 +135,7 @@ export function SessionRoute() {
           <p className="text-sm text-slate-600">Loading current user…</p>
         ) : null}
         {meError ? <p className="text-sm text-rose-600">{meError}</p> : null}
+        {meWarning ? <p className="text-sm text-amber-700">{meWarning}</p> : null}
 
         <section
           aria-labelledby="active-sessions-heading"
@@ -138,7 +152,9 @@ export function SessionRoute() {
 
           {tableError ? <p className="text-sm text-rose-600">Unable to kick session.</p> : null}
 
-          {rows.length === 0 ? (
+          {!session.authenticated ? (
+            <p className="text-sm text-slate-600">No active sessions.</p>
+          ) : meError ? null : rows.length === 0 ? (
             <p className="text-sm text-slate-600">No active sessions.</p>
           ) : (
             <div className="overflow-x-auto">

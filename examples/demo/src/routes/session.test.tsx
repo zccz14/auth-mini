@@ -168,7 +168,7 @@ describe('SessionRoute', () => {
     renderRoute();
 
     expect(await screen.findByText('Unable to load current user.')).toBeInTheDocument();
-    expect(screen.getByText('No active sessions.')).toBeInTheDocument();
+    expect(screen.queryByText('No active sessions.')).not.toBeInTheDocument();
   });
 
   it('ignores a stale /me response after local auth state is cleared', async () => {
@@ -264,6 +264,41 @@ describe('SessionRoute', () => {
       expect(screen.queryByText('session-peer')).not.toBeInTheDocument();
     });
     expect(sdkMocks.meFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps kick success visible when follow-up /me refresh fails', async () => {
+    const user = userEvent.setup();
+    sdkMocks.sessionState.current = authenticatedSession();
+    sdkMocks.meFetch
+      .mockResolvedValueOnce({
+        user_id: 'user-1',
+        email: 'user@example.com',
+        webauthn_credentials: [],
+        ed25519_credentials: [],
+        active_sessions: [
+          {
+            id: 'session-current',
+            created_at: '2026-04-12T00:00:00.000Z',
+            expires_at: '2026-04-12T01:00:00.000Z',
+          },
+          {
+            id: 'session-peer',
+            created_at: '2026-04-12T00:05:00.000Z',
+            expires_at: '2026-04-12T01:05:00.000Z',
+          },
+        ],
+      })
+      .mockRejectedValueOnce(new Error('Unable to refresh current user data.'));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response(null, { status: 204 })));
+
+    renderRoute();
+
+    await screen.findByText('session-peer');
+    await user.click(screen.getAllByRole('button', { name: 'Kick' })[1]!);
+
+    expect(await screen.findByText('Session updated, but current user data could not be refreshed.')).toBeInTheDocument();
+    expect(screen.queryByText('Unable to kick session.')).not.toBeInTheDocument();
+    expect(screen.getByText('session-peer')).toBeInTheDocument();
   });
 
   it('shows a kick error and allows retry', async () => {

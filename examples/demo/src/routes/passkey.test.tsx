@@ -193,4 +193,37 @@ describe('PasskeyRoute', () => {
     expect(await screen.findByText(/"email": "updated@example.com"/)).toBeInTheDocument();
     expect(await screen.findByText(/"credentialId": "cred-1"/)).toBeInTheDocument();
   });
+
+  it('preserves passkey registration success when follow-up /me refresh fails', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
+    sdkMocks.sessionState.current = {
+      status: 'authenticated',
+      authenticated: true,
+      sessionId: 'session-1',
+      accessToken: 'access-token',
+      refreshToken: 'refresh-token',
+      receivedAt: '2026-04-11T00:00:00.000Z',
+      expiresAt: '2026-04-11T01:00:00.000Z',
+    };
+    sdkMocks.meFetch
+      .mockResolvedValueOnce({
+        user_id: 'user-1',
+        email: 'user@example.com',
+        webauthn_credentials: [],
+        ed25519_credentials: [],
+        active_sessions: [],
+      })
+      .mockRejectedValueOnce(new Error('Unable to refresh current user data.'));
+    sdkMocks.passkeyRegister.mockResolvedValueOnce({ ok: true, credentialId: 'cred-1' });
+
+    renderRoute();
+
+    await screen.findByText(/"email": "user@example.com"/);
+    await user.click(screen.getByRole('button', { name: 'Register passkey' }));
+
+    expect(await screen.findByText('Passkey registered, but current user data could not be refreshed.')).toBeInTheDocument();
+    expect(screen.queryByText('Passkey register failed')).not.toBeInTheDocument();
+    expect(await screen.findByText(/"credentialId": "cred-1"/)).toBeInTheDocument();
+  });
 });

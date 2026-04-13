@@ -232,6 +232,9 @@ describe('CredentialsRoute', () => {
     renderRoute();
 
     expect(await screen.findByText('Unable to load current account.')).toBeInTheDocument();
+    expect(screen.queryByText('This account does not currently have a bound email.')).not.toBeInTheDocument();
+    expect(screen.queryByText('No passkeys are currently bound to this account.')).not.toBeInTheDocument();
+    expect(screen.queryByText('No Ed25519 credentials are currently bound to this account.')).not.toBeInTheDocument();
   });
 
   it('reloads local /me after deleting a passkey', async () => {
@@ -300,6 +303,39 @@ describe('CredentialsRoute', () => {
     expectDeleteRequest(sdkMocks.fetch, '/ed25519/credentials/device-row-1', sdkMocks.sessionState.current.accessToken!);
     expect(sdkMocks.meFetch).toHaveBeenCalledTimes(2);
     expect(await screen.findByText('No Ed25519 credentials are currently bound to this account.')).toBeInTheDocument();
+  });
+
+  it('preserves delete success when follow-up /me refresh fails', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
+    sdkMocks.sessionState.current = authenticatedSession();
+    sdkMocks.meFetch
+      .mockResolvedValueOnce(
+        meSnapshot({
+          webauthn_credentials: [
+            {
+              id: 'passkey-row-1',
+              credential_id: 'first-passkey',
+              rp_id: 'app.example.com',
+              last_used_at: null,
+              created_at: '2026-04-10T12:00:00.000Z',
+            },
+          ],
+        }),
+      )
+      .mockRejectedValueOnce(new Error('Unable to refresh current account data.'));
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    sdkMocks.fetch.mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    renderRoute();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Delete passkey first-passkey' }),
+    );
+
+    expect(await screen.findByText('Credential deleted, but current account data could not be refreshed.')).toBeInTheDocument();
+    expect(screen.queryByText('Delete failed')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete passkey first-passkey' })).toBeInTheDocument();
   });
 
   it('keeps delete actions available for legacy tokens after refresh yields manageable amr', async () => {

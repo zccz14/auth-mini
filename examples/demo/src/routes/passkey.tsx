@@ -18,24 +18,29 @@ export function PasskeyRoute() {
   const [me, setMe] = useState<DemoMe | null>(null);
   const [loadingMe, setLoadingMe] = useState(false);
   const [meError, setMeError] = useState('');
+  const [meWarning, setMeWarning] = useState('');
   const loadMeRequestIdRef = useRef(0);
 
   const setupReady = config.status === 'ready' && Boolean(sdk);
   const canRegister = setupReady && session.authenticated && me !== null;
 
-  const loadMe = useCallback(async () => {
+  const loadMe = useCallback(async (options?: { warningMessage?: string }) => {
     const requestId = loadMeRequestIdRef.current + 1;
     loadMeRequestIdRef.current = requestId;
 
     if (!sdk || config.status !== 'ready' || !session.authenticated) {
       setMe(null);
       setMeError('');
+      setMeWarning('');
       setLoadingMe(false);
       return;
     }
 
     setLoadingMe(true);
     setMeError('');
+    if (!options?.warningMessage) {
+      setMeWarning('');
+    }
 
     try {
       const nextMe = await sdk.me.fetch();
@@ -44,8 +49,14 @@ export function PasskeyRoute() {
       }
 
       setMe(nextMe);
+      setMeWarning('');
     } catch (cause) {
       if (loadMeRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      if (options?.warningMessage) {
+        setMeWarning(options.warningMessage);
         return;
       }
 
@@ -77,7 +88,9 @@ export function PasskeyRoute() {
           ? await sdk.passkey.register()
           : await sdk.passkey.authenticate();
       if (action === 'register') {
-        await loadMe();
+        await loadMe({
+          warningMessage: 'Passkey registered, but current user data could not be refreshed.',
+        });
       }
       setLastResult(result);
     } catch (cause) {
@@ -127,6 +140,7 @@ export function PasskeyRoute() {
           <p className="text-sm text-slate-600">Loading current user…</p>
         ) : null}
         {meError ? <p className="text-sm text-rose-600">{meError}</p> : null}
+        {meWarning ? <p className="text-sm text-amber-700">{meWarning}</p> : null}
 
         {error ? <p className="text-sm text-rose-600">{error}</p> : null}
 

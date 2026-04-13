@@ -212,6 +212,39 @@ describe('Ed25519Route', () => {
     });
   });
 
+  it('preserves registration success when follow-up /me refresh fails', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
+    sdkMocks.sessionState.current = authenticatedSession();
+    sdkMocks.meFetch
+      .mockResolvedValueOnce({
+        user_id: 'user-1',
+        email: 'user@example.com',
+        webauthn_credentials: [],
+        ed25519_credentials: [],
+        active_sessions: [],
+      })
+      .mockRejectedValueOnce(new Error('Unable to refresh current credential data.'));
+    sdkMocks.ed25519Register.mockResolvedValueOnce({
+      id: 'cred-1',
+      name: 'Laptop signer',
+      public_key: 'jt2HpVJxALeSteTe7QlqBRiOxVeloHMMImehYhZc9Rg',
+    });
+
+    renderRoute();
+
+    await user.type(screen.getByLabelText('Credential name'), 'Laptop signer');
+    await user.type(
+      screen.getByLabelText('Public key (base64url 32-byte)'),
+      'jt2HpVJxALeSteTe7QlqBRiOxVeloHMMImehYhZc9Rg',
+    );
+    await user.click(screen.getByRole('button', { name: 'Register credential' }));
+
+    expect(await screen.findByText('Credential registered, but current credential data could not be refreshed.')).toBeInTheDocument();
+    expect(screen.queryByText('Unable to refresh current credential data.')).not.toBeInTheDocument();
+    expect(await screen.findByText(/"id": "cred-1"/)).toBeInTheDocument();
+  });
+
   it('signs in with credential id + seed and updates the shared session panel', async () => {
     const user = userEvent.setup();
     localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');

@@ -66,6 +66,7 @@ export function CredentialsRoute() {
   const [me, setMe] = useState<DemoMe | null>(null);
   const [loadingMe, setLoadingMe] = useState(false);
   const [meError, setMeError] = useState('');
+  const [meWarning, setMeWarning] = useState('');
   const loadMeRequestIdRef = useRef(0);
   const [pendingSections, setPendingSections] = useState({
     passkey: false,
@@ -96,19 +97,23 @@ export function CredentialsRoute() {
     : 'not-manageable';
   const credentialManageable = credentialCapability === 'manageable';
 
-  const loadMe = useCallback(async () => {
+  const loadMe = useCallback(async (options?: { warningMessage?: string }) => {
     const requestId = loadMeRequestIdRef.current + 1;
     loadMeRequestIdRef.current = requestId;
 
     if (!authenticated || !sdk || config.status !== 'ready') {
       setMe(null);
       setMeError('');
+      setMeWarning('');
       setLoadingMe(false);
       return;
     }
 
     setLoadingMe(true);
     setMeError('');
+    if (!options?.warningMessage) {
+      setMeWarning('');
+    }
 
     try {
       const nextMe = await sdk.me.fetch();
@@ -117,8 +122,14 @@ export function CredentialsRoute() {
       }
 
       setMe(nextMe);
+      setMeWarning('');
     } catch (cause) {
       if (loadMeRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      if (options?.warningMessage) {
+        setMeWarning(options.warningMessage);
         return;
       }
 
@@ -210,7 +221,9 @@ export function CredentialsRoute() {
         throw new Error(`Delete failed with status ${response.status}`);
       }
 
-      await loadMe();
+      await loadMe({
+        warningMessage: 'Credential deleted, but current account data could not be refreshed.',
+      });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Delete failed');
     } finally {
@@ -232,6 +245,7 @@ export function CredentialsRoute() {
           <p className="text-sm text-slate-600">Loading current account…</p>
         ) : null}
         {meError ? <p className="text-sm text-rose-600">{meError}</p> : null}
+        {meWarning ? <p className="text-sm text-amber-700">{meWarning}</p> : null}
 
         <section
           aria-labelledby="credentials-email-heading"
@@ -248,7 +262,7 @@ export function CredentialsRoute() {
             <p className="text-sm text-slate-600">
               Sign in to inspect the current account email.
             </p>
-          ) : email ? (
+          ) : meError ? null : email ? (
             <div className="overflow-x-auto">
               <table className="min-w-full text-left text-sm text-slate-700">
                 <thead>
@@ -290,7 +304,7 @@ export function CredentialsRoute() {
           {passkeyError ? <p className="text-sm text-rose-600">{passkeyError}</p> : null}
           {!authenticated ? (
             <p className="text-sm text-slate-600">Sign in to inspect current passkeys.</p>
-          ) : passkeys.length > 0 ? (
+          ) : meError ? null : passkeys.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="min-w-full text-left text-sm text-slate-700">
                 <thead>
@@ -362,7 +376,7 @@ export function CredentialsRoute() {
             <p className="text-sm text-slate-600">
               Sign in to inspect current Ed25519 credentials.
             </p>
-          ) : ed25519Credentials.length > 0 ? (
+          ) : meError ? null : ed25519Credentials.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="min-w-full text-left text-sm text-slate-700">
                 <thead>
