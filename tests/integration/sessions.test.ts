@@ -1547,6 +1547,12 @@ describe('session routes', () => {
     const storedSession = verifyDb
       .prepare('SELECT auth_method, ip, user_agent FROM sessions WHERE id = ?')
       .get(verifyBody.session_id);
+    verifyDb
+      .prepare('UPDATE sessions SET ip = ?, user_agent = ? WHERE id = ?')
+      .run('198.51.100.99', 'RuntimeProxyClient/2.0', verifyBody.session_id);
+    const mutatedStoredSession = verifyDb
+      .prepare('SELECT auth_method, ip, user_agent FROM sessions WHERE id = ?')
+      .get(verifyBody.session_id);
     verifyDb.close();
 
     const meResponse = await fetch(`http://127.0.0.1:${port}/me`, {
@@ -1562,14 +1568,19 @@ describe('session routes', () => {
       ip: '198.51.100.31',
       user_agent: 'RuntimeProxyClient/1.0',
     });
+    expect(mutatedStoredSession).toEqual({
+      auth_method: 'email_otp',
+      ip: '198.51.100.99',
+      user_agent: 'RuntimeProxyClient/2.0',
+    });
     expect(meResponse.status).toBe(200);
     expect(await meResponse.json()).toMatchObject({
       active_sessions: [
         {
           id: verifyBody.session_id,
           auth_method: 'email_otp',
-          ip: '198.51.100.31',
-          user_agent: 'RuntimeProxyClient/1.0',
+          ip: '198.51.100.99',
+          user_agent: 'RuntimeProxyClient/2.0',
         },
       ],
     });
