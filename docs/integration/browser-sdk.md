@@ -1,10 +1,12 @@
 # Browser SDK integration
 
-auth-mini supports two SDK integration paths:
+auth-mini exposes one low-level API SDK plus higher-level runtime SDKs:
 
-- Browser SDK: import `createBrowserSdk` from `auth-mini/sdk/browser` for browser storage + cross-tab semantics.
-- Device SDK: import `createDeviceSdk` from `auth-mini/sdk/device` for isolated memory-only sessions in non-browser clients. See [Device SDK integration](./device-sdk.md).
-- Browser singleton script path: load `GET /sdk/singleton-iife.js`, which exposes `window.AuthMini` and infers its API base URL from the script `src`.
+- `auth-mini/sdk/api`: typed low-level HTTP/OpenAPI SDK. See [API SDK integration](./api-sdk.md).
+- `auth-mini/sdk/browser`: high-level browser SDK with browser storage and cross-tab semantics.
+- `auth-mini/sdk/device`: high-level device SDK for isolated memory-only sessions in non-browser clients. See [Device SDK integration](./device-sdk.md).
+
+For browser delivery, auth-mini also serves the browser SDK as `GET /sdk/singleton-iife.js`, which exposes `window.AuthMini` and infers its API base URL from the script `src`.
 
 For the low-level HTTP API contract, see `openapi.yaml` and [`auth-mini/sdk/api`](./api-sdk.md).
 This guide covers higher-level runtime behavior for the browser SDK only.

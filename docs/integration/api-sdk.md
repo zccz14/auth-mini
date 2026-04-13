@@ -24,7 +24,7 @@ Use the browser or device SDK when you want those higher-level runtime behaviors
 
 ## Runtime configuration
 
-`baseUrl` is required at runtime. The generated client does not bake in a deployment-specific server origin, so each caller must point the SDK at the auth-mini instance it should talk to.
+`auth-mini/sdk/api` requires `baseUrl` at runtime. Its public wrapper does not bake in a deployment-specific server origin, so each caller must point the SDK at the auth-mini instance it should talk to.
 
 For the exact route, auth, and schema contract, treat `openapi.yaml` as the source of truth.
 

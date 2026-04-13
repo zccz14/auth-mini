@@ -22,14 +22,14 @@ Access tokens issued by this API include an `amr` (Authentication Methods Refere
 
 - `GET /me`
 - `POST /session/logout`
-- `POST /session/:session_id/logout`
+- `POST /session/{session_id}/logout`
 - `GET /ed25519/credentials`
 - `POST /ed25519/credentials`
-- `PATCH /ed25519/credentials/:id`
-- `DELETE /ed25519/credentials/:id`
+- `PATCH /ed25519/credentials/{id}`
+- `DELETE /ed25519/credentials/{id}`
 - `POST /webauthn/register/options`
 - `POST /webauthn/register/verify`
-- `DELETE /webauthn/credentials/:id`
+- `DELETE /webauthn/credentials/{id}`
 
 ## Core auth flow contracts
 
@@ -262,7 +262,7 @@ Example response:
 { "ok": true }
 ```
 
-### `POST /session/:session_id/logout`
+### `POST /session/{session_id}/logout`
 
 Invalidates one other session for the authenticated user.
 
@@ -270,7 +270,7 @@ Request: send `Authorization: Bearer <access_token>` and pass the target session
 
 This route requires a human-authenticated session. The presented access token must carry an `amr` that includes either `email_otp` or `webauthn`.
 
-`POST /session/logout` remains the current-session logout route. If `:session_id` matches the current session id, the server returns `400`:
+`POST /session/logout` remains the current-session logout route. If `{session_id}` matches the current session id, the server returns `400`:
 
 ```json
 { "error": "invalid_request" }
@@ -338,7 +338,7 @@ Response shape:
 ]
 ```
 
-### `PATCH /ed25519/credentials/:id`
+### `PATCH /ed25519/credentials/{id}`
 
 Renames one registered ED25519 credential for the authenticated user.
 
@@ -354,7 +354,7 @@ Request body:
 
 Response shape matches `POST /ed25519/credentials`.
 
-### `DELETE /ed25519/credentials/:id`
+### `DELETE /ed25519/credentials/{id}`
 
 Deletes one registered ED25519 credential for the authenticated user.
 
@@ -414,7 +414,7 @@ Response shape:
 }
 ```
 
-### `DELETE /webauthn/credentials/:id`
+### `DELETE /webauthn/credentials/{id}`
 
 Deletes one stored WebAuthn credential for the authenticated user.
 
