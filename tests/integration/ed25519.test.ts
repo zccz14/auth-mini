@@ -157,6 +157,9 @@ describe('ed25519 routes', () => {
           id: testApp.sessionId,
           created_at: expect.any(String),
           expires_at: expect.any(String),
+          auth_method: 'email_otp',
+          ip: null,
+          user_agent: null,
         },
       ],
     });
