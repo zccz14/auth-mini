@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDemoSdk } from './demo-sdk';
+import { createDemoSdk, persistDemoSession } from './demo-sdk';
 
 const sdkMocks = vi.hoisted(() => {
   const sessionState = {
@@ -11,12 +11,6 @@ const sdkMocks = vi.hoisted(() => {
       refreshToken: 'refresh-token',
       receivedAt: '2026-04-11T00:00:00.000Z',
       expiresAt: '2026-04-11T01:00:00.000Z',
-      me: {
-        user_id: 'user-1',
-        email: 'user@example.com',
-        webauthn_credentials: [],
-        active_sessions: [],
-      },
     },
   };
 
@@ -32,14 +26,13 @@ const sdkMocks = vi.hoisted(() => {
       refreshToken: 'refresh-token',
       receivedAt: '2026-04-11T01:00:00.000Z',
       expiresAt: '2026-04-11T02:00:00.000Z',
-      me: sessionState.current.me,
     };
   });
 
   const createBrowserSdk = vi.fn(() => ({
     email: { start: vi.fn(), verify: vi.fn() },
     passkey: { register: vi.fn(), authenticate: vi.fn() },
-    me: { get: vi.fn(() => sessionState.current.me), reload: vi.fn() },
+    me: { fetch: vi.fn() },
     session: {
       getState: () => sessionState.current,
       onChange: vi.fn(() => vi.fn()),
@@ -68,12 +61,6 @@ describe('createDemoSdk', () => {
       refreshToken: 'refresh-token',
       receivedAt: '2026-04-11T00:00:00.000Z',
       expiresAt: '2026-04-11T01:00:00.000Z',
-      me: {
-        user_id: 'user-1',
-        email: 'user@example.com',
-        webauthn_credentials: [],
-        active_sessions: [],
-      },
     };
   });
 
@@ -124,5 +111,30 @@ describe('createDemoSdk', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it('persists demo sessions without a cached me payload', () => {
+    const storage = window.localStorage;
+
+    persistDemoSession(storage, 'https://auth.example.com', {
+      session_id: 'session-1',
+      access_token: 'access-token',
+      refresh_token: 'refresh-token',
+      expires_in: 900,
+      token_type: 'Bearer',
+    });
+
+    const persisted = JSON.parse(
+      storage.getItem('auth-mini.sdk:https://auth.example.com/') ?? '',
+    );
+
+    expect(persisted).toEqual(
+      expect.objectContaining({
+        sessionId: 'session-1',
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+      }),
+    );
+    expect(persisted).not.toHaveProperty('me');
   });
 });
