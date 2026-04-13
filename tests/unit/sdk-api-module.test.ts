@@ -19,6 +19,7 @@ const dtsConsumerTsconfig = JSON.parse(
 describe('sdk api package wiring', () => {
   it('declares generator scripts without publishing the wrapper export yet', () => {
     expect(packageJson.devDependencies['@hey-api/openapi-ts']).toBeTruthy();
+    expect(packageJson.devDependencies.jiti).toBeTruthy();
     expect(packageJson.scripts['generate:api']).toBe('openapi-ts');
     expect(packageJson.scripts['check:generated:api']).toBe(
       'node scripts/check-generated-api-sdk.mjs',

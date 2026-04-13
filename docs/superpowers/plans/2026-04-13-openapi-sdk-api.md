@@ -242,8 +242,6 @@ git commit -m "feat: add openapi api contract"
 - Create: `scripts/check-generated-api-sdk.mjs`
 - Modify: `package.json`
 - Create: `src/generated/api/` (generated)
-- Create: `tests/fixtures/sdk-dts-consumer/module-api-usage.ts`
-- Modify: `tests/fixtures/sdk-dts-consumer/tsconfig.json`
 
 - [ ] **Step 1: Add a failing unit test for the repo-level generation contract**
 
@@ -259,16 +257,14 @@ const packageJson = JSON.parse(
 );
 
 describe('sdk api package wiring', () => {
-  it('declares generator scripts and public export', () => {
+  it('declares generator scripts without publishing the wrapper export yet', () => {
     expect(packageJson.devDependencies['@hey-api/openapi-ts']).toBeTruthy();
+    expect(packageJson.devDependencies.jiti).toBeTruthy();
     expect(packageJson.scripts['generate:api']).toBe('openapi-ts');
     expect(packageJson.scripts['check:generated:api']).toBe(
       'node scripts/check-generated-api-sdk.mjs',
     );
-    expect(packageJson.exports['./sdk/api']).toEqual({
-      types: './dist/sdk/api.d.ts',
-      import: './dist/sdk/api.js',
-    });
+    expect(packageJson.exports['./sdk/api']).toBeUndefined();
   });
 });
 ```
@@ -279,9 +275,9 @@ This should fail before the package metadata is updated.
 
 Run: `npm run build && npx vitest run tests/unit/sdk-api-module.test.ts`
 
-Expected: FAIL because the new dependency, scripts, and export do not exist yet.
+Expected: FAIL because the new direct dependency and scripts do not exist yet.
 
-- [ ] **Step 3: Add the generator dependency, scripts, and export wiring**
+- [ ] **Step 3: Add the generator dependency and script wiring**
 
 Update `package.json` with the exact additions below:
 
@@ -295,10 +291,6 @@ Update `package.json` with the exact additions below:
     "./sdk/device": {
       "types": "./dist/sdk/device.d.ts",
       "import": "./dist/sdk/device.js"
-    },
-    "./sdk/api": {
-      "types": "./dist/sdk/api.d.ts",
-      "import": "./dist/sdk/api.js"
     }
   },
   "scripts": {
@@ -307,6 +299,7 @@ Update `package.json` with the exact additions below:
   },
   "devDependencies": {
     "@hey-api/openapi-ts": "0.96.0",
+    "jiti": "^2.6.1",
     "yaml": "2.8.3"
   }
 }
@@ -356,31 +349,29 @@ If the generator produces additional support files under `client/` or `core/`, c
 
 - [ ] **Step 6: Add a repeatable drift-check script instead of relying on human eyeballing**
 
-Create `scripts/check-generated-api-sdk.mjs` that regenerates into a repo-local temp directory, then compares against `src/generated/api/`:
+Create `scripts/check-generated-api-sdk.mjs` that loads `openapi-ts.config.ts`, regenerates into a repo-local temp directory by overriding only `output`, then compares against `src/generated/api/`:
 
 ```js
 import { mkdtempSync, rmSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { resolve } from 'node:path';
+import { createClient } from '@hey-api/openapi-ts';
+import { createJiti } from 'jiti';
 
 const root = process.cwd();
-const output = resolve(root, 'src/generated/api');
+const loadConfig = createJiti(import.meta.url);
+const { default: loadedOpenapiTsConfig } = await loadConfig.import(
+  '../openapi-ts.config.ts',
+);
+const openapiTsConfig = await loadedOpenapiTsConfig;
+const output = resolve(root, openapiTsConfig.output);
 const tempRoot = mkdtempSync(resolve(root, '.tmp-openapi-check-'));
 
 try {
-  const generate = spawnSync(
-    'node',
-    [
-      '--input-type=module',
-      '--eval',
-      `import { createClient } from '@hey-api/openapi-ts';\nawait createClient({\n  input: './openapi.yaml',\n  output: ${JSON.stringify(tempRoot)},\n  plugins: ['@hey-api/client-fetch', { name: '@hey-api/sdk', auth: true, operations: { strategy: 'flat' } }],\n});`,
-    ],
-    { cwd: root, stdio: 'inherit' },
-  );
-
-  if (generate.status !== 0) {
-    process.exit(generate.status ?? 1);
-  }
+  await createClient({
+    ...openapiTsConfig,
+    output: tempRoot,
+  });
 
   const diff = spawnSync(
     'git',
@@ -405,7 +396,7 @@ Keep the temporary directory inside the repo so the workflow respects the repo b
 
 Run: `npm run build && npx vitest run tests/unit/sdk-api-module.test.ts && npm run check:generated:api`
 
-Expected: PASS, proving the package metadata exists and the checked-in generated artifacts match the spec/config.
+Expected: PASS, proving the package metadata exists for generation/drift tooling and the checked-in generated artifacts match the spec/config.
 
 - [ ] **Step 8: Commit the tooling and generated-output slice**
 
@@ -420,6 +411,7 @@ git commit -m "feat: generate openapi api sdk"
 
 **Files:**
 
+- Modify: `package.json`
 - Create: `src/sdk/api.ts`
 - Create: `tests/unit/sdk-api-base-url.test.ts`
 - Create: `tests/fixtures/sdk-dts-consumer/module-api-usage.ts`
@@ -568,6 +560,21 @@ export function createApiSdk(options: ApiSdkOptions) {
 
 Keep the wrapper limited to configuration, naming, and stable re-exports. Do not move browser/device session behavior into it.
 
+- [ ] **Step 3.5: Publish the wrapper subpath once the wrapper exists**
+
+Update `package.json` to add the new public export only after `src/sdk/api.ts` exists:
+
+```json
+{
+  "exports": {
+    "./sdk/api": {
+      "types": "./dist/sdk/api.d.ts",
+      "import": "./dist/sdk/api.js"
+    }
+  }
+}
+```
+
 - [ ] **Step 4: Add a package-consumer declaration check for the new subpath**
 
 Create `tests/fixtures/sdk-dts-consumer/module-api-usage.ts`:
@@ -602,7 +609,7 @@ Expected: PASS, proving the wrapper enforces runtime `baseUrl` and the published
 Run:
 
 ```bash
-git add src/sdk/api.ts tests/unit/sdk-api-base-url.test.ts tests/fixtures/sdk-dts-consumer
+git add package.json src/sdk/api.ts tests/unit/sdk-api-base-url.test.ts tests/fixtures/sdk-dts-consumer
 git commit -m "feat: add api sdk wrapper"
 ```
 
