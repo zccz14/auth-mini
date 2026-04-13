@@ -30,6 +30,8 @@ type MockMe = {
   }>;
 };
 
+type MockActiveSession = MockMe['active_sessions'][number];
+
 const sdkMocks = vi.hoisted(() => {
   const listeners: Array<(state: MockSessionState) => void> = [];
   const sessionState = {
@@ -100,6 +102,15 @@ function authenticatedSession(): MockSessionState {
     refreshToken: 'refresh-token',
     receivedAt: '2026-04-12T00:00:00.000Z',
     expiresAt: '2026-04-12T01:00:00.000Z',
+  };
+}
+
+function activeSession(overrides: Partial<MockActiveSession> & Pick<MockActiveSession, 'id' | 'created_at' | 'expires_at'>): MockActiveSession {
+  return {
+    auth_method: 'email_otp',
+    ip: null,
+    user_agent: null,
+    ...overrides,
   };
 }
 
@@ -263,16 +274,16 @@ describe('SessionRoute', () => {
         webauthn_credentials: [],
         ed25519_credentials: [],
         active_sessions: [
-          {
+          activeSession({
             id: 'session-current',
             created_at: '2026-04-12T00:00:00.000Z',
             expires_at: '2026-04-12T01:00:00.000Z',
-          },
-          {
+          }),
+          activeSession({
             id: 'session-peer',
             created_at: '2026-04-12T00:05:00.000Z',
             expires_at: '2026-04-12T01:05:00.000Z',
-          },
+          }),
         ],
       })
       .mockResolvedValueOnce({
@@ -281,11 +292,11 @@ describe('SessionRoute', () => {
         webauthn_credentials: [],
         ed25519_credentials: [],
         active_sessions: [
-          {
+          activeSession({
             id: 'session-current',
             created_at: '2026-04-12T00:00:00.000Z',
             expires_at: '2026-04-12T01:00:00.000Z',
-          },
+          }),
         ],
       });
 
@@ -324,16 +335,16 @@ describe('SessionRoute', () => {
         webauthn_credentials: [],
         ed25519_credentials: [],
         active_sessions: [
-          {
+          activeSession({
             id: 'session-current',
             created_at: '2026-04-12T00:00:00.000Z',
             expires_at: '2026-04-12T01:00:00.000Z',
-          },
-          {
+          }),
+          activeSession({
             id: 'session-peer',
             created_at: '2026-04-12T00:05:00.000Z',
             expires_at: '2026-04-12T01:05:00.000Z',
-          },
+          }),
         ],
       })
       .mockRejectedValueOnce(new Error('Unable to refresh current user data.'));
@@ -363,16 +374,16 @@ describe('SessionRoute', () => {
         webauthn_credentials: [],
         ed25519_credentials: [],
         active_sessions: [
-          {
+          activeSession({
             id: 'session-current',
             created_at: '2026-04-12T00:00:00.000Z',
             expires_at: '2026-04-12T01:00:00.000Z',
-          },
-          {
+          }),
+          activeSession({
             id: 'session-peer',
             created_at: '2026-04-12T00:05:00.000Z',
             expires_at: '2026-04-12T01:05:00.000Z',
-          },
+          }),
         ],
       })
       .mockResolvedValueOnce({
@@ -381,11 +392,11 @@ describe('SessionRoute', () => {
         webauthn_credentials: [],
         ed25519_credentials: [],
         active_sessions: [
-          {
+          activeSession({
             id: 'session-current',
             created_at: '2026-04-12T00:00:00.000Z',
             expires_at: '2026-04-12T01:00:00.000Z',
-          },
+          }),
         ],
       });
     const fetchMock = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(new Response(null, { status: 204 }));
@@ -415,16 +426,16 @@ describe('SessionRoute', () => {
         webauthn_credentials: [],
         ed25519_credentials: [],
         active_sessions: [
-          {
+          activeSession({
             id: 'session-current',
             created_at: '2026-04-12T00:00:00.000Z',
             expires_at: '2026-04-12T01:00:00.000Z',
-          },
-          {
+          }),
+          activeSession({
             id: 'session-peer',
             created_at: '2026-04-12T00:05:00.000Z',
             expires_at: '2026-04-12T01:05:00.000Z',
-          },
+          }),
         ],
       })
       .mockResolvedValueOnce({
@@ -433,11 +444,11 @@ describe('SessionRoute', () => {
         webauthn_credentials: [],
         ed25519_credentials: [],
         active_sessions: [
-          {
+          activeSession({
             id: 'session-current',
             created_at: '2026-04-12T00:00:00.000Z',
             expires_at: '2026-04-12T01:00:00.000Z',
-          },
+          }),
         ],
       });
     const fetchMock = vi
