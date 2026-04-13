@@ -221,7 +221,6 @@ describe('sdk d.ts build artifact', () => {
       'verify(',
       'passkey:',
       'register(',
-      'ed25519_credentials:',
       'webauthn:',
       'session:',
       'onChange(',
@@ -230,6 +229,55 @@ describe('sdk d.ts build artifact', () => {
     ]) {
       expect(source).toContain(name);
     }
+
+    expect(source).not.toContain('GeneratedEmailStartInput');
+    expect(source).not.toContain('GeneratedEmailVerifyInput');
+    expect(source).not.toContain('GeneratedMeResponse');
+  });
+
+  it('aliases only the structurally equivalent browser sdk public types', () => {
+    const sharedTypes = readSharedTypesDeclaration();
+    const browserOutput = readBrowserModuleDeclaration();
+
+    expect(sharedTypes).toContain(
+      'import type { Ed25519Credential as GeneratedMeEd25519Credential',
+    );
+    expect(sharedTypes).toContain(
+      'EmailStartRequest as GeneratedEmailStartInput',
+    );
+    expect(sharedTypes).toContain(
+      'EmailVerifyRequest as GeneratedEmailVerifyInput',
+    );
+    expect(sharedTypes).toContain('MeResponse as GeneratedMeResponse');
+    expect(sharedTypes).toContain('SessionSummary as GeneratedMeActiveSession');
+    expect(sharedTypes).toContain(
+      'WebauthnCredential as GeneratedMeWebauthnCredential',
+    );
+    expect(sharedTypes).toContain(
+      'export type MeWebauthnCredential = GeneratedMeWebauthnCredential;',
+    );
+    expect(sharedTypes).toContain(
+      'export type MeEd25519Credential = GeneratedMeEd25519Credential;',
+    );
+    expect(sharedTypes).toContain(
+      'export type MeActiveSession = GeneratedMeActiveSession;',
+    );
+    expect(sharedTypes).toContain(
+      'export type MeResponse = GeneratedMeResponse;',
+    );
+    expect(sharedTypes).toContain(
+      'export type EmailStartInput = GeneratedEmailStartInput;',
+    );
+    expect(sharedTypes).toContain(
+      'export type EmailVerifyInput = GeneratedEmailVerifyInput;',
+    );
+    expect(sharedTypes).toContain('export type EmailStartResponse = {');
+    expect(sharedTypes).toContain('export type PasskeyOptionsInput = {');
+    expect(sharedTypes).toContain(
+      'export type WebauthnVerifyResponse = Record<string, unknown>;',
+    );
+    expect(browserOutput).toContain("} from './types.js';");
+    expect(browserOutput).not.toContain('../generated/api');
   });
 
   it('emits browser sdk module declarations', () => {

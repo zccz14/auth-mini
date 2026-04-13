@@ -80,6 +80,136 @@ const collectTypeAliases = (file: ts.SourceFile) => {
   return aliases;
 };
 
+const toDeclarationPath = (filePath: string) => {
+  if (filePath.endsWith('.d.ts')) {
+    return filePath;
+  }
+
+  if (filePath.endsWith('.js')) {
+    return filePath.slice(0, -3) + '.d.ts';
+  }
+
+  if (filePath.endsWith('.ts')) {
+    return filePath.slice(0, -3) + '.d.ts';
+  }
+
+  return `${filePath}.d.ts`;
+};
+
+const resolveDeclarationPath = (fromPath: string, specifier: string) =>
+  resolve(dirname(fromPath), toDeclarationPath(specifier));
+
+const collectExportedTypeDeclarations = (
+  filePath: string,
+  seen = new Set<string>(),
+) => {
+  if (seen.has(filePath)) {
+    return new Map<string, ts.TypeNode>();
+  }
+
+  seen.add(filePath);
+
+  const file = ts.createSourceFile(
+    filePath,
+    readFileSync(filePath, 'utf8'),
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const aliases = new Map<string, ts.TypeNode>();
+
+  for (const statement of file.statements) {
+    if (
+      ts.isTypeAliasDeclaration(statement) &&
+      statement.modifiers?.some(
+        (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+      )
+    ) {
+      aliases.set(statement.name.text, statement.type);
+      continue;
+    }
+
+    if (
+      ts.isInterfaceDeclaration(statement) &&
+      statement.modifiers?.some(
+        (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+      )
+    ) {
+      aliases.set(
+        statement.name.text,
+        ts.factory.createTypeLiteralNode([...statement.members]),
+      );
+      continue;
+    }
+
+    if (!ts.isExportDeclaration(statement) || !statement.moduleSpecifier) {
+      continue;
+    }
+
+    const targetPath = resolveDeclarationPath(
+      filePath,
+      (statement.moduleSpecifier as ts.StringLiteral).text,
+    );
+    const targetAliases = collectExportedTypeDeclarations(targetPath, seen);
+
+    if (!statement.exportClause || !ts.isNamedExports(statement.exportClause)) {
+      for (const [name, typeNode] of targetAliases) {
+        aliases.set(name, typeNode);
+      }
+      continue;
+    }
+
+    for (const element of statement.exportClause.elements) {
+      const targetName = (element.propertyName ?? element.name).text;
+      const aliasName = element.name.text;
+      const aliasTarget = targetAliases.get(targetName);
+
+      if (aliasTarget) {
+        aliases.set(aliasName, aliasTarget);
+      }
+    }
+  }
+
+  return aliases;
+};
+
+const collectImportedTypeAliases = (file: ts.SourceFile, filePath: string) => {
+  const aliases = new Map<string, ts.TypeNode>();
+
+  for (const statement of file.statements) {
+    if (!ts.isImportDeclaration(statement) || !statement.importClause) {
+      continue;
+    }
+
+    const bindings = statement.importClause.namedBindings;
+    if (!bindings || !ts.isNamedImports(bindings)) {
+      continue;
+    }
+
+    const targetAliases = collectExportedTypeDeclarations(
+      resolveDeclarationPath(
+        filePath,
+        (statement.moduleSpecifier as ts.StringLiteral).text,
+      ),
+    );
+
+    for (const element of bindings.elements) {
+      const targetName = (element.propertyName ?? element.name).text;
+      const aliasTarget = targetAliases.get(targetName);
+
+      if (aliasTarget) {
+        aliases.set(element.name.text, aliasTarget);
+      }
+    }
+
+    for (const [name, typeNode] of targetAliases) {
+      aliases.set(name, typeNode);
+    }
+  }
+
+  return aliases;
+};
+
 const inlineTypeNode = (
   node: ts.TypeNode,
   aliases: Map<string, ts.TypeNode>,
@@ -133,7 +263,10 @@ const buildArtifact = (tempDir: string) => {
     true,
     ts.ScriptKind.TS,
   );
-  const aliases = collectTypeAliases(typesSource);
+  const aliases = new Map([
+    ...collectImportedTypeAliases(typesSource, typesDtsPath),
+    ...collectTypeAliases(typesSource),
+  ]);
 
   const globalBlock = singletonSource.statements.find(ts.isModuleDeclaration);
   if (!globalBlock || globalBlock.name.text !== 'global' || !globalBlock.body) {
