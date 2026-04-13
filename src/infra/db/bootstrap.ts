@@ -213,6 +213,9 @@ function widenLegacySessionAuthMethodConstraint(
     return;
   }
 
+  const hasSessionIpColumn = tableHasColumn(db, 'sessions', 'ip');
+  const hasSessionUserAgentColumn = tableHasColumn(db, 'sessions', 'user_agent');
+
   db.transaction(() => {
     db.exec('ALTER TABLE sessions RENAME TO sessions_legacy_auth_method');
     db.exec(`
@@ -221,6 +224,8 @@ function widenLegacySessionAuthMethodConstraint(
         user_id TEXT NOT NULL,
         refresh_token_hash TEXT NOT NULL,
         auth_method TEXT NOT NULL CHECK (auth_method IN ('email_otp', 'webauthn', 'ed25519')),
+        ip TEXT,
+        user_agent TEXT,
         expires_at TEXT NOT NULL,
         revoked_at TEXT,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -233,6 +238,8 @@ function widenLegacySessionAuthMethodConstraint(
         user_id,
         refresh_token_hash,
         auth_method,
+        ip,
+        user_agent,
         expires_at,
         revoked_at,
         created_at
@@ -242,6 +249,8 @@ function widenLegacySessionAuthMethodConstraint(
         user_id,
         refresh_token_hash,
         auth_method,
+        ${hasSessionIpColumn ? 'ip' : 'NULL'},
+        ${hasSessionUserAgentColumn ? 'user_agent' : 'NULL'},
         expires_at,
         revoked_at,
         created_at

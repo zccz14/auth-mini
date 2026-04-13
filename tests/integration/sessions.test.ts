@@ -209,6 +209,77 @@ describe('session routes', () => {
     }
   });
 
+  it('preserves existing snapshot fields when widening the legacy auth method constraint', async () => {
+    const dbPath = await createTempDbPath();
+    const db = createDatabaseClient(dbPath);
+
+    try {
+      db.exec(`
+        CREATE TABLE users (
+          id TEXT PRIMARY KEY,
+          email TEXT NOT NULL UNIQUE,
+          email_verified_at TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE sessions (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          refresh_token_hash TEXT NOT NULL,
+          auth_method TEXT NOT NULL CHECK (auth_method IN ('email_otp', 'webauthn')),
+          ip TEXT,
+          user_agent TEXT,
+          expires_at TEXT NOT NULL,
+          revoked_at TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE allowed_origins (origin TEXT PRIMARY KEY);
+        CREATE TABLE jwks_keys (
+          id TEXT PRIMARY KEY CHECK (id IN ('CURRENT', 'STANDBY')),
+          kid TEXT NOT NULL UNIQUE,
+          alg TEXT NOT NULL,
+          public_jwk TEXT NOT NULL,
+          private_jwk TEXT NOT NULL
+        );
+        CREATE TABLE webauthn_challenges (request_id TEXT PRIMARY KEY, user_id TEXT, challenge TEXT NOT NULL, rp_id TEXT NOT NULL, origin TEXT NOT NULL, expires_at TEXT NOT NULL, consumed_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE webauthn_credentials (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, credential_id TEXT NOT NULL UNIQUE, public_key TEXT NOT NULL, counter INTEGER NOT NULL, transports TEXT NOT NULL DEFAULT '', rp_id TEXT NOT NULL, last_used_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+      `);
+      db.prepare(
+        'INSERT INTO users (id, email, email_verified_at) VALUES (?, ?, ?)',
+      ).run('legacy-user', 'legacy@example.com', '2030-01-01T00:00:00.000Z');
+      db.prepare(
+        'INSERT INTO sessions (id, user_id, refresh_token_hash, auth_method, ip, user_agent, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      ).run(
+        'legacy-session',
+        'legacy-user',
+        'legacy-hash',
+        'email_otp',
+        '198.51.100.8',
+        'Legacy Test Agent',
+        '2099-01-01T00:00:00.000Z',
+      );
+    } finally {
+      db.close();
+    }
+
+    await bootstrapDatabase(dbPath);
+    const migratedDb = createDatabaseClient(dbPath);
+
+    try {
+      expect(
+        migratedDb
+          .prepare('SELECT auth_method, ip, user_agent FROM sessions WHERE id = ?')
+          .get('legacy-session'),
+      ).toEqual({
+        auth_method: 'email_otp',
+        ip: '198.51.100.8',
+        user_agent: 'Legacy Test Agent',
+      });
+    } finally {
+      migratedDb.close();
+    }
+  });
+
   it('refresh rotates the refresh token', async () => {
     const testApp = await createSignedInApp('rotate@example.com');
     openApps.push(testApp);
