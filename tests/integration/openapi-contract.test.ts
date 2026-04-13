@@ -203,6 +203,26 @@ describe('openapi contract', () => {
       ],
     });
   });
+
+  it('documents the expanded SessionSummary schema', async () => {
+    const document = await readOpenApiContract();
+
+    expect(document.components?.schemas?.SessionSummary).toMatchObject({
+      required: [
+        'id',
+        'auth_method',
+        'created_at',
+        'expires_at',
+        'ip',
+        'user_agent',
+      ],
+      properties: {
+        auth_method: { type: 'string' },
+        ip: { type: ['string', 'null'] },
+        user_agent: { type: ['string', 'null'] },
+      },
+    });
+  });
 });
 
 async function readOpenApiContract() {
@@ -218,7 +238,13 @@ type OpenApiDocument = {
   openapi?: string;
   components?: {
     parameters?: Record<string, unknown>;
-    schemas?: Record<string, { properties?: Record<string, unknown> }>;
+    schemas?: Record<
+      string,
+      {
+        properties?: Record<string, unknown>;
+        required?: string[];
+      }
+    >;
   };
   servers?: Array<{ url?: string }>;
   security?: Array<Record<string, unknown>>;

@@ -36,8 +36,11 @@ export type SessionTokenResponse = {
 
 export type SessionSummary = {
     id: string;
+    auth_method: string;
     created_at: string;
     expires_at: string;
+    ip: string | null;
+    user_agent: string | null;
 };
 
 export type Ed25519Credential = {

@@ -672,18 +672,31 @@ components:
       additionalProperties: false
       required:
         - id
+        - auth_method
         - created_at
         - expires_at
+        - ip
+        - user_agent
       properties:
         id:
           type: string
           format: uuid
+        auth_method:
+          type: string
         created_at:
           type: string
           format: date-time
         expires_at:
           type: string
           format: date-time
+        ip:
+          type:
+            - 'string'
+            - 'null'
+        user_agent:
+          type:
+            - 'string'
+            - 'null'
     Ed25519Credential:
       type: object
       additionalProperties: false
