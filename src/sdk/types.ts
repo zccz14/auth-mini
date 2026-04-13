@@ -1,3 +1,12 @@
+import type {
+  Ed25519Credential as GeneratedMeEd25519Credential,
+  EmailStartRequest as GeneratedEmailStartInput,
+  EmailVerifyRequest as GeneratedEmailVerifyInput,
+  MeResponse as GeneratedMeResponse,
+  SessionSummary as GeneratedMeActiveSession,
+  WebauthnCredential as GeneratedMeWebauthnCredential,
+} from '../generated/api/index.js';
+
 export type SdkStatus = 'recovering' | 'authenticated' | 'anonymous';
 
 export type FetchLike = (
@@ -5,36 +14,13 @@ export type FetchLike = (
   init?: RequestInit,
 ) => Promise<Response>;
 
-export type MeWebauthnCredential = {
-  id: string;
-  credential_id: string;
-  transports: string[];
-  rp_id: string;
-  last_used_at: string | null;
-  created_at: string;
-};
+export type MeWebauthnCredential = GeneratedMeWebauthnCredential;
 
-export type MeEd25519Credential = {
-  id: string;
-  name: string;
-  public_key: string;
-  last_used_at: string | null;
-  created_at: string;
-};
+export type MeEd25519Credential = GeneratedMeEd25519Credential;
 
-export type MeActiveSession = {
-  id: string;
-  created_at: string;
-  expires_at: string;
-};
+export type MeActiveSession = GeneratedMeActiveSession;
 
-export type MeResponse = {
-  user_id: string;
-  email: string;
-  webauthn_credentials: MeWebauthnCredential[];
-  ed25519_credentials: MeEd25519Credential[];
-  active_sessions: MeActiveSession[];
-};
+export type MeResponse = GeneratedMeResponse;
 
 export type SessionSnapshot = {
   status: SdkStatus;
@@ -66,14 +52,9 @@ export type SessionTokens = {
 
 export type SessionResult = SessionTokens;
 
-export type EmailStartInput = {
-  email: string;
-};
+export type EmailStartInput = GeneratedEmailStartInput;
 
-export type EmailVerifyInput = {
-  email: string;
-  code: string;
-};
+export type EmailVerifyInput = GeneratedEmailVerifyInput;
 
 export type EmailStartResponse = {
   ok?: boolean;

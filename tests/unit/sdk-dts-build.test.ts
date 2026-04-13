@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
@@ -64,6 +65,47 @@ const getTypeLiteralMemberNames = (typeLiteral: ts.TypeLiteralNode) =>
 
 const loadTestRunnerModule = async () =>
   import(resolve(process.cwd(), 'scripts/run-tests.js'));
+
+const loadSingletonDtsModule = async () =>
+  import(
+    pathToFileURL(resolve(process.cwd(), 'src/sdk/build-singleton-dts.ts')).href
+  );
+
+const readSourceFile = (relativePath: string) => {
+  const filePath = resolve(process.cwd(), relativePath);
+
+  return {
+    filePath,
+    sourceFile: ts.createSourceFile(
+      filePath,
+      readFileSync(filePath, 'utf8'),
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    ),
+  };
+};
+
+const printTypeNode = (node: ts.TypeNode, sourceFile: ts.SourceFile) =>
+  ts
+    .createPrinter({
+      newLine: ts.NewLineKind.LineFeed,
+      removeComments: true,
+    })
+    .printNode(ts.EmitHint.Unspecified, node, sourceFile);
+
+const getNamedAliasType = (sourceFile: ts.SourceFile, aliasName: string) => {
+  const statement = sourceFile.statements.find(
+    (candidate): candidate is ts.TypeAliasDeclaration =>
+      ts.isTypeAliasDeclaration(candidate) && candidate.name.text === aliasName,
+  );
+
+  if (!statement) {
+    throw new Error(`expected type alias ${aliasName}`);
+  }
+
+  return statement.type;
+};
 
 describe('sdk d.ts build artifact', () => {
   it('is enforced by the automated repo test command', () => {
@@ -221,7 +263,6 @@ describe('sdk d.ts build artifact', () => {
       'verify(',
       'passkey:',
       'register(',
-      'ed25519_credentials:',
       'webauthn:',
       'session:',
       'onChange(',
@@ -230,6 +271,139 @@ describe('sdk d.ts build artifact', () => {
     ]) {
       expect(source).toContain(name);
     }
+
+    expect(source).not.toContain('GeneratedEmailStartInput');
+    expect(source).not.toContain('GeneratedEmailVerifyInput');
+    expect(source).not.toContain('GeneratedMeResponse');
+  });
+
+  it('inlines inherited members from imported exported interfaces', async () => {
+    const module = (await loadSingletonDtsModule()) as {
+      buildInlineAliasMap?: (
+        sourceFile: ts.SourceFile,
+        filePath: string,
+      ) => Map<string, ts.TypeNode>;
+      inlineDeclarationType?: (
+        node: ts.TypeNode,
+        aliases: Map<string, ts.TypeNode>,
+      ) => ts.TypeNode;
+    };
+    const { filePath, sourceFile } = readSourceFile(
+      'tests/fixtures/sdk-dts-build/types.d.ts',
+    );
+
+    const aliases = module.buildInlineAliasMap?.(sourceFile, filePath);
+    const inlined = aliases
+      ? module.inlineDeclarationType?.(
+          getNamedAliasType(sourceFile, 'UsesImportedInterface'),
+          aliases,
+        )
+      : undefined;
+    const printed = inlined ? printTypeNode(inlined, sourceFile) : '';
+
+    expect(printed).toContain('created_at: string;');
+    expect(printed).toContain('id: string;');
+    expect(printed).not.toContain('BaseImportedSessionSummary');
+  });
+
+  it('substitutes type arguments when inlining imported generic aliases', async () => {
+    const module = (await loadSingletonDtsModule()) as {
+      buildInlineAliasMap?: (
+        sourceFile: ts.SourceFile,
+        filePath: string,
+      ) => Map<string, ts.TypeNode>;
+      inlineDeclarationType?: (
+        node: ts.TypeNode,
+        aliases: Map<string, ts.TypeNode>,
+      ) => ts.TypeNode;
+    };
+    const { filePath, sourceFile } = readSourceFile(
+      'tests/fixtures/sdk-dts-build/types.d.ts',
+    );
+
+    const aliases = module.buildInlineAliasMap?.(sourceFile, filePath);
+    const inlined = aliases
+      ? module.inlineDeclarationType?.(
+          getNamedAliasType(sourceFile, 'UsesImportedGeneric'),
+          aliases,
+        )
+      : undefined;
+    const printed = inlined ? printTypeNode(inlined, sourceFile) : '';
+
+    expect(printed).toContain('value: string;');
+    expect(printed).toContain('list: string[];');
+    expect(printed).not.toContain('value: T;');
+    expect(printed).not.toContain('ImportedGenericBox');
+  });
+
+  it('matches the cli entrypoint guard against relative argv paths', async () => {
+    const module = (await loadSingletonDtsModule()) as {
+      isDirectExecution?: (
+        moduleUrl: string,
+        argvEntry: string | undefined,
+        cwd?: string,
+      ) => boolean;
+    };
+
+    expect(
+      module.isDirectExecution?.(
+        'file:///repo/dist/sdk/build-singleton-dts.js',
+        'dist/sdk/build-singleton-dts.js',
+        '/repo',
+      ),
+    ).toBe(true);
+    expect(
+      module.isDirectExecution?.(
+        'file:///repo/dist/sdk/build-singleton-dts.js',
+        'dist/sdk/other.js',
+        '/repo',
+      ),
+    ).toBe(false);
+  });
+
+  it('aliases only the structurally equivalent browser sdk public types', () => {
+    const sharedTypes = readSharedTypesDeclaration();
+    const browserOutput = readBrowserModuleDeclaration();
+
+    expect(sharedTypes).toContain(
+      'import type { Ed25519Credential as GeneratedMeEd25519Credential',
+    );
+    expect(sharedTypes).toContain(
+      'EmailStartRequest as GeneratedEmailStartInput',
+    );
+    expect(sharedTypes).toContain(
+      'EmailVerifyRequest as GeneratedEmailVerifyInput',
+    );
+    expect(sharedTypes).toContain('MeResponse as GeneratedMeResponse');
+    expect(sharedTypes).toContain('SessionSummary as GeneratedMeActiveSession');
+    expect(sharedTypes).toContain(
+      'WebauthnCredential as GeneratedMeWebauthnCredential',
+    );
+    expect(sharedTypes).toContain(
+      'export type MeWebauthnCredential = GeneratedMeWebauthnCredential;',
+    );
+    expect(sharedTypes).toContain(
+      'export type MeEd25519Credential = GeneratedMeEd25519Credential;',
+    );
+    expect(sharedTypes).toContain(
+      'export type MeActiveSession = GeneratedMeActiveSession;',
+    );
+    expect(sharedTypes).toContain(
+      'export type MeResponse = GeneratedMeResponse;',
+    );
+    expect(sharedTypes).toContain(
+      'export type EmailStartInput = GeneratedEmailStartInput;',
+    );
+    expect(sharedTypes).toContain(
+      'export type EmailVerifyInput = GeneratedEmailVerifyInput;',
+    );
+    expect(sharedTypes).toContain('export type EmailStartResponse = {');
+    expect(sharedTypes).toContain('export type PasskeyOptionsInput = {');
+    expect(sharedTypes).toContain(
+      'export type WebauthnVerifyResponse = Record<string, unknown>;',
+    );
+    expect(browserOutput).toContain("} from './types.js';");
+    expect(browserOutput).not.toContain('../generated/api');
   });
 
   it('emits browser sdk module declarations', () => {
