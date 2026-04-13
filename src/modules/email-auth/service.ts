@@ -107,7 +107,14 @@ export async function startEmailAuth(
 
 export async function verifyEmailAuth(
   db: DatabaseClient,
-  input: { email: string; code: string; issuer: string; logger?: AppLogger },
+  input: {
+    email: string;
+    code: string;
+    issuer: string;
+    ip?: string | null;
+    userAgent?: string | null;
+    logger?: AppLogger;
+  },
 ): Promise<TokenPair> {
   const email = normalizeEmail(input.email);
   const otp = getEmailOtp(db, email);
@@ -145,6 +152,8 @@ export async function verifyEmailAuth(
   const tokens = await mintSessionTokens(db, {
     userId: user.id,
     authMethod: 'email_otp',
+    ip: input.ip ?? null,
+    userAgent: input.userAgent ?? null,
     issuer: input.issuer,
     logger: input.logger,
   });

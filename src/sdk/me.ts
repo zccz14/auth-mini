@@ -95,8 +95,11 @@ export function createMeResponseParser() {
 
     return {
       id: requireString(record.id),
+      auth_method: requireString(record.auth_method),
       created_at: requireString(record.created_at),
       expires_at: requireString(record.expires_at),
+      ip: requireNullableString(record.ip),
+      user_agent: requireNullableString(record.user_agent),
     };
   }
 

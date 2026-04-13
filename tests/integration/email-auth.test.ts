@@ -260,6 +260,46 @@ describe('email auth routes', () => {
     expect(JSON.stringify(testApp.logs)).not.toContain('refresh_token');
   });
 
+  it('email verify stores request snapshot fields on the created session', async () => {
+    otpSeam.current = createOtpMailSeam();
+    const testApp = await createTestApp({ clientIp: '203.0.113.10' });
+    openApps.push(testApp);
+
+    await testApp.app.request('/email/start', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: json({ email: 'snapshot@example.com' }),
+    });
+    const code = extractOtpCode(
+      findLatestOtpMail(otpSeam.current.mailbox, 'snapshot@example.com')
+        ?.text ?? '',
+    );
+
+    const response = await testApp.app.request('/email/verify', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'User-Agent': 'EmailAgent/1.0 (snapshot)',
+      },
+      body: json({ email: 'snapshot@example.com', code }),
+    });
+
+    const body = (await response.json()) as { session_id: string };
+
+    expect(response.status).toBe(200);
+    expect(
+      testApp.db
+        .prepare(
+          'SELECT auth_method, ip, user_agent FROM sessions WHERE id = ?',
+        )
+        .get(body.session_id),
+    ).toEqual({
+      auth_method: 'email_otp',
+      ip: '203.0.113.10',
+      user_agent: 'EmailAgent/1.0 (snapshot)',
+    });
+  });
+
   it('verify signs in an existing user without creating a duplicate', async () => {
     otpSeam.current = createOtpMailSeam();
     const testApp = await createTestApp();

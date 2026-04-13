@@ -18,6 +18,7 @@ import {
   getSessionById,
   rotateRefreshToken,
 } from '../../src/modules/session/repo.js';
+import { listActiveUserSessions } from '../../src/modules/users/repo.js';
 import { refreshSessionTokens } from '../../src/modules/session/service.js';
 import { createTempDbPath } from '../helpers/db.js';
 import { createMemoryLogCollector } from '../helpers/logging.js';
@@ -104,6 +105,183 @@ describe('session routes', () => {
     }
   });
 
+  it('persists session snapshot fields and exposes them in active session rows', async () => {
+    const dbPath = await createTempDbPath();
+    await bootstrapDatabase(dbPath);
+    const db = createDatabaseClient(dbPath);
+
+    try {
+      db.prepare(
+        'INSERT INTO users (id, email, email_verified_at) VALUES (?, ?, ?)',
+      ).run('user-1', 'user-1@example.com', '2030-01-01T00:00:00.000Z');
+
+      const session = createSession(db, {
+        userId: 'user-1',
+        refreshTokenHash: 'refresh-hash',
+        authMethod: 'email_otp',
+        ip: '203.0.113.8',
+        userAgent: 'Mozilla/5.0 test-agent',
+        expiresAt: '2099-01-01T00:00:00.000Z',
+      });
+
+      expect(getSessionById(db, session.id)).toMatchObject({
+        authMethod: 'email_otp',
+        ip: '203.0.113.8',
+        userAgent: 'Mozilla/5.0 test-agent',
+      });
+      expect(
+        listActiveUserSessions(db, 'user-1', '2030-01-01T00:00:00.000Z'),
+      ).toEqual([
+        {
+          id: session.id,
+          auth_method: 'email_otp',
+          created_at: expect.any(String),
+          expires_at: '2099-01-01T00:00:00.000Z',
+          ip: '203.0.113.8',
+          user_agent: 'Mozilla/5.0 test-agent',
+        },
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('bootstraps legacy sessions with null snapshot fields', async () => {
+    const dbPath = await createTempDbPath();
+    const db = createDatabaseClient(dbPath);
+
+    try {
+      db.exec(`
+        CREATE TABLE users (
+          id TEXT PRIMARY KEY,
+          email TEXT NOT NULL UNIQUE,
+          email_verified_at TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE sessions (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          refresh_token_hash TEXT NOT NULL,
+          auth_method TEXT NOT NULL CHECK (auth_method IN ('email_otp', 'webauthn', 'ed25519')),
+          expires_at TEXT NOT NULL,
+          revoked_at TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE allowed_origins (origin TEXT PRIMARY KEY);
+        CREATE TABLE jwks_keys (
+          id TEXT PRIMARY KEY CHECK (id IN ('CURRENT', 'STANDBY')),
+          kid TEXT NOT NULL UNIQUE,
+          alg TEXT NOT NULL,
+          public_jwk TEXT NOT NULL,
+          private_jwk TEXT NOT NULL
+        );
+        CREATE TABLE webauthn_challenges (request_id TEXT PRIMARY KEY, user_id TEXT, challenge TEXT NOT NULL, rp_id TEXT NOT NULL, origin TEXT NOT NULL, expires_at TEXT NOT NULL, consumed_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE webauthn_credentials (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, credential_id TEXT NOT NULL UNIQUE, public_key TEXT NOT NULL, counter INTEGER NOT NULL, transports TEXT NOT NULL DEFAULT '', rp_id TEXT NOT NULL, last_used_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+      `);
+      db.prepare(
+        'INSERT INTO users (id, email, email_verified_at) VALUES (?, ?, ?)',
+      ).run('legacy-user', 'legacy@example.com', '2030-01-01T00:00:00.000Z');
+      db.prepare(
+        'INSERT INTO sessions (id, user_id, refresh_token_hash, auth_method, expires_at) VALUES (?, ?, ?, ?, ?)',
+      ).run(
+        'legacy-session',
+        'legacy-user',
+        'legacy-hash',
+        'email_otp',
+        '2099-01-01T00:00:00.000Z',
+      );
+    } finally {
+      db.close();
+    }
+
+    await bootstrapDatabase(dbPath);
+    const migratedDb = createDatabaseClient(dbPath);
+
+    try {
+      expect(
+        migratedDb
+          .prepare('SELECT ip, user_agent FROM sessions WHERE id = ?')
+          .get('legacy-session'),
+      ).toEqual({ ip: null, user_agent: null });
+    } finally {
+      migratedDb.close();
+    }
+  });
+
+  it('preserves existing snapshot fields when widening the legacy auth method constraint', async () => {
+    const dbPath = await createTempDbPath();
+    const db = createDatabaseClient(dbPath);
+
+    try {
+      db.exec(`
+        CREATE TABLE users (
+          id TEXT PRIMARY KEY,
+          email TEXT NOT NULL UNIQUE,
+          email_verified_at TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE sessions (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          refresh_token_hash TEXT NOT NULL,
+          auth_method TEXT NOT NULL CHECK (auth_method IN ('email_otp', 'webauthn')),
+          ip TEXT,
+          user_agent TEXT,
+          expires_at TEXT NOT NULL,
+          revoked_at TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE allowed_origins (origin TEXT PRIMARY KEY);
+        CREATE TABLE jwks_keys (
+          id TEXT PRIMARY KEY CHECK (id IN ('CURRENT', 'STANDBY')),
+          kid TEXT NOT NULL UNIQUE,
+          alg TEXT NOT NULL,
+          public_jwk TEXT NOT NULL,
+          private_jwk TEXT NOT NULL
+        );
+        CREATE TABLE webauthn_challenges (request_id TEXT PRIMARY KEY, user_id TEXT, challenge TEXT NOT NULL, rp_id TEXT NOT NULL, origin TEXT NOT NULL, expires_at TEXT NOT NULL, consumed_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE webauthn_credentials (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, credential_id TEXT NOT NULL UNIQUE, public_key TEXT NOT NULL, counter INTEGER NOT NULL, transports TEXT NOT NULL DEFAULT '', rp_id TEXT NOT NULL, last_used_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+      `);
+      db.prepare(
+        'INSERT INTO users (id, email, email_verified_at) VALUES (?, ?, ?)',
+      ).run('legacy-user', 'legacy@example.com', '2030-01-01T00:00:00.000Z');
+      db.prepare(
+        'INSERT INTO sessions (id, user_id, refresh_token_hash, auth_method, ip, user_agent, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      ).run(
+        'legacy-session',
+        'legacy-user',
+        'legacy-hash',
+        'email_otp',
+        '198.51.100.8',
+        'Legacy Test Agent',
+        '2099-01-01T00:00:00.000Z',
+      );
+    } finally {
+      db.close();
+    }
+
+    await bootstrapDatabase(dbPath);
+    const migratedDb = createDatabaseClient(dbPath);
+
+    try {
+      expect(
+        migratedDb
+          .prepare(
+            'SELECT auth_method, ip, user_agent FROM sessions WHERE id = ?',
+          )
+          .get('legacy-session'),
+      ).toEqual({
+        auth_method: 'email_otp',
+        ip: '198.51.100.8',
+        user_agent: 'Legacy Test Agent',
+      });
+    } finally {
+      migratedDb.close();
+    }
+  });
+
   it('refresh rotates the refresh token', async () => {
     const testApp = await createSignedInApp('rotate@example.com');
     openApps.push(testApp);
@@ -148,6 +326,93 @@ describe('session routes', () => {
     expect(JSON.stringify(testApp.logs)).not.toContain(
       testApp.tokens.refresh_token,
     );
+  });
+
+  it('refresh preserves session snapshot fields', async () => {
+    const { createTestApp } = await loadMockedAppHelpers();
+    const testApp = await createTestApp();
+    openApps.push(testApp);
+
+    testApp.db
+      .prepare(
+        'INSERT INTO users (id, email, email_verified_at) VALUES (?, ?, ?)',
+      )
+      .run(
+        'refresh-snapshot-user',
+        'refresh-snapshot@example.com',
+        '2030-01-01T00:00:00.000Z',
+      );
+
+    const refreshToken = 'refresh-source-token';
+    const session = createSession(testApp.db, {
+      userId: 'refresh-snapshot-user',
+      refreshTokenHash: hashValue(refreshToken),
+      authMethod: 'email_otp',
+      ip: '198.51.100.5',
+      userAgent: 'RefreshSource/1.0',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+    });
+
+    const response = await testApp.app.request('/session/refresh', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: json({
+        session_id: session.id,
+        refresh_token: refreshToken,
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(
+      testApp.db
+        .prepare('SELECT ip, user_agent FROM sessions WHERE id = ?')
+        .get(session.id),
+    ).toEqual({
+      ip: '198.51.100.5',
+      user_agent: 'RefreshSource/1.0',
+    });
+  });
+
+  it('rotateRefreshToken keeps the original session snapshot fields', async () => {
+    const dbPath = await createTempDbPath();
+    await bootstrapDatabase(dbPath);
+    const db = createDatabaseClient(dbPath);
+
+    try {
+      db.prepare(
+        'INSERT INTO users (id, email, email_verified_at) VALUES (?, ?, ?)',
+      ).run('user-1', 'user-1@example.com', '2030-01-01T00:00:00.000Z');
+
+      const currentRefreshTokenHash = hashValue('refresh-token');
+      const session = createSession(db, {
+        userId: 'user-1',
+        refreshTokenHash: currentRefreshTokenHash,
+        authMethod: 'email_otp',
+        ip: '203.0.113.20',
+        userAgent: 'Mozilla/5.0 rotate-test',
+        expiresAt: '2099-01-01T00:00:00.000Z',
+      });
+
+      const rotated = rotateRefreshToken(db, {
+        sessionId: session.id,
+        currentRefreshTokenHash,
+        nextRefreshTokenHash: hashValue('next-refresh-token'),
+        now: '2030-01-01T00:00:00.000Z',
+      });
+
+      expect(rotated).toMatchObject({
+        id: session.id,
+        ip: '203.0.113.20',
+        userAgent: 'Mozilla/5.0 rotate-test',
+      });
+      expect(getSessionById(db, session.id)).toMatchObject({
+        id: session.id,
+        ip: '203.0.113.20',
+        userAgent: 'Mozilla/5.0 rotate-test',
+      });
+    } finally {
+      db.close();
+    }
   });
 
   it('refresh rejects revoked session reuse', async () => {
@@ -978,8 +1243,11 @@ describe('session routes', () => {
       active_sessions: [
         {
           id: testApp.sessionId,
+          auth_method: 'email_otp',
           created_at: expect.any(String),
           expires_at: expect.any(String),
+          ip: null,
+          user_agent: null,
         },
       ],
     });
@@ -1005,8 +1273,11 @@ describe('session routes', () => {
       active_sessions: [
         {
           id: testApp.sessionId,
+          auth_method: 'email_otp',
           created_at: expect.any(String),
           expires_at: expect.any(String),
+          ip: null,
+          user_agent: null,
         },
       ],
     });
@@ -1036,8 +1307,11 @@ describe('session routes', () => {
       active_sessions: [
         {
           id: testApp.sessionId,
+          auth_method: 'ed25519',
           created_at: expect.any(String),
           expires_at: expect.any(String),
+          ip: null,
+          user_agent: null,
         },
       ],
     });

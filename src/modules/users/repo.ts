@@ -19,8 +19,11 @@ type WebauthnCredentialRow = {
 
 type SessionRow = {
   id: string;
+  auth_method: 'email_otp' | 'webauthn' | 'ed25519';
   created_at: string;
   expires_at: string;
+  ip: string | null;
+  user_agent: string | null;
 };
 
 type Ed25519CredentialRow = {
@@ -49,8 +52,11 @@ export type MeCredential = {
 
 export type ActiveSession = {
   id: string;
+  auth_method: 'email_otp' | 'webauthn' | 'ed25519';
   created_at: string;
   expires_at: string;
+  ip: string | null;
+  user_agent: string | null;
 };
 
 export type MeEd25519Credential = {
@@ -139,7 +145,7 @@ export function listActiveUserSessions(
   const rows = db
     .prepare(
       [
-        'SELECT id, created_at, expires_at',
+        'SELECT id, auth_method, created_at, expires_at, ip, user_agent',
         'FROM sessions',
         'WHERE user_id = ? AND expires_at > ?',
         'ORDER BY created_at ASC, id ASC',
@@ -149,8 +155,11 @@ export function listActiveUserSessions(
 
   return rows.map((row) => ({
     id: row.id,
+    auth_method: row.auth_method,
     created_at: row.created_at,
     expires_at: row.expires_at,
+    ip: row.ip,
+    user_agent: row.user_agent,
   }));
 }
 

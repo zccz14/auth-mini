@@ -177,6 +177,8 @@ export async function verifyAuthentication(
   input: {
     requestId: string;
     signature: string;
+    ip?: string | null;
+    userAgent?: string | null;
     issuer: string;
     logger?: AppLogger;
   },
@@ -209,6 +211,8 @@ export async function verifyAuthentication(
     const tokens = await mintSessionTokens(db, {
       userId: credential.userId,
       authMethod: 'ed25519',
+      ip: input.ip ?? null,
+      userAgent: input.userAgent ?? null,
       issuer: input.issuer,
       logger: input.logger,
     });

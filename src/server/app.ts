@@ -213,10 +213,13 @@ export function createApp(input: {
 
   app.post('/email/verify', async (c) => {
     const body = await parseJson(c.req.raw, emailVerifySchema);
+    const userAgent = c.req.header('User-Agent') ?? null;
     const result = await verifyEmailAuth(c.var.db, {
       email: body.email,
       code: body.code,
       issuer: c.var.issuer,
+      ip: c.var.clientIp,
+      userAgent,
       logger: c.var.logger,
     });
 
@@ -372,6 +375,8 @@ export function createApp(input: {
       requestId: body.request_id,
       signature: body.signature,
       issuer: c.var.issuer,
+      ip: c.var.clientIp,
+      userAgent: c.req.header('User-Agent') ?? null,
       logger: c.var.logger,
     });
 
@@ -450,6 +455,8 @@ export function createApp(input: {
       credential: body.credential,
       origin,
       issuer: c.var.issuer,
+      ip: c.var.clientIp,
+      userAgent: c.req.header('User-Agent') ?? null,
       logger: c.var.logger,
     });
 

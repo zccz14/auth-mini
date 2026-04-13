@@ -157,6 +157,9 @@ describe('ed25519 routes', () => {
           id: testApp.sessionId,
           created_at: expect.any(String),
           expires_at: expect.any(String),
+          auth_method: 'email_otp',
+          ip: null,
+          user_agent: null,
         },
       ],
     });
@@ -380,6 +383,46 @@ describe('ed25519 routes', () => {
     expect(storedCredential.last_used_at).toEqual(expect.any(String));
   });
 
+  it('verify stores request snapshot fields on the created session', async () => {
+    const testApp = await createSignedInApp('ed25519-snapshot@example.com', {
+      clientIp: '203.0.113.12',
+    });
+    openApps.push(testApp);
+
+    const deviceKey = createTestEd25519Keypair('snapshot');
+    const credential = await createCredentialForDevice(testApp, {
+      name: 'Snapshot device',
+      publicKey: deviceKey.publicKey,
+    });
+    const startBody = await startAuthentication(testApp, credential.id);
+
+    const response = await testApp.app.request('/ed25519/verify', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'User-Agent': 'Ed25519Agent/3.0 (snapshot)',
+      },
+      body: json({
+        request_id: startBody.request_id,
+        signature: deviceKey.signChallenge(startBody.challenge),
+      }),
+    });
+    const body = (await response.json()) as { session_id: string };
+
+    expect(response.status).toBe(200);
+    expect(
+      testApp.db
+        .prepare(
+          'SELECT auth_method, ip, user_agent FROM sessions WHERE id = ?',
+        )
+        .get(body.session_id),
+    ).toEqual({
+      auth_method: 'ed25519',
+      ip: '203.0.113.12',
+      user_agent: 'Ed25519Agent/3.0 (snapshot)',
+    });
+  });
+
   it('rejects expired challenges', async () => {
     const testApp = await createSignedInApp('ed25519-expired@example.com');
     openApps.push(testApp);
@@ -524,10 +567,13 @@ describe('ed25519 routes', () => {
   });
 });
 
-async function createSignedInApp(email: string) {
+async function createSignedInApp(
+  email: string,
+  options?: { clientIp?: string | null },
+) {
   otpSeam.current = createOtpMailSeam();
   const { createTestApp } = await loadMockedAppHelpers();
-  const testApp = await createTestApp();
+  const testApp = await createTestApp(options);
   const seam = getCurrentOtpSeam();
 
   await testApp.app.request('/email/start', {

@@ -4,6 +4,12 @@ import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
+const readConsumerFixture = (fileName: string) =>
+  readFileSync(
+    resolve(process.cwd(), 'tests/fixtures/sdk-dts-consumer', fileName),
+    'utf8',
+  );
+
 const readBuiltDeclaration = () =>
   readFileSync(resolve(process.cwd(), 'dist/sdk/singleton-iife.d.ts'), 'utf8');
 
@@ -442,5 +448,29 @@ describe('sdk d.ts build artifact', () => {
     expect(sharedTypes).toContain('dispose(): Promise<void>');
     expect(sharedTypes).toContain('[Symbol.asyncDispose](): Promise<void>');
     expect(errors).toContain("'disposed_session'");
+  });
+
+  it('keeps active session snapshot fields readable from declaration consumers', () => {
+    for (const fixture of ['module-browser-usage.ts', 'global-usage.ts']) {
+      const source = readConsumerFixture(fixture);
+
+      expect(source).toContain('me.active_sessions[0].auth_method');
+      expect(source).toContain('me.active_sessions[0].ip');
+      expect(source).toContain('me.active_sessions[0].user_agent');
+      expect(source).toContain(
+        'type IsAny<T> = 0 extends 1 & T ? true : false;',
+      );
+      expect(source).toContain('type AssertNotAny<T extends false> = T;');
+      expect(source).toContain(
+        'type ActiveSession = (typeof me.active_sessions)[number];',
+      );
+      expect(source).toContain('type AuthMethodIsNotAny = AssertNotAny<');
+      expect(source).toContain(
+        "type IpIsNotAny = AssertNotAny<IsAny<ActiveSession['ip']>>;",
+      );
+      expect(source).toContain(
+        "type UserAgentIsNotAny = AssertNotAny<IsAny<ActiveSession['user_agent']>>;",
+      );
+    }
   });
 });

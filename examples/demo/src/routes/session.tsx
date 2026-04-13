@@ -56,6 +56,22 @@ function getSessionCapability(accessToken: string): SessionCapability {
     : 'not-manageable';
 }
 
+function formatNullable(value: string | null | undefined) {
+  if (value == null || value.trim() === '') {
+    return 'Unavailable';
+  }
+
+  return value;
+}
+
+function truncateUserAgent(value: string | null | undefined) {
+  if (value == null || value.trim() === '') {
+    return 'Unavailable';
+  }
+
+  return value.length > 48 ? `${value.slice(0, 45)}...` : value;
+}
+
 export function SessionRoute() {
   const { clearLocalAuthState, config, sdk, session } = useDemo();
   const [me, setMe] = useState<DemoMe | null>(null);
@@ -224,8 +240,11 @@ export function SessionRoute() {
                 <thead>
                   <tr className="border-b border-slate-200 text-left text-slate-600">
                     <th className="px-3 py-2 font-medium">Session ID</th>
+                    <th className="px-3 py-2 font-medium">Auth Method</th>
                     <th className="px-3 py-2 font-medium">Created At</th>
                     <th className="px-3 py-2 font-medium">Expires At</th>
+                    <th className="px-3 py-2 font-medium">IP</th>
+                    <th className="px-3 py-2 font-medium">User-Agent</th>
                     <th className="px-3 py-2 font-medium">Action</th>
                   </tr>
                 </thead>
@@ -239,10 +258,19 @@ export function SessionRoute() {
                           {activeSession.id}
                         </td>
                         <td className="px-3 py-2 font-mono text-xs text-slate-950">
+                          {activeSession.auth_method}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-xs text-slate-950">
                           {activeSession.created_at}
                         </td>
                         <td className="px-3 py-2 font-mono text-xs text-slate-950">
                           {activeSession.expires_at}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-xs text-slate-950">
+                          {formatNullable(activeSession.ip)}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-xs text-slate-950">
+                          {truncateUserAgent(activeSession.user_agent)}
                         </td>
                         <td className="px-3 py-2">
                           <Button

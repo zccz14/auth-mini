@@ -22,10 +22,15 @@ type MockMe = {
   ed25519_credentials: Array<unknown>;
   active_sessions: Array<{
     id: string;
+    auth_method: string;
     created_at: string;
     expires_at: string;
+    ip: string | null;
+    user_agent: string | null;
   }>;
 };
+
+type MockActiveSession = MockMe['active_sessions'][number];
 
 const sdkMocks = vi.hoisted(() => {
   const listeners: Array<(state: MockSessionState) => void> = [];
@@ -97,6 +102,15 @@ function authenticatedSession(): MockSessionState {
     refreshToken: 'refresh-token',
     receivedAt: '2026-04-12T00:00:00.000Z',
     expiresAt: '2026-04-12T01:00:00.000Z',
+  };
+}
+
+function activeSession(overrides: Partial<MockActiveSession> & Pick<MockActiveSession, 'id' | 'created_at' | 'expires_at'>): MockActiveSession {
+  return {
+    auth_method: 'email_otp',
+    ip: null,
+    user_agent: null,
+    ...overrides,
   };
 }
 
@@ -173,8 +187,20 @@ describe('SessionRoute', () => {
       active_sessions: [
         {
           id: 'session-current',
+          auth_method: 'email_otp',
           created_at: '2026-04-12T00:00:00.000Z',
           expires_at: '2026-04-12T01:00:00.000Z',
+          ip: '203.0.113.30',
+          user_agent:
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/537.36 SnapshotBrowser/123.45',
+        },
+        {
+          id: 'session-peer',
+          auth_method: 'webauthn',
+          created_at: '2026-04-12T00:05:00.000Z',
+          expires_at: '2026-04-12T01:05:00.000Z',
+          ip: '',
+          user_agent: '',
         },
       ],
     });
@@ -184,6 +210,13 @@ describe('SessionRoute', () => {
     expect(screen.getByText('Loading current user…')).toBeInTheDocument();
     expect(await screen.findByText(/"email": "user@example.com"/)).toBeInTheDocument();
     expect(screen.getByText('session-current')).toBeInTheDocument();
+    expect(screen.getByText('email_otp')).toBeInTheDocument();
+    expect(screen.getByText('203.0.113.30')).toBeInTheDocument();
+    expect(
+      screen.getByText('Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) ...'),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('Unavailable')).toHaveLength(2);
+    expect(screen.queryByText('null')).not.toBeInTheDocument();
     expect(sdkMocks.meFetch).toHaveBeenCalledTimes(1);
   });
 
@@ -241,16 +274,16 @@ describe('SessionRoute', () => {
         webauthn_credentials: [],
         ed25519_credentials: [],
         active_sessions: [
-          {
+          activeSession({
             id: 'session-current',
             created_at: '2026-04-12T00:00:00.000Z',
             expires_at: '2026-04-12T01:00:00.000Z',
-          },
-          {
+          }),
+          activeSession({
             id: 'session-peer',
             created_at: '2026-04-12T00:05:00.000Z',
             expires_at: '2026-04-12T01:05:00.000Z',
-          },
+          }),
         ],
       })
       .mockResolvedValueOnce({
@@ -259,11 +292,11 @@ describe('SessionRoute', () => {
         webauthn_credentials: [],
         ed25519_credentials: [],
         active_sessions: [
-          {
+          activeSession({
             id: 'session-current',
             created_at: '2026-04-12T00:00:00.000Z',
             expires_at: '2026-04-12T01:00:00.000Z',
-          },
+          }),
         ],
       });
 
@@ -302,16 +335,16 @@ describe('SessionRoute', () => {
         webauthn_credentials: [],
         ed25519_credentials: [],
         active_sessions: [
-          {
+          activeSession({
             id: 'session-current',
             created_at: '2026-04-12T00:00:00.000Z',
             expires_at: '2026-04-12T01:00:00.000Z',
-          },
-          {
+          }),
+          activeSession({
             id: 'session-peer',
             created_at: '2026-04-12T00:05:00.000Z',
             expires_at: '2026-04-12T01:05:00.000Z',
-          },
+          }),
         ],
       })
       .mockRejectedValueOnce(new Error('Unable to refresh current user data.'));
@@ -341,16 +374,16 @@ describe('SessionRoute', () => {
         webauthn_credentials: [],
         ed25519_credentials: [],
         active_sessions: [
-          {
+          activeSession({
             id: 'session-current',
             created_at: '2026-04-12T00:00:00.000Z',
             expires_at: '2026-04-12T01:00:00.000Z',
-          },
-          {
+          }),
+          activeSession({
             id: 'session-peer',
             created_at: '2026-04-12T00:05:00.000Z',
             expires_at: '2026-04-12T01:05:00.000Z',
-          },
+          }),
         ],
       })
       .mockResolvedValueOnce({
@@ -359,11 +392,11 @@ describe('SessionRoute', () => {
         webauthn_credentials: [],
         ed25519_credentials: [],
         active_sessions: [
-          {
+          activeSession({
             id: 'session-current',
             created_at: '2026-04-12T00:00:00.000Z',
             expires_at: '2026-04-12T01:00:00.000Z',
-          },
+          }),
         ],
       });
     const fetchMock = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(new Response(null, { status: 204 }));
@@ -393,16 +426,16 @@ describe('SessionRoute', () => {
         webauthn_credentials: [],
         ed25519_credentials: [],
         active_sessions: [
-          {
+          activeSession({
             id: 'session-current',
             created_at: '2026-04-12T00:00:00.000Z',
             expires_at: '2026-04-12T01:00:00.000Z',
-          },
-          {
+          }),
+          activeSession({
             id: 'session-peer',
             created_at: '2026-04-12T00:05:00.000Z',
             expires_at: '2026-04-12T01:05:00.000Z',
-          },
+          }),
         ],
       })
       .mockResolvedValueOnce({
@@ -411,11 +444,11 @@ describe('SessionRoute', () => {
         webauthn_credentials: [],
         ed25519_credentials: [],
         active_sessions: [
-          {
+          activeSession({
             id: 'session-current',
             created_at: '2026-04-12T00:00:00.000Z',
             expires_at: '2026-04-12T01:00:00.000Z',
-          },
+          }),
         ],
       });
     const fetchMock = vi
