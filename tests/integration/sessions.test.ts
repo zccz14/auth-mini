@@ -936,6 +936,24 @@ describe('session routes', () => {
     const testApp = await createSignedInApp('me@example.com');
     openApps.push(testApp);
 
+    testApp.db
+      .prepare(
+        [
+          'INSERT INTO webauthn_credentials',
+          '(id, user_id, credential_id, public_key, counter, transports, rp_id)',
+          'VALUES (?, ?, ?, ?, ?, ?, ?)',
+        ].join(' '),
+      )
+      .run(
+        'webauthn-credential-1',
+        testApp.userId,
+        'device-1',
+        'stored-public-key',
+        0,
+        'usb',
+        'app.example.com',
+      );
+
     const response = await testApp.app.request('/me', {
       headers: {
         authorization: `Bearer ${testApp.tokens.access_token}`,
@@ -946,7 +964,16 @@ describe('session routes', () => {
     expect(await response.json()).toEqual({
       user_id: testApp.userId,
       email: 'me@example.com',
-      webauthn_credentials: [],
+      webauthn_credentials: [
+        {
+          id: 'webauthn-credential-1',
+          credential_id: 'device-1',
+          transports: ['usb'],
+          rp_id: 'app.example.com',
+          last_used_at: null,
+          created_at: expect.any(String),
+        },
+      ],
       ed25519_credentials: [],
       active_sessions: [
         {

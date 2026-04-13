@@ -22,7 +22,7 @@ type StartCommandInput = {
 const requiredRuntimeSchema = {
   allowed_origins: ['origin'],
   webauthn_challenges: ['rp_id', 'origin'],
-  webauthn_credentials: ['rp_id'],
+  webauthn_credentials: ['rp_id', 'last_used_at'],
 } as const;
 
 export async function runStartCommand(

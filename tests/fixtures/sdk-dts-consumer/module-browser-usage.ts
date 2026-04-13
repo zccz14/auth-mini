@@ -12,11 +12,15 @@ const me: MeResponse | null = sdk.me.get();
 
 if (me) {
   const credentialId: string = me.webauthn_credentials[0].credential_id;
+  const rpId: string = me.webauthn_credentials[0].rp_id;
+  const lastUsedAt: string | null = me.webauthn_credentials[0].last_used_at;
   const transport: string = me.webauthn_credentials[0].transports[0];
   const publicKey: string = me.ed25519_credentials[0].public_key;
   const expiresAt: string = me.active_sessions[0].expires_at;
 
   void credentialId;
+  void rpId;
+  void lastUsedAt;
   void transport;
   void publicKey;
   void expiresAt;

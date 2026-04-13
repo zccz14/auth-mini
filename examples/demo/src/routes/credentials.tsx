@@ -1,7 +1,15 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FlowCard } from '@/components/app/flow-card';
 import { Button } from '@/components/ui/button';
 import { useDemo } from '@/app/providers/demo-provider';
+
+type CredentialCapability = 'manageable' | 'not-manageable' | 'legacy-token';
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null
+    ? (value as Record<string, unknown>)
+    : null;
+}
 
 function truncateMiddle(value: string, edge = 20) {
   return value.length <= edge * 2 + 1
@@ -15,27 +23,38 @@ function decodeBase64Url(value: string) {
   return atob(`${normalized}${'='.repeat(padding)}`);
 }
 
-function getAccessTokenAmr(accessToken: string): string[] {
+function getAccessTokenPayload(accessToken: string) {
   const [, payloadSegment] = accessToken.split('.');
-  if (!payloadSegment) return [];
+  if (!payloadSegment) return null;
 
   try {
-    const payload = JSON.parse(decodeBase64Url(payloadSegment));
-    const amr =
-      typeof payload === 'object' && payload !== null && 'amr' in payload
-        ? (payload as { amr?: unknown }).amr
-        : undefined;
-    return Array.isArray(amr)
-      ? amr.filter((value: unknown): value is string => typeof value === 'string')
-      : [];
+    return asRecord(JSON.parse(decodeBase64Url(payloadSegment)));
   } catch {
-    return [];
+    return null;
   }
 }
 
-function canManageCredentials(accessToken: string) {
-  const amr = getAccessTokenAmr(accessToken);
-  return amr.includes('email_otp') || amr.includes('webauthn');
+function getCredentialCapability(accessToken: string): CredentialCapability {
+  const payload = getAccessTokenPayload(accessToken);
+  if (!payload) {
+    return 'not-manageable';
+  }
+
+  if (!('amr' in payload)) {
+    return 'legacy-token';
+  }
+
+  const amr = Array.isArray(payload.amr)
+    ? payload.amr.filter((value: unknown): value is string => typeof value === 'string')
+    : [];
+
+  if (amr.length === 0) {
+    return 'not-manageable';
+  }
+
+  return amr.includes('email_otp') || amr.includes('webauthn')
+    ? 'manageable'
+    : 'not-manageable';
 }
 
 export function CredentialsRoute() {
@@ -50,6 +69,11 @@ export function CredentialsRoute() {
   });
   const [passkeyError, setPasskeyError] = useState('');
   const [ed25519Error, setEd25519Error] = useState('');
+  const [accessTokenOverride, setAccessTokenOverride] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAccessTokenOverride(null);
+  }, [session.accessToken]);
 
   const authenticated =
     config.status === 'ready' &&
@@ -58,8 +82,44 @@ export function CredentialsRoute() {
     typeof session.accessToken === 'string' &&
     session.accessToken.length > 0;
   const accessToken = typeof session.accessToken === 'string' ? session.accessToken : '';
-  const credentialManageable =
-    authenticated && canManageCredentials(accessToken);
+  const effectiveAccessToken = accessTokenOverride ?? accessToken;
+  const credentialCapability = authenticated
+    ? getCredentialCapability(effectiveAccessToken)
+    : 'not-manageable';
+  const credentialManageable = credentialCapability === 'manageable';
+
+  useEffect(() => {
+    if (
+      !authenticated ||
+      !sdk ||
+      credentialCapability !== 'legacy-token' ||
+      !session.refreshToken ||
+      accessTokenOverride
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void sdk.session
+      .refresh()
+      .then((refreshed) => {
+        if (!cancelled && typeof refreshed.accessToken === 'string') {
+          setAccessTokenOverride(refreshed.accessToken);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    accessTokenOverride,
+    authenticated,
+    credentialCapability,
+    sdk,
+    session.refreshToken,
+  ]);
 
   const email = user?.email ?? '';
   const passkeys = user?.webauthn_credentials ?? [];
@@ -93,7 +153,7 @@ export function CredentialsRoute() {
       const response = await fetch(new URL(input.path, config.authOrigin), {
         method: 'DELETE',
         headers: {
-          authorization: `Bearer ${accessToken}`,
+          authorization: `Bearer ${effectiveAccessToken}`,
         },
       });
 
@@ -182,10 +242,10 @@ export function CredentialsRoute() {
                 <thead>
                   <tr className="border-b border-slate-200 text-slate-500">
                     <th className="py-2 pr-4 font-medium">Credential ID</th>
+                    <th className="py-2 pr-4 font-medium">RP ID</th>
+                    <th className="py-2 pr-4 font-medium">Last Used</th>
                     <th className="py-2 pr-4 font-medium">Created At</th>
-                    {credentialManageable ? (
-                      <th className="py-2 font-medium">Action</th>
-                    ) : null}
+                    <th className="py-2 font-medium">Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -194,9 +254,11 @@ export function CredentialsRoute() {
                       <td className="py-3 pr-4" title={row.credential_id}>
                         {truncateMiddle(row.credential_id)}
                       </td>
+                      <td className="py-3 pr-4">{row.rp_id}</td>
+                      <td className="py-3 pr-4">{row.last_used_at ?? 'Never'}</td>
                       <td className="py-3 pr-4">{row.created_at}</td>
-                      {credentialManageable ? (
-                        <td className="py-3">
+                      <td className="py-3">
+                        {credentialManageable ? (
                           <Button
                             disabled={pendingSections.passkey}
                             aria-label={`Delete passkey ${row.credential_id}`}
@@ -210,8 +272,10 @@ export function CredentialsRoute() {
                           >
                             {pendingSections.passkey ? 'Deleting…' : 'Delete'}
                           </Button>
-                        </td>
-                      ) : null}
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

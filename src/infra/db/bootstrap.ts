@@ -13,7 +13,7 @@ const requiredRuntimeSchema = {
   allowed_origins: ['origin'],
   jwks_keys: ['id', 'kid', 'alg', 'public_jwk', 'private_jwk'],
   webauthn_challenges: ['rp_id', 'origin'],
-  webauthn_credentials: ['rp_id'],
+  webauthn_credentials: ['rp_id', 'last_used_at'],
 } as const;
 
 const expectedJwksColumns = ['id', 'kid', 'alg', 'public_jwk', 'private_jwk'];
@@ -69,6 +69,7 @@ export async function bootstrapDatabase(
     if (hasExistingAppSchema(db)) {
       addMissingSessionAuthMethodColumn(db);
       widenLegacySessionAuthMethodConstraint(db);
+      addMissingWebauthnCredentialLastUsedAtColumn(db);
       assertRequiredTablesAndColumns(db, requiredRuntimeSchema);
       assertJwksSlotSchema(db);
     }
@@ -247,6 +248,17 @@ function widenLegacySessionAuthMethodConstraint(
     `);
     db.exec('DROP TABLE sessions_legacy_auth_method');
   })();
+}
+
+function addMissingWebauthnCredentialLastUsedAtColumn(
+  db: ReturnType<typeof createDatabaseClient>,
+): void {
+  if (
+    tableExists(db, 'webauthn_credentials') &&
+    !tableHasColumn(db, 'webauthn_credentials', 'last_used_at')
+  ) {
+    db.exec('ALTER TABLE webauthn_credentials ADD COLUMN last_used_at TEXT');
+  }
 }
 
 function tableExists(

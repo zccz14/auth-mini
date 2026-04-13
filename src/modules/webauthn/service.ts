@@ -390,13 +390,15 @@ export async function verifyAuthentication(
       throw new InvalidWebauthnAuthenticationError();
     }
 
+    const now = new Date().toISOString();
+
     if (
       !consumeChallengeAndUpdateCredentialCounter(db, {
         requestId: challenge.requestId,
         credentialId: storedCredential.id,
         expectedCounter: storedCredential.counter,
         nextCounter: verification.authenticationInfo.newCounter,
-        now: new Date().toISOString(),
+        now,
       })
     ) {
       throw new InvalidWebauthnAuthenticationError();

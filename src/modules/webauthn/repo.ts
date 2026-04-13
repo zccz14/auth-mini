@@ -21,6 +21,7 @@ type CredentialRow = {
   counter: number;
   transports: string;
   rp_id: string;
+  last_used_at: string | null;
   created_at: string;
 };
 
@@ -44,6 +45,7 @@ export type StoredWebauthnCredential = {
   counter: number;
   transports: string[];
   rpId: string;
+  lastUsedAt: string | null;
   createdAt: string;
 };
 
@@ -168,7 +170,7 @@ export function getCredentialByCredentialId(
   const row = db
     .prepare(
       [
-        'SELECT id, user_id, credential_id, public_key, counter, transports, rp_id, created_at',
+        'SELECT id, user_id, credential_id, public_key, counter, transports, rp_id, last_used_at, created_at',
         'FROM webauthn_credentials',
         'WHERE credential_id = ?',
         'LIMIT 1',
@@ -187,7 +189,7 @@ export function getCredentialByCredentialIdAndRpId(
   const row = db
     .prepare(
       [
-        'SELECT id, user_id, credential_id, public_key, counter, transports, rp_id, created_at',
+        'SELECT id, user_id, credential_id, public_key, counter, transports, rp_id, last_used_at, created_at',
         'FROM webauthn_credentials',
         'WHERE credential_id = ? AND rp_id = ?',
         'LIMIT 1',
@@ -205,7 +207,7 @@ export function getCredentialById(
   const row = db
     .prepare(
       [
-        'SELECT id, user_id, credential_id, public_key, counter, transports, rp_id, created_at',
+        'SELECT id, user_id, credential_id, public_key, counter, transports, rp_id, last_used_at, created_at',
         'FROM webauthn_credentials',
         'WHERE id = ?',
         'LIMIT 1',
@@ -241,7 +243,7 @@ export function consumeChallengeAndUpdateCredentialCounter(
     'UPDATE webauthn_challenges SET consumed_at = ? WHERE request_id = ? AND consumed_at IS NULL',
   );
   const update = db.prepare(
-    'UPDATE webauthn_credentials SET counter = ? WHERE id = ? AND counter = ?',
+    'UPDATE webauthn_credentials SET counter = ?, last_used_at = ? WHERE id = ? AND counter = ?',
   );
   const transaction = db.transaction(
     (
@@ -259,6 +261,7 @@ export function consumeChallengeAndUpdateCredentialCounter(
 
       const updateResult = update.run(
         nextCounter,
+        now,
         credentialId,
         expectedCounter,
       );
@@ -311,6 +314,7 @@ function mapCredential(row: CredentialRow): StoredWebauthnCredential {
     counter: row.counter,
     transports: row.transports ? row.transports.split(',').filter(Boolean) : [],
     rpId: row.rp_id,
+    lastUsedAt: row.last_used_at,
     createdAt: row.created_at,
   };
 }

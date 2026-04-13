@@ -64,6 +64,8 @@ export function createMeResponseParser() {
       id: requireString(record.id),
       credential_id: requireString(record.credential_id),
       transports: requireStringArray(record.transports),
+      rp_id: requireString(record.rp_id),
+      last_used_at: requireNullableString(record.last_used_at),
       created_at: requireString(record.created_at),
     };
   }

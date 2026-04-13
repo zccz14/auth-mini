@@ -3,6 +3,7 @@ import { createSingletonSdk } from '../../src/sdk/singleton-entry.js';
 import { createStateStore } from '../../src/sdk/state.js';
 import type { MeResponse, PersistedSdkState } from '../../src/sdk/types.js';
 import {
+  browserSdkStorageKey,
   createSharedStorageHarness,
   fakeStorage,
   seedBrowserSdkStorage,
@@ -27,6 +28,44 @@ describe('sdk state store', () => {
 
     expect(sdk.getState().status).toBe('recovering');
     expect(sdk.getState().sessionId).toBe('session-1');
+  });
+
+  it('normalizes legacy persisted webauthn metadata during state-store hydration', () => {
+    const storage = fakeStorage();
+    storage.setItem(
+      'auth-mini.sdk',
+      JSON.stringify({
+        sessionId: 'session-1',
+        accessToken: 'access-1',
+        refreshToken: 'refresh-1',
+        receivedAt: '2026-04-03T00:00:00.000Z',
+        expiresAt: '2026-04-03T00:15:00.000Z',
+        me: {
+          user_id: 'u',
+          email: 'u@example.com',
+          webauthn_credentials: [
+            {
+              id: 'cred-1',
+              credential_id: 'device-1',
+              transports: ['usb'],
+              created_at: '2026-04-03T00:00:00.000Z',
+            },
+          ],
+          ed25519_credentials: [],
+          active_sessions: [],
+        },
+      }),
+    );
+
+    const sdk = createStateStore(storage);
+
+    expect(sdk.getState().me?.webauthn_credentials).toEqual([
+      expect.objectContaining({
+        credential_id: 'device-1',
+        rp_id: '',
+        last_used_at: null,
+      }),
+    ]);
   });
 
   it('treats persisted sessions without a sessionId as invalid', () => {
@@ -167,6 +206,8 @@ describe('sdk state store', () => {
             id: 'cred-1',
             credential_id: 'device-1',
             transports: ['usb'],
+            rp_id: 'app.example.com',
+            last_used_at: null,
             created_at: '2026-04-03T00:00:00.000Z',
           },
         ],
@@ -188,7 +229,50 @@ describe('sdk state store', () => {
       snapshot.me.webauthn_credentials[0].credential_id = 'mutated-device';
     }).toThrow();
     expect(sdk.session.getState().me?.webauthn_credentials).toEqual([
-      expect.objectContaining({ credential_id: 'device-1' }),
+      expect.objectContaining({
+        credential_id: 'device-1',
+        rp_id: 'app.example.com',
+        last_used_at: null,
+      }),
+    ]);
+  });
+
+  it('normalizes legacy persisted webauthn metadata in the public singleton api', () => {
+    const storage = fakeStorage();
+    storage.setItem(
+      browserSdkStorageKey('https://auth.example.com'),
+      JSON.stringify({
+        sessionId: 'session-1',
+        refreshToken: 'rt',
+        expiresAt: '2026-04-03T00:00:00.000Z',
+        me: {
+          user_id: 'u',
+          email: 'u@example.com',
+          webauthn_credentials: [
+            {
+              id: 'cred-1',
+              credential_id: 'device-1',
+              transports: ['usb'],
+              created_at: '2026-04-03T00:00:00.000Z',
+            },
+          ],
+          ed25519_credentials: [],
+          active_sessions: [],
+        },
+      }),
+    );
+
+    const sdk = createSingletonSdk({
+      baseUrl: 'https://auth.example.com',
+      storage,
+    });
+
+    expect(sdk.session.getState().me?.webauthn_credentials).toEqual([
+      expect.objectContaining({
+        credential_id: 'device-1',
+        rp_id: '',
+        last_used_at: null,
+      }),
     ]);
   });
 
@@ -238,6 +322,8 @@ describe('sdk state store', () => {
           id: 'cred-1',
           credential_id: 'device-1',
           transports: ['usb'],
+          rp_id: 'app.example.com',
+          last_used_at: null,
           created_at: '2026-04-03T00:00:00.000Z',
         },
       ],
@@ -256,11 +342,17 @@ describe('sdk state store', () => {
 
     me.email = 'mutated@example.com';
     me.webauthn_credentials[0].credential_id = 'mutated-device';
+    me.webauthn_credentials[0].rp_id = 'mutated.example.com';
+    me.webauthn_credentials[0].last_used_at = '2026-04-04T00:00:00.000Z';
 
     expect(Object.isFrozen(me)).toBe(false);
     expect(sdk.getState().me).toMatchObject({ email: 'u@example.com' });
     expect(sdk.getState().me?.webauthn_credentials).toEqual([
-      expect.objectContaining({ credential_id: 'device-1' }),
+      expect.objectContaining({
+        credential_id: 'device-1',
+        rp_id: 'app.example.com',
+        last_used_at: null,
+      }),
     ]);
   });
 
@@ -274,6 +366,8 @@ describe('sdk state store', () => {
           id: 'cred-1',
           credential_id: 'device-1',
           transports: ['usb'],
+          rp_id: 'app.example.com',
+          last_used_at: null,
           created_at: '2026-04-03T00:00:00.000Z',
         },
       ],
@@ -292,11 +386,17 @@ describe('sdk state store', () => {
 
     me.email = 'mutated@example.com';
     me.webauthn_credentials[0].credential_id = 'mutated-device';
+    me.webauthn_credentials[0].rp_id = 'mutated.example.com';
+    me.webauthn_credentials[0].last_used_at = '2026-04-04T00:00:00.000Z';
 
     expect(Object.isFrozen(me)).toBe(false);
     expect(sdk.getState().me).toMatchObject({ email: 'u@example.com' });
     expect(sdk.getState().me?.webauthn_credentials).toEqual([
-      expect.objectContaining({ credential_id: 'device-1' }),
+      expect.objectContaining({
+        credential_id: 'device-1',
+        rp_id: 'app.example.com',
+        last_used_at: null,
+      }),
     ]);
   });
 
@@ -309,6 +409,8 @@ describe('sdk state store', () => {
           id: 'cred-1',
           credential_id: 'device-1',
           transports: ['usb'],
+          rp_id: 'app.example.com',
+          last_used_at: null,
           created_at: '2026-04-03T00:00:00.000Z',
         },
       ],
@@ -332,12 +434,18 @@ describe('sdk state store', () => {
 
     me.email = 'mutated@example.com';
     me.webauthn_credentials[0].credential_id = 'mutated-device';
+    me.webauthn_credentials[0].rp_id = 'mutated.example.com';
+    me.webauthn_credentials[0].last_used_at = '2026-04-04T00:00:00.000Z';
 
     expect(Object.isFrozen(me)).toBe(false);
     expect(sdk.getState().status).toBe('recovering');
     expect(sdk.getState().me).toMatchObject({ email: 'u@example.com' });
     expect(sdk.getState().me?.webauthn_credentials).toEqual([
-      expect.objectContaining({ credential_id: 'device-1' }),
+      expect.objectContaining({
+        credential_id: 'device-1',
+        rp_id: 'app.example.com',
+        last_used_at: null,
+      }),
     ]);
   });
 

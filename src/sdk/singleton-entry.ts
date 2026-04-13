@@ -1111,8 +1111,115 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     try {
       return parseMeResponseImpl(value);
     } catch {
-      return undefined;
+      const record = value && typeof value === 'object' ? value : null;
+
+      if (
+        !record ||
+        typeof record.user_id !== 'string' ||
+        typeof record.email !== 'string' ||
+        !Array.isArray(record.webauthn_credentials) ||
+        !Array.isArray(record.ed25519_credentials) ||
+        !Array.isArray(record.active_sessions)
+      ) {
+        return undefined;
+      }
+
+      const webauthnCredentials = record.webauthn_credentials
+        .map(normalizeWebauthnCredential)
+        .filter((credential) => credential !== null);
+      const ed25519Credentials = record.ed25519_credentials
+        .map(normalizeEd25519Credential)
+        .filter((credential) => credential !== null);
+      const activeSessions = record.active_sessions
+        .map(normalizeActiveSession)
+        .filter((session) => session !== null);
+
+      if (
+        webauthnCredentials.length !== record.webauthn_credentials.length ||
+        ed25519Credentials.length !== record.ed25519_credentials.length ||
+        activeSessions.length !== record.active_sessions.length
+      ) {
+        return undefined;
+      }
+
+      return {
+        user_id: record.user_id,
+        email: record.email,
+        webauthn_credentials: webauthnCredentials,
+        ed25519_credentials: ed25519Credentials,
+        active_sessions: activeSessions,
+      };
     }
+  }
+
+  function normalizeWebauthnCredential(value) {
+    if (!value || typeof value !== 'object') {
+      return null;
+    }
+
+    if (
+      typeof value.id !== 'string' ||
+      typeof value.credential_id !== 'string' ||
+      typeof value.created_at !== 'string'
+    ) {
+      return null;
+    }
+
+    return {
+      ...value,
+      id: value.id,
+      credential_id: value.credential_id,
+      rp_id: typeof value.rp_id === 'string' ? value.rp_id : '',
+      last_used_at:
+        value.last_used_at === null || typeof value.last_used_at === 'string'
+          ? value.last_used_at
+          : null,
+      created_at: value.created_at,
+    };
+  }
+
+  function normalizeEd25519Credential(value) {
+    if (!value || typeof value !== 'object') {
+      return null;
+    }
+
+    if (
+      typeof value.id !== 'string' ||
+      typeof value.name !== 'string' ||
+      typeof value.public_key !== 'string' ||
+      typeof value.created_at !== 'string' ||
+      !(value.last_used_at === null || typeof value.last_used_at === 'string')
+    ) {
+      return null;
+    }
+
+    return {
+      id: value.id,
+      name: value.name,
+      public_key: value.public_key,
+      last_used_at: value.last_used_at,
+      created_at: value.created_at,
+    };
+  }
+
+  function normalizeActiveSession(value) {
+    if (!value || typeof value !== 'object') {
+      return null;
+    }
+
+    if (
+      typeof value.id !== 'string' ||
+      typeof value.created_at !== 'string' ||
+      typeof value.expires_at !== 'string'
+    ) {
+      return null;
+    }
+
+    return {
+      id: value.id,
+      created_at: value.created_at,
+      expires_at: value.expires_at,
+    };
   }
 
   function createSnapshot(status) {
@@ -1146,7 +1253,15 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
       webauthn_credentials: me.webauthn_credentials.map((credential) => ({
         id: credential.id,
         credential_id: credential.credential_id,
-        transports: [...credential.transports],
+        transports: Array.isArray(credential.transports)
+          ? [...credential.transports]
+          : [],
+        rp_id: typeof credential.rp_id === 'string' ? credential.rp_id : '',
+        last_used_at:
+          credential.last_used_at === null ||
+          typeof credential.last_used_at === 'string'
+            ? credential.last_used_at
+            : null,
         created_at: credential.created_at,
       })),
       ed25519_credentials: me.ed25519_credentials.map((credential) => ({

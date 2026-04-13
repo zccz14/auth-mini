@@ -9,6 +9,8 @@ export type MeWebauthnCredential = {
   id: string;
   credential_id: string;
   transports: string[];
+  rp_id: string;
+  last_used_at: string | null;
   created_at: string;
 };
 

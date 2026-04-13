@@ -381,6 +381,7 @@ export async function createMalformedJwksSlotDbPath(input: {
         counter INTEGER NOT NULL DEFAULT 0,
         transports TEXT NOT NULL DEFAULT '',
         rp_id TEXT NOT NULL,
+        last_used_at TEXT,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
 
