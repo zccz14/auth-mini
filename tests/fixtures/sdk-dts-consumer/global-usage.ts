@@ -1,3 +1,6 @@
+type IsAny<T> = 0 extends 1 & T ? true : false;
+type AssertNotAny<T extends false> = T;
+
 window.AuthMini.session.onChange((state) => {
   const status = state.status;
   // @ts-expect-error session snapshots no longer expose me
@@ -36,6 +39,14 @@ async function readMe() {
   const ip: string | null = me.active_sessions[0].ip;
   const userAgent: string | null = me.active_sessions[0].user_agent;
 
+  type ActiveSession = (typeof me.active_sessions)[number];
+  type AuthMethodIsNotAny = AssertNotAny<IsAny<ActiveSession['auth_method']>>;
+  type IpIsNotAny = AssertNotAny<IsAny<ActiveSession['ip']>>;
+  type UserAgentIsNotAny = AssertNotAny<IsAny<ActiveSession['user_agent']>>;
+  const authMethodIsNotAny: AuthMethodIsNotAny = false;
+  const ipIsNotAny: IpIsNotAny = false;
+  const userAgentIsNotAny: UserAgentIsNotAny = false;
+
   void email;
   void emailVerifyResult.accessToken;
   void sessionRefreshResult.refreshToken;
@@ -49,6 +60,9 @@ async function readMe() {
   void expiresAt;
   void ip;
   void userAgent;
+  void authMethodIsNotAny;
+  void ipIsNotAny;
+  void userAgentIsNotAny;
 }
 
 window.AuthMini.email.start({ email: 'user@example.com' });

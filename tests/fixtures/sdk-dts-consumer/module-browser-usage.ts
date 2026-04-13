@@ -5,6 +5,9 @@ import type {
   SessionSnapshot,
 } from 'auth-mini/sdk/browser';
 
+type IsAny<T> = 0 extends 1 & T ? true : false;
+type AssertNotAny<T extends false> = T;
+
 const sdk: AuthMiniApi = createBrowserSdk('https://auth.example.com');
 
 const state: SessionSnapshot = sdk.session.getState();
@@ -43,6 +46,14 @@ const expiresAt: string = me.active_sessions[0].expires_at;
 const ip: string | null = me.active_sessions[0].ip;
 const userAgent: string | null = me.active_sessions[0].user_agent;
 
+type ActiveSession = (typeof me.active_sessions)[number];
+type AuthMethodIsNotAny = AssertNotAny<IsAny<ActiveSession['auth_method']>>;
+type IpIsNotAny = AssertNotAny<IsAny<ActiveSession['ip']>>;
+type UserAgentIsNotAny = AssertNotAny<IsAny<ActiveSession['user_agent']>>;
+const authMethodIsNotAny: AuthMethodIsNotAny = false;
+const ipIsNotAny: IpIsNotAny = false;
+const userAgentIsNotAny: UserAgentIsNotAny = false;
+
 void state;
 void state.accessToken;
 void emailVerifyResult.accessToken;
@@ -59,3 +70,6 @@ void expiresAt;
 void ip;
 void userAgent;
 void me;
+void authMethodIsNotAny;
+void ipIsNotAny;
+void userAgentIsNotAny;
