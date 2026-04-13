@@ -3,6 +3,7 @@
 `openapi.yaml` is the source of truth for the current HTTP contract.
 
 Use this document for narrative examples and `openapi.yaml` for the exact route, auth, and schema contract.
+If you want a typed low-level client for that contract, use `auth-mini/sdk/api` and see [API SDK integration](../integration/api-sdk.md).
 
 ## Public endpoints
 

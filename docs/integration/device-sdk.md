@@ -2,6 +2,9 @@
 
 Use `auth-mini/sdk/device` for Node.js clients (or other runtimes that provide Node's `node:crypto` APIs) that hold an Ed25519 private key seed locally and want an isolated memory-only session.
 
+For the low-level HTTP API contract, see `openapi.yaml` and [`auth-mini/sdk/api`](./api-sdk.md).
+This guide covers higher-level runtime behavior for the device SDK only.
+
 ## Recommended: module/device-subpath usage
 
 ```ts

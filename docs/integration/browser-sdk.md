@@ -6,6 +6,9 @@ auth-mini supports two SDK integration paths:
 - Device SDK: import `createDeviceSdk` from `auth-mini/sdk/device` for isolated memory-only sessions in non-browser clients. See [Device SDK integration](./device-sdk.md).
 - Browser singleton script path: load `GET /sdk/singleton-iife.js`, which exposes `window.AuthMini` and infers its API base URL from the script `src`.
 
+For the low-level HTTP API contract, see `openapi.yaml` and [`auth-mini/sdk/api`](./api-sdk.md).
+This guide covers higher-level runtime behavior for the browser SDK only.
+
 ## Recommended: module/browser-subpath usage
 
 Import the browser SDK module and construct it with your auth server origin:
