@@ -227,6 +227,10 @@ type OpenApiDocument = {
 
 type OpenApiOperation = {
   parameters?: unknown;
+  responses?: Record<
+    string,
+    { content?: Record<string, { examples?: unknown }> }
+  >;
   security?: unknown;
 };
 
