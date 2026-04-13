@@ -42,6 +42,7 @@ const sdkMocks = vi.hoisted(() => {
   };
 
   const meFetch = vi.fn<() => Promise<MockMe>>();
+  const refresh = vi.fn();
   const logout = vi.fn(async () => {
     sessionState.current = {
       status: 'anonymous',
@@ -68,7 +69,7 @@ const sdkMocks = vi.hoisted(() => {
           listeners.push(listener);
           return vi.fn();
         }),
-        refresh: vi.fn(),
+        refresh,
         logout,
       },
       webauthn: { register: vi.fn(), authenticate: vi.fn() },
@@ -77,6 +78,7 @@ const sdkMocks = vi.hoisted(() => {
     listeners,
     logout,
     meFetch,
+    refresh,
     sessionState,
   };
 });
@@ -91,11 +93,34 @@ function authenticatedSession(): MockSessionState {
     status: 'authenticated',
     authenticated: true,
     sessionId: 'session-current',
-    accessToken: 'access-token',
+    accessToken: fakeAccessToken(['email_otp']),
     refreshToken: 'refresh-token',
     receivedAt: '2026-04-12T00:00:00.000Z',
     expiresAt: '2026-04-12T01:00:00.000Z',
   };
+}
+
+function encodeJwtSegment(value: unknown) {
+  return btoa(JSON.stringify(value))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/u, '');
+}
+
+function fakeAccessToken(amr: string[]) {
+  return [
+    encodeJwtSegment({ alg: 'none', typ: 'JWT' }),
+    encodeJwtSegment({ amr }),
+    'signature',
+  ].join('.');
+}
+
+function fakeLegacyAccessToken() {
+  return [
+    encodeJwtSegment({ alg: 'none', typ: 'JWT' }),
+    encodeJwtSegment({ sub: 'user-1' }),
+    'signature',
+  ].join('.');
 }
 
 function renderRoute() {
@@ -114,6 +139,7 @@ describe('SessionRoute', () => {
     sdkMocks.createDemoSdk.mockClear();
     sdkMocks.logout.mockClear();
     sdkMocks.meFetch.mockReset();
+    sdkMocks.refresh.mockReset();
     sdkMocks.listeners.length = 0;
     sdkMocks.sessionState.current = {
       status: 'anonymous',
@@ -299,6 +325,62 @@ describe('SessionRoute', () => {
     expect(await screen.findByText('Session updated, but current user data could not be refreshed.')).toBeInTheDocument();
     expect(screen.queryByText('Unable to kick session.')).not.toBeInTheDocument();
     expect(screen.getByText('session-peer')).toBeInTheDocument();
+  });
+
+  it('refreshes a legacy token before kicking a peer session', async () => {
+    const user = userEvent.setup();
+    sdkMocks.sessionState.current = {
+      ...authenticatedSession(),
+      accessToken: fakeLegacyAccessToken(),
+    };
+    sdkMocks.refresh.mockResolvedValueOnce({ accessToken: fakeAccessToken(['email_otp']) });
+    sdkMocks.meFetch
+      .mockResolvedValueOnce({
+        user_id: 'user-1',
+        email: 'user@example.com',
+        webauthn_credentials: [],
+        ed25519_credentials: [],
+        active_sessions: [
+          {
+            id: 'session-current',
+            created_at: '2026-04-12T00:00:00.000Z',
+            expires_at: '2026-04-12T01:00:00.000Z',
+          },
+          {
+            id: 'session-peer',
+            created_at: '2026-04-12T00:05:00.000Z',
+            expires_at: '2026-04-12T01:05:00.000Z',
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        user_id: 'user-1',
+        email: 'user@example.com',
+        webauthn_credentials: [],
+        ed25519_credentials: [],
+        active_sessions: [
+          {
+            id: 'session-current',
+            created_at: '2026-04-12T00:00:00.000Z',
+            expires_at: '2026-04-12T01:00:00.000Z',
+          },
+        ],
+      });
+    const fetchMock = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderRoute();
+
+    await screen.findByText('session-peer');
+    await user.click(screen.getAllByRole('button', { name: 'Kick' })[1]!);
+
+    expect(sdkMocks.refresh).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    const request = new Request('https://auth.example.com', init);
+    expect(request.headers.get('authorization')).toBe(`Bearer ${fakeAccessToken(['email_otp'])}`);
+    await waitFor(() => {
+      expect(screen.queryByText('session-peer')).not.toBeInTheDocument();
+    });
   });
 
   it('shows a kick error and allows retry', async () => {

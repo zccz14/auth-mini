@@ -161,6 +161,19 @@ describe('Ed25519Route', () => {
     });
   });
 
+  it('shows the /me error without falling through to an empty credentials panel', async () => {
+    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
+    sdkMocks.sessionState.current = authenticatedSession();
+    sdkMocks.meFetch.mockRejectedValueOnce(new Error('Unable to load current credentials.'));
+
+    renderRoute();
+
+    const currentCredentialsPanel = getJsonPanel('current credentials');
+    expect(await screen.findByText('Unable to load current credentials.')).toBeInTheDocument();
+    expect(within(currentCredentialsPanel).queryByText('[]')).not.toBeInTheDocument();
+    expect(within(currentCredentialsPanel).getByText('null')).toBeInTheDocument();
+  });
+
   it('refreshes local /me after registration succeeds', async () => {
     const user = userEvent.setup();
     localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');

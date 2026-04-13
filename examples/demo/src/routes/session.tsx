@@ -8,6 +8,54 @@ type DemoMe = Awaited<
   ReturnType<NonNullable<ReturnType<typeof useDemo>['sdk']>['me']['fetch']>
 >;
 
+type SessionCapability = 'manageable' | 'not-manageable' | 'legacy-token';
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function decodeBase64Url(value: string) {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padding = (4 - (normalized.length % 4)) % 4;
+  return atob(`${normalized}${'='.repeat(padding)}`);
+}
+
+function getAccessTokenPayload(accessToken: string) {
+  const [, payloadSegment] = accessToken.split('.');
+  if (!payloadSegment) return null;
+
+  try {
+    return asRecord(JSON.parse(decodeBase64Url(payloadSegment)));
+  } catch {
+    return null;
+  }
+}
+
+function getSessionCapability(accessToken: string): SessionCapability {
+  const payload = getAccessTokenPayload(accessToken);
+  if (!payload) {
+    return 'not-manageable';
+  }
+
+  if (!('amr' in payload)) {
+    return 'legacy-token';
+  }
+
+  const amr = Array.isArray(payload.amr)
+    ? payload.amr.filter((value: unknown): value is string => typeof value === 'string')
+    : [];
+
+  if (amr.length === 0) {
+    return 'not-manageable';
+  }
+
+  return amr.includes('email_otp') || amr.includes('webauthn')
+    ? 'manageable'
+    : 'not-manageable';
+}
+
 export function SessionRoute() {
   const { clearLocalAuthState, config, sdk, session } = useDemo();
   const [me, setMe] = useState<DemoMe | null>(null);
@@ -84,11 +132,25 @@ export function SessionRoute() {
     setPendingSessionId(sessionId);
 
     try {
+      let accessToken = session.accessToken;
+      const capability = getSessionCapability(accessToken);
+
+      if (capability === 'legacy-token' && session.refreshToken) {
+        const refreshed = await sdk.session.refresh();
+        if (typeof refreshed.accessToken === 'string') {
+          accessToken = refreshed.accessToken;
+        }
+      }
+
+      if (getSessionCapability(accessToken) !== 'manageable') {
+        throw new Error('Unable to kick session.');
+      }
+
       const response = await fetch(
         new URL(`/session/${sessionId}/logout`, config.authOrigin),
         {
           method: 'POST',
-          headers: { authorization: `Bearer ${session.accessToken}` },
+          headers: { authorization: `Bearer ${accessToken}` },
         },
       );
 

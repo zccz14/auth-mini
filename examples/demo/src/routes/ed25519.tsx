@@ -380,7 +380,10 @@ export function Ed25519Route() {
             ) : null}
             {meError ? <p className="text-sm text-rose-600">{meError}</p> : null}
             {meWarning ? <p className="text-sm text-amber-700">{meWarning}</p> : null}
-            <JsonPanel title="current credentials" value={me?.ed25519_credentials ?? []} />
+            <JsonPanel
+              title="current credentials"
+              value={meError ? null : (me?.ed25519_credentials ?? [])}
+            />
           </div>
         </div>
       </div>
