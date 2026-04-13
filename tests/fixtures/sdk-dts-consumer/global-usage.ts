@@ -31,7 +31,10 @@ async function readMe() {
   const rpId = me.webauthn_credentials[0].rp_id;
   const lastUsedAt = me.webauthn_credentials[0].last_used_at;
   const publicKey = me.ed25519_credentials[0].public_key;
+  const authMethod: string = me.active_sessions[0].auth_method;
   const expiresAt = me.active_sessions[0].expires_at;
+  const ip: string | null = me.active_sessions[0].ip;
+  const userAgent: string | null = me.active_sessions[0].user_agent;
 
   void email;
   void emailVerifyResult.accessToken;
@@ -42,7 +45,10 @@ async function readMe() {
   void rpId;
   void lastUsedAt;
   void publicKey;
+  void authMethod;
   void expiresAt;
+  void ip;
+  void userAgent;
 }
 
 window.AuthMini.email.start({ email: 'user@example.com' });

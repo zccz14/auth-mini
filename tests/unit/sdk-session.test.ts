@@ -131,6 +131,41 @@ describe('sdk session flows', () => {
     expect(sdk.session.getState()).not.toHaveProperty('me');
   });
 
+  it('me.fetch returns active session snapshot fields', async () => {
+    const sdk = createAuthMiniForTest({
+      storage: fakeAuthenticatedStorage(),
+      fetch: vi.fn().mockResolvedValueOnce(
+        jsonResponse({
+          user_id: 'u1',
+          email: 'updated@example.com',
+          webauthn_credentials: [],
+          ed25519_credentials: [],
+          active_sessions: [
+            {
+              id: 'session-1',
+              auth_method: 'webauthn',
+              created_at: '2026-04-13T00:00:00.000Z',
+              expires_at: '2026-04-13T01:00:00.000Z',
+              ip: '203.0.113.20',
+              user_agent: 'SDKAgent/1.0',
+            },
+          ],
+        }),
+      ),
+    });
+
+    const me = await sdk.me.fetch();
+
+    expect(me.active_sessions[0]).toEqual({
+      id: 'session-1',
+      auth_method: 'webauthn',
+      created_at: '2026-04-13T00:00:00.000Z',
+      expires_at: '2026-04-13T01:00:00.000Z',
+      ip: '203.0.113.20',
+      user_agent: 'SDKAgent/1.0',
+    });
+  });
+
   it('rejects /me payloads that omit ed25519_credentials', async () => {
     const sdk = createAuthMiniForTest({
       storage: fakeAuthenticatedStorage(),
@@ -158,6 +193,33 @@ describe('sdk session flows', () => {
           email: 'updated@example.com',
           webauthn_credentials: [],
           ed25519_credentials: [],
+        }),
+      ),
+    });
+
+    await expect(sdk.me.fetch()).rejects.toMatchObject({
+      error: 'request_failed',
+    });
+  });
+
+  it('rejects /me payloads that omit active_sessions auth_method', async () => {
+    const sdk = createAuthMiniForTest({
+      storage: fakeAuthenticatedStorage(),
+      fetch: vi.fn().mockResolvedValueOnce(
+        jsonResponse({
+          user_id: 'u1',
+          email: 'updated@example.com',
+          webauthn_credentials: [],
+          ed25519_credentials: [],
+          active_sessions: [
+            {
+              id: 'session-1',
+              created_at: '...',
+              expires_at: '...',
+              ip: null,
+              user_agent: null,
+            },
+          ],
         }),
       ),
     });

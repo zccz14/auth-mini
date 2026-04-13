@@ -4,6 +4,12 @@ import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
+const readConsumerFixture = (fileName: string) =>
+  readFileSync(
+    resolve(process.cwd(), 'tests/fixtures/sdk-dts-consumer', fileName),
+    'utf8',
+  );
+
 const readBuiltDeclaration = () =>
   readFileSync(resolve(process.cwd(), 'dist/sdk/singleton-iife.d.ts'), 'utf8');
 
@@ -442,5 +448,15 @@ describe('sdk d.ts build artifact', () => {
     expect(sharedTypes).toContain('dispose(): Promise<void>');
     expect(sharedTypes).toContain('[Symbol.asyncDispose](): Promise<void>');
     expect(errors).toContain("'disposed_session'");
+  });
+
+  it('keeps active session snapshot fields readable from declaration consumers', () => {
+    for (const fixture of ['module-browser-usage.ts', 'global-usage.ts']) {
+      const source = readConsumerFixture(fixture);
+
+      expect(source).toContain('me.active_sessions[0].auth_method');
+      expect(source).toContain('me.active_sessions[0].ip');
+      expect(source).toContain('me.active_sessions[0].user_agent');
+    }
   });
 });
