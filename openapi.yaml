@@ -4,7 +4,9 @@ info:
   version: 0.1.9
   description: Current public HTTP surface for auth-mini.
 servers:
-  - url: http://localhost
+  - url: http://localhost:7777
+security:
+  - bearerAuth: []
 paths:
   /email/start:
     post:
@@ -185,7 +187,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Ed25519ChallengeResponse'
         '400':
-          description: Request body or credential is invalid
+          description: Request body or authentication challenge is invalid
           content:
             application/json:
               schema:
@@ -194,9 +196,9 @@ paths:
                 invalid_request:
                   value:
                     error: invalid_request
-                invalid_ed25519_credential:
+                invalid_ed25519_authentication:
                   value:
-                    error: invalid_ed25519_credential
+                    error: invalid_ed25519_authentication
   /ed25519/verify:
     post:
       tags:

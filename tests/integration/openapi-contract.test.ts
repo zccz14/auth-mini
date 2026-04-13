@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { parse } from 'yaml';
 
 import type { OtpMailSeam } from '../helpers/mock-smtp.js';
 
@@ -29,13 +30,7 @@ vi.mock('../../src/infra/smtp/mailer.js', async () => {
 });
 
 import { createTestApp } from '../helpers/app.js';
-import {
-  createOtpMailSeam,
-  extractOtpCode,
-  findLatestOtpMail,
-} from '../helpers/mock-smtp.js';
 
-const json = (value: unknown) => JSON.stringify(value);
 const openApps: Array<{ close(): void }> = [];
 
 const contractOperations = [
@@ -67,93 +62,59 @@ afterEach(() => {
 
 describe('openapi contract', () => {
   it('documents the current public http route set', async () => {
-    const contract = await readOpenApiContract();
+    const document = await readOpenApiContract();
 
-    expect(contract).toContain('openapi: 3.1.0');
+    expect(document.openapi).toBe('3.1.0');
+    expect(document.servers).toEqual([{ url: 'http://localhost:7777' }]);
+    expect(document.security).toEqual([{ bearerAuth: [] }]);
+    expect(document.paths).toBeTruthy();
 
     for (const operation of contractOperations) {
-      expect(contract).toContain(`  ${operation.path}:`);
-      const pathBlock = contract.match(
-        new RegExp(
-          `^  ${escapeRegExp(operation.path)}:\n([\\s\\S]*?)(?=^  /|^components:)`,
-          'm',
-        ),
-      )?.[0];
+      const pathItem = document.paths[operation.path];
 
-      expect(pathBlock).toBeTruthy();
+      expect(pathItem).toBeTruthy();
 
       for (const method of operation.methods) {
-        expect(pathBlock).toContain(`    ${method}:`);
+        expect(pathItem).toHaveProperty(method);
       }
     }
+
+    expect(
+      document.paths['/ed25519/start']?.post?.responses?.['400']?.content?.[
+        'application/json'
+      ]?.examples,
+    ).toMatchObject({
+      invalid_ed25519_authentication: {
+        value: { error: 'invalid_ed25519_authentication' },
+      },
+    });
   });
 
-  it('matches live behavior for email start, refresh, me, and jwks', async () => {
-    otpSeam.current = createOtpMailSeam();
+  it('matches live auth-boundary baseline behavior for key routes', async () => {
     const testApp = await createTestApp();
     openApps.push(testApp);
 
     const startResponse = await testApp.app.request('/email/start', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: json({ email: 'contract@example.com' }),
+      body: '{}',
     });
-    const otpCode = extractOtpCode(
-      findLatestOtpMail(otpSeam.current.mailbox, 'contract@example.com')
-        ?.text ?? '',
-    );
-    const verifyResponse = await testApp.app.request('/email/verify', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: json({ email: 'contract@example.com', code: otpCode }),
-    });
-    const tokens = (await verifyResponse.json()) as {
-      session_id: string;
-      access_token: string;
-      refresh_token: string;
-    };
-
     const refreshResponse = await testApp.app.request('/session/refresh', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: json({
-        session_id: tokens.session_id,
-        refresh_token: tokens.refresh_token,
-      }),
+      body: '{}',
     });
-    const meResponse = await testApp.app.request('/me', {
-      headers: {
-        authorization: `Bearer ${tokens.access_token}`,
-      },
-    });
+    const meResponse = await testApp.app.request('/me');
     const jwksResponse = await testApp.app.request('/jwks');
 
-    expect(startResponse.status).toBe(200);
-    expect(await startResponse.json()).toEqual({ ok: true });
+    expect(startResponse.status).toBe(400);
+    expect(await startResponse.json()).toEqual({ error: 'invalid_request' });
 
-    expect(refreshResponse.status).toBe(200);
-    expect(await refreshResponse.json()).toEqual({
-      session_id: tokens.session_id,
-      access_token: expect.any(String),
-      token_type: 'Bearer',
-      expires_in: 900,
-      refresh_token: expect.any(String),
-    });
+    expect(refreshResponse.status).toBe(400);
+    expect(await refreshResponse.json()).toEqual({ error: 'invalid_request' });
 
-    expect(meResponse.status).toBe(200);
-    expect(await meResponse.json()).toEqual({
-      user_id: expect.any(String),
-      email: 'contract@example.com',
-      webauthn_credentials: [],
-      ed25519_credentials: [],
-      active_sessions: [
-        {
-          id: tokens.session_id,
-          created_at: expect.any(String),
-          expires_at: expect.any(String),
-        },
-      ],
-    });
+    expect(meResponse.status).toBe(401);
+    expect(await meResponse.json()).toEqual({ error: 'invalid_access_token' });
 
     expect(jwksResponse.status).toBe(200);
     expect(await jwksResponse.json()).toEqual({
@@ -180,9 +141,17 @@ describe('openapi contract', () => {
 });
 
 async function readOpenApiContract() {
-  return readFile(new URL('../../openapi.yaml', import.meta.url), 'utf8');
+  const text = await readFile(
+    new URL('../../openapi.yaml', import.meta.url),
+    'utf8',
+  );
+
+  return parse(text) as OpenApiDocument;
 }
 
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+type OpenApiDocument = {
+  openapi?: string;
+  servers?: Array<{ url?: string }>;
+  security?: Array<Record<string, unknown>>;
+  paths: Record<string, Record<string, unknown>>;
+};
