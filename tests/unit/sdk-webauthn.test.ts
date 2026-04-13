@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createAuthMiniInternal } from '../../src/sdk/singleton-entry.js';
+import type { NavigatorCredentialsLike } from '../../src/sdk/types.js';
 import {
   cancelledNavigatorCredentials,
   countRefreshCalls,
@@ -17,7 +18,7 @@ function createWebauthnSdkForTest(
   options: {
     fetch?: typeof globalThis.fetch;
     now?: () => number;
-    navigatorCredentials?: CredentialContainer;
+    navigatorCredentials?: NavigatorCredentialsLike;
     publicKeyCredential?: unknown;
     storage?: Storage;
   } = {},
@@ -312,7 +313,7 @@ describe('sdk webauthn flows', () => {
           return fakeNavigatorCredentials().create(options);
         },
       },
-      storage: fakeAuthenticatedStorage(undefined, {
+      storage: fakeAuthenticatedStorage({
         accessToken: 'access-token',
         refreshToken: 'refresh-token',
         receivedAt: '2026-04-03T00:00:00.000Z',
