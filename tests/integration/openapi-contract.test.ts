@@ -79,6 +79,20 @@ describe('openapi contract', () => {
       }
     }
 
+    for (const path of publicRoutePaths) {
+      expect(document.paths[path]).toBeTruthy();
+      expect(firstOperation(document.paths[path])).toMatchObject({
+        security: [],
+      });
+    }
+
+    for (const path of authenticatedRoutePaths) {
+      expect(document.paths[path]).toBeTruthy();
+      expect(firstOperation(document.paths[path])).toMatchObject({
+        security: [{ bearerAuth: [] }],
+      });
+    }
+
     expect(
       document.paths['/ed25519/start']?.post?.responses?.['400']?.content?.[
         'application/json'
@@ -87,6 +101,19 @@ describe('openapi contract', () => {
       invalid_ed25519_authentication: {
         value: { error: 'invalid_ed25519_authentication' },
       },
+    });
+
+    expect(
+      document.components?.schemas?.RegistrationCredentialJson?.properties
+        ?.authenticatorAttachment,
+    ).toMatchObject({
+      type: 'string',
+    });
+    expect(
+      document.components?.schemas?.AuthenticationCredentialJson?.properties
+        ?.authenticatorAttachment,
+    ).toMatchObject({
+      type: 'string',
     });
   });
 
@@ -151,7 +178,36 @@ async function readOpenApiContract() {
 
 type OpenApiDocument = {
   openapi?: string;
+  components?: {
+    schemas?: Record<string, { properties?: Record<string, unknown> }>;
+  };
   servers?: Array<{ url?: string }>;
   security?: Array<Record<string, unknown>>;
   paths: Record<string, Record<string, unknown>>;
 };
+
+const publicRoutePaths = [
+  '/email/start',
+  '/email/verify',
+  '/session/refresh',
+  '/ed25519/start',
+  '/ed25519/verify',
+  '/webauthn/authenticate/options',
+  '/webauthn/authenticate/verify',
+  '/jwks',
+] as const;
+
+const authenticatedRoutePaths = [
+  '/me',
+  '/session/logout',
+  '/session/{session_id}/logout',
+  '/ed25519/credentials',
+  '/ed25519/credentials/{id}',
+  '/webauthn/register/options',
+  '/webauthn/register/verify',
+  '/webauthn/credentials/{id}',
+] as const;
+
+function firstOperation(pathItem: Record<string, unknown>) {
+  return Object.values(pathItem)[0] as { security?: unknown };
+}

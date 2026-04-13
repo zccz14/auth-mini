@@ -10,6 +10,7 @@ security:
 paths:
   /email/start:
     post:
+      security: []
       tags:
         - email
       operationId: startEmailAuth
@@ -44,6 +45,7 @@ paths:
                     error: smtp_temporarily_unavailable
   /email/verify:
     post:
+      security: []
       tags:
         - email
       operationId: verifyEmailAuth
@@ -90,6 +92,7 @@ paths:
           $ref: '#/components/responses/InvalidAccessToken'
   /session/refresh:
     post:
+      security: []
       tags:
         - session
       operationId: refreshSession
@@ -169,6 +172,7 @@ paths:
           $ref: '#/components/responses/InsufficientAuthenticationMethod'
   /ed25519/start:
     post:
+      security: []
       tags:
         - ed25519
       operationId: startEd25519Authentication
@@ -201,6 +205,7 @@ paths:
                     error: invalid_ed25519_authentication
   /ed25519/verify:
     post:
+      security: []
       tags:
         - ed25519
       operationId: verifyEd25519Authentication
@@ -430,6 +435,7 @@ paths:
                 error: duplicate_credential
   /webauthn/authenticate/options:
     post:
+      security: []
       tags:
         - webauthn
       operationId: createWebauthnAuthenticationOptions
@@ -462,6 +468,7 @@ paths:
                     error: invalid_webauthn_authentication
   /webauthn/authenticate/verify:
     post:
+      security: []
       tags:
         - webauthn
       operationId: verifyWebauthnAuthentication
@@ -517,6 +524,7 @@ paths:
           $ref: '#/components/responses/CredentialNotFound'
   /jwks:
     get:
+      security: []
       tags:
         - jwks
       operationId: listJwks
@@ -949,6 +957,8 @@ components:
         type:
           type: string
           const: public-key
+        authenticatorAttachment:
+          type: string
         clientExtensionResults:
           type: object
           additionalProperties: true
@@ -987,6 +997,8 @@ components:
         type:
           type: string
           const: public-key
+        authenticatorAttachment:
+          type: string
         response:
           type: object
           additionalProperties: false
