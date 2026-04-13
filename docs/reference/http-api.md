@@ -1,5 +1,9 @@
 # HTTP API reference
 
+`openapi.yaml` is the source of truth for the current HTTP contract.
+
+Use `auth-mini/sdk/api` when you want the typed low-level client for this surface. The browser and device SDK docs describe higher-level integrations, not the raw HTTP contract.
+
 ## Public endpoints
 
 - `POST /email/start` sends an OTP to the email address.
