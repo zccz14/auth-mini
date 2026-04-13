@@ -1547,20 +1547,32 @@ describe('session routes', () => {
     const storedSession = verifyDb
       .prepare('SELECT auth_method, ip, user_agent FROM sessions WHERE id = ?')
       .get(verifyBody.session_id);
-    verifyDb
-      .prepare('UPDATE sessions SET ip = ?, user_agent = ? WHERE id = ?')
-      .run('198.51.100.99', 'RuntimeProxyClient/2.0', verifyBody.session_id);
-    const mutatedStoredSession = verifyDb
-      .prepare('SELECT auth_method, ip, user_agent FROM sessions WHERE id = ?')
-      .get(verifyBody.session_id);
     verifyDb.close();
 
-    const meResponse = await fetch(`http://127.0.0.1:${port}/me`, {
+    const initialMeResponse = await fetch(`http://127.0.0.1:${port}/me`, {
       headers: {
         authorization: `Bearer ${verifyBody.access_token}`,
         'x-forwarded-for': '203.0.113.88',
       },
     });
+    const initialMeBody = await initialMeResponse.json();
+
+    const mutateDb = createDatabaseClient(dbPath);
+    mutateDb
+      .prepare('UPDATE sessions SET ip = ?, user_agent = ? WHERE id = ?')
+      .run('198.51.100.99', 'RuntimeProxyClient/2.0', verifyBody.session_id);
+    const mutatedStoredSession = mutateDb
+      .prepare('SELECT auth_method, ip, user_agent FROM sessions WHERE id = ?')
+      .get(verifyBody.session_id);
+    mutateDb.close();
+
+    const mutatedMeResponse = await fetch(`http://127.0.0.1:${port}/me`, {
+      headers: {
+        authorization: `Bearer ${verifyBody.access_token}`,
+        'x-forwarded-for': '203.0.113.77',
+      },
+    });
+    const mutatedMeBody = await mutatedMeResponse.json();
 
     expect(verifyResponse.status).toBe(200);
     expect(storedSession).toEqual({
@@ -1568,13 +1580,24 @@ describe('session routes', () => {
       ip: '198.51.100.31',
       user_agent: 'RuntimeProxyClient/1.0',
     });
+    expect(initialMeResponse.status).toBe(200);
+    expect(initialMeBody).toMatchObject({
+      active_sessions: [
+        {
+          id: verifyBody.session_id,
+          auth_method: 'email_otp',
+          ip: '198.51.100.31',
+          user_agent: 'RuntimeProxyClient/1.0',
+        },
+      ],
+    });
     expect(mutatedStoredSession).toEqual({
       auth_method: 'email_otp',
       ip: '198.51.100.99',
       user_agent: 'RuntimeProxyClient/2.0',
     });
-    expect(meResponse.status).toBe(200);
-    expect(await meResponse.json()).toMatchObject({
+    expect(mutatedMeResponse.status).toBe(200);
+    expect(mutatedMeBody).toMatchObject({
       active_sessions: [
         {
           id: verifyBody.session_id,
