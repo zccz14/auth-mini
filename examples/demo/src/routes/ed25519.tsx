@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { FlowCard } from '@/components/app/flow-card';
 import { JsonPanel } from '@/components/app/json-panel';
 import { Button } from '@/components/ui/button';
@@ -41,6 +41,7 @@ export function Ed25519Route() {
   const [me, setMe] = useState<DemoMe | null>(null);
   const [loadingMe, setLoadingMe] = useState(false);
   const [meError, setMeError] = useState('');
+  const loadMeRequestIdRef = useRef(0);
 
   const setupReady = config.status === 'ready' && Boolean(sdk);
   const hasRegisterSession =
@@ -63,6 +64,9 @@ export function Ed25519Route() {
     pendingAction === null;
 
   const loadMe = useCallback(async () => {
+    const requestId = loadMeRequestIdRef.current + 1;
+    loadMeRequestIdRef.current = requestId;
+
     if (!sdk || config.status !== 'ready' || !session.authenticated) {
       setMe(null);
       setMeError('');
@@ -74,8 +78,17 @@ export function Ed25519Route() {
     setMeError('');
 
     try {
-      setMe(await sdk.me.fetch());
+      const nextMe = await sdk.me.fetch();
+      if (loadMeRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      setMe(nextMe);
     } catch (cause) {
+      if (loadMeRequestIdRef.current !== requestId) {
+        return;
+      }
+
       setMe(null);
       setMeError(
         cause instanceof Error
@@ -83,9 +96,11 @@ export function Ed25519Route() {
           : 'Unable to load current credentials.',
       );
     } finally {
-      setLoadingMe(false);
+      if (loadMeRequestIdRef.current === requestId) {
+        setLoadingMe(false);
+      }
     }
-  }, [config.status, sdk, session.authenticated]);
+  }, [config.status, sdk, session.authenticated, session.sessionId]);
 
   useEffect(() => {
     void loadMe();

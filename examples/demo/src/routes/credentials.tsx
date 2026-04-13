@@ -66,6 +66,7 @@ export function CredentialsRoute() {
   const [me, setMe] = useState<DemoMe | null>(null);
   const [loadingMe, setLoadingMe] = useState(false);
   const [meError, setMeError] = useState('');
+  const loadMeRequestIdRef = useRef(0);
   const [pendingSections, setPendingSections] = useState({
     passkey: false,
     ed25519: false,
@@ -96,6 +97,9 @@ export function CredentialsRoute() {
   const credentialManageable = credentialCapability === 'manageable';
 
   const loadMe = useCallback(async () => {
+    const requestId = loadMeRequestIdRef.current + 1;
+    loadMeRequestIdRef.current = requestId;
+
     if (!authenticated || !sdk || config.status !== 'ready') {
       setMe(null);
       setMeError('');
@@ -107,16 +111,27 @@ export function CredentialsRoute() {
     setMeError('');
 
     try {
-      setMe(await sdk.me.fetch());
+      const nextMe = await sdk.me.fetch();
+      if (loadMeRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      setMe(nextMe);
     } catch (cause) {
+      if (loadMeRequestIdRef.current !== requestId) {
+        return;
+      }
+
       setMe(null);
       setMeError(
         cause instanceof Error ? cause.message : 'Unable to load current account.',
       );
     } finally {
-      setLoadingMe(false);
+      if (loadMeRequestIdRef.current === requestId) {
+        setLoadingMe(false);
+      }
     }
-  }, [authenticated, config.status, sdk]);
+  }, [authenticated, config.status, sdk, session.sessionId]);
 
   useEffect(() => {
     void loadMe();
@@ -195,9 +210,9 @@ export function CredentialsRoute() {
         throw new Error(`Delete failed with status ${response.status}`);
       }
 
-       await loadMe();
-     } catch (cause) {
-       setError(cause instanceof Error ? cause.message : 'Delete failed');
+      await loadMe();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Delete failed');
     } finally {
       pendingSectionsRef.current[input.section] = false;
       setPendingSections((current) => ({

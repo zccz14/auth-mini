@@ -171,6 +171,40 @@ describe('SessionRoute', () => {
     expect(screen.getByText('No active sessions.')).toBeInTheDocument();
   });
 
+  it('ignores a stale /me response after local auth state is cleared', async () => {
+    const user = userEvent.setup();
+    sdkMocks.sessionState.current = authenticatedSession();
+
+    let resolveMe: ((value: MockMe) => void) | undefined;
+    sdkMocks.meFetch.mockImplementationOnce(
+      () =>
+        new Promise<MockMe>((resolve) => {
+          resolveMe = resolve;
+        }),
+    );
+
+    renderRoute();
+
+    expect(screen.getByText('Loading current user…')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Clear local auth state' }));
+
+    expect(sdkMocks.logout).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/"status": "anonymous"/)).toBeInTheDocument();
+
+    resolveMe?.({
+      user_id: 'user-1',
+      email: 'stale@example.com',
+      webauthn_credentials: [],
+      ed25519_credentials: [],
+      active_sessions: [],
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText(/stale@example.com/)).not.toBeInTheDocument();
+    });
+    expect(screen.getByText('No active sessions.')).toBeInTheDocument();
+  });
+
   it('kicks one session and refreshes the local /me snapshot', async () => {
     const user = userEvent.setup();
     sdkMocks.sessionState.current = authenticatedSession();

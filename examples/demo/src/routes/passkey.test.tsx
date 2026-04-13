@@ -166,13 +166,21 @@ describe('PasskeyRoute', () => {
       receivedAt: '2026-04-11T00:00:00.000Z',
       expiresAt: '2026-04-11T01:00:00.000Z',
     };
-    sdkMocks.meFetch.mockResolvedValueOnce({
-      user_id: 'user-1',
-      email: 'user@example.com',
-      webauthn_credentials: [],
-      ed25519_credentials: [],
-      active_sessions: [],
-    });
+    sdkMocks.meFetch
+      .mockResolvedValueOnce({
+        user_id: 'user-1',
+        email: 'user@example.com',
+        webauthn_credentials: [],
+        ed25519_credentials: [],
+        active_sessions: [],
+      })
+      .mockResolvedValueOnce({
+        user_id: 'user-1',
+        email: 'updated@example.com',
+        webauthn_credentials: [{ id: 'cred-1' }],
+        ed25519_credentials: [],
+        active_sessions: [],
+      });
     sdkMocks.passkeyRegister.mockResolvedValueOnce({ ok: true, credentialId: 'cred-1' });
 
     renderRoute();
@@ -181,6 +189,8 @@ describe('PasskeyRoute', () => {
     await user.click(screen.getByRole('button', { name: 'Register passkey' }));
 
     expect(sdkMocks.passkeyRegister).toHaveBeenCalledTimes(1);
+    expect(sdkMocks.meFetch).toHaveBeenCalledTimes(2);
+    expect(await screen.findByText(/"email": "updated@example.com"/)).toBeInTheDocument();
     expect(await screen.findByText(/"credentialId": "cred-1"/)).toBeInTheDocument();
   });
 });

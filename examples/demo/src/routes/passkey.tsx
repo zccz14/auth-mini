@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { FlowCard } from '@/components/app/flow-card';
 import { JsonPanel } from '@/components/app/json-panel';
 import { Button } from '@/components/ui/button';
@@ -18,11 +18,15 @@ export function PasskeyRoute() {
   const [me, setMe] = useState<DemoMe | null>(null);
   const [loadingMe, setLoadingMe] = useState(false);
   const [meError, setMeError] = useState('');
+  const loadMeRequestIdRef = useRef(0);
 
   const setupReady = config.status === 'ready' && Boolean(sdk);
   const canRegister = setupReady && session.authenticated && me !== null;
 
   const loadMe = useCallback(async () => {
+    const requestId = loadMeRequestIdRef.current + 1;
+    loadMeRequestIdRef.current = requestId;
+
     if (!sdk || config.status !== 'ready' || !session.authenticated) {
       setMe(null);
       setMeError('');
@@ -34,16 +38,27 @@ export function PasskeyRoute() {
     setMeError('');
 
     try {
-      setMe(await sdk.me.fetch());
+      const nextMe = await sdk.me.fetch();
+      if (loadMeRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      setMe(nextMe);
     } catch (cause) {
+      if (loadMeRequestIdRef.current !== requestId) {
+        return;
+      }
+
       setMe(null);
       setMeError(
         cause instanceof Error ? cause.message : 'Unable to load current user.',
       );
     } finally {
-      setLoadingMe(false);
+      if (loadMeRequestIdRef.current === requestId) {
+        setLoadingMe(false);
+      }
     }
-  }, [config.status, sdk, session.authenticated]);
+  }, [config.status, sdk, session.authenticated, session.sessionId]);
 
   useEffect(() => {
     void loadMe();
@@ -61,6 +76,9 @@ export function PasskeyRoute() {
         action === 'register'
           ? await sdk.passkey.register()
           : await sdk.passkey.authenticate();
+      if (action === 'register') {
+        await loadMe();
+      }
       setLastResult(result);
     } catch (cause) {
       setError(
