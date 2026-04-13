@@ -23,6 +23,10 @@
     "./sdk/device": {
       "types": "./dist/sdk/device.d.ts",
       "import": "./dist/sdk/device.js"
+    },
+    "./sdk/api": {
+      "types": "./dist/sdk/api.d.ts",
+      "import": "./dist/sdk/api.js"
     }
   },
   "bin": {
@@ -44,6 +48,8 @@
   },
   "scripts": {
     "build": "node scripts/build-sdk.mjs",
+    "generate:api": "openapi-ts",
+    "check:generated:api": "node scripts/check-generated-api-sdk.mjs",
     "test": "npm run typecheck && npm run test:unit && npm run test:integration",
     "test:unit": "node scripts/run-tests.js",
     "demo:build": "npm run build && npm --prefix examples/demo run build",
@@ -68,6 +74,7 @@
     "zod": "^4.1.11"
   },
   "devDependencies": {
+    "@hey-api/openapi-ts": "0.96.0",
     "@eslint/js": "^9.38.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.6.1",
@@ -79,6 +86,7 @@
     "prettier": "^3.6.2",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.46.0",
-    "vitest": "^4.0.0"
+    "vitest": "^4.0.0",
+    "yaml": "2.8.3"
   }
 }
