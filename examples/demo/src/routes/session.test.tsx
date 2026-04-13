@@ -188,8 +188,8 @@ describe('SessionRoute', () => {
           auth_method: 'webauthn',
           created_at: '2026-04-12T00:05:00.000Z',
           expires_at: '2026-04-12T01:05:00.000Z',
-          ip: null,
-          user_agent: null,
+          ip: '',
+          user_agent: '',
         },
       ],
     });
@@ -201,8 +201,10 @@ describe('SessionRoute', () => {
     expect(screen.getByText('session-current')).toBeInTheDocument();
     expect(screen.getByText('email_otp')).toBeInTheDocument();
     expect(screen.getByText('203.0.113.30')).toBeInTheDocument();
-    expect(screen.getByText(/Mozilla\/5\.0 .*\.\.\./)).toBeInTheDocument();
-    expect(screen.getAllByText('Unavailable')).not.toHaveLength(0);
+    expect(
+      screen.getByText('Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) ...'),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('Unavailable')).toHaveLength(2);
     expect(screen.queryByText('null')).not.toBeInTheDocument();
     expect(sdkMocks.meFetch).toHaveBeenCalledTimes(1);
   });

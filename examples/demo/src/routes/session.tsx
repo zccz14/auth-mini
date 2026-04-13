@@ -57,11 +57,15 @@ function getSessionCapability(accessToken: string): SessionCapability {
 }
 
 function formatNullable(value: string | null | undefined) {
-  return value == null ? 'Unavailable' : value;
+  if (value == null || value.trim() === '') {
+    return 'Unavailable';
+  }
+
+  return value;
 }
 
 function truncateUserAgent(value: string | null | undefined) {
-  if (value == null) {
+  if (value == null || value.trim() === '') {
     return 'Unavailable';
   }
 
