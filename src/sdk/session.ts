@@ -2,6 +2,7 @@ import { createSdkError } from './errors.js';
 import type { HttpClient } from './http.js';
 import { parseMeResponse } from './me.js';
 import type {
+  MeResponse,
   PersistedSdkState,
   SessionSnapshot,
   SessionResult,
@@ -13,14 +14,7 @@ type StateStore = {
   onChange(listener: (state: SessionSnapshot) => void): () => void;
   applyPersistedState(next: PersistedSdkState | null): void;
   setAuthenticated(next: SessionResult): void;
-  setRecovering(next: {
-    sessionId: string | null;
-    accessToken: string | null;
-    refreshToken: string;
-    receivedAt: string;
-    expiresAt: string;
-    me: SessionSnapshot['me'];
-  }): void;
+  setRecovering(next: PersistedSdkState): void;
   setAnonymous(): void;
   setAnonymousLocal(): void;
 };
@@ -34,40 +28,18 @@ export function createSessionController(input: {
   waitForExternalStorage?: (timeoutMs: number) => Promise<void>;
 }) {
   let refreshPromise: Promise<SessionResult> | null = null;
+  let meFetchPromise: Promise<MeResponse> | null = null;
   let supersededRecoveryPromise: Promise<void> | null = null;
 
   return {
     getState: () => input.state.getState(),
     onChange: (listener: (state: SessionSnapshot) => void) =>
       input.state.onChange(listener),
-    async acceptSessionResponse(
-      response: unknown,
-      options: {
-        clearOnMeFailure?: 'always' | 'auth-invalidating';
-      } = {},
-    ): Promise<SessionResult> {
+    async acceptSessionResponse(response: unknown): Promise<SessionResult> {
       const session = normalizeTokenResponse(response, input.now);
 
-      input.state.setRecovering({
-        ...session,
-        me: input.state.getState().me,
-      });
-
-      try {
-        const me = await fetchMe(session.accessToken);
-        const result = { ...session, me };
-
-        input.state.setAuthenticated(result);
-        return result;
-      } catch (error) {
-        if (
-          options.clearOnMeFailure !== 'auth-invalidating' ||
-          isAuthInvalidatingError(error)
-        ) {
-          input.state.setAnonymous();
-        }
-        throw error;
-      }
+      input.state.setAuthenticated(session);
+      return session;
     },
     async refresh(): Promise<SessionResult> {
       if (refreshPromise) {
@@ -84,6 +56,14 @@ export function createSessionController(input: {
         throw createSdkError('missing_session', 'Missing session id');
       }
 
+      input.state.setRecovering({
+        sessionId: snapshot.sessionId,
+        accessToken: snapshot.accessToken,
+        refreshToken: snapshot.refreshToken,
+        receivedAt: snapshot.receivedAt,
+        expiresAt: snapshot.expiresAt,
+      });
+
       refreshPromise = (async () => {
         try {
           const response = await input.http.postJson<unknown>(
@@ -94,9 +74,7 @@ export function createSessionController(input: {
             },
           );
 
-          return await this.acceptSessionResponse(response, {
-            clearOnMeFailure: 'auth-invalidating',
-          });
+          return await this.acceptSessionResponse(response);
         } catch (error) {
           if (isSessionSupersededError(error)) {
             const recoveryPromise = startSupersededRecovery(snapshot);
@@ -139,7 +117,6 @@ export function createSessionController(input: {
           return;
         }
 
-        const me = await fetchMe(snapshot.accessToken);
         input.state.setAuthenticated({
           sessionId: snapshot.sessionId,
           accessToken: snapshot.accessToken,
@@ -147,7 +124,6 @@ export function createSessionController(input: {
           receivedAt:
             snapshot.receivedAt ?? new Date(input.now()).toISOString(),
           expiresAt: snapshot.expiresAt ?? new Date(input.now()).toISOString(),
-          me,
         });
       } catch (error) {
         if (isSessionSupersededError(error)) {
@@ -171,33 +147,39 @@ export function createSessionController(input: {
         }
       }
     },
-    async reloadMe(): Promise<SessionSnapshot['me']> {
-      const snapshot = input.state.getState();
-
-      if (!snapshot.refreshToken) {
-        throw createSdkError('missing_session', 'Missing refresh token');
+    async fetchMe(): Promise<MeResponse> {
+      if (meFetchPromise) {
+        return meFetchPromise;
       }
 
-      if (!snapshot.accessToken || needsRefresh(snapshot, input.now())) {
-        return (await this.refresh()).me;
+      meFetchPromise = (async () => {
+        const snapshot = input.state.getState();
+
+        if (!snapshot.refreshToken) {
+          throw createSdkError('missing_session', 'Missing refresh token');
+        }
+
+        const accessToken =
+          !snapshot.accessToken || needsRefresh(snapshot, input.now())
+            ? (await this.refresh()).accessToken
+            : snapshot.accessToken;
+
+        if (!accessToken) {
+          throw createSdkError('missing_session', 'Missing access token');
+        }
+
+        return parseMeResponse(
+          await input.http.getJson('/me', {
+            accessToken,
+          }),
+        );
+      })();
+
+      try {
+        return await meFetchPromise;
+      } finally {
+        meFetchPromise = null;
       }
-
-      if (!snapshot.sessionId) {
-        throw createSdkError('missing_session', 'Missing session id');
-      }
-
-      const me = await fetchMe(snapshot.accessToken);
-
-      input.state.setAuthenticated({
-        sessionId: snapshot.sessionId,
-        accessToken: snapshot.accessToken,
-        refreshToken: snapshot.refreshToken,
-        receivedAt: snapshot.receivedAt ?? new Date(input.now()).toISOString(),
-        expiresAt: snapshot.expiresAt ?? new Date(input.now()).toISOString(),
-        me,
-      });
-
-      return me;
     },
     async logout(): Promise<void> {
       const snapshot = input.state.getState();
@@ -233,19 +215,6 @@ export function createSessionController(input: {
       }
     },
   };
-
-  async function fetchMe(accessToken: string | null) {
-    if (!accessToken) {
-      throw createSdkError('missing_session', 'Missing access token');
-    }
-
-    return parseMeResponse(
-      await input.http.getJson<SessionResult['me']>('/me', {
-        accessToken,
-      }),
-    );
-  }
-
   async function startSupersededRecovery(snapshot: SessionSnapshot) {
     input.state.setRecovering({
       sessionId: snapshot.sessionId,
@@ -253,7 +222,6 @@ export function createSessionController(input: {
       refreshToken: snapshot.refreshToken ?? '',
       receivedAt: snapshot.receivedAt ?? new Date(input.now()).toISOString(),
       expiresAt: snapshot.expiresAt ?? new Date(input.now()).toISOString(),
-      me: snapshot.me,
     });
 
     const timeoutMs = input.recoveryTimeoutMs ?? 50;
@@ -299,7 +267,6 @@ export function createSessionController(input: {
 
     if (
       shared.accessToken &&
-      shared.me &&
       !needsRefresh(
         {
           status: 'recovering',
@@ -309,7 +276,6 @@ export function createSessionController(input: {
           refreshToken: shared.refreshToken,
           receivedAt: shared.receivedAt,
           expiresAt: shared.expiresAt,
-          me: shared.me,
         },
         input.now(),
       )
@@ -320,7 +286,6 @@ export function createSessionController(input: {
         refreshToken: shared.refreshToken,
         receivedAt: shared.receivedAt ?? new Date(input.now()).toISOString(),
         expiresAt: shared.expiresAt ?? new Date(input.now()).toISOString(),
-        me: shared.me,
       });
       return 'usable';
     }

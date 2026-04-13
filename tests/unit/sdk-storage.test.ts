@@ -20,7 +20,7 @@ function createStorage(raw: unknown): Storage {
 }
 
 describe('readPersistedSdkState', () => {
-  it('rejects persisted me when ed25519_credentials is missing', () => {
+  it('ignores legacy persisted me fields and returns only session tokens', () => {
     expect(
       readPersistedSdkState(
         createStorage({
@@ -37,30 +37,16 @@ describe('readPersistedSdkState', () => {
           },
         }),
       ),
-    ).toBeNull();
+    ).toEqual({
+      sessionId: 'session-1',
+      accessToken: 'access-1',
+      refreshToken: 'refresh-1',
+      receivedAt: '2026-04-13T00:00:00.000Z',
+      expiresAt: '2026-04-13T01:00:00.000Z',
+    });
   });
 
-  it('rejects persisted me when active_sessions is missing', () => {
-    expect(
-      readPersistedSdkState(
-        createStorage({
-          sessionId: 'session-1',
-          accessToken: 'access-1',
-          refreshToken: 'refresh-1',
-          receivedAt: '2026-04-13T00:00:00.000Z',
-          expiresAt: '2026-04-13T01:00:00.000Z',
-          me: {
-            user_id: 'user-1',
-            email: 'user@example.com',
-            webauthn_credentials: [],
-            ed25519_credentials: [],
-          },
-        }),
-      ),
-    ).toBeNull();
-  });
-
-  it('rejects persisted me when nested credential items are malformed', () => {
+  it('ignores malformed legacy persisted me payloads', () => {
     expect(
       readPersistedSdkState(
         createStorage({
@@ -82,6 +68,29 @@ describe('readPersistedSdkState', () => {
               },
             ],
             active_sessions: [],
+          },
+        }),
+      ),
+    ).toEqual({
+      sessionId: 'session-1',
+      accessToken: 'access-1',
+      refreshToken: 'refresh-1',
+      receivedAt: '2026-04-13T00:00:00.000Z',
+      expiresAt: '2026-04-13T01:00:00.000Z',
+    });
+  });
+
+  it('rejects invalid session token fields', () => {
+    expect(
+      readPersistedSdkState(
+        createStorage({
+          sessionId: 'session-1',
+          accessToken: { value: 'access-1' },
+          refreshToken: 'refresh-1',
+          receivedAt: '2026-04-13T00:00:00.000Z',
+          expiresAt: '2026-04-13T01:00:00.000Z',
+          me: {
+            user_id: 'user-1',
           },
         }),
       ),

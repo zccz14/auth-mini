@@ -64,24 +64,30 @@ describe('device module sdk', () => {
       now: () => Date.parse('2026-04-12T00:00:00.000Z'),
     });
 
+    expect(typeof sdk.me.fetch).toBe('function');
+    expect(sdk.me).not.toHaveProperty('get');
+    expect(sdk.me).not.toHaveProperty('reload');
     await expect(sdk.ready).resolves.toBeUndefined();
     await expect(sdk.session.refresh()).resolves.toMatchObject({
       sessionId: 'session-2',
       accessToken: 'access-2',
     });
+    await expect(sdk.me.fetch()).resolves.toMatchObject({
+      email: 'device@example.com',
+    });
+    expect(sdk.session.getState()).not.toHaveProperty('me');
     await expect(sdk.session.logout()).resolves.toBeUndefined();
 
     expect(seenHrefs).toEqual([
       'https://sdk.example.test:9443/auth/base/ed25519/start',
       'https://sdk.example.test:9443/auth/base/ed25519/verify',
-      'https://sdk.example.test:9443/auth/base/me',
       'https://sdk.example.test:9443/auth/base/session/refresh',
       'https://sdk.example.test:9443/auth/base/me',
       'https://sdk.example.test:9443/auth/base/session/logout',
     ]);
   });
 
-  it('auto-authenticates on construction and resolves ready after /me', async () => {
+  it('auto-authenticates on construction before any explicit /me fetch', async () => {
     const fetch = vi.fn(async (input: URL | RequestInfo) => {
       const url = input instanceof URL ? input : new URL(String(input));
 
@@ -101,16 +107,6 @@ describe('device module sdk', () => {
         });
       }
 
-      if (url.pathname === '/me') {
-        return jsonResponse({
-          user_id: 'user-1',
-          email: 'device@example.com',
-          webauthn_credentials: [],
-          ed25519_credentials: [],
-          active_sessions: [],
-        });
-      }
-
       throw new Error(`Unhandled path: ${url.pathname}`);
     });
 
@@ -124,7 +120,8 @@ describe('device module sdk', () => {
 
     await expect(sdk.ready).resolves.toBeUndefined();
     expect(sdk.session.getState()).toMatchObject({ status: 'authenticated' });
-    expect(sdk.me.get()).toMatchObject({ email: 'device@example.com' });
+    expect(sdk.session.getState()).not.toHaveProperty('me');
+    expect(fetch).toHaveBeenCalledTimes(2);
     expect(readJsonBody(fetch, '/ed25519/start')).toEqual({
       credential_id: '550e8400-e29b-41d4-a716-446655440000',
     });
@@ -193,15 +190,6 @@ describe('device module sdk', () => {
             refresh_token: 'refresh-1',
             expires_in: 900,
           }),
-        )
-        .mockResolvedValueOnce(
-          jsonResponse({
-            user_id: 'user-1',
-            email: 'device@example.com',
-            webauthn_credentials: [],
-            ed25519_credentials: [],
-            active_sessions: [],
-          }),
         ),
     });
 
@@ -266,7 +254,7 @@ describe('device module sdk', () => {
     await sdk.dispose();
     await sdk.dispose();
 
-    await expect(sdk.me.reload()).rejects.toMatchObject({
+    await expect(sdk.me.fetch()).rejects.toMatchObject({
       code: 'disposed_session',
     });
     await expect(sdk.session.refresh()).rejects.toMatchObject({
@@ -275,21 +263,19 @@ describe('device module sdk', () => {
     await expect(sdk.session.logout()).rejects.toMatchObject({
       code: 'disposed_session',
     });
-    expect(sdk.me.get()).toBeNull();
     expect(sdk.session.getState()).toMatchObject({
       status: 'anonymous',
       authenticated: false,
       sessionId: null,
       accessToken: null,
       refreshToken: null,
-      me: null,
     });
   });
 
   it('async dispose keeps pending auth completion from reviving the instance', async () => {
-    let resolveMe!: (value: Response) => void;
-    const meGate = new Promise<Response>((resolve) => {
-      resolveMe = resolve;
+    let resolveVerify!: (value: Response) => void;
+    const verifyGate = new Promise<Response>((resolve) => {
+      resolveVerify = resolve;
     });
 
     const fetch = vi.fn(async (input: URL | RequestInfo) => {
@@ -303,16 +289,7 @@ describe('device module sdk', () => {
       }
 
       if (url.pathname === '/ed25519/verify') {
-        return jsonResponse({
-          session_id: 'session-1',
-          access_token: 'access-1',
-          refresh_token: 'refresh-1',
-          expires_in: 900,
-        });
-      }
-
-      if (url.pathname === '/me') {
-        return meGate;
+        return verifyGate;
       }
 
       if (url.pathname === '/session/logout') {
@@ -332,13 +309,12 @@ describe('device module sdk', () => {
 
     await sdk[Symbol.asyncDispose]();
 
-    resolveMe(
+    resolveVerify(
       jsonResponse({
-        user_id: 'user-1',
-        email: 'device@example.com',
-        webauthn_credentials: [],
-        ed25519_credentials: [],
-        active_sessions: [],
+        session_id: 'session-1',
+        access_token: 'access-1',
+        refresh_token: 'refresh-1',
+        expires_in: 900,
       }),
     );
 
@@ -349,7 +325,6 @@ describe('device module sdk', () => {
       sessionId: null,
       accessToken: null,
       refreshToken: null,
-      me: null,
     });
   });
 
@@ -425,7 +400,6 @@ describe('device module sdk', () => {
       sessionId: null,
       accessToken: null,
       refreshToken: null,
-      me: null,
     });
   });
 });

@@ -13,17 +13,12 @@ type DemoSessionSnapshot = {
   refreshToken: string | null;
   receivedAt: string | null;
   expiresAt: string | null;
-  me: {
-    user_id: string;
-    email: string;
-    webauthn_credentials: Array<unknown>;
-    active_sessions: Array<unknown>;
-  } | null;
 };
 
 const sdkMocks = vi.hoisted(() => {
   const listeners: Array<(state: DemoSessionSnapshot) => void> = [];
   const unsubscribe = vi.fn();
+  const sdkStates: DemoSessionSnapshot[] = [];
   const sessionState = {
     current: {
       status: 'anonymous',
@@ -33,7 +28,6 @@ const sdkMocks = vi.hoisted(() => {
       refreshToken: null,
       receivedAt: null,
       expiresAt: null,
-      me: null,
     } as DemoSessionSnapshot,
   };
 
@@ -51,20 +45,27 @@ const sdkMocks = vi.hoisted(() => {
       refreshToken: null,
       receivedAt: null,
       expiresAt: null,
-      me: null,
     };
   });
 
-  const createBrowserSdk = vi.fn(() => ({
-    session: { getState: () => sessionState.current, onChange, logout },
-    me: { get: () => sessionState.current.me, reload: vi.fn() },
-  }));
+  const createBrowserSdk = vi.fn(() => {
+    const snapshot = sdkStates.shift();
+    if (snapshot) {
+      sessionState.current = snapshot;
+    }
+
+    return {
+      session: { getState: () => sessionState.current, onChange, logout },
+      me: { fetch: vi.fn() },
+    };
+  });
 
   return {
     createBrowserSdk,
     listeners,
     logout,
     onChange,
+    sdkStates,
     sessionState,
     unsubscribe,
   };
@@ -80,7 +81,20 @@ function Probe() {
     <div>
       <span data-testid="config-status">{demo.config.status}</span>
       <span data-testid="session-status">{demo.session.status}</span>
-      <span data-testid="user-email">{demo.user?.email ?? 'none'}</span>
+      <span data-testid="has-user">{'user' in demo ? 'yes' : 'no'}</span>
+      <button
+        onClick={() =>
+          void demo.adoptDemoSession({
+            session_id: 'session-2',
+            access_token: 'next-access-token',
+            refresh_token: 'next-refresh-token',
+            expires_in: 900,
+            token_type: 'Bearer',
+          })
+        }
+      >
+        Adopt demo session
+      </button>
       <button onClick={() => void demo.clearLocalAuthState()}>
         Clear local auth state
       </button>
@@ -96,6 +110,7 @@ describe('DemoProvider', () => {
     sdkMocks.logout.mockClear();
     sdkMocks.unsubscribe.mockClear();
     sdkMocks.listeners.length = 0;
+    sdkMocks.sdkStates.length = 0;
     sdkMocks.sessionState.current = {
       status: 'anonymous',
       authenticated: false,
@@ -104,7 +119,6 @@ describe('DemoProvider', () => {
       refreshToken: null,
       receivedAt: null,
       expiresAt: null,
-      me: null,
     };
   });
 
@@ -123,7 +137,7 @@ describe('DemoProvider', () => {
 
     expect(screen.getByTestId('config-status')).toHaveTextContent('ready');
     expect(screen.getByTestId('session-status')).toHaveTextContent('anonymous');
-    expect(screen.getByTestId('user-email')).toHaveTextContent('none');
+    expect(screen.getByTestId('has-user')).toHaveTextContent('no');
     expect(sdkMocks.createBrowserSdk).toHaveBeenCalledWith(
       'https://auth.zccz14.com',
     );
@@ -159,12 +173,6 @@ describe('DemoProvider', () => {
       refreshToken: 'refresh-token',
       receivedAt: '2026-04-11T00:00:00.000Z',
       expiresAt: '2026-04-11T01:00:00.000Z',
-      me: {
-        user_id: 'user-1',
-        email: 'first@example.com',
-        webauthn_credentials: [],
-        active_sessions: [],
-      },
     };
 
     render(
@@ -183,9 +191,7 @@ describe('DemoProvider', () => {
     expect(screen.getByTestId('session-status')).toHaveTextContent(
       'authenticated',
     );
-    expect(screen.getByTestId('user-email')).toHaveTextContent(
-      'first@example.com',
-    );
+    expect(screen.getByTestId('has-user')).toHaveTextContent('no');
     expect(sdkMocks.createBrowserSdk).toHaveBeenCalledWith(
       'https://auth.example.com',
     );
@@ -201,13 +207,68 @@ describe('DemoProvider', () => {
         refreshToken: null,
         receivedAt: null,
         expiresAt: null,
-        me: null,
       };
       sdkMocks.listeners[0]?.(sdkMocks.sessionState.current);
     });
 
     expect(screen.getByTestId('session-status')).toHaveTextContent('anonymous');
-    expect(screen.getByTestId('user-email')).toHaveTextContent('none');
+    expect(screen.getByTestId('has-user')).toHaveTextContent('no');
+  });
+
+  it('adopts persisted session tokens by reattaching an authenticated sdk without exposing user', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
+    sdkMocks.sdkStates.push(
+      {
+        status: 'anonymous',
+        authenticated: false,
+        sessionId: null,
+        accessToken: null,
+        refreshToken: null,
+        receivedAt: null,
+        expiresAt: null,
+      },
+      {
+        status: 'authenticated',
+        authenticated: true,
+        sessionId: 'session-2',
+        accessToken: 'next-access-token',
+        refreshToken: 'next-refresh-token',
+        receivedAt: '2026-04-11T00:00:00.000Z',
+        expiresAt: '2026-04-11T01:00:00.000Z',
+      },
+    );
+
+    render(
+      <DemoProvider
+        initialLocation={{
+          hash: '#/',
+          search: '',
+          origin: 'https://demo.example.com',
+        }}
+      >
+        <Probe />
+      </DemoProvider>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Adopt demo session' }));
+
+    expect(sdkMocks.createBrowserSdk).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId('session-status')).toHaveTextContent(
+      'authenticated',
+    );
+    expect(screen.getByTestId('has-user')).toHaveTextContent('no');
+    expect(
+      JSON.parse(
+        localStorage.getItem('auth-mini.sdk:https://auth.example.com/') ?? '',
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        sessionId: 'session-2',
+        accessToken: 'next-access-token',
+        refreshToken: 'next-refresh-token',
+      }),
+    );
   });
 
   it('creates the sdk from effect lifecycle and cleans subscriptions under StrictMode replay', () => {
@@ -308,12 +369,6 @@ describe('DemoProvider', () => {
       refreshToken: 'refresh-token',
       receivedAt: '2026-04-11T00:00:00.000Z',
       expiresAt: '2026-04-11T01:00:00.000Z',
-      me: {
-        user_id: 'user-1',
-        email: 'first@example.com',
-        webauthn_credentials: [],
-        active_sessions: [],
-      },
     };
 
     render(
@@ -360,12 +415,6 @@ describe('DemoProvider', () => {
       refreshToken: 'refresh-token',
       receivedAt: '2026-04-11T00:00:00.000Z',
       expiresAt: '2026-04-11T01:00:00.000Z',
-      me: {
-        user_id: 'user-1',
-        email: 'first@example.com',
-        webauthn_credentials: [],
-        active_sessions: [],
-      },
     };
 
     render(

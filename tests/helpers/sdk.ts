@@ -1,4 +1,11 @@
-import { createAuthMiniInternal } from '../../src/sdk/singleton-entry.js';
+import { createEmailModule } from '../../src/sdk/email.js';
+import { createSdkError } from '../../src/sdk/errors.js';
+import { createHttpClient } from '../../src/sdk/http.js';
+import {
+  createSessionController,
+  needsRefresh,
+} from '../../src/sdk/session.js';
+import { createStateStore } from '../../src/sdk/state.js';
 import {
   clearPersistedSdkState,
   readPersistedSdkState,
@@ -42,7 +49,6 @@ export function seedBrowserSdkStorage(
       refreshToken: null,
       receivedAt: null,
       expiresAt: null,
-      me: null,
       ...seed,
     }),
   );
@@ -60,7 +66,6 @@ export function fakeStorage(seed: StorageSeed = {}): Storage {
         refreshToken: null,
         receivedAt: null,
         expiresAt: null,
-        me: null,
         ...seed,
       }),
     );
@@ -97,17 +102,6 @@ export function fakeAuthenticatedStorage(
     refreshToken: 'refresh-token',
     receivedAt: '2026-04-03T00:00:00.000Z',
     expiresAt: '2026-04-03T00:15:00.000Z',
-    me: null,
-    ...seed,
-  });
-}
-
-export function fakeAuthenticatedStorageWithMe(
-  me: MeResponse = createMe(),
-  seed: Partial<PersistedSdkState> = {},
-): Storage {
-  return fakeAuthenticatedStorage({
-    me,
     ...seed,
   });
 }
@@ -133,16 +127,128 @@ export function createDevicePrivateKeySeed(): string {
 }
 
 export function createAuthMiniForTest(options: TestSdkOptions = {}) {
-  return createAuthMiniInternal({
-    autoRecover: false,
+  const storage = options.storage ?? fakeStorage();
+  const now = options.now ?? (() => Date.parse('2026-04-03T00:00:00.000Z'));
+  const autoRecover = options.autoRecover ?? false;
+  const state = createStateStore(storage);
+  const externalStorageListeners = new Set<() => void>();
+  const storageSync = options.storageSync;
+
+  storageSync?.subscribe((next) => {
+    if (
+      next?.sessionId &&
+      next.refreshToken &&
+      next.accessToken &&
+      !needsRefresh(
+        {
+          status: 'recovering',
+          authenticated: false,
+          sessionId: next.sessionId,
+          accessToken: next.accessToken,
+          refreshToken: next.refreshToken,
+          receivedAt: next.receivedAt,
+          expiresAt: next.expiresAt,
+        },
+        now(),
+      )
+    ) {
+      state.setAuthenticated({
+        sessionId: next.sessionId,
+        accessToken: next.accessToken,
+        refreshToken: next.refreshToken,
+        receivedAt: next.receivedAt ?? new Date(now()).toISOString(),
+        expiresAt: next.expiresAt ?? new Date(now()).toISOString(),
+      });
+    } else {
+      state.applyPersistedState(next);
+    }
+
+    for (const listener of externalStorageListeners) {
+      listener();
+    }
+  });
+
+  const http = createHttpClient({
     baseUrl: 'https://auth.example.com',
-    fetch: async () => jsonResponse({ ok: true }),
-    now: () => Date.parse('2026-04-03T00:00:00.000Z'),
-    publicKeyCredential: {},
-    navigatorCredentials: fakeNavigatorCredentials(),
-    storage: fakeStorage(),
-    ...options,
-  } as InternalSdkDeps);
+    fetch: options.fetch ?? (async () => jsonResponse({ ok: true })),
+  });
+  const session = createSessionController({
+    http,
+    now,
+    readSharedState: () =>
+      storageSync?.getSnapshot() ?? readPersistedSdkState(storage),
+    recoveryTimeoutMs: options.recoveryTimeoutMs,
+    state,
+    waitForExternalStorage(timeoutMs) {
+      if (!storageSync) {
+        return Promise.resolve();
+      }
+
+      return new Promise((resolve) => {
+        let settled = false;
+        const done = () => {
+          if (settled) {
+            return;
+          }
+
+          settled = true;
+          clearTimeout(timer);
+          externalStorageListeners.delete(done);
+          resolve();
+        };
+        const timer = setTimeout(done, timeoutMs);
+
+        externalStorageListeners.add(done);
+      });
+    },
+  });
+  const ready =
+    autoRecover && state.getState().status === 'recovering'
+      ? Promise.resolve().then(() => session.recover())
+      : Promise.resolve();
+
+  void ready.catch(() => {});
+
+  const unsupportedWebauthn = {
+    async authenticate() {
+      throw createSdkError(
+        'sdk_init_failed',
+        'Passkey helper is unavailable in this focused test harness',
+      );
+    },
+    async register() {
+      throw createSdkError(
+        'sdk_init_failed',
+        'Passkey helper is unavailable in this focused test harness',
+      );
+    },
+  };
+
+  return {
+    ready,
+    email: createEmailModule({ http, session }),
+    me: {
+      fetch() {
+        return session.fetchMe();
+      },
+    },
+    session: {
+      getState() {
+        return state.getState();
+      },
+      onChange(listener: Parameters<typeof state.onChange>[0]) {
+        return state.onChange(listener);
+      },
+      refresh() {
+        return session.refresh();
+      },
+      logout() {
+        return session.logout();
+      },
+    },
+    passkey: unsupportedWebauthn,
+    webauthn: unsupportedWebauthn,
+  };
 }
 
 export function createSharedStorageHarness(seed: StorageSeed = {}) {

@@ -27,6 +27,9 @@ describe('browser module sdk', () => {
     try {
       expect(typeof sdk.email.start).toBe('function');
       expect(typeof sdk.session.onChange).toBe('function');
+      expect(typeof sdk.me.fetch).toBe('function');
+      expect(sdk.me).not.toHaveProperty('get');
+      expect(sdk.me).not.toHaveProperty('reload');
       expect('AuthMini' in globalThis).toBe(false);
 
       await expect(
@@ -70,13 +73,6 @@ describe('browser module sdk', () => {
           access_token: 'access-a',
           refresh_token: 'refresh-a',
           expires_in: 3600,
-          me: {
-            user_id: 'user-a',
-            email: 'user@example.com',
-            webauthn_credentials: [],
-            ed25519_credentials: [],
-            active_sessions: [],
-          },
         });
       }
 
@@ -125,7 +121,7 @@ describe('browser module sdk', () => {
     }
   });
 
-  it('rejects malformed /me payloads instead of repairing them in the browser sdk', async () => {
+  it('rejects malformed /me payloads from explicit browser me.fetch calls', async () => {
     const storage = fakeStorage();
 
     seedBrowserSdkStorage(storage, 'https://auth.example.com', {
@@ -134,7 +130,6 @@ describe('browser module sdk', () => {
       refreshToken: 'refresh-1',
       receivedAt: '2036-04-03T00:00:00.000Z',
       expiresAt: '2036-04-03T00:15:00.000Z',
-      me: null,
     });
     const fetch = vi.fn(async (input: string | URL) => {
       const requestUrl = new URL(String(input));
@@ -157,7 +152,7 @@ describe('browser module sdk', () => {
     try {
       const sdk = createBrowserSdk('https://auth.example.com');
 
-      await expect(sdk.me.reload()).rejects.toMatchObject({
+      await expect(sdk.me.fetch()).rejects.toMatchObject({
         error: 'request_failed',
       });
     } finally {
@@ -165,7 +160,31 @@ describe('browser module sdk', () => {
     }
   });
 
-  it('rejects browser startup recovery when /me payload is invalid and clears to anonymous', async () => {
+  it('rejects explicit browser me.fetch calls without an authenticated session', async () => {
+    const storage = fakeStorage();
+    const fetch = vi.fn(async () => jsonResponse({ error: 'unexpected' }, 500));
+
+    vi.stubGlobal('fetch', fetch);
+    vi.stubGlobal('localStorage', storage);
+
+    try {
+      const sdk = createBrowserSdk('https://auth.example.com');
+
+      await expect(sdk.me.fetch()).rejects.toMatchObject({
+        code: 'missing_session',
+      });
+      expect(sdk.session.getState()).toMatchObject({
+        status: 'anonymous',
+        authenticated: false,
+      });
+      expect(sdk.session.getState()).not.toHaveProperty('me');
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('browser startup recovery keeps token-only state without requesting /me', async () => {
     const storage = fakeStorage();
 
     seedBrowserSdkStorage(storage, 'https://auth.example.com', {
@@ -174,19 +193,9 @@ describe('browser module sdk', () => {
       refreshToken: 'refresh-1',
       receivedAt: '2036-04-03T00:00:00.000Z',
       expiresAt: '2036-04-03T00:15:00.000Z',
-      me: null,
     });
     const fetch = vi.fn(async (input: string | URL) => {
-      const requestUrl = new URL(String(input));
-
-      if (requestUrl.pathname.endsWith('/me')) {
-        return jsonResponse({
-          user_id: 'user-1',
-          email: 'user@example.com',
-          webauthn_credentials: [],
-          active_sessions: [],
-        });
-      }
+      new URL(String(input));
 
       return jsonResponse({ error: 'unexpected' }, 500);
     });
@@ -195,25 +204,23 @@ describe('browser module sdk', () => {
     vi.stubGlobal('localStorage', storage);
 
     try {
-      const sdk = createBrowserSdk('https://auth.example.com') as AuthMiniApi & {
+      const sdk = createBrowserSdk(
+        'https://auth.example.com',
+      ) as AuthMiniApi & {
         ready: Promise<void>;
       };
       const ready = sdk.ready;
 
-      void ready.catch(() => {});
-
-      await expect(ready).rejects.toMatchObject({
-        error: 'request_failed',
-        message: 'request_failed: Invalid /me payload',
-      });
+      await expect(ready).resolves.toBeUndefined();
       expect(sdk.session.getState()).toMatchObject({
-        status: 'anonymous',
-        authenticated: false,
-        sessionId: null,
-        accessToken: null,
-        refreshToken: null,
-        me: null,
+        status: 'authenticated',
+        authenticated: true,
+        sessionId: 'session-1',
+        accessToken: 'access-1',
+        refreshToken: 'refresh-1',
       });
+      expect(sdk.session.getState()).not.toHaveProperty('me');
+      expect(fetch).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
     }
@@ -228,7 +235,6 @@ describe('browser module sdk', () => {
       refreshToken: 'refresh-1',
       receivedAt: '2036-04-03T00:00:00.000Z',
       expiresAt: '2036-04-03T00:15:00.000Z',
-      me: null,
     });
     const fetch = vi.fn(async (input: string | URL) => {
       const requestUrl = new URL(String(input));
@@ -259,7 +265,7 @@ describe('browser module sdk', () => {
     try {
       const sdk = createBrowserSdk('https://auth.example.com');
 
-      await expect(sdk.me.reload()).rejects.toMatchObject({
+      await expect(sdk.me.fetch()).rejects.toMatchObject({
         error: 'request_failed',
       });
     } finally {
@@ -267,7 +273,7 @@ describe('browser module sdk', () => {
     }
   });
 
-  it('rejects malformed /me payloads in the served singleton iife', async () => {
+  it('rejects malformed /me payloads in explicit singleton me.fetch calls', async () => {
     const storage = fakeStorage();
 
     seedBrowserSdkStorage(storage, 'https://app.example.com', {
@@ -276,7 +282,6 @@ describe('browser module sdk', () => {
       refreshToken: 'refresh-1',
       receivedAt: '2036-04-03T00:00:00.000Z',
       expiresAt: '2036-04-03T00:15:00.000Z',
-      me: null,
     });
 
     const fetch = vi.fn(async (input: string | URL) => {
@@ -302,7 +307,7 @@ describe('browser module sdk', () => {
         storage,
       });
 
-      await expect(windowObject.AuthMini.me.reload()).rejects.toMatchObject({
+      await expect(windowObject.AuthMini.me.fetch()).rejects.toMatchObject({
         error: 'request_failed',
       });
     } finally {
@@ -310,7 +315,7 @@ describe('browser module sdk', () => {
     }
   });
 
-  it('rejects singleton startup recovery when /me payload is invalid and clears to anonymous', async () => {
+  it('singleton startup recovery keeps token-only state without requesting /me', async () => {
     const storage = fakeStorage();
 
     seedBrowserSdkStorage(storage, 'https://app.example.com', {
@@ -319,20 +324,10 @@ describe('browser module sdk', () => {
       refreshToken: 'refresh-1',
       receivedAt: '2036-04-03T00:00:00.000Z',
       expiresAt: '2036-04-03T00:15:00.000Z',
-      me: null,
     });
 
     const fetch = vi.fn(async (input: string | URL) => {
-      const requestUrl = new URL(String(input));
-
-      if (requestUrl.pathname.endsWith('/me')) {
-        return jsonResponse({
-          user_id: 'user-1',
-          email: 'user@example.com',
-          webauthn_credentials: [],
-          active_sessions: [],
-        });
-      }
+      new URL(String(input));
 
       return jsonResponse({ error: 'unexpected' }, 500);
     });
@@ -344,29 +339,26 @@ describe('browser module sdk', () => {
         currentScriptSrc: 'https://app.example.com/sdk/singleton-iife.js',
         storage,
       });
-      const ready = (windowObject.AuthMini as AuthMiniApi & { ready: Promise<void> })
-        .ready;
+      const ready = (
+        windowObject.AuthMini as AuthMiniApi & { ready: Promise<void> }
+      ).ready;
 
-      void ready.catch(() => {});
-
-      await expect(ready).rejects.toMatchObject({
-        error: 'request_failed',
-        message: 'request_failed: Invalid /me payload',
-      });
+      await expect(ready).resolves.toBeUndefined();
       expect(windowObject.AuthMini.session.getState()).toMatchObject({
-        status: 'anonymous',
-        authenticated: false,
-        sessionId: null,
-        accessToken: null,
-        refreshToken: null,
-        me: null,
+        status: 'authenticated',
+        authenticated: true,
+        sessionId: 'session-1',
+        accessToken: 'access-1',
+        refreshToken: 'refresh-1',
       });
+      expect(windowObject.AuthMini.session.getState()).not.toHaveProperty('me');
+      expect(fetch).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
     }
   });
 
-  it('rejects malformed persisted me when the served singleton restores from localStorage', async () => {
+  it('ignores legacy persisted me blobs when the served singleton restores from localStorage', async () => {
     const storage = fakeStorage();
     const fetch = vi.fn(async () => jsonResponse({ error: 'unexpected' }, 500));
 
@@ -407,12 +399,13 @@ describe('browser module sdk', () => {
         (windowObject.AuthMini as AuthMiniApi & { ready: Promise<void> }).ready,
       ).resolves.toBeUndefined();
       expect(windowObject.AuthMini.session.getState()).toMatchObject({
-        status: 'anonymous',
-        authenticated: false,
-        sessionId: null,
-        refreshToken: null,
-        me: null,
+        status: 'authenticated',
+        authenticated: true,
+        sessionId: 'session-1',
+        accessToken: 'access-1',
+        refreshToken: 'refresh-1',
       });
+      expect(windowObject.AuthMini.session.getState()).not.toHaveProperty('me');
       expect(fetch).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();

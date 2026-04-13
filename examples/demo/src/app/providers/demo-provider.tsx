@@ -28,7 +28,6 @@ const ANONYMOUS_SESSION = {
   refreshToken: null,
   receivedAt: null,
   expiresAt: null,
-  me: null,
 } as const;
 
 function clearHashAuthOrigin(hash: string) {
@@ -51,7 +50,6 @@ type DemoContextValue = {
   config: ReturnType<typeof getInitialDemoConfig>;
   sdk: DemoSdk | null;
   session: DemoSession;
-  user: DemoSession['me'];
   adoptDemoSession: (tokens: DemoSessionTokens) => Promise<void>;
   clearLocalAuthState: () => Promise<void>;
   setAuthOrigin: (authOrigin: string) => void;
@@ -154,7 +152,6 @@ export function DemoProvider({
 
         persistDemoSession(storage, config.authOrigin, tokens);
         const nextSdk = createDemoSdk(config.authOrigin);
-        await nextSdk.me.reload();
         attachSdk(nextSdk);
       },
       clearLocalAuthState: async () => {
@@ -190,7 +187,6 @@ export function DemoProvider({
       setAuthOrigin: (authOrigin) => {
         setAuthOriginOverride(authOrigin.trim());
       },
-      user: session.me,
     }),
     [config, sdk, session],
   );

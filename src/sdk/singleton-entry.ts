@@ -159,14 +159,12 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
       const refreshToken = toNullableString(value.refreshToken);
       const receivedAt = toNullableString(value.receivedAt);
       const expiresAt = toNullableString(value.expiresAt);
-      const me = toMe(value.me);
       if (
         sessionId === undefined ||
         accessToken === undefined ||
         refreshToken === undefined ||
         receivedAt === undefined ||
-        expiresAt === undefined ||
-        me === undefined
+        expiresAt === undefined
       ) {
         return null;
       }
@@ -179,7 +177,6 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
         refreshToken,
         receivedAt,
         expiresAt,
-        me,
       };
     } catch {
       return null;
@@ -373,15 +370,10 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
       },
       async acceptSessionResponse(response, options = {}) {
         const session = normalizeTokenResponse(response, input.now);
-        input.state.setRecovering({
-          ...session,
-          me: input.state.getState().me,
-        });
+        input.state.setRecovering(session);
         try {
-          const me = await fetchMe(session.accessToken);
-          const result = { ...session, me };
-          input.state.setAuthenticated(result);
-          return result;
+          input.state.setAuthenticated(session);
+          return session;
         } catch (error) {
           if (
             options.clearOnMeFailure !== 'auth-invalidating' ||
@@ -445,7 +437,6 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
             await controller.refresh();
             return;
           }
-          const me = await fetchMe(snapshot.accessToken);
           input.state.setAuthenticated({
             sessionId: snapshot.sessionId,
             accessToken: snapshot.accessToken,
@@ -454,7 +445,6 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
               snapshot.receivedAt ?? new Date(input.now()).toISOString(),
             expiresAt:
               snapshot.expiresAt ?? new Date(input.now()).toISOString(),
-            me,
           });
         } catch (error) {
           if (isSessionSupersededError(error)) {
@@ -478,28 +468,18 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
           }
         }
       },
-      async reloadMe() {
+      async fetchMe() {
         const snapshot = input.state.getState();
         if (!snapshot.refreshToken) {
           throw createSdkError('missing_session', 'Missing refresh token');
         }
         if (!snapshot.accessToken || needsRefresh(snapshot, input.now())) {
-          return (await controller.refresh()).me;
+          return await fetchMe((await controller.refresh()).accessToken);
         }
         if (!snapshot.sessionId) {
           throw createSdkError('missing_session', 'Missing session id');
         }
-        const me = await fetchMe(snapshot.accessToken);
-        input.state.setAuthenticated({
-          sessionId: snapshot.sessionId,
-          accessToken: snapshot.accessToken,
-          refreshToken: snapshot.refreshToken,
-          receivedAt:
-            snapshot.receivedAt ?? new Date(input.now()).toISOString(),
-          expiresAt: snapshot.expiresAt ?? new Date(input.now()).toISOString(),
-          me,
-        });
-        return me;
+        return await fetchMe(snapshot.accessToken);
       },
       async logout() {
         const snapshot = input.state.getState();
@@ -551,7 +531,6 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
         refreshToken: snapshot.refreshToken ?? '',
         receivedAt: snapshot.receivedAt ?? new Date(input.now()).toISOString(),
         expiresAt: snapshot.expiresAt ?? new Date(input.now()).toISOString(),
-        me: snapshot.me,
       });
 
       const timeoutMs = input.recoveryTimeoutMs ?? 50;
@@ -595,7 +574,6 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
 
       if (
         shared.accessToken &&
-        shared.me &&
         !needsRefresh(
           {
             status: 'recovering',
@@ -605,7 +583,6 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
             refreshToken: shared.refreshToken,
             receivedAt: shared.receivedAt,
             expiresAt: shared.expiresAt,
-            me: shared.me,
           },
           input.now(),
         )
@@ -616,7 +593,6 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
           refreshToken: shared.refreshToken,
           receivedAt: shared.receivedAt ?? new Date(input.now()).toISOString(),
           expiresAt: shared.expiresAt ?? new Date(input.now()).toISOString(),
-          me: shared.me,
         });
         return 'usable';
       }
@@ -764,7 +740,6 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
         next?.sessionId &&
         next.refreshToken &&
         next.accessToken &&
-        next.me &&
         !needsRefresh(
           {
             status: 'recovering',
@@ -774,7 +749,6 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
             refreshToken: next.refreshToken,
             receivedAt: next.receivedAt,
             expiresAt: next.expiresAt,
-            me: next.me,
           },
           input.now ?? (() => Date.now())(),
         )
@@ -789,7 +763,6 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
           expiresAt:
             next.expiresAt ??
             new Date((input.now ?? (() => Date.now()))()).toISOString(),
-          me: next.me,
         });
       } else {
         state.applyPersistedState(next);
@@ -838,11 +811,8 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     const api = {
       email: createEmailModule({ http, session }),
       me: {
-        get() {
-          return state.getState().me;
-        },
-        reload() {
-          return session.reloadMe();
+        fetch() {
+          return session.fetchMe();
         },
       },
       session: {
@@ -1103,125 +1073,6 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
   }
 
-  function toMe(value) {
-    if (value === undefined || value === null) {
-      return null;
-    }
-
-    try {
-      return parseMeResponseImpl(value);
-    } catch {
-      const record = value && typeof value === 'object' ? value : null;
-
-      if (
-        !record ||
-        typeof record.user_id !== 'string' ||
-        typeof record.email !== 'string' ||
-        !Array.isArray(record.webauthn_credentials) ||
-        !Array.isArray(record.ed25519_credentials) ||
-        !Array.isArray(record.active_sessions)
-      ) {
-        return undefined;
-      }
-
-      const webauthnCredentials = record.webauthn_credentials
-        .map(normalizeWebauthnCredential)
-        .filter((credential) => credential !== null);
-      const ed25519Credentials = record.ed25519_credentials
-        .map(normalizeEd25519Credential)
-        .filter((credential) => credential !== null);
-      const activeSessions = record.active_sessions
-        .map(normalizeActiveSession)
-        .filter((session) => session !== null);
-
-      if (
-        webauthnCredentials.length !== record.webauthn_credentials.length ||
-        ed25519Credentials.length !== record.ed25519_credentials.length ||
-        activeSessions.length !== record.active_sessions.length
-      ) {
-        return undefined;
-      }
-
-      return {
-        user_id: record.user_id,
-        email: record.email,
-        webauthn_credentials: webauthnCredentials,
-        ed25519_credentials: ed25519Credentials,
-        active_sessions: activeSessions,
-      };
-    }
-  }
-
-  function normalizeWebauthnCredential(value) {
-    if (!value || typeof value !== 'object') {
-      return null;
-    }
-
-    if (
-      typeof value.id !== 'string' ||
-      typeof value.credential_id !== 'string' ||
-      typeof value.created_at !== 'string'
-    ) {
-      return null;
-    }
-
-    return {
-      ...value,
-      id: value.id,
-      credential_id: value.credential_id,
-      rp_id: typeof value.rp_id === 'string' ? value.rp_id : '',
-      last_used_at:
-        value.last_used_at === null || typeof value.last_used_at === 'string'
-          ? value.last_used_at
-          : null,
-      created_at: value.created_at,
-    };
-  }
-
-  function normalizeEd25519Credential(value) {
-    if (!value || typeof value !== 'object') {
-      return null;
-    }
-
-    if (
-      typeof value.id !== 'string' ||
-      typeof value.name !== 'string' ||
-      typeof value.public_key !== 'string' ||
-      typeof value.created_at !== 'string' ||
-      !(value.last_used_at === null || typeof value.last_used_at === 'string')
-    ) {
-      return null;
-    }
-
-    return {
-      id: value.id,
-      name: value.name,
-      public_key: value.public_key,
-      last_used_at: value.last_used_at,
-      created_at: value.created_at,
-    };
-  }
-
-  function normalizeActiveSession(value) {
-    if (!value || typeof value !== 'object') {
-      return null;
-    }
-
-    if (
-      typeof value.id !== 'string' ||
-      typeof value.created_at !== 'string' ||
-      typeof value.expires_at !== 'string'
-    ) {
-      return null;
-    }
-
-    return {
-      id: value.id,
-      created_at: value.created_at,
-      expires_at: value.expires_at,
-    };
-  }
-
   function createSnapshot(status) {
     return freezeSnapshot({
       status,
@@ -1231,7 +1082,6 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
       refreshToken: null,
       receivedAt: null,
       expiresAt: null,
-      me: null,
     });
   }
 
@@ -1242,62 +1092,10 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
       refreshToken: snapshot.refreshToken,
       receivedAt: snapshot.receivedAt,
       expiresAt: snapshot.expiresAt,
-      me: snapshot.me ? cloneMeResponse(snapshot.me) : null,
-    };
-  }
-
-  function cloneMeResponse(me) {
-    return {
-      user_id: me.user_id,
-      email: me.email,
-      webauthn_credentials: me.webauthn_credentials.map((credential) => ({
-        id: credential.id,
-        credential_id: credential.credential_id,
-        transports: Array.isArray(credential.transports)
-          ? [...credential.transports]
-          : [],
-        rp_id: typeof credential.rp_id === 'string' ? credential.rp_id : '',
-        last_used_at:
-          credential.last_used_at === null ||
-          typeof credential.last_used_at === 'string'
-            ? credential.last_used_at
-            : null,
-        created_at: credential.created_at,
-      })),
-      ed25519_credentials: me.ed25519_credentials.map((credential) => ({
-        id: credential.id,
-        name: credential.name,
-        public_key: credential.public_key,
-        last_used_at: credential.last_used_at,
-        created_at: credential.created_at,
-      })),
-      active_sessions: me.active_sessions.map((session) => ({
-        id: session.id,
-        created_at: session.created_at,
-        expires_at: session.expires_at,
-      })),
     };
   }
 
   function freezeSnapshot(snapshot) {
-    if (snapshot.me) {
-      for (const credential of snapshot.me.webauthn_credentials) {
-        if (Array.isArray(credential.transports)) {
-          Object.freeze(credential.transports);
-        }
-        Object.freeze(credential);
-      }
-      for (const credential of snapshot.me.ed25519_credentials) {
-        Object.freeze(credential);
-      }
-      for (const session of snapshot.me.active_sessions) {
-        Object.freeze(session);
-      }
-      Object.freeze(snapshot.me.webauthn_credentials);
-      Object.freeze(snapshot.me.ed25519_credentials);
-      Object.freeze(snapshot.me.active_sessions);
-      Object.freeze(snapshot.me);
-    }
     return Object.freeze(snapshot);
   }
 

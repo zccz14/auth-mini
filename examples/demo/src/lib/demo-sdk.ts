@@ -50,7 +50,6 @@ export function persistDemoSession(
       refreshToken: tokens.refresh_token,
       receivedAt,
       expiresAt,
-      me: null,
     }),
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { FlowCard } from '@/components/app/flow-card';
 import { Button } from '@/components/ui/button';
 import { useDemo } from '@/app/providers/demo-provider';
@@ -57,8 +57,17 @@ function getCredentialCapability(accessToken: string): CredentialCapability {
     : 'not-manageable';
 }
 
+type DemoMe = Awaited<
+  ReturnType<NonNullable<ReturnType<typeof useDemo>['sdk']>['me']['fetch']>
+>;
+
 export function CredentialsRoute() {
-  const { config, sdk, session, user } = useDemo();
+  const { config, sdk, session } = useDemo();
+  const [me, setMe] = useState<DemoMe | null>(null);
+  const [loadingMe, setLoadingMe] = useState(false);
+  const [meError, setMeError] = useState('');
+  const [meWarning, setMeWarning] = useState('');
+  const loadMeRequestIdRef = useRef(0);
   const [pendingSections, setPendingSections] = useState({
     passkey: false,
     ed25519: false,
@@ -87,6 +96,57 @@ export function CredentialsRoute() {
     ? getCredentialCapability(effectiveAccessToken)
     : 'not-manageable';
   const credentialManageable = credentialCapability === 'manageable';
+
+  const loadMe = useCallback(async (options?: { warningMessage?: string }) => {
+    const requestId = loadMeRequestIdRef.current + 1;
+    loadMeRequestIdRef.current = requestId;
+
+    if (!authenticated || !sdk || config.status !== 'ready') {
+      setMe(null);
+      setMeError('');
+      setMeWarning('');
+      setLoadingMe(false);
+      return;
+    }
+
+    setLoadingMe(true);
+    setMeError('');
+    if (!options?.warningMessage) {
+      setMeWarning('');
+    }
+
+    try {
+      const nextMe = await sdk.me.fetch();
+      if (loadMeRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      setMe(nextMe);
+      setMeWarning('');
+    } catch (cause) {
+      if (loadMeRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      if (options?.warningMessage) {
+        setMeWarning(options.warningMessage);
+        return;
+      }
+
+      setMe(null);
+      setMeError(
+        cause instanceof Error ? cause.message : 'Unable to load current account.',
+      );
+    } finally {
+      if (loadMeRequestIdRef.current === requestId) {
+        setLoadingMe(false);
+      }
+    }
+  }, [authenticated, config.status, sdk, session.sessionId]);
+
+  useEffect(() => {
+    void loadMe();
+  }, [loadMe]);
 
   useEffect(() => {
     if (
@@ -121,9 +181,9 @@ export function CredentialsRoute() {
     session.refreshToken,
   ]);
 
-  const email = user?.email ?? '';
-  const passkeys = user?.webauthn_credentials ?? [];
-  const ed25519Credentials = user?.ed25519_credentials ?? [];
+  const email = me?.email ?? '';
+  const passkeys = me?.webauthn_credentials ?? [];
+  const ed25519Credentials = me?.ed25519_credentials ?? [];
 
   async function deleteCredential(input: {
     section: 'passkey' | 'ed25519';
@@ -161,7 +221,9 @@ export function CredentialsRoute() {
         throw new Error(`Delete failed with status ${response.status}`);
       }
 
-      await sdk.me.reload();
+      await loadMe({
+        warningMessage: 'Credential deleted, but current account data could not be refreshed.',
+      });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Delete failed');
     } finally {
@@ -179,6 +241,12 @@ export function CredentialsRoute() {
       description="Inspect the current account credentials and remove bound authenticators when needed."
     >
       <div className="space-y-6">
+        {loadingMe ? (
+          <p className="text-sm text-slate-600">Loading current account…</p>
+        ) : null}
+        {meError ? <p className="text-sm text-rose-600">{meError}</p> : null}
+        {meWarning ? <p className="text-sm text-amber-700">{meWarning}</p> : null}
+
         <section
           aria-labelledby="credentials-email-heading"
           className="space-y-3 rounded-xl border border-slate-200 bg-white p-4"
@@ -194,7 +262,7 @@ export function CredentialsRoute() {
             <p className="text-sm text-slate-600">
               Sign in to inspect the current account email.
             </p>
-          ) : email ? (
+          ) : meError ? null : email ? (
             <div className="overflow-x-auto">
               <table className="min-w-full text-left text-sm text-slate-700">
                 <thead>
@@ -236,7 +304,7 @@ export function CredentialsRoute() {
           {passkeyError ? <p className="text-sm text-rose-600">{passkeyError}</p> : null}
           {!authenticated ? (
             <p className="text-sm text-slate-600">Sign in to inspect current passkeys.</p>
-          ) : passkeys.length > 0 ? (
+          ) : meError ? null : passkeys.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="min-w-full text-left text-sm text-slate-700">
                 <thead>
@@ -308,7 +376,7 @@ export function CredentialsRoute() {
             <p className="text-sm text-slate-600">
               Sign in to inspect current Ed25519 credentials.
             </p>
-          ) : ed25519Credentials.length > 0 ? (
+          ) : meError ? null : ed25519Credentials.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="min-w-full text-left text-sm text-slate-700">
                 <thead>
