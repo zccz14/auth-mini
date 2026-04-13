@@ -51,6 +51,7 @@ vi.mock('auth-mini/sdk/browser', () => ({
 
 describe('createDemoSdk', () => {
   beforeEach(() => {
+    vi.useRealTimers();
     sdkMocks.createBrowserSdk.mockClear();
     sdkMocks.refresh.mockClear();
     sdkMocks.sessionState.current = {
@@ -115,6 +116,8 @@ describe('createDemoSdk', () => {
 
   it('persists demo sessions without a cached me payload', () => {
     const storage = window.localStorage;
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-11T00:00:00.000Z'));
 
     persistDemoSession(storage, 'https://auth.example.com', {
       session_id: 'session-1',
@@ -128,13 +131,12 @@ describe('createDemoSdk', () => {
       storage.getItem('auth-mini.sdk:https://auth.example.com/') ?? '',
     );
 
-    expect(persisted).toEqual(
-      expect.objectContaining({
-        sessionId: 'session-1',
-        accessToken: 'access-token',
-        refreshToken: 'refresh-token',
-      }),
-    );
-    expect(persisted).not.toHaveProperty('me');
+    expect(persisted).toEqual({
+      sessionId: 'session-1',
+      accessToken: 'access-token',
+      refreshToken: 'refresh-token',
+      receivedAt: '2026-04-11T00:00:00.000Z',
+      expiresAt: '2026-04-11T00:15:00.000Z',
+    });
   });
 });

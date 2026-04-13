@@ -17,8 +17,8 @@ type DemoSessionSnapshot = {
 
 const sdkMocks = vi.hoisted(() => {
   const listeners: Array<(state: DemoSessionSnapshot) => void> = [];
-  const meReload = vi.fn();
   const unsubscribe = vi.fn();
+  const sdkStates: DemoSessionSnapshot[] = [];
   const sessionState = {
     current: {
       status: 'anonymous',
@@ -48,17 +48,24 @@ const sdkMocks = vi.hoisted(() => {
     };
   });
 
-  const createBrowserSdk = vi.fn(() => ({
-    session: { getState: () => sessionState.current, onChange, logout },
-    me: { fetch: vi.fn(), reload: meReload },
-  }));
+  const createBrowserSdk = vi.fn(() => {
+    const snapshot = sdkStates.shift();
+    if (snapshot) {
+      sessionState.current = snapshot;
+    }
+
+    return {
+      session: { getState: () => sessionState.current, onChange, logout },
+      me: { fetch: vi.fn() },
+    };
+  });
 
   return {
     createBrowserSdk,
     listeners,
     logout,
-    meReload,
     onChange,
+    sdkStates,
     sessionState,
     unsubscribe,
   };
@@ -101,9 +108,9 @@ describe('DemoProvider', () => {
     sdkMocks.createBrowserSdk.mockClear();
     sdkMocks.onChange.mockClear();
     sdkMocks.logout.mockClear();
-    sdkMocks.meReload.mockClear();
     sdkMocks.unsubscribe.mockClear();
     sdkMocks.listeners.length = 0;
+    sdkMocks.sdkStates.length = 0;
     sdkMocks.sessionState.current = {
       status: 'anonymous',
       authenticated: false,
@@ -208,9 +215,29 @@ describe('DemoProvider', () => {
     expect(screen.getByTestId('has-user')).toHaveTextContent('no');
   });
 
-  it('adopts demo sessions without reloading me before attaching the sdk', async () => {
+  it('adopts persisted session tokens by reattaching an authenticated sdk without exposing user', async () => {
     const user = userEvent.setup();
     localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
+    sdkMocks.sdkStates.push(
+      {
+        status: 'anonymous',
+        authenticated: false,
+        sessionId: null,
+        accessToken: null,
+        refreshToken: null,
+        receivedAt: null,
+        expiresAt: null,
+      },
+      {
+        status: 'authenticated',
+        authenticated: true,
+        sessionId: 'session-2',
+        accessToken: 'next-access-token',
+        refreshToken: 'next-refresh-token',
+        receivedAt: '2026-04-11T00:00:00.000Z',
+        expiresAt: '2026-04-11T01:00:00.000Z',
+      },
+    );
 
     render(
       <DemoProvider
@@ -226,8 +253,22 @@ describe('DemoProvider', () => {
 
     await user.click(screen.getByRole('button', { name: 'Adopt demo session' }));
 
-    expect(sdkMocks.meReload).not.toHaveBeenCalled();
-    expect(screen.getByTestId('session-status')).toHaveTextContent('anonymous');
+    expect(sdkMocks.createBrowserSdk).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId('session-status')).toHaveTextContent(
+      'authenticated',
+    );
+    expect(screen.getByTestId('has-user')).toHaveTextContent('no');
+    expect(
+      JSON.parse(
+        localStorage.getItem('auth-mini.sdk:https://auth.example.com/') ?? '',
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        sessionId: 'session-2',
+        accessToken: 'next-access-token',
+        refreshToken: 'next-refresh-token',
+      }),
+    );
   });
 
   it('creates the sdk from effect lifecycle and cleans subscriptions under StrictMode replay', () => {
