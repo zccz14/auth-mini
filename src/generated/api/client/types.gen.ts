@@ -5,10 +5,7 @@ import type {
   ServerSentEventsOptions,
   ServerSentEventsResult,
 } from '../core/serverSentEvents.gen.js';
-import type {
-  Client as CoreClient,
-  Config as CoreConfig,
-} from '../core/types.gen.js';
+import type { Client as CoreClient, Config as CoreConfig } from '../core/types.gen.js';
 import type { Middleware } from './utils.gen.js';
 
 export type ResponseStyle = 'data' | 'fields';
@@ -41,14 +38,7 @@ export interface Config<T extends ClientOptions = ClientOptions>
    *
    * @default 'auto'
    */
-  parseAs?:
-    | 'arrayBuffer'
-    | 'auto'
-    | 'blob'
-    | 'formData'
-    | 'json'
-    | 'stream'
-    | 'text';
+  parseAs?: 'arrayBuffer' | 'auto' | 'blob' | 'formData' | 'json' | 'stream' | 'text';
   /**
    * Should we return only data or multiple fields (data, error, response, etc.)?
    *
@@ -118,32 +108,22 @@ export type RequestResult<
           ? TData[keyof TData]
           : TData
         : {
-            data: TData extends Record<string, unknown>
-              ? TData[keyof TData]
-              : TData;
+            data: TData extends Record<string, unknown> ? TData[keyof TData] : TData;
             request: Request;
             response: Response;
           }
     >
   : Promise<
       TResponseStyle extends 'data'
-        ?
-            | (TData extends Record<string, unknown>
-                ? TData[keyof TData]
-                : TData)
-            | undefined
+        ? (TData extends Record<string, unknown> ? TData[keyof TData] : TData) | undefined
         : (
             | {
-                data: TData extends Record<string, unknown>
-                  ? TData[keyof TData]
-                  : TData;
+                data: TData extends Record<string, unknown> ? TData[keyof TData] : TData;
                 error: undefined;
               }
             | {
                 data: undefined;
-                error: TError extends Record<string, unknown>
-                  ? TError[keyof TError]
-                  : TError;
+                error: TError extends Record<string, unknown> ? TError[keyof TError] : TError;
               }
           ) & {
             request: Request;
@@ -182,10 +162,7 @@ type RequestFn = <
   TResponseStyle extends ResponseStyle = 'fields',
 >(
   options: Omit<RequestOptions<TData, TResponseStyle, ThrowOnError>, 'method'> &
-    Pick<
-      Required<RequestOptions<TData, TResponseStyle, ThrowOnError>>,
-      'method'
-    >,
+    Pick<Required<RequestOptions<TData, TResponseStyle, ThrowOnError>>, 'method'>,
 ) => RequestResult<TData, TError, ThrowOnError, TResponseStyle>;
 
 type BuildUrlFn = <
@@ -199,13 +176,7 @@ type BuildUrlFn = <
   options: TData & Options<TData>,
 ) => string;
 
-export type Client = CoreClient<
-  RequestFn,
-  Config,
-  MethodFn,
-  BuildUrlFn,
-  SseFn
-> & {
+export type Client = CoreClient<RequestFn, Config, MethodFn, BuildUrlFn, SseFn> & {
   interceptors: Middleware<Request, Response, unknown, ResolvedRequestOptions>;
 };
 
