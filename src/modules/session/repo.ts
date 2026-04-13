@@ -6,6 +6,8 @@ type SessionRow = {
   user_id: string;
   refresh_token_hash: string;
   auth_method: Session['authMethod'];
+  ip: string | null;
+  user_agent: string | null;
   expires_at: string;
   created_at: string;
 };
@@ -15,6 +17,8 @@ export type Session = {
   userId: string;
   refreshTokenHash: string;
   authMethod: 'email_otp' | 'webauthn' | 'ed25519';
+  ip: string | null;
+  userAgent: string | null;
   expiresAt: string;
   createdAt: string;
 };
@@ -25,18 +29,22 @@ export function createSession(
     userId: string;
     refreshTokenHash: string;
     authMethod: Session['authMethod'];
+    ip?: string | null;
+    userAgent?: string | null;
     expiresAt: string;
   },
 ): Session {
   const id = randomUUID();
 
   db.prepare(
-    'INSERT INTO sessions (id, user_id, refresh_token_hash, auth_method, expires_at) VALUES (?, ?, ?, ?, ?)',
+    'INSERT INTO sessions (id, user_id, refresh_token_hash, auth_method, ip, user_agent, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
   ).run(
     id,
     input.userId,
     input.refreshTokenHash,
     input.authMethod,
+    input.ip ?? null,
+    input.userAgent ?? null,
     input.expiresAt,
   );
 
@@ -46,7 +54,7 @@ export function createSession(
 export function getSessionById(db: DatabaseClient, id: string): Session | null {
   const row = db
     .prepare(
-      'SELECT id, user_id, refresh_token_hash, auth_method, expires_at, created_at FROM sessions WHERE id = ? LIMIT 1',
+      'SELECT id, user_id, refresh_token_hash, auth_method, ip, user_agent, expires_at, created_at FROM sessions WHERE id = ? LIMIT 1',
     )
     .get(id) as SessionRow | undefined;
 
@@ -118,11 +126,11 @@ export function rotateRefreshToken(
     ].join(' '),
   );
   const select = db.prepare(
-    [
-      'SELECT id, user_id, refresh_token_hash, auth_method, expires_at, created_at',
-      'FROM sessions',
-      'WHERE id = ?',
-      'LIMIT 1',
+      [
+        'SELECT id, user_id, refresh_token_hash, auth_method, ip, user_agent, expires_at, created_at',
+        'FROM sessions',
+        'WHERE id = ?',
+        'LIMIT 1',
     ].join(' '),
   );
   const transaction = db.transaction(
@@ -154,6 +162,8 @@ function mapSession(row: SessionRow): Session {
     userId: row.user_id,
     refreshTokenHash: row.refresh_token_hash,
     authMethod: row.auth_method,
+    ip: row.ip,
+    userAgent: row.user_agent,
     expiresAt: row.expires_at,
     createdAt: row.created_at,
   };
