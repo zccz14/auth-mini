@@ -1,5 +1,6 @@
 import { createSdkError } from './errors.js';
 import type { HttpClient } from './http.js';
+import { parseMeResponse } from './me.js';
 import type {
   PersistedSdkState,
   SessionSnapshot,
@@ -105,7 +106,10 @@ export function createSessionController(input: {
                 supersededRecoveryPromise = null;
               }
             });
-          } else if (isAuthInvalidatingError(error)) {
+          } else if (
+            isAuthInvalidatingError(error) ||
+            isContractDriftError(error)
+          ) {
             input.state.setAnonymous();
           }
           throw error;
@@ -158,8 +162,12 @@ export function createSessionController(input: {
           return;
         }
 
-        if (isAuthInvalidatingError(error)) {
+        if (isAuthInvalidatingError(error) || isContractDriftError(error)) {
           input.state.setAnonymous();
+
+          if (isContractDriftError(error)) {
+            throw error;
+          }
         }
       }
     },
@@ -231,9 +239,11 @@ export function createSessionController(input: {
       throw createSdkError('missing_session', 'Missing access token');
     }
 
-    return await input.http.getJson<SessionResult['me']>('/me', {
-      accessToken,
-    });
+    return parseMeResponse(
+      await input.http.getJson<SessionResult['me']>('/me', {
+        accessToken,
+      }),
+    );
   }
 
   async function startSupersededRecovery(snapshot: SessionSnapshot) {
@@ -391,9 +401,24 @@ function isAuthInvalidatingError(error: unknown): boolean {
   return (
     candidate.error === 'invalid_refresh_token' ||
     candidate.error === 'session_invalidated' ||
-    (candidate.status === 401 && candidate.error !== 'session_superseded') ||
-    (candidate.code === 'request_failed' &&
-      candidate.message === 'request_failed: Invalid session payload')
+    (candidate.status === 401 && candidate.error !== 'session_superseded')
+  );
+}
+
+function isContractDriftError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const candidate = error as {
+    code?: unknown;
+    message?: unknown;
+  };
+
+  return (
+    candidate.code === 'request_failed' &&
+    (candidate.message === 'request_failed: Invalid session payload' ||
+      candidate.message === 'request_failed: Invalid /me payload')
   );
 }
 

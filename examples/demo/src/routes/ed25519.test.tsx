@@ -22,6 +22,7 @@ type MockSessionState = {
 };
 
 const sdkMocks = vi.hoisted(() => {
+  const listeners = new Set<(nextSession: MockSessionState) => void>();
   const sessionState = {
     current: {
       status: 'anonymous',
@@ -40,6 +41,12 @@ const sdkMocks = vi.hoisted(() => {
   const ed25519Verify = vi.fn();
   const meReload = vi.fn();
 
+  function emitSession() {
+    for (const listener of listeners) {
+      listener(sessionState.current);
+    }
+  }
+
   return {
     createDemoSdk: vi.fn(() => ({
       email: { start: vi.fn(), verify: vi.fn() },
@@ -52,7 +59,10 @@ const sdkMocks = vi.hoisted(() => {
       passkey: { register: vi.fn(), authenticate: vi.fn() },
       session: {
         getState: () => sessionState.current,
-        onChange: vi.fn(() => vi.fn()),
+        onChange: vi.fn((listener: (nextSession: MockSessionState) => void) => {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        }),
         refresh: vi.fn(),
         logout: vi.fn(),
       },
@@ -61,6 +71,7 @@ const sdkMocks = vi.hoisted(() => {
     ed25519Start,
     ed25519Verify,
     ed25519Register,
+    emitSession,
     meReload,
     persistDemoSession: vi.fn(),
     sessionState,
@@ -142,17 +153,24 @@ describe('Ed25519Route', () => {
       name: 'Laptop signer',
       public_key: 'jt2HpVJxALeSteTe7QlqBRiOxVeloHMMImehYhZc9Rg',
     });
-    sdkMocks.meReload.mockResolvedValueOnce({
-      user_id: 'user-1',
-      email: 'user@example.com',
-      ed25519_credentials: [
-        {
-          id: 'cred-1',
-          name: 'Laptop signer',
-          public_key: 'jt2HpVJxALeSteTe7QlqBRiOxVeloHMMImehYhZc9Rg',
+    sdkMocks.meReload.mockImplementationOnce(async () => {
+      sdkMocks.sessionState.current = {
+        ...sdkMocks.sessionState.current,
+        me: {
+          user_id: 'user-1',
+          email: 'user@example.com',
+          ed25519_credentials: [
+            {
+              id: 'cred-1',
+              name: 'Laptop signer',
+              public_key: 'jt2HpVJxALeSteTe7QlqBRiOxVeloHMMImehYhZc9Rg',
+            },
+          ],
+          active_sessions: [],
         },
-      ],
-      active_sessions: [],
+      };
+      sdkMocks.emitSession();
+      return sdkMocks.sessionState.current.me!;
     });
 
     render(
@@ -190,6 +208,67 @@ describe('Ed25519Route', () => {
     await user.click(useLastRegisteredCredentialId);
 
     expect(credentialIdInput).toHaveValue('cred-1');
+  });
+
+  it('renders the reloaded ed25519 list from shared me state without a local credentials mirror', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
+    sdkMocks.sessionState.current = {
+      status: 'authenticated',
+      authenticated: true,
+      sessionId: 'session-1',
+      accessToken: 'access-token',
+      refreshToken: 'refresh-token',
+      receivedAt: '2026-04-12T00:00:00.000Z',
+      expiresAt: '2026-04-12T01:00:00.000Z',
+      me: {
+        user_id: 'user-1',
+        email: 'user@example.com',
+        ed25519_credentials: [],
+        active_sessions: [],
+      },
+    };
+
+    sdkMocks.ed25519Register.mockResolvedValueOnce({ id: 'cred-1' });
+    const sharedMe = sdkMocks.sessionState.current.me!;
+    sdkMocks.meReload.mockImplementationOnce(async () => {
+      sharedMe.ed25519_credentials = [
+        {
+          id: 'cred-1',
+          name: 'Laptop signer',
+          public_key: 'jt2HpVJxALeSteTe7QlqBRiOxVeloHMMImehYhZc9Rg',
+        },
+      ];
+      sdkMocks.sessionState.current = {
+        ...sdkMocks.sessionState.current,
+        me: sharedMe,
+      };
+      sdkMocks.emitSession();
+
+      return {
+        ...sharedMe,
+        ed25519_credentials: [],
+      };
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/ed25519']}>
+        <AppRouter />
+      </MemoryRouter>,
+    );
+
+    await user.type(screen.getByLabelText('Credential name'), 'Laptop signer');
+    await user.type(
+      screen.getByLabelText('Public key (base64url 32-byte)'),
+      'jt2HpVJxALeSteTe7QlqBRiOxVeloHMMImehYhZc9Rg',
+    );
+    await user.click(screen.getByRole('button', { name: 'Register credential' }));
+
+    const currentCredentialsPanel = getJsonPanel('current credentials');
+
+    await waitFor(() => {
+      expect(within(currentCredentialsPanel).getByText(/Laptop signer/)).toBeInTheDocument();
+    });
   });
 
   it('keeps register disabled for invalid public key text', async () => {

@@ -2,8 +2,15 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createBrowserSdk } from '../../src/sdk/browser.js';
+import { renderSingletonIifeSource } from '../../src/sdk/singleton-entry.js';
 import type { AuthMiniApi } from '../../src/sdk/types.js';
-import { fakeStorage, jsonResponse } from '../helpers/sdk.js';
+import {
+  browserSdkStorageKey,
+  executeServedSdk,
+  fakeStorage,
+  jsonResponse,
+  seedBrowserSdkStorage,
+} from '../helpers/sdk.js';
 
 describe('browser module sdk', () => {
   it('preserves base-path prefixes in browser sdk requests without window side effects', async () => {
@@ -67,6 +74,7 @@ describe('browser module sdk', () => {
             user_id: 'user-a',
             email: 'user@example.com',
             webauthn_credentials: [],
+            ed25519_credentials: [],
             active_sessions: [],
           },
         });
@@ -86,6 +94,7 @@ describe('browser module sdk', () => {
           user_id: 'user-a',
           email: 'user@example.com',
           webauthn_credentials: [],
+          ed25519_credentials: [],
           active_sessions: [],
         });
       }
@@ -111,6 +120,300 @@ describe('browser module sdk', () => {
 
       expect(fetch).not.toHaveBeenCalled();
       expect(secondSdk.session.getState().status).toBe('anonymous');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('rejects malformed /me payloads instead of repairing them in the browser sdk', async () => {
+    const storage = fakeStorage();
+
+    seedBrowserSdkStorage(storage, 'https://auth.example.com', {
+      sessionId: 'session-1',
+      accessToken: 'access-1',
+      refreshToken: 'refresh-1',
+      receivedAt: '2036-04-03T00:00:00.000Z',
+      expiresAt: '2036-04-03T00:15:00.000Z',
+      me: null,
+    });
+    const fetch = vi.fn(async (input: string | URL) => {
+      const requestUrl = new URL(String(input));
+
+      if (requestUrl.pathname.endsWith('/me')) {
+        return jsonResponse({
+          user_id: 'user-1',
+          email: 'user@example.com',
+          webauthn_credentials: [],
+          active_sessions: [],
+        });
+      }
+
+      return jsonResponse({ error: 'unexpected' }, 500);
+    });
+
+    vi.stubGlobal('fetch', fetch);
+    vi.stubGlobal('localStorage', storage);
+
+    try {
+      const sdk = createBrowserSdk('https://auth.example.com');
+
+      await expect(sdk.me.reload()).rejects.toMatchObject({
+        error: 'request_failed',
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('rejects browser startup recovery when /me payload is invalid and clears to anonymous', async () => {
+    const storage = fakeStorage();
+
+    seedBrowserSdkStorage(storage, 'https://auth.example.com', {
+      sessionId: 'session-1',
+      accessToken: 'access-1',
+      refreshToken: 'refresh-1',
+      receivedAt: '2036-04-03T00:00:00.000Z',
+      expiresAt: '2036-04-03T00:15:00.000Z',
+      me: null,
+    });
+    const fetch = vi.fn(async (input: string | URL) => {
+      const requestUrl = new URL(String(input));
+
+      if (requestUrl.pathname.endsWith('/me')) {
+        return jsonResponse({
+          user_id: 'user-1',
+          email: 'user@example.com',
+          webauthn_credentials: [],
+          active_sessions: [],
+        });
+      }
+
+      return jsonResponse({ error: 'unexpected' }, 500);
+    });
+
+    vi.stubGlobal('fetch', fetch);
+    vi.stubGlobal('localStorage', storage);
+
+    try {
+      const sdk = createBrowserSdk('https://auth.example.com') as AuthMiniApi & {
+        ready: Promise<void>;
+      };
+      const ready = sdk.ready;
+
+      void ready.catch(() => {});
+
+      await expect(ready).rejects.toMatchObject({
+        error: 'request_failed',
+        message: 'request_failed: Invalid /me payload',
+      });
+      expect(sdk.session.getState()).toMatchObject({
+        status: 'anonymous',
+        authenticated: false,
+        sessionId: null,
+        accessToken: null,
+        refreshToken: null,
+        me: null,
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('rejects browser /me payloads when nested credential items are malformed', async () => {
+    const storage = fakeStorage();
+
+    seedBrowserSdkStorage(storage, 'https://auth.example.com', {
+      sessionId: 'session-1',
+      accessToken: 'access-1',
+      refreshToken: 'refresh-1',
+      receivedAt: '2036-04-03T00:00:00.000Z',
+      expiresAt: '2036-04-03T00:15:00.000Z',
+      me: null,
+    });
+    const fetch = vi.fn(async (input: string | URL) => {
+      const requestUrl = new URL(String(input));
+
+      if (requestUrl.pathname.endsWith('/me')) {
+        return jsonResponse({
+          user_id: 'user-1',
+          email: 'user@example.com',
+          webauthn_credentials: [],
+          ed25519_credentials: [
+            {
+              id: 'cred-1',
+              public_key: 'public-key',
+              created_at: '2036-04-03T00:00:00.000Z',
+              last_used_at: null,
+            },
+          ],
+          active_sessions: [],
+        });
+      }
+
+      return jsonResponse({ error: 'unexpected' }, 500);
+    });
+
+    vi.stubGlobal('fetch', fetch);
+    vi.stubGlobal('localStorage', storage);
+
+    try {
+      const sdk = createBrowserSdk('https://auth.example.com');
+
+      await expect(sdk.me.reload()).rejects.toMatchObject({
+        error: 'request_failed',
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('rejects malformed /me payloads in the served singleton iife', async () => {
+    const storage = fakeStorage();
+
+    seedBrowserSdkStorage(storage, 'https://app.example.com', {
+      sessionId: 'session-1',
+      accessToken: 'access-1',
+      refreshToken: 'refresh-1',
+      receivedAt: '2036-04-03T00:00:00.000Z',
+      expiresAt: '2036-04-03T00:15:00.000Z',
+      me: null,
+    });
+
+    const fetch = vi.fn(async (input: string | URL) => {
+      const requestUrl = new URL(String(input));
+
+      if (requestUrl.pathname.endsWith('/me')) {
+        return jsonResponse({
+          user_id: 'user-1',
+          email: 'user@example.com',
+          webauthn_credentials: [],
+          active_sessions: [],
+        });
+      }
+
+      return jsonResponse({ error: 'unexpected' }, 500);
+    });
+
+    vi.stubGlobal('fetch', fetch);
+
+    try {
+      const windowObject = executeServedSdk(renderSingletonIifeSource(), {
+        currentScriptSrc: 'https://app.example.com/sdk/singleton-iife.js',
+        storage,
+      });
+
+      await expect(windowObject.AuthMini.me.reload()).rejects.toMatchObject({
+        error: 'request_failed',
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('rejects singleton startup recovery when /me payload is invalid and clears to anonymous', async () => {
+    const storage = fakeStorage();
+
+    seedBrowserSdkStorage(storage, 'https://app.example.com', {
+      sessionId: 'session-1',
+      accessToken: 'access-1',
+      refreshToken: 'refresh-1',
+      receivedAt: '2036-04-03T00:00:00.000Z',
+      expiresAt: '2036-04-03T00:15:00.000Z',
+      me: null,
+    });
+
+    const fetch = vi.fn(async (input: string | URL) => {
+      const requestUrl = new URL(String(input));
+
+      if (requestUrl.pathname.endsWith('/me')) {
+        return jsonResponse({
+          user_id: 'user-1',
+          email: 'user@example.com',
+          webauthn_credentials: [],
+          active_sessions: [],
+        });
+      }
+
+      return jsonResponse({ error: 'unexpected' }, 500);
+    });
+
+    vi.stubGlobal('fetch', fetch);
+
+    try {
+      const windowObject = executeServedSdk(renderSingletonIifeSource(), {
+        currentScriptSrc: 'https://app.example.com/sdk/singleton-iife.js',
+        storage,
+      });
+      const ready = (windowObject.AuthMini as AuthMiniApi & { ready: Promise<void> })
+        .ready;
+
+      void ready.catch(() => {});
+
+      await expect(ready).rejects.toMatchObject({
+        error: 'request_failed',
+        message: 'request_failed: Invalid /me payload',
+      });
+      expect(windowObject.AuthMini.session.getState()).toMatchObject({
+        status: 'anonymous',
+        authenticated: false,
+        sessionId: null,
+        accessToken: null,
+        refreshToken: null,
+        me: null,
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('rejects malformed persisted me when the served singleton restores from localStorage', async () => {
+    const storage = fakeStorage();
+    const fetch = vi.fn(async () => jsonResponse({ error: 'unexpected' }, 500));
+
+    storage.setItem(
+      browserSdkStorageKey('https://app.example.com'),
+      JSON.stringify({
+        sessionId: 'session-1',
+        accessToken: 'access-1',
+        refreshToken: 'refresh-1',
+        receivedAt: '2036-04-03T00:00:00.000Z',
+        expiresAt: '2036-04-03T00:15:00.000Z',
+        me: {
+          user_id: 'user-1',
+          email: 'user@example.com',
+          webauthn_credentials: [],
+          ed25519_credentials: [
+            {
+              id: 'cred-1',
+              public_key: 'public-key',
+              created_at: '2036-04-03T00:00:00.000Z',
+              last_used_at: null,
+            },
+          ],
+          active_sessions: [],
+        },
+      }),
+    );
+
+    vi.stubGlobal('fetch', fetch);
+
+    try {
+      const windowObject = executeServedSdk(renderSingletonIifeSource(), {
+        currentScriptSrc: 'https://app.example.com/sdk/singleton-iife.js',
+        storage,
+      });
+
+      await expect(
+        (windowObject.AuthMini as AuthMiniApi & { ready: Promise<void> }).ready,
+      ).resolves.toBeUndefined();
+      expect(windowObject.AuthMini.session.getState()).toMatchObject({
+        status: 'anonymous',
+        authenticated: false,
+        sessionId: null,
+        refreshToken: null,
+        me: null,
+      });
+      expect(fetch).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
     }

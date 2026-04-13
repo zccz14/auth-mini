@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { FlowCard } from '@/components/app/flow-card';
 import { JsonPanel } from '@/components/app/json-panel';
 import { Button } from '@/components/ui/button';
@@ -20,9 +20,6 @@ export function Ed25519Route() {
   const [seedPublicKey, setSeedPublicKey] = useState('');
   const [generatedSeed, setGeneratedSeed] = useState('');
   const [generatedPublicKey, setGeneratedPublicKey] = useState('');
-  const [currentCredentials, setCurrentCredentials] = useState(
-    user?.ed25519_credentials ?? null,
-  );
   const [lastRegisteredCredentialId, setLastRegisteredCredentialId] =
     useState('');
   const [pendingAction, setPendingAction] = useState<
@@ -57,10 +54,6 @@ export function Ed25519Route() {
     credentialId.trim() !== '' &&
     seedValidationError === '' &&
     pendingAction === null;
-
-  useEffect(() => {
-    setCurrentCredentials(session.me?.ed25519_credentials ?? null);
-  }, [session.me]);
 
   function formatDemoError(cause: unknown): string {
     if (cause instanceof Error) {
@@ -142,10 +135,9 @@ export function Ed25519Route() {
         name: credentialName.trim(),
         public_key: publicKey.trim(),
       });
-      const me = await sdk.me.reload();
+      await sdk.me.reload();
 
       setLastResponses((current) => ({ ...current, register: result }));
-      setCurrentCredentials(me?.ed25519_credentials ?? []);
       setLastRegisteredCredentialId(
         typeof (result as { id?: unknown }).id === 'string'
           ? (result as { id: string }).id
@@ -318,7 +310,10 @@ export function Ed25519Route() {
         <div className="grid gap-4 xl:grid-cols-3">
           <JsonPanel title="session" value={session} />
           <JsonPanel title="last responses" value={lastResponses} />
-          <JsonPanel title="current credentials" value={currentCredentials} />
+          <JsonPanel
+            title="current credentials"
+            value={user?.ed25519_credentials ?? []}
+          />
         </div>
       </div>
     </FlowCard>

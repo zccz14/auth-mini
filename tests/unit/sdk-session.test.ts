@@ -33,6 +33,7 @@ describe('sdk session flows', () => {
             user_id: 'u1',
             email: 'u@example.com',
             webauthn_credentials: [],
+            ed25519_credentials: [],
             active_sessions: [],
           }),
         ),
@@ -56,13 +57,14 @@ describe('sdk session flows', () => {
         }),
       )
       .mockResolvedValueOnce(
-        jsonResponse({
-          user_id: 'u1',
-          email: 'u@example.com',
-          webauthn_credentials: [],
-          active_sessions: [],
-        }),
-      );
+          jsonResponse({
+            user_id: 'u1',
+            email: 'u@example.com',
+            webauthn_credentials: [],
+            ed25519_credentials: [],
+            active_sessions: [],
+          }),
+        );
     const sdk = createAuthMiniForTest({
       fetch,
       now: () => Date.parse('2026-04-03T00:02:00.000Z'),
@@ -95,6 +97,7 @@ describe('sdk session flows', () => {
             user_id: 'u1',
             email: 'u@example.com',
             webauthn_credentials: [],
+            ed25519_credentials: [],
             active_sessions: [],
           }),
         ),
@@ -135,6 +138,25 @@ describe('sdk session flows', () => {
     const sdk = createAuthMiniForTest({
       storage: fakeAuthenticatedStorageWithMe(),
       fetch: vi.fn().mockResolvedValueOnce(
+          jsonResponse({
+            user_id: 'u1',
+            email: 'updated@example.com',
+            webauthn_credentials: [],
+            ed25519_credentials: [],
+            active_sessions: [],
+          }),
+        ),
+    });
+
+    const me = await sdk.me.reload();
+    expect(me.email).toBe('updated@example.com');
+    expect(sdk.me.get()?.email).toBe('updated@example.com');
+  });
+
+  it('rejects /me payloads that omit ed25519_credentials', async () => {
+    const sdk = createAuthMiniForTest({
+      storage: fakeAuthenticatedStorageWithMe(),
+      fetch: vi.fn().mockResolvedValueOnce(
         jsonResponse({
           user_id: 'u1',
           email: 'updated@example.com',
@@ -144,9 +166,58 @@ describe('sdk session flows', () => {
       ),
     });
 
-    const me = await sdk.me.reload();
-    expect(me.email).toBe('updated@example.com');
-    expect(sdk.me.get()?.email).toBe('updated@example.com');
+    await expect(sdk.me.reload()).rejects.toMatchObject({
+      error: 'request_failed',
+    });
+  });
+
+  it('rejects /me payloads that omit active_sessions', async () => {
+    const sdk = createAuthMiniForTest({
+      storage: fakeAuthenticatedStorageWithMe(),
+      fetch: vi.fn().mockResolvedValueOnce(
+        jsonResponse({
+          user_id: 'u1',
+          email: 'updated@example.com',
+          webauthn_credentials: [],
+          ed25519_credentials: [],
+        }),
+      ),
+    });
+
+    await expect(sdk.me.reload()).rejects.toMatchObject({
+      error: 'request_failed',
+    });
+  });
+
+  it('rejects startup recovery when /me payload is invalid and clears to anonymous', async () => {
+    const sdk = createAuthMiniForTest({
+      autoRecover: true,
+      storage: fakeAuthenticatedStorageWithMe(),
+      fetch: vi.fn().mockResolvedValueOnce(
+        jsonResponse({
+          user_id: 'u1',
+          email: 'updated@example.com',
+          webauthn_credentials: [],
+          active_sessions: [],
+        }),
+      ),
+    });
+    const ready = sdk.ready;
+
+    void ready.catch(() => {});
+
+    await expect(ready).rejects.toMatchObject({
+      error: 'request_failed',
+      message: 'request_failed: Invalid /me payload',
+    });
+    expect(sdk.session.getState()).toMatchObject({
+      status: 'anonymous',
+      authenticated: false,
+      sessionId: null,
+      accessToken: null,
+      refreshToken: null,
+      me: null,
+    });
   });
 
   it('retains ed25519 credentials on cached me state after reload', async () => {
@@ -273,6 +344,7 @@ describe('sdk session flows', () => {
             user_id: 'u1',
             email: 'u@example.com',
             webauthn_credentials: [],
+            ed25519_credentials: [],
             active_sessions: [],
           }),
         ),
@@ -455,6 +527,7 @@ describe('sdk session flows', () => {
           user_id: 'u1',
           email: 'u@example.com',
           webauthn_credentials: [],
+          ed25519_credentials: [],
           active_sessions: [],
         }),
       );
@@ -503,6 +576,7 @@ describe('sdk session flows', () => {
           user_id: 'u1',
           email: 'u@example.com',
           webauthn_credentials: [],
+          ed25519_credentials: [],
           active_sessions: [],
         }),
       )

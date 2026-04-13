@@ -35,6 +35,7 @@ type MockSessionState = {
 };
 
 const sdkMocks = vi.hoisted(() => {
+  const listeners = new Set<(nextSession: MockSessionState) => void>();
   const sessionState = {
     current: {
       status: 'anonymous',
@@ -56,6 +57,12 @@ const sdkMocks = vi.hoisted(() => {
     return sessionState.current.me;
   });
 
+  function emitSession() {
+    for (const listener of listeners) {
+      listener(sessionState.current);
+    }
+  }
+
   return {
     createBrowserSdk: vi.fn(() => ({
       email: { start: vi.fn(), verify: vi.fn() },
@@ -63,13 +70,17 @@ const sdkMocks = vi.hoisted(() => {
       me: { get: vi.fn(() => sessionState.current.me), reload: reloadMe },
       session: {
         getState: () => sessionState.current,
-        onChange: vi.fn(() => vi.fn()),
+        onChange: vi.fn((listener: (nextSession: MockSessionState) => void) => {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        }),
         refresh: vi.fn(),
         logout: vi.fn(),
       },
       webauthn: { register: vi.fn(), authenticate: vi.fn() },
     })),
     fetch,
+    emitSession,
     reloadMe,
     sessionState,
   };
@@ -275,6 +286,64 @@ describe('CredentialsRoute', () => {
     expect(screen.getByText(/MCowBQYDK2VwAyEA/i)).toBeInTheDocument();
   });
 
+  it('keeps the page pinned to the shared session until reload emits an updated snapshot', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
+
+    sdkMocks.sessionState.current = authenticatedSession({
+      webauthn_credentials: [
+        {
+          id: 'passkey-row-1',
+          credential_id: 'first-passkey',
+          created_at: '2026-04-10T12:00:00.000Z',
+        },
+      ],
+      ed25519_credentials: [],
+    });
+
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    sdkMocks.fetch.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const refreshedSession = authenticatedSession({
+      webauthn_credentials: [],
+      ed25519_credentials: [],
+    });
+    sdkMocks.reloadMe.mockImplementationOnce(async () => {
+      return refreshedSession.me!;
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/credentials']}>
+        <AppRouter />
+      </MemoryRouter>,
+    );
+
+    await user.click(
+      screen.getByRole('button', { name: 'Delete passkey first-passkey' }),
+    );
+
+    expectDeleteConfirmation(confirmSpy, 'passkey');
+    await expect(sdkMocks.reloadMe.mock.results[0]?.value).resolves.toEqual(
+      expect.objectContaining({
+        webauthn_credentials: [],
+      }),
+    );
+    expect(
+      screen.getByRole('button', { name: 'Delete passkey first-passkey' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('No passkeys are currently bound to this account.'),
+    ).not.toBeInTheDocument();
+
+    act(() => {
+      sdkMocks.sessionState.current = refreshedSession;
+      sdkMocks.emitSession();
+    });
+
+    expect(
+      await screen.findByText('No passkeys are currently bound to this account.'),
+    ).toBeInTheDocument();
+  });
+
   it('deletes a passkey after confirm and reloads /me from the server', async () => {
     const user = userEvent.setup();
     localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
@@ -299,6 +368,7 @@ describe('CredentialsRoute', () => {
       sdkMocks.sessionState.current = authenticatedSession({
         webauthn_credentials: [],
       });
+      sdkMocks.emitSession();
       return sdkMocks.sessionState.current.me!;
     });
 
@@ -352,6 +422,7 @@ describe('CredentialsRoute', () => {
       sdkMocks.sessionState.current = authenticatedSession({
         ed25519_credentials: [],
       });
+      sdkMocks.emitSession();
       return sdkMocks.sessionState.current.me!;
     });
 
