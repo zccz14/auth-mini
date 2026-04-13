@@ -361,6 +361,18 @@ export const buildInlineAliasMap = (
     ...collectTypeAliases(sourceFile),
   ]);
 
+export const isDirectExecution = (
+  moduleUrl: string,
+  argvEntry: string | undefined,
+  cwd = process.cwd(),
+) => {
+  if (!argvEntry) {
+    return false;
+  }
+
+  return moduleUrl === pathToFileURL(resolve(cwd, argvEntry)).href;
+};
+
 const buildArtifact = (tempDir: string) => {
   const singletonDtsPath = resolve(tempDir, 'sdk/singleton-global.d.ts');
   const typesDtsPath = resolve(tempDir, 'sdk/types.d.ts');
@@ -502,9 +514,6 @@ const run = () => {
   }
 };
 
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+if (isDirectExecution(import.meta.url, process.argv[1])) {
   run();
 }

@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
@@ -66,7 +67,9 @@ const loadTestRunnerModule = async () =>
   import(resolve(process.cwd(), 'scripts/run-tests.js'));
 
 const loadSingletonDtsModule = async () =>
-  import(resolve(process.cwd(), 'src/sdk/build-singleton-dts.ts'));
+  import(
+    pathToFileURL(resolve(process.cwd(), 'src/sdk/build-singleton-dts.ts')).href
+  );
 
 const readSourceFile = (relativePath: string) => {
   const filePath = resolve(process.cwd(), relativePath);
@@ -331,6 +334,31 @@ describe('sdk d.ts build artifact', () => {
     expect(printed).toContain('list: string[];');
     expect(printed).not.toContain('value: T;');
     expect(printed).not.toContain('ImportedGenericBox');
+  });
+
+  it('matches the cli entrypoint guard against relative argv paths', async () => {
+    const module = (await loadSingletonDtsModule()) as {
+      isDirectExecution?: (
+        moduleUrl: string,
+        argvEntry: string | undefined,
+        cwd?: string,
+      ) => boolean;
+    };
+
+    expect(
+      module.isDirectExecution?.(
+        'file:///repo/dist/sdk/build-singleton-dts.js',
+        'dist/sdk/build-singleton-dts.js',
+        '/repo',
+      ),
+    ).toBe(true);
+    expect(
+      module.isDirectExecution?.(
+        'file:///repo/dist/sdk/build-singleton-dts.js',
+        'dist/sdk/other.js',
+        '/repo',
+      ),
+    ).toBe(false);
   });
 
   it('aliases only the structurally equivalent browser sdk public types', () => {
