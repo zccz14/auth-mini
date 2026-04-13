@@ -22,8 +22,11 @@ type MockMe = {
   ed25519_credentials: Array<unknown>;
   active_sessions: Array<{
     id: string;
+    auth_method: string;
     created_at: string;
     expires_at: string;
+    ip: string | null;
+    user_agent: string | null;
   }>;
 };
 
@@ -173,8 +176,20 @@ describe('SessionRoute', () => {
       active_sessions: [
         {
           id: 'session-current',
+          auth_method: 'email_otp',
           created_at: '2026-04-12T00:00:00.000Z',
           expires_at: '2026-04-12T01:00:00.000Z',
+          ip: '203.0.113.30',
+          user_agent:
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/537.36 SnapshotBrowser/123.45',
+        },
+        {
+          id: 'session-peer',
+          auth_method: 'webauthn',
+          created_at: '2026-04-12T00:05:00.000Z',
+          expires_at: '2026-04-12T01:05:00.000Z',
+          ip: null,
+          user_agent: null,
         },
       ],
     });
@@ -184,6 +199,11 @@ describe('SessionRoute', () => {
     expect(screen.getByText('Loading current user…')).toBeInTheDocument();
     expect(await screen.findByText(/"email": "user@example.com"/)).toBeInTheDocument();
     expect(screen.getByText('session-current')).toBeInTheDocument();
+    expect(screen.getByText('email_otp')).toBeInTheDocument();
+    expect(screen.getByText('203.0.113.30')).toBeInTheDocument();
+    expect(screen.getByText(/Mozilla\/5\.0 .*\.\.\./)).toBeInTheDocument();
+    expect(screen.getAllByText('Unavailable')).not.toHaveLength(0);
+    expect(screen.queryByText('null')).not.toBeInTheDocument();
     expect(sdkMocks.meFetch).toHaveBeenCalledTimes(1);
   });
 
