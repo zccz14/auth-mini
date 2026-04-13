@@ -106,14 +106,6 @@ export function fakeAuthenticatedStorage(
   });
 }
 
-export function fakeAuthenticatedStorageWithMe(
-  _me: MeResponse = createMe(),
-  seed: Partial<PersistedSdkState> = {},
-): Storage {
-  void _me;
-  return fakeAuthenticatedStorage(seed);
-}
-
 export function fakeAlmostExpiredStorage(): Storage {
   return fakeAuthenticatedStorage({
     receivedAt: '2026-04-03T00:00:00.000Z',

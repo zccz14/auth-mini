@@ -6,7 +6,6 @@ import {
   createSharedStorageHarness,
   fakeAlmostExpiredStorage,
   fakeAuthenticatedStorage,
-  fakeAuthenticatedStorageWithMe,
   jsonResponse,
 } from '../helpers/sdk.js';
 
@@ -443,7 +442,7 @@ describe('sdk session flows', () => {
   it('drops legacy persisted sessions without sessionId during boot recovery', async () => {
     const sdk = createAuthMiniForTest({
       autoRecover: true,
-      storage: fakeAuthenticatedStorageWithMe(undefined, { sessionId: null }),
+      storage: fakeAuthenticatedStorage({ sessionId: null }),
     });
 
     await expect(sdk.ready).resolves.toBeUndefined();
@@ -469,7 +468,7 @@ describe('sdk session flows', () => {
     const sdk = createAuthMiniForTest({
       autoRecover: true,
       fetch,
-      storage: fakeAuthenticatedStorageWithMe(undefined, {
+      storage: fakeAuthenticatedStorage({
         receivedAt: 'not-a-date',
         expiresAt: 'still-not-a-date',
       }),
