@@ -156,7 +156,6 @@ paths:
           required: true
           schema:
             type: string
-            format: uuid
       responses:
         '200':
           description: Target session invalidated or already inactive
@@ -549,7 +548,6 @@ components:
       required: true
       schema:
         type: string
-        format: uuid
   responses:
     InvalidRequest:
       description: Request body or path parameters do not match the route contract

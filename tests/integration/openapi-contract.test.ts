@@ -79,19 +79,57 @@ describe('openapi contract', () => {
       }
     }
 
-    for (const path of publicRoutePaths) {
-      expect(document.paths[path]).toBeTruthy();
-      expect(firstOperation(document.paths[path])).toMatchObject({
+    for (const operation of publicOperations) {
+      const pathItem = document.paths[operation.path];
+
+      expect(pathItem).toBeTruthy();
+      expect(operationAt(pathItem, operation.method)).toMatchObject({
         security: [],
       });
     }
 
-    for (const path of authenticatedRoutePaths) {
-      expect(document.paths[path]).toBeTruthy();
-      expect(firstOperation(document.paths[path])).toMatchObject({
+    for (const operation of authenticatedOperations) {
+      const pathItem = document.paths[operation.path];
+
+      expect(pathItem).toBeTruthy();
+      expect(operationAt(pathItem, operation.method)).toMatchObject({
         security: [{ bearerAuth: [] }],
       });
     }
+
+    expect(
+      operationAt(document.paths['/session/{session_id}/logout'], 'post')
+        .parameters,
+    ).toEqual([
+      {
+        name: 'session_id',
+        in: 'path',
+        required: true,
+        schema: {
+          type: 'string',
+        },
+      },
+    ]);
+    expect(document.components?.parameters?.CredentialId).toEqual({
+      name: 'id',
+      in: 'path',
+      required: true,
+      schema: {
+        type: 'string',
+      },
+    });
+    expect(
+      operationAt(document.paths['/ed25519/credentials/{id}'], 'patch')
+        .parameters,
+    ).toEqual([{ $ref: '#/components/parameters/CredentialId' }]);
+    expect(
+      operationAt(document.paths['/ed25519/credentials/{id}'], 'delete')
+        .parameters,
+    ).toEqual([{ $ref: '#/components/parameters/CredentialId' }]);
+    expect(
+      operationAt(document.paths['/webauthn/credentials/{id}'], 'delete')
+        .parameters,
+    ).toEqual([{ $ref: '#/components/parameters/CredentialId' }]);
 
     expect(
       document.paths['/ed25519/start']?.post?.responses?.['400']?.content?.[
@@ -179,35 +217,46 @@ async function readOpenApiContract() {
 type OpenApiDocument = {
   openapi?: string;
   components?: {
+    parameters?: Record<string, unknown>;
     schemas?: Record<string, { properties?: Record<string, unknown> }>;
   };
   servers?: Array<{ url?: string }>;
   security?: Array<Record<string, unknown>>;
-  paths: Record<string, Record<string, unknown>>;
+  paths: Record<string, Record<string, OpenApiOperation>>;
 };
 
-const publicRoutePaths = [
-  '/email/start',
-  '/email/verify',
-  '/session/refresh',
-  '/ed25519/start',
-  '/ed25519/verify',
-  '/webauthn/authenticate/options',
-  '/webauthn/authenticate/verify',
-  '/jwks',
+type OpenApiOperation = {
+  parameters?: unknown;
+  security?: unknown;
+};
+
+const publicOperations = [
+  { path: '/email/start', method: 'post' },
+  { path: '/email/verify', method: 'post' },
+  { path: '/session/refresh', method: 'post' },
+  { path: '/ed25519/start', method: 'post' },
+  { path: '/ed25519/verify', method: 'post' },
+  { path: '/webauthn/authenticate/options', method: 'post' },
+  { path: '/webauthn/authenticate/verify', method: 'post' },
+  { path: '/jwks', method: 'get' },
 ] as const;
 
-const authenticatedRoutePaths = [
-  '/me',
-  '/session/logout',
-  '/session/{session_id}/logout',
-  '/ed25519/credentials',
-  '/ed25519/credentials/{id}',
-  '/webauthn/register/options',
-  '/webauthn/register/verify',
-  '/webauthn/credentials/{id}',
+const authenticatedOperations = [
+  { path: '/me', method: 'get' },
+  { path: '/session/logout', method: 'post' },
+  { path: '/session/{session_id}/logout', method: 'post' },
+  { path: '/ed25519/credentials', method: 'get' },
+  { path: '/ed25519/credentials', method: 'post' },
+  { path: '/ed25519/credentials/{id}', method: 'patch' },
+  { path: '/ed25519/credentials/{id}', method: 'delete' },
+  { path: '/webauthn/register/options', method: 'post' },
+  { path: '/webauthn/register/verify', method: 'post' },
+  { path: '/webauthn/credentials/{id}', method: 'delete' },
 ] as const;
 
-function firstOperation(pathItem: Record<string, unknown>) {
-  return Object.values(pathItem)[0] as { security?: unknown };
+function operationAt(
+  pathItem: Record<string, OpenApiOperation>,
+  method: string,
+) {
+  return pathItem[method] as OpenApiOperation;
 }

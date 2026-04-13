@@ -2,7 +2,7 @@
 
 `openapi.yaml` is the source of truth for the current HTTP contract.
 
-Use `auth-mini/sdk/api` when you want the typed low-level client for this surface. The browser and device SDK docs describe higher-level integrations, not the raw HTTP contract.
+Use this document for narrative examples and `openapi.yaml` for the exact route, auth, and schema contract.
 
 ## Public endpoints
 
