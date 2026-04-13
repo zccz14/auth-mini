@@ -1,30 +1,32 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
+import { createClient } from '@hey-api/openapi-ts';
+import { createJiti } from 'jiti';
 
 const root = process.cwd();
-const output = resolve(root, 'src/generated/api');
+const loadConfig = createJiti(import.meta.url);
+const { default: loadedOpenapiTsConfig } = await loadConfig.import(
+  '../openapi-ts.config.ts',
+);
+const openapiTsConfig = await loadedOpenapiTsConfig;
+const output = resolve(root, openapiTsConfig.output);
 const tempRoot = mkdtempSync(resolve(root, '.tmp-openapi-check-'));
 
 try {
-  const generate = spawnSync(
-    'node',
-    [
-      '--input-type=module',
-      '--eval',
-      `import { createClient } from '@hey-api/openapi-ts';\nawait createClient({\n  input: './openapi.yaml',\n  output: ${JSON.stringify(tempRoot)},\n  plugins: ['@hey-api/client-fetch', { name: '@hey-api/sdk', auth: true, operations: { strategy: 'flat' } }],\n});`,
-    ],
-    { cwd: root, stdio: 'inherit' },
-  );
-
-  if (generate.status !== 0) {
-    process.exit(generate.status ?? 1);
-  }
-
-  const diff = spawnSync('git', ['diff', '--no-index', '--exit-code', output, tempRoot], {
-    cwd: root,
-    stdio: 'inherit',
+  await createClient({
+    ...openapiTsConfig,
+    output: tempRoot,
   });
+
+  const diff = spawnSync(
+    'git',
+    ['diff', '--no-index', '--exit-code', output, tempRoot],
+    {
+      cwd: root,
+      stdio: 'inherit',
+    },
+  );
 
   if (diff.status !== 0) {
     process.exit(diff.status ?? 1);
