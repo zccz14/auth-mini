@@ -81,7 +81,7 @@ describe('sdk d.ts build artifact', () => {
     expect(testRunnerSource).toContain('fileURLToPath(import.meta.url)');
   });
 
-  it('runs api generation before emit and checks generated artifact drift on the standard path', () => {
+  it('runs generated artifact drift checks before the standard test suite and dts compile', () => {
     const buildScriptSource = readFileSync(
       resolve(process.cwd(), 'scripts/build-sdk.mjs'),
       'utf8',
@@ -99,9 +99,18 @@ describe('sdk d.ts build artifact', () => {
       "run('npm', ['run', 'check:generated:api'])",
     );
     expect(
-      testRunnerSource.indexOf('tests/fixtures/sdk-dts-consumer/tsconfig.json'),
-    ).toBeLessThan(
       testRunnerSource.indexOf("run('npm', ['run', 'check:generated:api'])"),
+    ).toBeLessThan(
+      testRunnerSource.indexOf(
+        "run('npx', ['vitest', 'run', 'tests', ...args])",
+      ),
+    );
+    expect(
+      testRunnerSource.indexOf(
+        "run('npx', ['vitest', 'run', 'tests', ...args])",
+      ),
+    ).toBeLessThan(
+      testRunnerSource.indexOf('tests/fixtures/sdk-dts-consumer/tsconfig.json'),
     );
   });
 
@@ -237,10 +246,12 @@ describe('sdk d.ts build artifact', () => {
     const runtimeOutput = readApiModuleRuntime();
 
     expect(declarationOutput).toContain('export declare function createApiSdk');
+    expect(declarationOutput).toContain('export type ApiSdkOptions = {');
     expect(declarationOutput).toContain(
       "export type * from '../generated/api/index.js'",
     );
     expect(runtimeOutput).toContain('export function createApiSdk');
+    expect(runtimeOutput).toContain('if (!options.baseUrl)');
     expect(runtimeOutput).toContain("from '../generated/api/client/index.js'");
   });
 
