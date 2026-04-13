@@ -4,7 +4,7 @@ import {
   countRefreshCalls,
   createAuthMiniForTest,
   createWebauthnRequestRecorder,
-  fakeAuthenticatedStorageWithMe,
+  fakeAuthenticatedStorage,
   fakeNavigatorCredentials,
   jsonResponse,
   readJsonBody,
@@ -55,7 +55,7 @@ describe('sdk webauthn flows', () => {
     const fetch = createWebauthnRequestRecorder();
     const sdk = createAuthMiniForTest({
       fetch,
-      storage: fakeAuthenticatedStorageWithMe(),
+      storage: fakeAuthenticatedStorage(),
       navigatorCredentials: fakeNavigatorCredentials(),
     });
 
@@ -70,7 +70,7 @@ describe('sdk webauthn flows', () => {
     const fetch = createWebauthnRequestRecorder();
     const sdk = createAuthMiniForTest({
       fetch,
-      storage: fakeAuthenticatedStorageWithMe(),
+      storage: fakeAuthenticatedStorage(),
       navigatorCredentials: fakeNavigatorCredentials(),
     });
 
@@ -102,7 +102,7 @@ describe('sdk webauthn flows', () => {
     });
   });
 
-  it('authenticates, stores session, and makes me available synchronously', async () => {
+  it('authenticates and leaves /me to an explicit fetch', async () => {
     const fetch = createWebauthnRequestRecorder();
     const sdk = createAuthMiniForTest({
       fetch,
@@ -112,7 +112,7 @@ describe('sdk webauthn flows', () => {
     const result = await sdk.webauthn.authenticate();
 
     expect(result.accessToken).toBe('access-authenticated');
-    expect(sdk.me.get()?.email).toBe('u@example.com');
+    expect(sdk.session.getState()).not.toHaveProperty('me');
     expect(sdk.session.getState().status).toBe('authenticated');
     expect(readJsonBody(fetch, '/webauthn/authenticate/verify')).toEqual({
       request_id: 'request-authenticate',
@@ -130,7 +130,7 @@ describe('sdk webauthn flows', () => {
     });
   });
 
-  it('rolls back local auth state when post-auth me loading fails', async () => {
+  it('does not roll back auth state for an unused trailing /me failure', async () => {
     const fetch = createWebauthnRequestRecorder()
       .mockImplementationOnce(async () =>
         jsonResponse({
@@ -158,11 +158,11 @@ describe('sdk webauthn flows', () => {
       navigatorCredentials: fakeNavigatorCredentials(),
     });
 
-    await expect(sdk.webauthn.authenticate()).rejects.toMatchObject({
-      error: 'internal_error',
+    await expect(sdk.webauthn.authenticate()).resolves.toMatchObject({
+      accessToken: 'access-authenticated',
     });
-    expect(sdk.session.getState().status).toBe('anonymous');
-    expect(sdk.me.get()).toBeNull();
+    expect(sdk.session.getState()).toMatchObject({ status: 'authenticated' });
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 
   it('requires an authenticated session before passkey registration', async () => {
@@ -175,7 +175,7 @@ describe('sdk webauthn flows', () => {
 
   it('register throws webauthn_unsupported when browser apis are unavailable', async () => {
     const sdk = createAuthMiniForTest({
-      storage: fakeAuthenticatedStorageWithMe(),
+      storage: fakeAuthenticatedStorage(),
       publicKeyCredential: undefined,
     });
 
@@ -188,7 +188,7 @@ describe('sdk webauthn flows', () => {
     const fetch = createWebauthnRequestRecorder();
     const sdk = createAuthMiniForTest({
       fetch,
-      storage: fakeAuthenticatedStorageWithMe(),
+      storage: fakeAuthenticatedStorage(),
       navigatorCredentials: fakeNavigatorCredentials(),
     });
 
@@ -275,7 +275,7 @@ describe('sdk webauthn flows', () => {
           return fakeNavigatorCredentials().create(options);
         },
       },
-      storage: fakeAuthenticatedStorageWithMe(undefined, {
+      storage: fakeAuthenticatedStorage(undefined, {
         accessToken: 'access-token',
         refreshToken: 'refresh-token',
         receivedAt: '2026-04-03T00:00:00.000Z',
