@@ -1,0 +1,1085 @@
+openapi: 3.1.0
+info:
+  title: auth-mini HTTP API
+  version: 0.1.9
+  description: Current public HTTP surface for auth-mini.
+servers:
+  - url: http://localhost:7777
+security:
+  - bearerAuth: []
+paths:
+  /email/start:
+    post:
+      security: []
+      tags:
+        - email
+      operationId: startEmailAuth
+      summary: Start the email OTP flow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailStartRequest'
+      responses:
+        '200':
+          description: OTP delivery started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '503':
+          description: SMTP is unavailable for this request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                smtp_not_configured:
+                  value:
+                    error: smtp_not_configured
+                smtp_temporarily_unavailable:
+                  value:
+                    error: smtp_temporarily_unavailable
+  /email/verify:
+    post:
+      security: []
+      tags:
+        - email
+      operationId: verifyEmailAuth
+      summary: Verify an email OTP and create a session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailVerifyRequest'
+      responses:
+        '200':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionTokenResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          description: OTP is invalid, expired, or already consumed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: invalid_email_otp
+  /me:
+    get:
+      tags:
+        - session
+      operationId: getCurrentUser
+      summary: Read the authenticated user profile
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Authenticated user profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '401':
+          $ref: '#/components/responses/InvalidAccessToken'
+  /session/refresh:
+    post:
+      security: []
+      tags:
+        - session
+      operationId: refreshSession
+      summary: Rotate the refresh token and mint a new access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Tokens rotated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionTokenResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          description: Session can no longer be refreshed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                session_invalidated:
+                  value:
+                    error: session_invalidated
+                session_superseded:
+                  value:
+                    error: session_superseded
+  /session/logout:
+    post:
+      tags:
+        - session
+      operationId: logoutCurrentSession
+      summary: Invalidate the current authenticated session
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Session invalidated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '401':
+          $ref: '#/components/responses/InvalidAccessToken'
+  /session/{session_id}/logout:
+    post:
+      tags:
+        - session
+      operationId: logoutPeerSession
+      summary: Invalidate another active session for the same user
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Target session invalidated or already inactive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidAccessToken'
+        '403':
+          $ref: '#/components/responses/InsufficientAuthenticationMethod'
+  /ed25519/start:
+    post:
+      security: []
+      tags:
+        - ed25519
+      operationId: startEd25519Authentication
+      summary: Create an ed25519 authentication challenge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Ed25519StartRequest'
+      responses:
+        '200':
+          description: Authentication challenge created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ed25519ChallengeResponse'
+        '400':
+          description: Request body or authentication challenge is invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_request:
+                  value:
+                    error: invalid_request
+                invalid_ed25519_authentication:
+                  value:
+                    error: invalid_ed25519_authentication
+  /ed25519/verify:
+    post:
+      security: []
+      tags:
+        - ed25519
+      operationId: verifyEd25519Authentication
+      summary: Verify an ed25519 signature challenge and create a session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Ed25519VerifyRequest'
+      responses:
+        '200':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionTokenResponse'
+        '400':
+          description: Request body or challenge verification failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_request:
+                  value:
+                    error: invalid_request
+                invalid_ed25519_authentication:
+                  value:
+                    error: invalid_ed25519_authentication
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /ed25519/credentials:
+    get:
+      tags:
+        - ed25519
+      operationId: listEd25519Credentials
+      summary: List the caller's ed25519 credentials
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Credential list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Ed25519Credential'
+        '401':
+          $ref: '#/components/responses/InvalidAccessToken'
+        '403':
+          $ref: '#/components/responses/InsufficientAuthenticationMethod'
+    post:
+      tags:
+        - ed25519
+      operationId: createEd25519Credential
+      summary: Create an ed25519 credential for the caller
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Ed25519CredentialCreateRequest'
+      responses:
+        '200':
+          description: Credential created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ed25519Credential'
+        '400':
+          description: Request body or credential is invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_request:
+                  value:
+                    error: invalid_request
+                invalid_ed25519_credential:
+                  value:
+                    error: invalid_ed25519_credential
+        '401':
+          $ref: '#/components/responses/InvalidAccessToken'
+        '403':
+          $ref: '#/components/responses/InsufficientAuthenticationMethod'
+  /ed25519/credentials/{id}:
+    patch:
+      tags:
+        - ed25519
+      operationId: updateEd25519Credential
+      summary: Rename an ed25519 credential
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CredentialId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Ed25519CredentialUpdateRequest'
+      responses:
+        '200':
+          description: Credential updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ed25519Credential'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidAccessToken'
+        '403':
+          $ref: '#/components/responses/InsufficientAuthenticationMethod'
+        '404':
+          $ref: '#/components/responses/CredentialNotFound'
+    delete:
+      tags:
+        - ed25519
+      operationId: deleteEd25519Credential
+      summary: Delete an ed25519 credential
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CredentialId'
+      responses:
+        '200':
+          description: Credential deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '401':
+          $ref: '#/components/responses/InvalidAccessToken'
+        '403':
+          $ref: '#/components/responses/InsufficientAuthenticationMethod'
+        '404':
+          $ref: '#/components/responses/CredentialNotFound'
+  /webauthn/register/options:
+    post:
+      tags:
+        - webauthn
+      operationId: createWebauthnRegistrationOptions
+      summary: Create passkey registration options for the caller
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebauthnOptionsRequest'
+      responses:
+        '200':
+          description: Registration challenge created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebauthnRegistrationOptionsResponse'
+        '400':
+          description: Request body or origin/rp_id combination is invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_request:
+                  value:
+                    error: invalid_request
+                invalid_webauthn_registration:
+                  value:
+                    error: invalid_webauthn_registration
+        '401':
+          $ref: '#/components/responses/InvalidAccessToken'
+        '403':
+          $ref: '#/components/responses/InsufficientAuthenticationMethod'
+  /webauthn/register/verify:
+    post:
+      tags:
+        - webauthn
+      operationId: verifyWebauthnRegistration
+      summary: Verify a passkey registration ceremony
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebauthnRegisterVerifyRequest'
+      responses:
+        '200':
+          description: Registration stored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '400':
+          description: Request body or ceremony verification failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_request:
+                  value:
+                    error: invalid_request
+                invalid_webauthn_registration:
+                  value:
+                    error: invalid_webauthn_registration
+        '401':
+          $ref: '#/components/responses/InvalidAccessToken'
+        '403':
+          $ref: '#/components/responses/InsufficientAuthenticationMethod'
+        '409':
+          description: Credential id already belongs to another stored credential
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: duplicate_credential
+  /webauthn/authenticate/options:
+    post:
+      security: []
+      tags:
+        - webauthn
+      operationId: createWebauthnAuthenticationOptions
+      summary: Create a passkey authentication challenge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebauthnOptionsRequest'
+      responses:
+        '200':
+          description: Authentication challenge created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebauthnAuthenticationOptionsResponse'
+        '400':
+          description: Request body or origin/rp_id combination is invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_request:
+                  value:
+                    error: invalid_request
+                invalid_webauthn_authentication:
+                  value:
+                    error: invalid_webauthn_authentication
+  /webauthn/authenticate/verify:
+    post:
+      security: []
+      tags:
+        - webauthn
+      operationId: verifyWebauthnAuthentication
+      summary: Verify a passkey assertion and create a session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebauthnAuthenticateVerifyRequest'
+      responses:
+        '200':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionTokenResponse'
+        '400':
+          description: Request body or ceremony verification failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_request:
+                  value:
+                    error: invalid_request
+                invalid_webauthn_authentication:
+                  value:
+                    error: invalid_webauthn_authentication
+  /webauthn/credentials/{id}:
+    delete:
+      tags:
+        - webauthn
+      operationId: deleteWebauthnCredential
+      summary: Delete a stored passkey credential
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CredentialId'
+      responses:
+        '200':
+          description: Credential deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '401':
+          $ref: '#/components/responses/InvalidAccessToken'
+        '403':
+          $ref: '#/components/responses/InsufficientAuthenticationMethod'
+        '404':
+          $ref: '#/components/responses/CredentialNotFound'
+  /jwks:
+    get:
+      security: []
+      tags:
+        - jwks
+      operationId: listJwks
+      summary: List the current public signing keys
+      responses:
+        '200':
+          description: Public JWK set
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JwksResponse'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    CredentialId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    InvalidRequest:
+      description: Request body or path parameters do not match the route contract
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: invalid_request
+    InvalidAccessToken:
+      description: Missing, malformed, expired, or revoked access token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: invalid_access_token
+    InsufficientAuthenticationMethod:
+      description: Access token is valid but the session auth method is not allowed for this route
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: insufficient_authentication_method
+    CredentialNotFound:
+      description: Credential id does not exist for the authenticated user
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: credential_not_found
+    InternalError:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: internal_error
+  schemas:
+    OkResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - ok
+      properties:
+        ok:
+          type: boolean
+          const: true
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - error
+      properties:
+        error:
+          type: string
+    EmailStartRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
+    EmailVerifyRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - email
+        - code
+      properties:
+        email:
+          type: string
+          format: email
+        code:
+          type: string
+          pattern: ^\d{6}$
+          example: '123456'
+    RefreshRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - session_id
+        - refresh_token
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        refresh_token:
+          type: string
+          minLength: 1
+    SessionTokenResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - session_id
+        - access_token
+        - token_type
+        - expires_in
+        - refresh_token
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        access_token:
+          type: string
+        token_type:
+          type: string
+          const: Bearer
+        expires_in:
+          type: integer
+          const: 900
+        refresh_token:
+          type: string
+    SessionSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - created_at
+        - expires_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+    Ed25519Credential:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - public_key
+        - last_used_at
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        public_key:
+          type: string
+        last_used_at:
+          type:
+            - 'string'
+            - 'null'
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    WebauthnCredential:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - credential_id
+        - transports
+        - rp_id
+        - last_used_at
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        credential_id:
+          type: string
+        transports:
+          type: array
+          items:
+            type: string
+        rp_id:
+          type: string
+        last_used_at:
+          type:
+            - 'string'
+            - 'null'
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    MeResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - user_id
+        - email
+        - webauthn_credentials
+        - ed25519_credentials
+        - active_sessions
+      properties:
+        user_id:
+          type: string
+        email:
+          type: string
+          format: email
+        webauthn_credentials:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebauthnCredential'
+        ed25519_credentials:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ed25519Credential'
+        active_sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionSummary'
+    Ed25519CredentialCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - public_key
+      properties:
+        name:
+          type: string
+          minLength: 1
+        public_key:
+          type: string
+          minLength: 1
+    Ed25519CredentialUpdateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+    Ed25519StartRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - credential_id
+      properties:
+        credential_id:
+          type: string
+          format: uuid
+    Ed25519ChallengeResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - request_id
+        - challenge
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        challenge:
+          type: string
+    Ed25519VerifyRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - request_id
+        - signature
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        signature:
+          type: string
+          minLength: 1
+    WebauthnOptionsRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - rp_id
+      properties:
+        rp_id:
+          type: string
+          minLength: 1
+    WebauthnRegistrationOptionsResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - request_id
+        - publicKey
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        publicKey:
+          $ref: '#/components/schemas/PublicKeyCredentialCreationOptionsJson'
+    WebauthnAuthenticationOptionsResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - request_id
+        - publicKey
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        publicKey:
+          $ref: '#/components/schemas/PublicKeyCredentialRequestOptionsJson'
+    PublicKeyCredentialCreationOptionsJson:
+      type: object
+      additionalProperties: true
+      required:
+        - challenge
+        - rp
+        - user
+        - pubKeyCredParams
+        - timeout
+        - authenticatorSelection
+      properties:
+        challenge:
+          type: string
+        rp:
+          type: object
+          additionalProperties: false
+          required:
+            - id
+            - name
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+        user:
+          type: object
+          additionalProperties: false
+          required:
+            - id
+            - name
+            - displayName
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            displayName:
+              type: string
+        pubKeyCredParams:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - type
+              - alg
+            properties:
+              type:
+                type: string
+                const: public-key
+              alg:
+                type: integer
+        timeout:
+          type: integer
+        authenticatorSelection:
+          type: object
+          additionalProperties: false
+          required:
+            - residentKey
+            - userVerification
+          properties:
+            residentKey:
+              type: string
+            userVerification:
+              type: string
+    PublicKeyCredentialRequestOptionsJson:
+      type: object
+      additionalProperties: true
+      required:
+        - challenge
+        - rpId
+        - timeout
+        - userVerification
+      properties:
+        challenge:
+          type: string
+        rpId:
+          type: string
+        timeout:
+          type: integer
+        userVerification:
+          type: string
+    RegistrationCredentialJson:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - rawId
+        - type
+        - response
+      properties:
+        id:
+          type: string
+          minLength: 1
+        rawId:
+          type: string
+          minLength: 1
+        type:
+          type: string
+          const: public-key
+        authenticatorAttachment:
+          type: string
+        clientExtensionResults:
+          type: object
+          additionalProperties: true
+        response:
+          type: object
+          additionalProperties: false
+          required:
+            - clientDataJSON
+            - attestationObject
+          properties:
+            clientDataJSON:
+              type: string
+              minLength: 1
+            attestationObject:
+              type: string
+              minLength: 1
+            transports:
+              type: array
+              items:
+                type: string
+    AuthenticationCredentialJson:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - rawId
+        - type
+        - response
+      properties:
+        id:
+          type: string
+          minLength: 1
+        rawId:
+          type: string
+          minLength: 1
+        type:
+          type: string
+          const: public-key
+        authenticatorAttachment:
+          type: string
+        response:
+          type: object
+          additionalProperties: false
+          required:
+            - clientDataJSON
+            - authenticatorData
+            - signature
+          properties:
+            clientDataJSON:
+              type: string
+              minLength: 1
+            authenticatorData:
+              type: string
+              minLength: 1
+            signature:
+              type: string
+              minLength: 1
+            userHandle:
+              type:
+                - 'string'
+                - 'null'
+        clientExtensionResults:
+          type: object
+          additionalProperties: true
+    WebauthnRegisterVerifyRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - request_id
+        - credential
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        credential:
+          $ref: '#/components/schemas/RegistrationCredentialJson'
+    WebauthnAuthenticateVerifyRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - request_id
+        - credential
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        credential:
+          $ref: '#/components/schemas/AuthenticationCredentialJson'
+    JwkPublicEd25519:
+      type: object
+      additionalProperties: false
+      required:
+        - kid
+        - alg
+        - kty
+        - crv
+        - use
+        - x
+      properties:
+        kid:
+          type: string
+        alg:
+          type: string
+          const: EdDSA
+        kty:
+          type: string
+          const: OKP
+        crv:
+          type: string
+          const: Ed25519
+        use:
+          type: string
+          const: sig
+        x:
+          type: string
+    JwksResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - keys
+      properties:
+        keys:
+          type: array
+          minItems: 2
+          items:
+            $ref: '#/components/schemas/JwkPublicEd25519'

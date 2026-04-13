@@ -33,6 +33,6 @@ docker run --rm \
 	-v "$WORK_DIR:/work" \
 	-v "$ARTIFACT_DIR:/out" \
 	"$NODE_IMAGE" \
-	bash -lc 'set -euo pipefail; retry() { local attempt=1; while true; do if "$@"; then return 0; fi; if [ "$attempt" -ge 3 ]; then return 1; fi; attempt=$((attempt + 1)); sleep 5; done; }; mkdir -p "$HOME" /work/src; cp /src/package.json /src/package-lock.json /src/tsconfig.json /src/tsconfig.build.json /work/src/; cp -R /src/src /src/sql /src/scripts /work/src/; cd /work/src; echo "==> npm ci"; retry npm ci --no-audit --fund=false; echo "==> npm run build"; npm run build; echo "==> npm prune --omit=dev"; npm prune --omit=dev --no-audit --fund=false; echo "==> copy runtime artifact"; cp package.json package-lock.json /out/; cp -R dist node_modules sql /out/'
+	bash -lc 'set -euo pipefail; retry() { local attempt=1; while true; do if "$@"; then return 0; fi; if [ "$attempt" -ge 3 ]; then return 1; fi; attempt=$((attempt + 1)); sleep 5; done; }; mkdir -p "$HOME" /work/src; cp /src/package.json /src/package-lock.json /src/tsconfig.json /src/tsconfig.build.json /src/openapi-ts.config.ts /src/openapi.yaml /work/src/; cp -R /src/src /src/sql /src/scripts /work/src/; cd /work/src; echo "==> npm ci"; retry npm ci --no-audit --fund=false; echo "==> npm run build"; npm run build; echo "==> npm prune --omit=dev"; npm prune --omit=dev --no-audit --fund=false; echo "==> copy runtime artifact"; cp package.json package-lock.json /out/; cp -R dist node_modules sql /out/'
 
 printf '==> runtime artifact ready: %s\n' "$ARTIFACT_DIR"

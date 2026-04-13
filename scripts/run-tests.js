@@ -78,6 +78,7 @@ export const main = (args) => {
     return;
   }
 
+  run('npm', ['run', 'check:generated:api']);
   run('npx', ['vitest', 'run', 'tests', ...args]);
   run('npx', ['tsc', '-p', 'tests/fixtures/sdk-dts-consumer/tsconfig.json']);
 };

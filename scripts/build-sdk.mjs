@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 
 const isWatchMode = process.argv.includes('--watch');
+const generateApiCommand = 'npm run generate:api';
 const buildCommand = 'tsc -p tsconfig.build.json --declaration';
 const watchCommand =
   'tsc -p tsconfig.build.json --declaration --watch --preserveWatchOutput';
@@ -39,11 +40,14 @@ async function runPostBuild() {
 }
 
 async function runBuild() {
+  await runCommand(generateApiCommand);
   await runCommand(buildCommand);
   await runPostBuild();
 }
 
-function runWatch() {
+async function runWatch() {
+  await runCommand(generateApiCommand);
+
   const child = spawn(watchCommand, {
     stdio: ['inherit', 'pipe', 'pipe'],
     shell: true,
@@ -130,7 +134,10 @@ function runWatch() {
 }
 
 if (isWatchMode) {
-  runWatch();
+  runWatch().catch((error) => {
+    console.error(error instanceof Error ? error.message : error);
+    process.exit(1);
+  });
 } else {
   runBuild().catch((error) => {
     console.error(error instanceof Error ? error.message : error);
