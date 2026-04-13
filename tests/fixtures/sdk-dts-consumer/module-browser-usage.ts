@@ -8,6 +8,12 @@ import type {
 const sdk: AuthMiniApi = createBrowserSdk('https://auth.example.com');
 
 const state: SessionSnapshot = sdk.session.getState();
+// @ts-expect-error session snapshots no longer expose me
+void sdk.session.getState().me;
+// @ts-expect-error me.get was removed from the public contract
+void sdk.me.get();
+// @ts-expect-error me.reload was removed from the public contract
+void sdk.me.reload();
 const me: MeResponse = await sdk.me.fetch();
 
 const credentialId: string = me.webauthn_credentials[0].credential_id;

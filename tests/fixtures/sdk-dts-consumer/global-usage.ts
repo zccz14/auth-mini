@@ -1,5 +1,7 @@
 window.AuthMini.session.onChange((state) => {
   const status = state.status;
+  // @ts-expect-error session snapshots no longer expose me
+  void state.me;
 
   void status;
 });
@@ -26,6 +28,10 @@ window.AuthMini.email.verify({ email: 'user@example.com', code: '123456' });
 window.AuthMini.passkey.authenticate({ rpId: 'auth.example.com' });
 window.AuthMini.webauthn.register();
 void readMe();
+// @ts-expect-error me.get was removed from the public contract
+window.AuthMini.me.get();
+// @ts-expect-error me.reload was removed from the public contract
+window.AuthMini.me.reload();
 window.AuthMini.session.getState();
 window.AuthMini.session.refresh();
 window.AuthMini.session.logout();

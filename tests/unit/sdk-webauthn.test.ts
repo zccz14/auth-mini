@@ -112,6 +112,7 @@ describe('sdk webauthn flows', () => {
     const result = await sdk.webauthn.authenticate();
 
     expect(result.accessToken).toBe('access-authenticated');
+    expect(result).not.toHaveProperty('me');
     expect(sdk.session.getState()).not.toHaveProperty('me');
     expect(sdk.session.getState().status).toBe('authenticated');
     expect(readJsonBody(fetch, '/webauthn/authenticate/verify')).toEqual({
@@ -158,9 +159,12 @@ describe('sdk webauthn flows', () => {
       navigatorCredentials: fakeNavigatorCredentials(),
     });
 
-    await expect(sdk.webauthn.authenticate()).resolves.toMatchObject({
+    const result = await sdk.webauthn.authenticate();
+
+    expect(result).toMatchObject({
       accessToken: 'access-authenticated',
     });
+    expect(result).not.toHaveProperty('me');
     expect(sdk.session.getState()).toMatchObject({ status: 'authenticated' });
     expect(fetch).toHaveBeenCalledTimes(2);
   });

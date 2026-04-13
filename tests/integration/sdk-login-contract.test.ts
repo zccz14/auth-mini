@@ -21,6 +21,7 @@ describe('sdk login contract', () => {
     });
 
     expect(result).toMatchObject({ sessionId: 's1', accessToken: 'a' });
+    expect(result).not.toHaveProperty('me');
     expect(sdk.session.getState()).not.toHaveProperty('me');
     expect(sdk.session.getState().expiresAt).toBe('2026-04-03T00:15:00.000Z');
     expect(sdk.session.getState().sessionId).toBe('s1');
@@ -43,9 +44,13 @@ describe('sdk login contract', () => {
       fetch,
     });
 
-    await expect(
-      sdk.email.verify({ email: 'u@example.com', code: '123456' }),
-    ).resolves.toMatchObject({ sessionId: 's1', accessToken: 'a' });
+    const result = await sdk.email.verify({
+      email: 'u@example.com',
+      code: '123456',
+    });
+
+    expect(result).toMatchObject({ sessionId: 's1', accessToken: 'a' });
+    expect(result).not.toHaveProperty('me');
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(sdk.session.getState()).toMatchObject({ status: 'authenticated' });
   });

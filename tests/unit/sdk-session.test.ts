@@ -89,6 +89,7 @@ describe('sdk session flows', () => {
       accessToken: 'a2',
       refreshToken: 'r2',
     });
+    expect(refreshed).not.toHaveProperty('me');
     expect(sdk.session.getState()).not.toHaveProperty('me');
   });
 
@@ -239,9 +240,12 @@ describe('sdk session flows', () => {
       ),
     });
 
-    await expect(sdk.session.refresh()).resolves.toMatchObject({
+    const refreshed = await sdk.session.refresh();
+
+    expect(refreshed).toMatchObject({
       accessToken: 'a2',
     });
+    expect(refreshed).not.toHaveProperty('me');
     expect(sdk.session.getState()).toMatchObject({
       status: 'authenticated',
       accessToken: 'a2',
