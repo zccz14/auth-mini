@@ -61,7 +61,8 @@ The request logger should be attached to the request context so downstream handl
 
 Client IP must come from one explicit source only:
 
-- default precedence: `CF-Connecting-IP` -> `X-Forwarded-For` first token only -> `Forwarded for=` -> `req.socket.remoteAddress`
+- default precedence: `CF-Connecting-IP` -> first `X-Forwarded-For` IP -> `Forwarded for=` -> `req.socket.remoteAddress`
+- for `X-Forwarded-For`, only the first token is considered; if that token is invalid, fall through to lower-precedence sources rather than scanning later entries
 - when multiple proxy headers are present, use the first available value from that precedence chain as the canonical client IP
 
 `http.request.completed` is the canonical terminal request event. It should include `status_code` and `duration_ms`, and may include `error_name` for handled error responses. Avoid a separate `http.request.failed` event for normal application errors to prevent duplicate terminal logs.
