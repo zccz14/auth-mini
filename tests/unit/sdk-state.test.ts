@@ -3,6 +3,7 @@ import { createSingletonSdk } from '../../src/sdk/singleton-entry.js';
 import { createStateStore } from '../../src/sdk/state.js';
 import type { MeResponse, PersistedSdkState } from '../../src/sdk/types.js';
 import {
+  browserSdkStorageKey,
   createSharedStorageHarness,
   fakeStorage,
   seedBrowserSdkStorage,
@@ -238,25 +239,28 @@ describe('sdk state store', () => {
 
   it('normalizes legacy persisted webauthn metadata in the public singleton api', () => {
     const storage = fakeStorage();
-    seedBrowserSdkStorage(storage, 'https://auth.example.com', {
-      sessionId: 'session-1',
-      refreshToken: 'rt',
-      expiresAt: '2026-04-03T00:00:00.000Z',
-      me: {
-        user_id: 'u',
-        email: 'u@example.com',
-        webauthn_credentials: [
-          {
-            id: 'cred-1',
-            credential_id: 'device-1',
-            transports: ['usb'],
-            created_at: '2026-04-03T00:00:00.000Z',
-          },
-        ],
-        ed25519_credentials: [],
-        active_sessions: [],
-      },
-    });
+    storage.setItem(
+      browserSdkStorageKey('https://auth.example.com'),
+      JSON.stringify({
+        sessionId: 'session-1',
+        refreshToken: 'rt',
+        expiresAt: '2026-04-03T00:00:00.000Z',
+        me: {
+          user_id: 'u',
+          email: 'u@example.com',
+          webauthn_credentials: [
+            {
+              id: 'cred-1',
+              credential_id: 'device-1',
+              transports: ['usb'],
+              created_at: '2026-04-03T00:00:00.000Z',
+            },
+          ],
+          ed25519_credentials: [],
+          active_sessions: [],
+        },
+      }),
+    );
 
     const sdk = createSingletonSdk({
       baseUrl: 'https://auth.example.com',
@@ -314,14 +318,14 @@ describe('sdk state store', () => {
       user_id: 'u',
       email: 'u@example.com',
       webauthn_credentials: [
-          {
-            id: 'cred-1',
-            credential_id: 'device-1',
-            transports: ['usb'],
-            rp_id: 'app.example.com',
-            last_used_at: null,
-            created_at: '2026-04-03T00:00:00.000Z',
-          },
+        {
+          id: 'cred-1',
+          credential_id: 'device-1',
+          transports: ['usb'],
+          rp_id: 'app.example.com',
+          last_used_at: null,
+          created_at: '2026-04-03T00:00:00.000Z',
+        },
       ],
       ed25519_credentials: [],
       active_sessions: [],
@@ -358,14 +362,14 @@ describe('sdk state store', () => {
       user_id: 'u',
       email: 'u@example.com',
       webauthn_credentials: [
-          {
-            id: 'cred-1',
-            credential_id: 'device-1',
-            transports: ['usb'],
-            rp_id: 'app.example.com',
-            last_used_at: null,
-            created_at: '2026-04-03T00:00:00.000Z',
-          },
+        {
+          id: 'cred-1',
+          credential_id: 'device-1',
+          transports: ['usb'],
+          rp_id: 'app.example.com',
+          last_used_at: null,
+          created_at: '2026-04-03T00:00:00.000Z',
+        },
       ],
       ed25519_credentials: [],
       active_sessions: [],
@@ -401,14 +405,14 @@ describe('sdk state store', () => {
       user_id: 'u',
       email: 'u@example.com',
       webauthn_credentials: [
-          {
-            id: 'cred-1',
-            credential_id: 'device-1',
-            transports: ['usb'],
-            rp_id: 'app.example.com',
-            last_used_at: null,
-            created_at: '2026-04-03T00:00:00.000Z',
-          },
+        {
+          id: 'cred-1',
+          credential_id: 'device-1',
+          transports: ['usb'],
+          rp_id: 'app.example.com',
+          last_used_at: null,
+          created_at: '2026-04-03T00:00:00.000Z',
+        },
       ],
       ed25519_credentials: [],
       active_sessions: [],
