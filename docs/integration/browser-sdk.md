@@ -65,12 +65,13 @@ works when `http://localhost:3000` has been added with `npx auth-mini origin add
 
 ## Startup state model
 
-If a refresh token is already stored, startup enters `recovering` first and then settles to `authenticated` or `anonymous` after recovery completes. During recovery, `AuthMini.me.get()` may return the last cached snapshot while `AuthMini.session.getState().status` still reports `recovering`.
+If a refresh token is already stored, startup enters `recovering` first and then settles to `authenticated` or `anonymous` after recovery completes. `AuthMini.session.getState()` only exposes session/auth fields; it never includes a cached `/me` snapshot.
 
-## `me.get()` vs `me.reload()`
+## Explicit `/me` reads
 
-- `AuthMini.me.get()` returns the current cached `/me` snapshot synchronously.
-- `AuthMini.me.reload()` performs authenticated network I/O, follows the SDK refresh rules, updates cached state, and resolves with the fresh `/me` payload.
+- `await AuthMini.me.fetch()` performs one explicit authenticated `/me` request and resolves with that response.
+- `AuthMini.me.fetch()` may refresh the access token first when the stored session requires it, but it does not write `/me` into shared session state or browser storage.
+- Callers own any local memoization, loading state, error state, and refresh timing for `/me`.
 
 ## Passkey example
 
@@ -80,12 +81,12 @@ If a refresh token is already stored, startup enters `recovering` first and then
   async function signIn(email, code) {
     await window.AuthMini.email.start({ email });
     await window.AuthMini.email.verify({ email, code });
-    console.log(window.AuthMini.me.get());
+    console.log(await window.AuthMini.me.fetch());
   }
 
   async function signInWithPasskey() {
     await window.AuthMini.webauthn.authenticate();
-    console.log(window.AuthMini.me.get());
+    console.log(await window.AuthMini.me.fetch());
   }
 </script>
 ```
@@ -95,7 +96,7 @@ If a refresh token is already stored, startup enters `recovering` first and then
 - The SDK script origin must match the auth API origin because the singleton client derives its base URL from the script `src`.
 - Cross-origin browser pages are supported only when the page origin is stored via the `origin` topic commands.
 - Multiple tabs sharing one session can still race during refresh-token rotation, but the loser tab enters `recovering` and usually converges to the latest shared session state.
-- That convergence depends on receiving a usable shared snapshot before the recovery timeout; otherwise only the local in-memory state falls back to anonymous.
+- That convergence only shares session tokens/status; `/me` remains caller-owned and must be fetched explicitly in each tab when needed.
 
 ## Demo and publishing guidance
 

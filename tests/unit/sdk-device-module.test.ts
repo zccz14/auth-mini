@@ -75,6 +75,7 @@ describe('device module sdk', () => {
     await expect(sdk.me.fetch()).resolves.toMatchObject({
       email: 'device@example.com',
     });
+    expect(sdk.session.getState()).not.toHaveProperty('me');
     await expect(sdk.session.logout()).resolves.toBeUndefined();
 
     expect(seenHrefs).toEqual([

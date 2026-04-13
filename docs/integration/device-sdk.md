@@ -18,7 +18,7 @@ const sdk = createDeviceSdk({
 
 await sdk.ready;
 console.log(sdk.session.getState().status);
-console.log(sdk.me.get());
+console.log(await sdk.me.fetch());
 
 await sdk.dispose();
 ```
@@ -31,7 +31,6 @@ await sdk.dispose();
 2. decode the configured `privateKeySeed`, derive the Ed25519 private key locally, and sign the returned challenge
 3. `POST /ed25519/verify` with the signature payload
 4. store the resulting session in the instance's in-memory state
-5. load `/me` so `sdk.ready` resolves only after the authenticated user snapshot is available
 
 If any step fails, `sdk.ready` rejects and the instance stays responsible only for its own in-memory state.
 
@@ -39,16 +38,18 @@ If any step fails, `sdk.ready` rejects and the instance stays responsible only f
 
 - Device SDK state is instance-local and memory-only.
 - It does not read from or write to `Storage`, `localStorage`, or other browser persistence layers.
-- Each `createDeviceSdk(...)` call returns a fresh isolated instance with its own session state, `/me` cache, listeners, and refresh lifecycle.
+- Each `createDeviceSdk(...)` call returns a fresh isolated instance with its own session state, listeners, and refresh lifecycle.
+- The SDK does not keep a shared `/me` cache; callers decide when to call `await sdk.me.fetch()` and how long to retain that result locally.
 - Restarting the process or disposing the instance drops all locally held device session state.
 
 If you want browser persistence and cross-tab recovery semantics instead, use the browser-specific guide: [Browser SDK integration](./browser-sdk.md).
 
 ## `ready`, session state, and refresh
 
-- `sdk.ready` resolves when the initial device login and `/me` sync both succeed.
+- `sdk.ready` resolves when the initial device login succeeds.
 - `sdk.session.getState()` exposes the same `recovering | authenticated | anonymous` state model used by the browser SDK session controller.
 - `sdk.session.refresh()` keeps using the normal session refresh flow, but only against this instance's in-memory session.
+- `sdk.me.fetch()` performs one explicit authenticated `/me` request and returns that payload without mutating session state.
 
 ## Disposal contract
 
@@ -65,4 +66,4 @@ Both entrypoints are equivalent and idempotent:
 - they always clear the local in-memory session state
 - they stop future refresh or recovery updates for that instance
 
-After `dispose()` or `await sdk[Symbol.asyncDispose]()`, APIs that require a live session reject with the SDK error code `disposed_session`, including `sdk.session.refresh()` and `sdk.me.reload()`.
+After `dispose()` or `await sdk[Symbol.asyncDispose]()`, APIs that require a live session reject with the SDK error code `disposed_session`, including `sdk.session.refresh()` and `sdk.me.fetch()`.

@@ -130,7 +130,6 @@ describe('browser module sdk', () => {
       refreshToken: 'refresh-1',
       receivedAt: '2036-04-03T00:00:00.000Z',
       expiresAt: '2036-04-03T00:15:00.000Z',
-      me: null,
     });
     const fetch = vi.fn(async (input: string | URL) => {
       const requestUrl = new URL(String(input));
@@ -161,6 +160,30 @@ describe('browser module sdk', () => {
     }
   });
 
+  it('rejects explicit browser me.fetch calls without an authenticated session', async () => {
+    const storage = fakeStorage();
+    const fetch = vi.fn(async () => jsonResponse({ error: 'unexpected' }, 500));
+
+    vi.stubGlobal('fetch', fetch);
+    vi.stubGlobal('localStorage', storage);
+
+    try {
+      const sdk = createBrowserSdk('https://auth.example.com');
+
+      await expect(sdk.me.fetch()).rejects.toMatchObject({
+        code: 'missing_session',
+      });
+      expect(sdk.session.getState()).toMatchObject({
+        status: 'anonymous',
+        authenticated: false,
+      });
+      expect(sdk.session.getState()).not.toHaveProperty('me');
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('browser startup recovery keeps token-only state without requesting /me', async () => {
     const storage = fakeStorage();
 
@@ -170,7 +193,6 @@ describe('browser module sdk', () => {
       refreshToken: 'refresh-1',
       receivedAt: '2036-04-03T00:00:00.000Z',
       expiresAt: '2036-04-03T00:15:00.000Z',
-      me: null,
     });
     const fetch = vi.fn(async (input: string | URL) => {
       new URL(String(input));
@@ -213,7 +235,6 @@ describe('browser module sdk', () => {
       refreshToken: 'refresh-1',
       receivedAt: '2036-04-03T00:00:00.000Z',
       expiresAt: '2036-04-03T00:15:00.000Z',
-      me: null,
     });
     const fetch = vi.fn(async (input: string | URL) => {
       const requestUrl = new URL(String(input));
@@ -261,7 +282,6 @@ describe('browser module sdk', () => {
       refreshToken: 'refresh-1',
       receivedAt: '2036-04-03T00:00:00.000Z',
       expiresAt: '2036-04-03T00:15:00.000Z',
-      me: null,
     });
 
     const fetch = vi.fn(async (input: string | URL) => {
@@ -304,7 +324,6 @@ describe('browser module sdk', () => {
       refreshToken: 'refresh-1',
       receivedAt: '2036-04-03T00:00:00.000Z',
       expiresAt: '2036-04-03T00:15:00.000Z',
-      me: null,
     });
 
     const fetch = vi.fn(async (input: string | URL) => {

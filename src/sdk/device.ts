@@ -40,11 +40,13 @@ export function createDeviceSdk(options: DeviceSdkOptions): DeviceSdkApi {
     getState() {
       return state.getState();
     },
-    onChange(listener: DeviceSdkApi['session']['onChange'] extends (
-      listener: infer T,
-    ) => () => void
-      ? T
-      : never) {
+    onChange(
+      listener: DeviceSdkApi['session']['onChange'] extends (
+        listener: infer T,
+      ) => () => void
+        ? T
+        : never,
+    ) {
       return state.onChange(listener);
     },
     applyPersistedState(next: PersistedSdkState | null) {
@@ -135,19 +137,10 @@ export function createDeviceSdk(options: DeviceSdkOptions): DeviceSdkApi {
       return dispose();
     },
     me: {
-      get() {
-        return state.getState().me;
-      },
-      async reload() {
+      async fetch() {
         assertNotDisposed();
 
-        const me = await session.reloadMe();
-
-        if (!me) {
-          throw createSdkError('missing_session', 'Missing authenticated user');
-        }
-
-        return me;
+        return await session.fetchMe();
       },
     },
     session: {
@@ -173,7 +166,10 @@ export function createDeviceSdk(options: DeviceSdkOptions): DeviceSdkApi {
       return;
     }
 
-    throw createSdkError('disposed_session', 'Device SDK instance has been disposed');
+    throw createSdkError(
+      'disposed_session',
+      'Device SDK instance has been disposed',
+    );
   }
 
   function dispose(): Promise<void> {
