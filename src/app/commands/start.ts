@@ -174,13 +174,15 @@ function resolveClientIp(
   headers: IncomingHttpHeaders,
   remoteAddress: string | null,
 ): string | null {
-  const cfConnectingIp = firstHeaderValue(headers['cf-connecting-ip']);
+  const cfConnectingIp = normalizeClientIpValue(
+    firstHeaderValue(headers['cf-connecting-ip']),
+  );
   if (cfConnectingIp) {
     return cfConnectingIp;
   }
 
-  const xForwardedFor = firstCommaSeparatedValue(
-    firstHeaderValue(headers['x-forwarded-for']),
+  const xForwardedFor = normalizeClientIpValue(
+    firstCommaSeparatedValue(firstHeaderValue(headers['x-forwarded-for'])),
   );
   if (xForwardedFor) {
     return xForwardedFor;
@@ -234,12 +236,10 @@ function firstForwardedForValue(value: string | undefined): string | undefined {
   }
 
   const match = /(?:^|[;,]\s*)for=(?:"([^"]+)"|([^;,]+))/i.exec(value);
-  return normalizeForwardedForValue(match?.[1] ?? match?.[2]);
+  return normalizeClientIpValue(match?.[1] ?? match?.[2]);
 }
 
-function normalizeForwardedForValue(
-  value: string | undefined,
-): string | undefined {
+function normalizeClientIpValue(value: string | undefined): string | undefined {
   if (!value) {
     return undefined;
   }
