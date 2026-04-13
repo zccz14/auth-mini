@@ -140,7 +140,10 @@ async function handleRequest(input: {
           ? undefined
           : await readRequestBody(req),
     });
-    clientIps.set(request, req.socket.remoteAddress ?? null);
+    clientIps.set(
+      request,
+      resolveClientIp(req.headers, req.socket.remoteAddress ?? null),
+    );
     const response = await app.fetch(request);
 
     res.statusCode = response.status;
@@ -165,6 +168,98 @@ async function handleRequest(input: {
 
     res.end(JSON.stringify({ error: 'internal_server_error' }));
   }
+}
+
+function resolveClientIp(
+  headers: IncomingHttpHeaders,
+  remoteAddress: string | null,
+): string | null {
+  const cfConnectingIp = firstHeaderValue(headers['cf-connecting-ip']);
+  if (cfConnectingIp) {
+    return cfConnectingIp;
+  }
+
+  const xForwardedFor = firstCommaSeparatedValue(
+    firstHeaderValue(headers['x-forwarded-for']),
+  );
+  if (xForwardedFor) {
+    return xForwardedFor;
+  }
+
+  const forwardedFor = firstForwardedForValue(
+    firstHeaderValue(headers.forwarded),
+  );
+  if (forwardedFor) {
+    return forwardedFor;
+  }
+
+  return remoteAddress;
+}
+
+function firstHeaderValue(
+  value: string | string[] | undefined,
+): string | undefined {
+  if (typeof value === 'string') {
+    return value.trim() || undefined;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const normalized = item.trim();
+      if (normalized) {
+        return normalized;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function firstCommaSeparatedValue(
+  value: string | undefined,
+): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const [firstValue] = value.split(',');
+  const normalized = firstValue?.trim();
+
+  return normalized || undefined;
+}
+
+function firstForwardedForValue(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const match = /(?:^|[;,]\s*)for=(?:"([^"]+)"|([^;,]+))/i.exec(value);
+  return normalizeForwardedForValue(match?.[1] ?? match?.[2]);
+}
+
+function normalizeForwardedForValue(
+  value: string | undefined,
+): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = value.trim();
+  if (!normalized || normalized.toLowerCase() === 'unknown') {
+    return undefined;
+  }
+
+  const ipv6Match = /^\[([^\]]+)\](?::\d+)?$/.exec(normalized);
+  if (ipv6Match) {
+    return ipv6Match[1];
+  }
+
+  const hostWithPortMatch = /^([^:\s]+):(\d+)$/.exec(normalized);
+  if (hostWithPortMatch) {
+    return hostWithPortMatch[1];
+  }
+
+  return normalized;
 }
 
 async function readRequestBody(
