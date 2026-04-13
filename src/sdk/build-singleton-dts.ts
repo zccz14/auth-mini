@@ -7,11 +7,19 @@ import {
 } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
+import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 
 const repoRoot = process.cwd();
 const entryPath = resolve(repoRoot, 'src/sdk/singleton-global.ts');
 const outputPath = resolve(repoRoot, 'dist/sdk/singleton-iife.d.ts');
+
+type InlineAliasDeclaration = {
+  typeNode: ts.TypeNode;
+  typeParameters?: readonly ts.TypeParameterDeclaration[];
+};
+
+type InlineAliasMap = Map<string, InlineAliasDeclaration>;
 
 const parseConfig = (configPath: string) => {
   const parsed = ts.getParsedCommandLineOfConfigFile(
@@ -68,12 +76,62 @@ const emitDeclarations = (tempDir: string) => {
   }
 };
 
+const hasExportModifier = (node: ts.Node) => {
+  const modifiers = (node as ts.Node & { modifiers?: readonly ts.Modifier[] })
+    .modifiers;
+
+  return !!modifiers?.some(
+    (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+  );
+};
+
+const parseTypeNode = (typeText: string) => {
+  const file = ts.createSourceFile(
+    'inline-type.d.ts',
+    `type __Inline = ${typeText};`,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const statement = file.statements[0];
+
+  if (!statement || !ts.isTypeAliasDeclaration(statement)) {
+    throw new Error(`failed to parse type node: ${typeText}`);
+  }
+
+  return statement.type;
+};
+
+const createInterfaceTypeNode = (
+  statement: ts.InterfaceDeclaration,
+  sourceFile: ts.SourceFile,
+) => {
+  const members = ts.factory.createTypeLiteralNode([...statement.members]);
+  const heritageTypes =
+    statement.heritageClauses
+      ?.filter((clause) => clause.token === ts.SyntaxKind.ExtendsKeyword)
+      .flatMap((clause) =>
+        clause.types.map((heritageType) =>
+          parseTypeNode(heritageType.getText(sourceFile)),
+        ),
+      ) ?? [];
+
+  if (heritageTypes.length === 0) {
+    return members;
+  }
+
+  return ts.factory.createIntersectionTypeNode([...heritageTypes, members]);
+};
+
 const collectTypeAliases = (file: ts.SourceFile) => {
-  const aliases = new Map<string, ts.TypeNode>();
+  const aliases = new Map<string, InlineAliasDeclaration>();
 
   for (const statement of file.statements) {
     if (ts.isTypeAliasDeclaration(statement)) {
-      aliases.set(statement.name.text, statement.type);
+      aliases.set(statement.name.text, {
+        typeNode: statement.type,
+        typeParameters: statement.typeParameters,
+      });
     }
   }
 
@@ -104,7 +162,7 @@ const collectExportedTypeDeclarations = (
   seen = new Set<string>(),
 ) => {
   if (seen.has(filePath)) {
-    return new Map<string, ts.TypeNode>();
+    return new Map<string, InlineAliasDeclaration>();
   }
 
   seen.add(filePath);
@@ -116,29 +174,22 @@ const collectExportedTypeDeclarations = (
     true,
     ts.ScriptKind.TS,
   );
-  const aliases = new Map<string, ts.TypeNode>();
+  const aliases = new Map<string, InlineAliasDeclaration>();
 
   for (const statement of file.statements) {
-    if (
-      ts.isTypeAliasDeclaration(statement) &&
-      statement.modifiers?.some(
-        (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
-      )
-    ) {
-      aliases.set(statement.name.text, statement.type);
+    if (ts.isTypeAliasDeclaration(statement) && hasExportModifier(statement)) {
+      aliases.set(statement.name.text, {
+        typeNode: statement.type,
+        typeParameters: statement.typeParameters,
+      });
       continue;
     }
 
-    if (
-      ts.isInterfaceDeclaration(statement) &&
-      statement.modifiers?.some(
-        (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
-      )
-    ) {
-      aliases.set(
-        statement.name.text,
-        ts.factory.createTypeLiteralNode([...statement.members]),
-      );
+    if (ts.isInterfaceDeclaration(statement) && hasExportModifier(statement)) {
+      aliases.set(statement.name.text, {
+        typeNode: createInterfaceTypeNode(statement, file),
+        typeParameters: statement.typeParameters,
+      });
       continue;
     }
 
@@ -153,8 +204,8 @@ const collectExportedTypeDeclarations = (
     const targetAliases = collectExportedTypeDeclarations(targetPath, seen);
 
     if (!statement.exportClause || !ts.isNamedExports(statement.exportClause)) {
-      for (const [name, typeNode] of targetAliases) {
-        aliases.set(name, typeNode);
+      for (const [name, declaration] of targetAliases) {
+        aliases.set(name, declaration);
       }
       continue;
     }
@@ -174,7 +225,7 @@ const collectExportedTypeDeclarations = (
 };
 
 const collectImportedTypeAliases = (file: ts.SourceFile, filePath: string) => {
-  const aliases = new Map<string, ts.TypeNode>();
+  const aliases = new Map<string, InlineAliasDeclaration>();
 
   for (const statement of file.statements) {
     if (!ts.isImportDeclaration(statement) || !statement.importClause) {
@@ -202,35 +253,49 @@ const collectImportedTypeAliases = (file: ts.SourceFile, filePath: string) => {
       }
     }
 
-    for (const [name, typeNode] of targetAliases) {
-      aliases.set(name, typeNode);
+    for (const [name, declaration] of targetAliases) {
+      aliases.set(name, declaration);
     }
   }
 
   return aliases;
 };
 
-const inlineTypeNode = (
+const substituteTypeParameters = (
   node: ts.TypeNode,
-  aliases: Map<string, ts.TypeNode>,
-  seen = new Set<string>(),
-): ts.TypeNode => {
+  typeParameters: readonly ts.TypeParameterDeclaration[] | undefined,
+  typeArguments: readonly ts.TypeNode[] | undefined,
+) => {
+  if (!typeParameters || typeParameters.length === 0) {
+    return node;
+  }
+
+  const replacements = new Map<string, ts.TypeNode>();
+
+  for (const [index, typeParameter] of typeParameters.entries()) {
+    const replacement = typeArguments?.[index] ?? typeParameter.default;
+
+    if (replacement) {
+      replacements.set(typeParameter.name.text, replacement);
+    }
+  }
+
+  if (replacements.size === 0) {
+    return node;
+  }
+
   const result = ts.transform(node, [
     (context) => {
       const visitor: ts.Visitor = (current) => {
         if (
           ts.isTypeReferenceNode(current) &&
-          ts.isIdentifier(current.typeName)
+          ts.isIdentifier(current.typeName) &&
+          !current.typeArguments?.length
         ) {
-          const aliasName = current.typeName.text;
-          const aliasTarget = aliases.get(aliasName);
+          const replacement = replacements.get(current.typeName.text);
 
-          if (aliasTarget && !seen.has(aliasName)) {
-            return inlineTypeNode(
-              aliasTarget,
-              aliases,
-              new Set(seen).add(aliasName),
-            );
+          if (replacement) {
+            return replacement;
           }
         }
 
@@ -245,6 +310,56 @@ const inlineTypeNode = (
   result.dispose();
   return transformed as ts.TypeNode;
 };
+
+export const inlineDeclarationType = (
+  node: ts.TypeNode,
+  aliases: InlineAliasMap,
+  seen = new Set<string>(),
+): ts.TypeNode => {
+  const result = ts.transform(node, [
+    (context) => {
+      const visitor: ts.Visitor = (current) => {
+        if (
+          ts.isTypeReferenceNode(current) &&
+          ts.isIdentifier(current.typeName)
+        ) {
+          const aliasName = current.typeName.text;
+          const aliasTarget = aliases.get(aliasName);
+
+          if (aliasTarget && !seen.has(aliasName)) {
+            const nextSeen = new Set(seen).add(aliasName);
+            const substitutedTarget = substituteTypeParameters(
+              aliasTarget.typeNode,
+              aliasTarget.typeParameters,
+              current.typeArguments?.map((typeArgument) =>
+                inlineDeclarationType(typeArgument, aliases, nextSeen),
+              ),
+            );
+
+            return inlineDeclarationType(substitutedTarget, aliases, nextSeen);
+          }
+        }
+
+        return ts.visitEachChild(current, visitor, context);
+      };
+
+      return (root) => ts.visitNode(root, visitor) as ts.TypeNode;
+    },
+  ]);
+  const [transformed] = result.transformed;
+
+  result.dispose();
+  return transformed as ts.TypeNode;
+};
+
+export const buildInlineAliasMap = (
+  sourceFile: ts.SourceFile,
+  filePath: string,
+) =>
+  new Map([
+    ...collectImportedTypeAliases(sourceFile, filePath),
+    ...collectTypeAliases(sourceFile),
+  ]);
 
 const buildArtifact = (tempDir: string) => {
   const singletonDtsPath = resolve(tempDir, 'sdk/singleton-global.d.ts');
@@ -263,10 +378,7 @@ const buildArtifact = (tempDir: string) => {
     true,
     ts.ScriptKind.TS,
   );
-  const aliases = new Map([
-    ...collectImportedTypeAliases(typesSource, typesDtsPath),
-    ...collectTypeAliases(typesSource),
-  ]);
+  const aliases = buildInlineAliasMap(typesSource, typesDtsPath);
 
   const globalBlock = singletonSource.statements.find(ts.isModuleDeclaration);
   if (!globalBlock || globalBlock.name.text !== 'global' || !globalBlock.body) {
@@ -301,7 +413,10 @@ const buildArtifact = (tempDir: string) => {
     throw new Error('singleton-global.d.ts must expose Window.AuthMini');
   }
 
-  const inlinedAuthMiniType = inlineTypeNode(authMiniMember.type, aliases);
+  const inlinedAuthMiniType = inlineDeclarationType(
+    authMiniMember.type,
+    aliases,
+  );
   const printer = ts.createPrinter({
     newLine: ts.NewLineKind.LineFeed,
     removeComments: true,
@@ -376,11 +491,20 @@ const validateOutput = (output: string) => {
   }
 };
 
-const tempDir = mkdtempSync(resolve(tmpdir(), 'auth-mini-sdk-dts-'));
+const run = () => {
+  const tempDir = mkdtempSync(resolve(tmpdir(), 'auth-mini-sdk-dts-'));
 
-try {
-  emitDeclarations(tempDir);
-  buildArtifact(tempDir);
-} finally {
-  rmSync(tempDir, { force: true, recursive: true });
+  try {
+    emitDeclarations(tempDir);
+    buildArtifact(tempDir);
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+};
+
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  run();
 }

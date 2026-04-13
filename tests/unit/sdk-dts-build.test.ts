@@ -65,6 +65,45 @@ const getTypeLiteralMemberNames = (typeLiteral: ts.TypeLiteralNode) =>
 const loadTestRunnerModule = async () =>
   import(resolve(process.cwd(), 'scripts/run-tests.js'));
 
+const loadSingletonDtsModule = async () =>
+  import(resolve(process.cwd(), 'src/sdk/build-singleton-dts.ts'));
+
+const readSourceFile = (relativePath: string) => {
+  const filePath = resolve(process.cwd(), relativePath);
+
+  return {
+    filePath,
+    sourceFile: ts.createSourceFile(
+      filePath,
+      readFileSync(filePath, 'utf8'),
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    ),
+  };
+};
+
+const printTypeNode = (node: ts.TypeNode, sourceFile: ts.SourceFile) =>
+  ts
+    .createPrinter({
+      newLine: ts.NewLineKind.LineFeed,
+      removeComments: true,
+    })
+    .printNode(ts.EmitHint.Unspecified, node, sourceFile);
+
+const getNamedAliasType = (sourceFile: ts.SourceFile, aliasName: string) => {
+  const statement = sourceFile.statements.find(
+    (candidate): candidate is ts.TypeAliasDeclaration =>
+      ts.isTypeAliasDeclaration(candidate) && candidate.name.text === aliasName,
+  );
+
+  if (!statement) {
+    throw new Error(`expected type alias ${aliasName}`);
+  }
+
+  return statement.type;
+};
+
 describe('sdk d.ts build artifact', () => {
   it('is enforced by the automated repo test command', () => {
     const testRunnerSource = readFileSync(
@@ -233,6 +272,65 @@ describe('sdk d.ts build artifact', () => {
     expect(source).not.toContain('GeneratedEmailStartInput');
     expect(source).not.toContain('GeneratedEmailVerifyInput');
     expect(source).not.toContain('GeneratedMeResponse');
+  });
+
+  it('inlines inherited members from imported exported interfaces', async () => {
+    const module = (await loadSingletonDtsModule()) as {
+      buildInlineAliasMap?: (
+        sourceFile: ts.SourceFile,
+        filePath: string,
+      ) => Map<string, ts.TypeNode>;
+      inlineDeclarationType?: (
+        node: ts.TypeNode,
+        aliases: Map<string, ts.TypeNode>,
+      ) => ts.TypeNode;
+    };
+    const { filePath, sourceFile } = readSourceFile(
+      'tests/fixtures/sdk-dts-build/types.d.ts',
+    );
+
+    const aliases = module.buildInlineAliasMap?.(sourceFile, filePath);
+    const inlined = aliases
+      ? module.inlineDeclarationType?.(
+          getNamedAliasType(sourceFile, 'UsesImportedInterface'),
+          aliases,
+        )
+      : undefined;
+    const printed = inlined ? printTypeNode(inlined, sourceFile) : '';
+
+    expect(printed).toContain('created_at: string;');
+    expect(printed).toContain('id: string;');
+    expect(printed).not.toContain('BaseImportedSessionSummary');
+  });
+
+  it('substitutes type arguments when inlining imported generic aliases', async () => {
+    const module = (await loadSingletonDtsModule()) as {
+      buildInlineAliasMap?: (
+        sourceFile: ts.SourceFile,
+        filePath: string,
+      ) => Map<string, ts.TypeNode>;
+      inlineDeclarationType?: (
+        node: ts.TypeNode,
+        aliases: Map<string, ts.TypeNode>,
+      ) => ts.TypeNode;
+    };
+    const { filePath, sourceFile } = readSourceFile(
+      'tests/fixtures/sdk-dts-build/types.d.ts',
+    );
+
+    const aliases = module.buildInlineAliasMap?.(sourceFile, filePath);
+    const inlined = aliases
+      ? module.inlineDeclarationType?.(
+          getNamedAliasType(sourceFile, 'UsesImportedGeneric'),
+          aliases,
+        )
+      : undefined;
+    const printed = inlined ? printTypeNode(inlined, sourceFile) : '';
+
+    expect(printed).toContain('value: string;');
+    expect(printed).toContain('list: string[];');
+    expect(printed).not.toContain('value: T;');
+    expect(printed).not.toContain('ImportedGenericBox');
   });
 
   it('aliases only the structurally equivalent browser sdk public types', () => {
