@@ -1111,40 +1111,114 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     try {
       return parseMeResponseImpl(value);
     } catch {
+      const record = value && typeof value === 'object' ? value : null;
+
       if (
-        typeof value.user_id !== 'string' ||
-        typeof value.email !== 'string' ||
-        !Array.isArray(value.webauthn_credentials) ||
-        !Array.isArray(value.active_sessions)
+        !record ||
+        typeof record.user_id !== 'string' ||
+        typeof record.email !== 'string' ||
+        !Array.isArray(record.webauthn_credentials) ||
+        !Array.isArray(record.ed25519_credentials) ||
+        !Array.isArray(record.active_sessions)
       ) {
         return undefined;
       }
+
+      const webauthnCredentials = record.webauthn_credentials
+        .map(normalizeWebauthnCredential)
+        .filter((credential) => credential !== null);
+      const ed25519Credentials = record.ed25519_credentials
+        .map(normalizeEd25519Credential)
+        .filter((credential) => credential !== null);
+      const activeSessions = record.active_sessions
+        .map(normalizeActiveSession)
+        .filter((session) => session !== null);
+
+      if (
+        webauthnCredentials.length !== record.webauthn_credentials.length ||
+        ed25519Credentials.length !== record.ed25519_credentials.length ||
+        activeSessions.length !== record.active_sessions.length
+      ) {
+        return undefined;
+      }
+
       return {
-        user_id: value.user_id,
-        email: value.email,
-        webauthn_credentials: value.webauthn_credentials.map(
-          normalizeWebauthnCredential,
-        ),
-        ed25519_credentials: Array.isArray(value.ed25519_credentials)
-          ? [...value.ed25519_credentials]
-          : [],
-        active_sessions: [...value.active_sessions],
+        user_id: record.user_id,
+        email: record.email,
+        webauthn_credentials: webauthnCredentials,
+        ed25519_credentials: ed25519Credentials,
+        active_sessions: activeSessions,
       };
     }
   }
 
   function normalizeWebauthnCredential(value) {
     if (!value || typeof value !== 'object') {
-      return value;
+      return null;
+    }
+
+    if (
+      typeof value.id !== 'string' ||
+      typeof value.credential_id !== 'string' ||
+      typeof value.created_at !== 'string'
+    ) {
+      return null;
     }
 
     return {
       ...value,
+      id: value.id,
+      credential_id: value.credential_id,
       rp_id: typeof value.rp_id === 'string' ? value.rp_id : '',
       last_used_at:
         value.last_used_at === null || typeof value.last_used_at === 'string'
           ? value.last_used_at
           : null,
+      created_at: value.created_at,
+    };
+  }
+
+  function normalizeEd25519Credential(value) {
+    if (!value || typeof value !== 'object') {
+      return null;
+    }
+
+    if (
+      typeof value.id !== 'string' ||
+      typeof value.name !== 'string' ||
+      typeof value.public_key !== 'string' ||
+      typeof value.created_at !== 'string' ||
+      !(value.last_used_at === null || typeof value.last_used_at === 'string')
+    ) {
+      return null;
+    }
+
+    return {
+      id: value.id,
+      name: value.name,
+      public_key: value.public_key,
+      last_used_at: value.last_used_at,
+      created_at: value.created_at,
+    };
+  }
+
+  function normalizeActiveSession(value) {
+    if (!value || typeof value !== 'object') {
+      return null;
+    }
+
+    if (
+      typeof value.id !== 'string' ||
+      typeof value.created_at !== 'string' ||
+      typeof value.expires_at !== 'string'
+    ) {
+      return null;
+    }
+
+    return {
+      id: value.id,
+      created_at: value.created_at,
+      expires_at: value.expires_at,
     };
   }
 

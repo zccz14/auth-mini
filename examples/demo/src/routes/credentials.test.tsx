@@ -324,6 +324,8 @@ describe('CredentialsRoute', () => {
         {
           id: 'passkey-row-1',
           credential_id: 'first-passkey',
+          rp_id: 'app.example.com',
+          last_used_at: null,
           created_at: '2026-04-10T12:00:00.000Z',
         },
       ],
