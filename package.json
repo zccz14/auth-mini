@@ -23,6 +23,10 @@
     "./sdk/device": {
       "types": "./dist/sdk/device.d.ts",
       "import": "./dist/sdk/device.js"
+    },
+    "./sdk/api": {
+      "types": "./dist/sdk/api.d.ts",
+      "import": "./dist/sdk/api.js"
     }
   },
   "bin": {

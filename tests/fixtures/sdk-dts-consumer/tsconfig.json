@@ -11,6 +11,7 @@
   "files": [
     "../../../dist/sdk/singleton-iife.d.ts",
     "./global-usage.ts",
+    "./module-api-usage.ts",
     "./module-browser-usage.ts",
     "./module-device-usage.ts"
   ]
