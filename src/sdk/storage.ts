@@ -75,25 +75,28 @@ export function readPersistedSdkState(
     try {
       return parseMeResponse(value);
     } catch {
+      const record = isRecord(value) ? value : null;
+
       if (
-        typeof value.user_id !== 'string' ||
-        typeof value.email !== 'string' ||
-        !Array.isArray(value.webauthn_credentials) ||
-        !Array.isArray(value.active_sessions)
+        !record ||
+        typeof record.user_id !== 'string' ||
+        typeof record.email !== 'string' ||
+        !Array.isArray(record.webauthn_credentials) ||
+        !Array.isArray(record.active_sessions)
       ) {
         return undefined;
       }
 
       return {
-        user_id: value.user_id,
-        email: value.email,
-        webauthn_credentials: value.webauthn_credentials.map(
+        user_id: record.user_id,
+        email: record.email,
+        webauthn_credentials: record.webauthn_credentials.map(
           normalizeWebauthnCredential,
         ),
-        ed25519_credentials: Array.isArray(value.ed25519_credentials)
-          ? [...value.ed25519_credentials]
+        ed25519_credentials: Array.isArray(record.ed25519_credentials)
+          ? [...record.ed25519_credentials]
           : [],
-        active_sessions: [...value.active_sessions],
+        active_sessions: [...record.active_sessions],
       };
     }
   }
