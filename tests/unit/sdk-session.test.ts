@@ -168,28 +168,30 @@ describe('sdk session flows', () => {
   });
 
   it('startup recovery settles authenticated without any implicit /me load', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        session_id: 's2',
+        access_token: 'a2',
+        refresh_token: 'r2',
+        expires_in: 900,
+        token_type: 'Bearer',
+      }),
+    );
     const sdk = createAuthMiniForTest({
       autoRecover: true,
       storage: fakeAuthenticatedStorage(),
-      fetch: vi.fn().mockResolvedValueOnce(
-        jsonResponse({
-          session_id: 's2',
-          access_token: 'a2',
-          refresh_token: 'r2',
-          expires_in: 900,
-          token_type: 'Bearer',
-        }),
-      ),
+      fetch,
     });
 
     await expect(sdk.ready).resolves.toBeUndefined();
     expect(sdk.session.getState()).toMatchObject({
       status: 'authenticated',
       authenticated: true,
-      sessionId: 's2',
-      accessToken: 'a2',
-      refreshToken: 'r2',
+      sessionId: 'session-1',
+      accessToken: 'access-token',
+      refreshToken: 'refresh-token',
     });
+    expect(fetch).not.toHaveBeenCalled();
     expect(sdk.session.getState()).not.toHaveProperty('me');
   });
 
@@ -360,7 +362,7 @@ describe('sdk session flows', () => {
     }
   });
 
-  it('keeps waiting after a provisional shared snapshot and only times out locally', async () => {
+  it('keeps provisional shared snapshots in recovering state', async () => {
     vi.useFakeTimers();
 
     try {
@@ -390,7 +392,7 @@ describe('sdk session flows', () => {
 
       shared.write({
         sessionId: 'session-1',
-        accessToken: 'access-2',
+        accessToken: null,
         refreshToken: 'refresh-2',
         receivedAt: '2026-04-03T00:02:00.000Z',
         expiresAt: '2026-04-03T00:17:00.000Z',
@@ -410,9 +412,9 @@ describe('sdk session flows', () => {
       await vi.runAllTicks();
 
       expect(sdk.session.getState()).toMatchObject({
-        status: 'anonymous',
-        sessionId: null,
-        refreshToken: null,
+        status: 'recovering',
+        sessionId: 'session-1',
+        refreshToken: 'refresh-2',
       });
       expect(shared.read()).toMatchObject({
         sessionId: 'session-1',
