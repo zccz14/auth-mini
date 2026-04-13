@@ -6,7 +6,6 @@ import {
 import type {
   AuthenticatedStateInput,
   Listener,
-  MeResponse,
   PersistedSdkState,
   SessionSnapshot,
   SdkStatus,
@@ -77,7 +76,6 @@ export function createStateStore(input: Storage | SdkStatePersistence) {
       listener(cloneSnapshot(state));
     }
   }
-
 }
 
 function resolvePersistence(
@@ -113,9 +111,7 @@ function isSdkStatePersistence(
   );
 }
 
-function hydrateSnapshot(
-  persisted: PersistedSdkState | null,
-): SessionSnapshot {
+function hydrateSnapshot(persisted: PersistedSdkState | null): SessionSnapshot {
   if (!persisted?.refreshToken || !persisted.sessionId) {
     return createSnapshot('anonymous');
   }
@@ -128,7 +124,6 @@ function hydrateSnapshot(
     refreshToken: persisted.refreshToken,
     receivedAt: persisted.receivedAt,
     expiresAt: persisted.expiresAt,
-    me: persisted.me ? cloneMeResponse(persisted.me) : null,
   });
 }
 
@@ -141,7 +136,6 @@ function createSnapshot(status: SdkStatus): SessionSnapshot {
     refreshToken: null,
     receivedAt: null,
     expiresAt: null,
-    me: null,
   });
 }
 
@@ -154,28 +148,10 @@ function cloneSnapshot(snapshot: SessionSnapshot): SessionSnapshot {
     refreshToken: snapshot.refreshToken,
     receivedAt: snapshot.receivedAt,
     expiresAt: snapshot.expiresAt,
-    me: snapshot.me ? cloneMeResponse(snapshot.me) : null,
   });
 }
 
 function freezeSnapshot(snapshot: SessionSnapshot): SessionSnapshot {
-  if (snapshot.me) {
-    for (const credential of snapshot.me.webauthn_credentials) {
-      Object.freeze(credential.transports);
-      Object.freeze(credential);
-    }
-    for (const credential of snapshot.me.ed25519_credentials) {
-      Object.freeze(credential);
-    }
-    for (const session of snapshot.me.active_sessions) {
-      Object.freeze(session);
-    }
-    Object.freeze(snapshot.me.webauthn_credentials);
-    Object.freeze(snapshot.me.ed25519_credentials);
-    Object.freeze(snapshot.me.active_sessions);
-    Object.freeze(snapshot.me);
-  }
-
   return Object.freeze(snapshot);
 }
 
@@ -188,37 +164,5 @@ function clonePersistedState(
     refreshToken: currentState.refreshToken,
     receivedAt: currentState.receivedAt,
     expiresAt: currentState.expiresAt,
-    me: currentState.me ? cloneMeResponse(currentState.me) : null,
-  };
-}
-
-function cloneMeResponse(me: MeResponse): MeResponse {
-  return {
-    user_id: me.user_id,
-    email: me.email,
-    webauthn_credentials: me.webauthn_credentials.map((credential) => ({
-      id: credential.id,
-      credential_id: credential.credential_id,
-      transports: [...credential.transports],
-      rp_id: typeof credential.rp_id === 'string' ? credential.rp_id : '',
-      last_used_at:
-        credential.last_used_at === null ||
-        typeof credential.last_used_at === 'string'
-          ? credential.last_used_at
-          : null,
-      created_at: credential.created_at,
-    })),
-    ed25519_credentials: me.ed25519_credentials.map((credential) => ({
-      id: credential.id,
-      name: credential.name,
-      public_key: credential.public_key,
-      last_used_at: credential.last_used_at,
-      created_at: credential.created_at,
-    })),
-    active_sessions: me.active_sessions.map((session) => ({
-      id: session.id,
-      created_at: session.created_at,
-      expires_at: session.expires_at,
-    })),
   };
 }

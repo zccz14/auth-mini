@@ -44,7 +44,6 @@ export type SessionSnapshot = {
   refreshToken: string | null;
   receivedAt: string | null;
   expiresAt: string | null;
-  me: MeResponse | null;
 };
 
 export type PersistedSdkState = {
@@ -53,7 +52,6 @@ export type PersistedSdkState = {
   refreshToken: string | null;
   receivedAt: string | null;
   expiresAt: string | null;
-  me: MeResponse | null;
 };
 
 export type AuthenticatedStateInput = PersistedSdkState;
@@ -66,9 +64,7 @@ export type SessionTokens = {
   expiresAt: string;
 };
 
-export type SessionResult = SessionTokens & {
-  me: MeResponse;
-};
+export type SessionResult = SessionTokens;
 
 export type EmailStartInput = {
   email: string;
@@ -109,8 +105,7 @@ export type DeviceSdkApi = {
   dispose(): Promise<void>;
   [Symbol.asyncDispose](): Promise<void>;
   me: {
-    get(): MeResponse | null;
-    reload(): Promise<MeResponse>;
+    fetch(): Promise<MeResponse>;
   };
   session: {
     getState(): SessionSnapshot;
@@ -130,8 +125,7 @@ export type AuthMiniApi = {
     register(input?: PasskeyOptionsInput): Promise<WebauthnVerifyResponse>;
   };
   me: {
-    get(): MeResponse | null;
-    reload(): Promise<MeResponse>;
+    fetch(): Promise<MeResponse>;
   };
   session: {
     getState(): SessionSnapshot;
