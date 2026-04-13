@@ -7,7 +7,25 @@ window.AuthMini.session.onChange((state) => {
 });
 
 async function readMe() {
+  const emailVerifyResult = await window.AuthMini.email.verify({
+    email: 'user@example.com',
+    code: '123456',
+  });
+  const sessionRefreshResult = await window.AuthMini.session.refresh();
+  const webauthnAuthenticateResult =
+    await window.AuthMini.webauthn.authenticate();
+  const passkeyAuthenticateResult = await window.AuthMini.passkey.authenticate({
+    rpId: 'auth.example.com',
+  });
   const me = await window.AuthMini.me.fetch();
+  // @ts-expect-error auth/session results are token-only
+  void emailVerifyResult.me;
+  // @ts-expect-error auth/session results are token-only
+  void sessionRefreshResult.me;
+  // @ts-expect-error auth/session results are token-only
+  void webauthnAuthenticateResult.me;
+  // @ts-expect-error auth/session results are token-only
+  void passkeyAuthenticateResult.me;
   const email = me.email;
   const credentialId = me.webauthn_credentials[0].credential_id;
   const rpId = me.webauthn_credentials[0].rp_id;
@@ -16,6 +34,10 @@ async function readMe() {
   const expiresAt = me.active_sessions[0].expires_at;
 
   void email;
+  void emailVerifyResult.accessToken;
+  void sessionRefreshResult.refreshToken;
+  void webauthnAuthenticateResult.sessionId;
+  void passkeyAuthenticateResult.accessToken;
   void credentialId;
   void rpId;
   void lastUsedAt;

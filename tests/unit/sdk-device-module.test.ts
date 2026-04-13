@@ -64,6 +64,9 @@ describe('device module sdk', () => {
       now: () => Date.parse('2026-04-12T00:00:00.000Z'),
     });
 
+    expect(typeof sdk.me.fetch).toBe('function');
+    expect(sdk.me).not.toHaveProperty('get');
+    expect(sdk.me).not.toHaveProperty('reload');
     await expect(sdk.ready).resolves.toBeUndefined();
     await expect(sdk.session.refresh()).resolves.toMatchObject({
       sessionId: 'session-2',

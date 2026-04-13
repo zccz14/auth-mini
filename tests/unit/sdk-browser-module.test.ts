@@ -27,6 +27,9 @@ describe('browser module sdk', () => {
     try {
       expect(typeof sdk.email.start).toBe('function');
       expect(typeof sdk.session.onChange).toBe('function');
+      expect(typeof sdk.me.fetch).toBe('function');
+      expect(sdk.me).not.toHaveProperty('get');
+      expect(sdk.me).not.toHaveProperty('reload');
       expect('AuthMini' in globalThis).toBe(false);
 
       await expect(
