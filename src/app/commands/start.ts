@@ -175,7 +175,7 @@ function resolveClientIp(
   remoteAddress: string | null,
 ): string | null {
   const cfConnectingIp = normalizeClientIpValue(
-    firstHeaderValue(headers['cf-connecting-ip']),
+    firstCommaSeparatedValue(firstHeaderValue(headers['cf-connecting-ip'])),
   );
   if (cfConnectingIp) {
     return cfConnectingIp;

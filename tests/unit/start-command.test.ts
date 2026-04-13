@@ -445,6 +445,59 @@ describe('runStartCommand', () => {
     await runningServer.close();
   });
 
+  it('uses the first token when Node merges repeated CF-Connecting-IP values', async () => {
+    const server = createMockServer();
+    const db = {
+      close: vi.fn(),
+      prepare: vi.fn().mockReturnValue({
+        all: vi.fn().mockReturnValue([]),
+      }),
+    };
+    const observedClientIps: Array<string | null> = [];
+    const fetch = vi.fn((request: Request) => {
+      const createAppInput = createApp.mock.calls[0]?.[0] as
+        | { getClientIp(request: Request): string | null }
+        | undefined;
+
+      observedClientIps.push(createAppInput?.getClientIp(request) ?? null);
+
+      return Response.json({ ok: true });
+    });
+
+    createDatabaseClient.mockReturnValue(db);
+    bootstrapKeys.mockResolvedValue({ id: 'key-1', kid: 'kid-1' });
+    createServer.mockReturnValue(server);
+    createApp.mockReturnValue({ fetch });
+
+    const runStartCommand = await loadRunStartCommand();
+    const runningServer = await runStartCommand({
+      dbPath: '/tmp/auth-mini.db',
+    });
+    const requestHandler = createServer.mock.calls[0]?.[0] as
+      | ((req: object, res: object) => void)
+      | undefined;
+
+    const req = {
+      headers: {
+        'cf-connecting-ip': '198.51.100.10, 198.51.100.11',
+        host: 'auth.example.test',
+      },
+      method: 'GET',
+      socket: { remoteAddress: '198.51.100.40' },
+      url: '/health',
+    };
+    const res = createMockResponse();
+
+    requestHandler?.(req, res);
+    await vi.waitFor(() => {
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    expect(observedClientIps).toEqual(['198.51.100.10']);
+
+    await runningServer.close();
+  });
+
   it('ignores an invalid X-Forwarded-For token and falls through to the socket address', async () => {
     const server = createMockServer();
     const db = {
