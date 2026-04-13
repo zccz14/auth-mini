@@ -268,7 +268,9 @@ describe('session routes', () => {
     try {
       expect(
         migratedDb
-          .prepare('SELECT auth_method, ip, user_agent FROM sessions WHERE id = ?')
+          .prepare(
+            'SELECT auth_method, ip, user_agent FROM sessions WHERE id = ?',
+          )
           .get('legacy-session'),
       ).toEqual({
         auth_method: 'email_otp',
@@ -324,6 +326,51 @@ describe('session routes', () => {
     expect(JSON.stringify(testApp.logs)).not.toContain(
       testApp.tokens.refresh_token,
     );
+  });
+
+  it('refresh preserves session snapshot fields', async () => {
+    const { createTestApp } = await loadMockedAppHelpers();
+    const testApp = await createTestApp();
+    openApps.push(testApp);
+
+    testApp.db
+      .prepare(
+        'INSERT INTO users (id, email, email_verified_at) VALUES (?, ?, ?)',
+      )
+      .run(
+        'refresh-snapshot-user',
+        'refresh-snapshot@example.com',
+        '2030-01-01T00:00:00.000Z',
+      );
+
+    const refreshToken = 'refresh-source-token';
+    const session = createSession(testApp.db, {
+      userId: 'refresh-snapshot-user',
+      refreshTokenHash: hashValue(refreshToken),
+      authMethod: 'email_otp',
+      ip: '198.51.100.5',
+      userAgent: 'RefreshSource/1.0',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+    });
+
+    const response = await testApp.app.request('/session/refresh', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: json({
+        session_id: session.id,
+        refresh_token: refreshToken,
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(
+      testApp.db
+        .prepare('SELECT ip, user_agent FROM sessions WHERE id = ?')
+        .get(session.id),
+    ).toEqual({
+      ip: '198.51.100.5',
+      user_agent: 'RefreshSource/1.0',
+    });
   });
 
   it('rotateRefreshToken keeps the original session snapshot fields', async () => {

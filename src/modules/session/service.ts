@@ -62,6 +62,8 @@ export async function mintSessionTokens(
   input: {
     userId: string;
     authMethod: Session['authMethod'];
+    ip?: string | null;
+    userAgent?: string | null;
     issuer: string;
     logger?: AppLogger;
   },
@@ -75,6 +77,8 @@ export async function mintSessionTokens(
     userId: input.userId,
     refreshTokenHash: hashValue(refreshToken),
     authMethod: input.authMethod,
+    ip: input.ip ?? null,
+    userAgent: input.userAgent ?? null,
     expiresAt,
   });
   const accessToken = await signJwt(db, {

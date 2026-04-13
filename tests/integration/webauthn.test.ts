@@ -1048,6 +1048,50 @@ describe('webauthn routes', () => {
     );
   });
 
+  it('authenticate/verify stores request snapshot fields on the created session', async () => {
+    const signedInApp = await signInOnExistingApp(
+      await createTestApp({ clientIp: '203.0.113.11' }),
+      'snapshot-webauthn@example.com',
+    );
+    openApps.push(signedInApp);
+    const passkey = await registerPasskey(
+      signedInApp,
+      'snapshot-webauthn@example.com',
+    );
+    const authOptionsBody = await getAuthOptions(signedInApp);
+    const credential = passkey.createAuthenticationCredential(
+      authOptionsBody.publicKey,
+      origin,
+    );
+
+    const response = await signedInApp.app.request(
+      '/webauthn/authenticate/verify',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          Origin: origin,
+          'User-Agent': 'WebAuthnAgent/2.0 (snapshot)',
+        },
+        body: json({ request_id: authOptionsBody.request_id, credential }),
+      },
+    );
+    const body = (await response.json()) as { session_id: string };
+
+    expect(response.status).toBe(200);
+    expect(
+      signedInApp.db
+        .prepare(
+          'SELECT auth_method, ip, user_agent FROM sessions WHERE id = ?',
+        )
+        .get(body.session_id),
+    ).toEqual({
+      auth_method: 'webauthn',
+      ip: '203.0.113.11',
+      user_agent: 'WebAuthnAgent/2.0 (snapshot)',
+    });
+  });
+
   it('authenticate/verify signs in with an RS256 credential', async () => {
     const testApp = await createSignedInApp('signin-rs256@example.com');
     openApps.push(testApp);
