@@ -13,12 +13,14 @@ type MockSessionState = {
   refreshToken: string | null;
   receivedAt: string | null;
   expiresAt: string | null;
-  me: {
-    user_id: string;
-    email: string;
-    webauthn_credentials: Array<unknown>;
-    active_sessions: Array<unknown>;
-  } | null;
+};
+
+type MockMe = {
+  user_id: string;
+  email: string;
+  webauthn_credentials: Array<unknown>;
+  ed25519_credentials: Array<unknown>;
+  active_sessions: Array<unknown>;
 };
 
 const sdkMocks = vi.hoisted(() => {
@@ -31,18 +33,18 @@ const sdkMocks = vi.hoisted(() => {
       refreshToken: null,
       receivedAt: null,
       expiresAt: null,
-      me: null,
     } as MockSessionState,
   };
 
   const passkeyRegister = vi.fn();
   const passkeyAuthenticate = vi.fn();
+  const meFetch = vi.fn<() => Promise<MockMe>>();
 
   return {
     createBrowserSdk: vi.fn(() => ({
       email: { start: vi.fn(), verify: vi.fn() },
       passkey: { register: passkeyRegister, authenticate: passkeyAuthenticate },
-      me: { get: vi.fn(() => null), reload: vi.fn() },
+      me: { fetch: meFetch },
       session: {
         getState: () => sessionState.current,
         onChange: vi.fn(() => vi.fn()),
@@ -51,6 +53,7 @@ const sdkMocks = vi.hoisted(() => {
       },
       webauthn: { register: vi.fn(), authenticate: vi.fn() },
     })),
+    meFetch,
     passkeyRegister,
     passkeyAuthenticate,
     sessionState,
@@ -61,10 +64,19 @@ vi.mock('auth-mini/sdk/browser', () => ({
   createBrowserSdk: sdkMocks.createBrowserSdk,
 }));
 
+function renderRoute() {
+  render(
+    <MemoryRouter initialEntries={['/passkey']}>
+      <AppRouter />
+    </MemoryRouter>,
+  );
+}
+
 describe('PasskeyRoute', () => {
   beforeEach(() => {
     localStorage.clear();
     sdkMocks.createBrowserSdk.mockClear();
+    sdkMocks.meFetch.mockReset();
     sdkMocks.passkeyRegister.mockReset();
     sdkMocks.passkeyAuthenticate.mockReset();
     sdkMocks.sessionState.current = {
@@ -75,44 +87,71 @@ describe('PasskeyRoute', () => {
       refreshToken: null,
       receivedAt: null,
       expiresAt: null,
-      me: null,
     };
   });
 
   it('renders both register and sign-in actions', () => {
     localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
 
-    render(
-      <MemoryRouter initialEntries={['/passkey']}>
-        <AppRouter />
-      </MemoryRouter>,
-    );
+    renderRoute();
 
-    expect(
-      screen.getByRole('button', { name: 'Register passkey' }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Sign in with passkey' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Register passkey' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign in with passkey' })).toBeInTheDocument();
   });
 
   it('keeps passkey registration disabled for anonymous state', () => {
     localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
 
-    render(
-      <MemoryRouter initialEntries={['/passkey']}>
-        <AppRouter />
-      </MemoryRouter>,
-    );
+    renderRoute();
 
-    expect(
-      screen.getByRole('button', { name: 'Register passkey' }),
-    ).toBeDisabled();
-    expect(
-      screen.getByText(
-        'Register a passkey after signing in with an existing session.',
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Register passkey' })).toBeDisabled();
+    expect(screen.getByText('Register a passkey after signing in with an existing session.')).toBeInTheDocument();
+    expect(sdkMocks.meFetch).not.toHaveBeenCalled();
+  });
+
+  it('loads /me in the route and enables passkey registration', async () => {
+    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
+    sdkMocks.sessionState.current = {
+      status: 'authenticated',
+      authenticated: true,
+      sessionId: 'session-1',
+      accessToken: 'access-token',
+      refreshToken: 'refresh-token',
+      receivedAt: '2026-04-11T00:00:00.000Z',
+      expiresAt: '2026-04-11T01:00:00.000Z',
+    };
+    sdkMocks.meFetch.mockResolvedValueOnce({
+      user_id: 'user-1',
+      email: 'user@example.com',
+      webauthn_credentials: [],
+      ed25519_credentials: [],
+      active_sessions: [],
+    });
+
+    renderRoute();
+
+    expect(screen.getByText('Loading current user…')).toBeInTheDocument();
+    expect(await screen.findByText(/"email": "user@example.com"/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Register passkey' })).toBeEnabled();
+  });
+
+  it('blocks registration when route-owned /me loading fails', async () => {
+    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
+    sdkMocks.sessionState.current = {
+      status: 'authenticated',
+      authenticated: true,
+      sessionId: 'session-1',
+      accessToken: 'access-token',
+      refreshToken: 'refresh-token',
+      receivedAt: '2026-04-11T00:00:00.000Z',
+      expiresAt: '2026-04-11T01:00:00.000Z',
+    };
+    sdkMocks.meFetch.mockRejectedValueOnce(new Error('Unable to load current user.'));
+
+    renderRoute();
+
+    expect(await screen.findByText('Unable to load current user.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Register passkey' })).toBeDisabled();
   });
 
   it('renders passkey register results for authenticated users', async () => {
@@ -126,29 +165,22 @@ describe('PasskeyRoute', () => {
       refreshToken: 'refresh-token',
       receivedAt: '2026-04-11T00:00:00.000Z',
       expiresAt: '2026-04-11T01:00:00.000Z',
-      me: {
-        user_id: 'user-1',
-        email: 'user@example.com',
-        webauthn_credentials: [],
-        active_sessions: [],
-      },
     };
-    sdkMocks.passkeyRegister.mockResolvedValueOnce({
-      ok: true,
-      credentialId: 'cred-1',
+    sdkMocks.meFetch.mockResolvedValueOnce({
+      user_id: 'user-1',
+      email: 'user@example.com',
+      webauthn_credentials: [],
+      ed25519_credentials: [],
+      active_sessions: [],
     });
+    sdkMocks.passkeyRegister.mockResolvedValueOnce({ ok: true, credentialId: 'cred-1' });
 
-    render(
-      <MemoryRouter initialEntries={['/passkey']}>
-        <AppRouter />
-      </MemoryRouter>,
-    );
+    renderRoute();
 
+    await screen.findByText(/"email": "user@example.com"/);
     await user.click(screen.getByRole('button', { name: 'Register passkey' }));
 
     expect(sdkMocks.passkeyRegister).toHaveBeenCalledTimes(1);
-    expect(
-      await screen.findByText(/"credentialId": "cred-1"/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/"credentialId": "cred-1"/)).toBeInTheDocument();
   });
 });

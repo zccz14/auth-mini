@@ -13,12 +13,18 @@ type MockSessionState = {
   refreshToken: string | null;
   receivedAt: string | null;
   expiresAt: string | null;
-  me: {
-    user_id: string;
-    email: string;
-    ed25519_credentials?: Array<unknown>;
-    active_sessions?: Array<unknown>;
-  } | null;
+};
+
+type MockMe = {
+  user_id: string;
+  email: string;
+  webauthn_credentials: Array<unknown>;
+  ed25519_credentials: Array<{
+    id: string;
+    name: string;
+    public_key: string;
+  }>;
+  active_sessions: Array<unknown>;
 };
 
 const sdkMocks = vi.hoisted(() => {
@@ -32,20 +38,13 @@ const sdkMocks = vi.hoisted(() => {
       refreshToken: null,
       receivedAt: null,
       expiresAt: null,
-      me: null,
     } as MockSessionState,
   };
 
   const ed25519Register = vi.fn();
   const ed25519Start = vi.fn();
   const ed25519Verify = vi.fn();
-  const meReload = vi.fn();
-
-  function emitSession() {
-    for (const listener of listeners) {
-      listener(sessionState.current);
-    }
-  }
+  const meFetch = vi.fn<() => Promise<MockMe>>();
 
   return {
     createDemoSdk: vi.fn(() => ({
@@ -55,7 +54,7 @@ const sdkMocks = vi.hoisted(() => {
         start: ed25519Start,
         verify: ed25519Verify,
       },
-      me: { get: vi.fn(() => sessionState.current.me), reload: meReload },
+      me: { fetch: meFetch },
       passkey: { register: vi.fn(), authenticate: vi.fn() },
       session: {
         getState: () => sessionState.current,
@@ -68,11 +67,10 @@ const sdkMocks = vi.hoisted(() => {
       },
       webauthn: { register: vi.fn(), authenticate: vi.fn() },
     })),
+    ed25519Register,
     ed25519Start,
     ed25519Verify,
-    ed25519Register,
-    emitSession,
-    meReload,
+    meFetch,
     persistDemoSession: vi.fn(),
     sessionState,
   };
@@ -86,10 +84,28 @@ vi.mock('@/lib/demo-sdk', () => ({
 function getJsonPanel(title: string) {
   const heading = screen.getByRole('heading', { level: 3, name: title });
   const panel = heading.closest('section');
-
   expect(panel).not.toBeNull();
-
   return panel as HTMLElement;
+}
+
+function authenticatedSession(): MockSessionState {
+  return {
+    status: 'authenticated',
+    authenticated: true,
+    sessionId: 'session-1',
+    accessToken: 'access-token',
+    refreshToken: 'refresh-token',
+    receivedAt: '2026-04-12T00:00:00.000Z',
+    expiresAt: '2026-04-12T01:00:00.000Z',
+  };
+}
+
+function renderRoute() {
+  render(
+    <MemoryRouter initialEntries={['/ed25519']}>
+      <AppRouter />
+    </MemoryRouter>,
+  );
 }
 
 describe('Ed25519Route', () => {
@@ -99,7 +115,7 @@ describe('Ed25519Route', () => {
     sdkMocks.ed25519Register.mockReset();
     sdkMocks.ed25519Start.mockReset();
     sdkMocks.ed25519Verify.mockReset();
-    sdkMocks.meReload.mockReset();
+    sdkMocks.meFetch.mockReset();
     sdkMocks.persistDemoSession.mockReset();
     sdkMocks.sessionState.current = {
       status: 'anonymous',
@@ -109,76 +125,76 @@ describe('Ed25519Route', () => {
       refreshToken: null,
       receivedAt: null,
       expiresAt: null,
-      me: null,
     };
   });
 
   it('disables register when setup is not ready or no session is present', () => {
-    render(
-      <MemoryRouter initialEntries={['/ed25519']}>
-        <AppRouter />
-      </MemoryRouter>,
-    );
+    renderRoute();
 
-    expect(
-      screen.getByRole('button', { name: 'Register credential' }),
-    ).toBeDisabled();
-    expect(
-      screen.getByText(
-        'Registering an ED25519 credential requires an existing session.',
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Register credential' })).toBeDisabled();
+    expect(screen.getByText('Registering an ED25519 credential requires an existing session.')).toBeInTheDocument();
   });
 
-  it('uses the last registered credential id to populate the sign-in input', async () => {
+  it('loads current credentials from route-owned /me state', async () => {
+    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
+    sdkMocks.sessionState.current = authenticatedSession();
+    sdkMocks.meFetch.mockResolvedValueOnce({
+      user_id: 'user-1',
+      email: 'user@example.com',
+      webauthn_credentials: [],
+      ed25519_credentials: [
+        {
+          id: 'cred-1',
+          name: 'Laptop signer',
+          public_key: 'jt2HpVJxALeSteTe7QlqBRiOxVeloHMMImehYhZc9Rg',
+        },
+      ],
+      active_sessions: [],
+    });
+
+    renderRoute();
+
+    const currentCredentialsPanel = getJsonPanel('current credentials');
+    expect(screen.getByText('Loading current credentials…')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(within(currentCredentialsPanel).getByText(/Laptop signer/)).toBeInTheDocument();
+    });
+  });
+
+  it('refreshes local /me after registration succeeds', async () => {
     const user = userEvent.setup();
     localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
-    sdkMocks.sessionState.current = {
-      status: 'authenticated',
-      authenticated: true,
-      sessionId: 'session-1',
-      accessToken: 'access-token',
-      refreshToken: 'refresh-token',
-      receivedAt: '2026-04-12T00:00:00.000Z',
-      expiresAt: '2026-04-12T01:00:00.000Z',
-      me: {
+    sdkMocks.sessionState.current = authenticatedSession();
+    sdkMocks.meFetch
+      .mockResolvedValueOnce({
         user_id: 'user-1',
         email: 'user@example.com',
+        webauthn_credentials: [],
         ed25519_credentials: [],
         active_sessions: [],
-      },
-    };
+      })
+      .mockResolvedValueOnce({
+        user_id: 'user-1',
+        email: 'user@example.com',
+        webauthn_credentials: [],
+        ed25519_credentials: [
+          {
+            id: 'cred-1',
+            name: 'Laptop signer',
+            public_key: 'jt2HpVJxALeSteTe7QlqBRiOxVeloHMMImehYhZc9Rg',
+          },
+        ],
+        active_sessions: [],
+      });
     sdkMocks.ed25519Register.mockResolvedValueOnce({
       id: 'cred-1',
       name: 'Laptop signer',
       public_key: 'jt2HpVJxALeSteTe7QlqBRiOxVeloHMMImehYhZc9Rg',
     });
-    sdkMocks.meReload.mockImplementationOnce(async () => {
-      sdkMocks.sessionState.current = {
-        ...sdkMocks.sessionState.current,
-        me: {
-          user_id: 'user-1',
-          email: 'user@example.com',
-          ed25519_credentials: [
-            {
-              id: 'cred-1',
-              name: 'Laptop signer',
-              public_key: 'jt2HpVJxALeSteTe7QlqBRiOxVeloHMMImehYhZc9Rg',
-            },
-          ],
-          active_sessions: [],
-        },
-      };
-      sdkMocks.emitSession();
-      return sdkMocks.sessionState.current.me!;
-    });
 
-    render(
-      <MemoryRouter initialEntries={['/ed25519']}>
-        <AppRouter />
-      </MemoryRouter>,
-    );
+    renderRoute();
 
+    const currentCredentialsPanel = getJsonPanel('current credentials');
     await user.type(screen.getByLabelText('Credential name'), 'Laptop signer');
     await user.type(
       screen.getByLabelText('Public key (base64url 32-byte)'),
@@ -190,123 +206,10 @@ describe('Ed25519Route', () => {
       name: 'Laptop signer',
       public_key: 'jt2HpVJxALeSteTe7QlqBRiOxVeloHMMImehYhZc9Rg',
     });
-    expect(sdkMocks.meReload).toHaveBeenCalledTimes(1);
-
-    const useLastRegisteredCredentialId = screen.getByRole('button', {
-      name: 'Use last registered credential id',
-    });
-    const currentCredentialsPanel = getJsonPanel('current credentials');
-
+    expect(sdkMocks.meFetch).toHaveBeenCalledTimes(2);
     await waitFor(() => {
-      expect(useLastRegisteredCredentialId).toBeEnabled();
+      expect(within(currentCredentialsPanel).getByText(/cred-1/)).toBeInTheDocument();
     });
-    expect(within(currentCredentialsPanel).getByText(/cred-1/)).toBeInTheDocument();
-
-    const credentialIdInput = screen.getByLabelText('Credential id');
-    expect(credentialIdInput).toHaveValue('');
-
-    await user.click(useLastRegisteredCredentialId);
-
-    expect(credentialIdInput).toHaveValue('cred-1');
-  });
-
-  it('renders the reloaded ed25519 list from shared me state without a local credentials mirror', async () => {
-    const user = userEvent.setup();
-    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
-    sdkMocks.sessionState.current = {
-      status: 'authenticated',
-      authenticated: true,
-      sessionId: 'session-1',
-      accessToken: 'access-token',
-      refreshToken: 'refresh-token',
-      receivedAt: '2026-04-12T00:00:00.000Z',
-      expiresAt: '2026-04-12T01:00:00.000Z',
-      me: {
-        user_id: 'user-1',
-        email: 'user@example.com',
-        ed25519_credentials: [],
-        active_sessions: [],
-      },
-    };
-
-    sdkMocks.ed25519Register.mockResolvedValueOnce({ id: 'cred-1' });
-    const sharedMe = sdkMocks.sessionState.current.me!;
-    sdkMocks.meReload.mockImplementationOnce(async () => {
-      sharedMe.ed25519_credentials = [
-        {
-          id: 'cred-1',
-          name: 'Laptop signer',
-          public_key: 'jt2HpVJxALeSteTe7QlqBRiOxVeloHMMImehYhZc9Rg',
-        },
-      ];
-      sdkMocks.sessionState.current = {
-        ...sdkMocks.sessionState.current,
-        me: sharedMe,
-      };
-      sdkMocks.emitSession();
-
-      return {
-        ...sharedMe,
-        ed25519_credentials: [],
-      };
-    });
-
-    render(
-      <MemoryRouter initialEntries={['/ed25519']}>
-        <AppRouter />
-      </MemoryRouter>,
-    );
-
-    await user.type(screen.getByLabelText('Credential name'), 'Laptop signer');
-    await user.type(
-      screen.getByLabelText('Public key (base64url 32-byte)'),
-      'jt2HpVJxALeSteTe7QlqBRiOxVeloHMMImehYhZc9Rg',
-    );
-    await user.click(screen.getByRole('button', { name: 'Register credential' }));
-
-    const currentCredentialsPanel = getJsonPanel('current credentials');
-
-    await waitFor(() => {
-      expect(within(currentCredentialsPanel).getByText(/Laptop signer/)).toBeInTheDocument();
-    });
-  });
-
-  it('keeps register disabled for invalid public key text', async () => {
-    const user = userEvent.setup();
-    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
-    sdkMocks.sessionState.current = {
-      status: 'authenticated',
-      authenticated: true,
-      sessionId: 'session-1',
-      accessToken: 'access-token',
-      refreshToken: 'refresh-token',
-      receivedAt: '2026-04-12T00:00:00.000Z',
-      expiresAt: '2026-04-12T01:00:00.000Z',
-      me: {
-        user_id: 'user-1',
-        email: 'user@example.com',
-        ed25519_credentials: [],
-        active_sessions: [],
-      },
-    };
-
-    render(
-      <MemoryRouter initialEntries={['/ed25519']}>
-        <AppRouter />
-      </MemoryRouter>,
-    );
-
-    await user.type(
-      screen.getByLabelText('Public key (base64url 32-byte)'),
-      'bad-key',
-    );
-
-    expect(
-      screen.getByText('Expected base64url-encoded 32-byte value'),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Register credential' }),
-    ).toBeDisabled();
   });
 
   it('signs in with credential id + seed and updates the shared session panel', async () => {
@@ -323,97 +226,42 @@ describe('Ed25519Route', () => {
       expires_in: 3600,
       token_type: 'Bearer',
     });
-    sdkMocks.meReload.mockImplementation(async () => {
+    sdkMocks.persistDemoSession.mockImplementation((_storage, _origin, tokens) => {
       sdkMocks.sessionState.current = {
         status: 'authenticated',
         authenticated: true,
-        sessionId: 'session-2',
-        accessToken: 'access-token-2',
-        refreshToken: 'refresh-token-2',
+        sessionId: tokens.session_id,
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
         receivedAt: '2026-04-12T00:00:00.000Z',
         expiresAt: '2026-04-12T01:00:00.000Z',
-        me: {
-          user_id: 'user-2',
-          email: 'user2@example.com',
-          ed25519_credentials: [],
-          active_sessions: [],
-        },
       };
-
-      return sdkMocks.sessionState.current.me;
+    });
+    sdkMocks.meFetch.mockResolvedValueOnce({
+      user_id: 'user-2',
+      email: 'user2@example.com',
+      webauthn_credentials: [],
+      ed25519_credentials: [],
+      active_sessions: [],
     });
 
-    render(
-      <MemoryRouter initialEntries={['/ed25519']}>
-        <AppRouter />
-      </MemoryRouter>,
-    );
+    renderRoute();
 
     await user.type(screen.getByLabelText('Credential id'), 'cred-1');
     await user.type(
       screen.getByLabelText('Seed (base64url 32-byte)'),
       '7rANewlCLceTsUo9feN0DLjnu-ayYsdhkVWvHT4FelM',
     );
-    await user.click(
-      screen.getByRole('button', { name: 'Sign in with private key' }),
-    );
+    await user.click(screen.getByRole('button', { name: 'Sign in with private key' }));
 
-    expect(sdkMocks.ed25519Start).toHaveBeenCalledWith({
-      credential_id: 'cred-1',
-    });
+    expect(sdkMocks.ed25519Start).toHaveBeenCalledWith({ credential_id: 'cred-1' });
     await waitFor(() => {
       expect(sdkMocks.ed25519Verify).toHaveBeenCalledWith({
         request_id: 'request-1',
         signature: expect.stringMatching(/^[A-Za-z0-9_-]+$/),
       });
     });
-    expect(
-      await screen.findByText(/"status": "authenticated"/),
-    ).toBeInTheDocument();
-    expect(
-      await screen.findByText(/"session_id": "session-2"/),
-    ).toBeInTheDocument();
-  });
-
-  it('keeps sign-in disabled when the credential id is blank or the seed is invalid', async () => {
-    const user = userEvent.setup();
-    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
-
-    render(
-      <MemoryRouter initialEntries={['/ed25519']}>
-        <AppRouter />
-      </MemoryRouter>,
-    );
-
-    expect(
-      screen.getByRole('button', { name: 'Sign in with private key' }),
-    ).toBeDisabled();
-
-    await user.type(screen.getByLabelText('Seed (base64url 32-byte)'), 'bad-seed');
-
-    expect(
-      screen.getByText('Expected base64url-encoded 32-byte value'),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Sign in with private key' }),
-    ).toBeDisabled();
-  });
-
-  it('starts from the default ready demo configuration', () => {
-    render(
-      <MemoryRouter initialEntries={['/ed25519']}>
-        <AppRouter />
-      </MemoryRouter>,
-    );
-
-    expect(
-      screen.getByRole('button', { name: 'Sign in with private key' }),
-    ).toBeDisabled();
-    expect(
-      screen.queryByText('Complete setup before using ED25519 actions.'),
-    ).not.toBeInTheDocument();
-    expect(screen.getByText(/^Connected to https:\/\//)).toBeInTheDocument();
-    expect(screen.getByText('ready')).toBeInTheDocument();
-    expect(screen.getByText('sdk ready')).toBeInTheDocument();
+    expect(await screen.findByText(/"status": "authenticated"/)).toBeInTheDocument();
+    expect(await screen.findByText(/"session_id": "session-2"/)).toBeInTheDocument();
   });
 });

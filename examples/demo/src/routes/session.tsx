@@ -1,14 +1,48 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { FlowCard } from '@/components/app/flow-card';
 import { JsonPanel } from '@/components/app/json-panel';
 import { Button } from '@/components/ui/button';
 import { useDemo } from '@/app/providers/demo-provider';
 
+type DemoMe = Awaited<
+  ReturnType<NonNullable<ReturnType<typeof useDemo>['sdk']>['me']['fetch']>
+>;
+
 export function SessionRoute() {
-  const { clearLocalAuthState, config, sdk, session, user } = useDemo();
+  const { clearLocalAuthState, config, sdk, session } = useDemo();
+  const [me, setMe] = useState<DemoMe | null>(null);
+  const [loadingMe, setLoadingMe] = useState(false);
+  const [meError, setMeError] = useState('');
   const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
   const [tableError, setTableError] = useState('');
-  const rows = user?.active_sessions ?? [];
+  const rows = me?.active_sessions ?? [];
+
+  const loadMe = useCallback(async () => {
+    if (!sdk || config.status !== 'ready' || !session.authenticated) {
+      setMe(null);
+      setMeError('');
+      setLoadingMe(false);
+      return;
+    }
+
+    setLoadingMe(true);
+    setMeError('');
+
+    try {
+      setMe(await sdk.me.fetch());
+    } catch (cause) {
+      setMe(null);
+      setMeError(
+        cause instanceof Error ? cause.message : 'Unable to load current user.',
+      );
+    } finally {
+      setLoadingMe(false);
+    }
+  }, [config.status, sdk, session.authenticated]);
+
+  useEffect(() => {
+    void loadMe();
+  }, [loadMe]);
 
   async function kickSession(sessionId: string) {
     if (pendingSessionId !== null) {
@@ -36,7 +70,7 @@ export function SessionRoute() {
         throw new Error('Unable to kick session.');
       }
 
-      await sdk.me.reload();
+      await loadMe();
       setTableError('');
     } catch {
       setTableError('Unable to kick session.');
@@ -53,8 +87,8 @@ export function SessionRoute() {
       <div className="space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="max-w-2xl text-sm text-slate-600">
-            Shared provider state keeps the session snapshot and current user in
-            sync with the demo SDK.
+            The session page owns its own authenticated profile fetch so refreshes
+            stay local to this route.
           </p>
           <Button onClick={() => void clearLocalAuthState()}>
             Clear local auth state
@@ -66,8 +100,13 @@ export function SessionRoute() {
             title="Current session"
             value={session ?? { status: config.status }}
           />
-          <JsonPanel title="Current user" value={user} />
+          <JsonPanel title="Current user" value={me} />
         </div>
+
+        {loadingMe ? (
+          <p className="text-sm text-slate-600">Loading current user…</p>
+        ) : null}
+        {meError ? <p className="text-sm text-rose-600">{meError}</p> : null}
 
         <section
           aria-labelledby="active-sessions-heading"

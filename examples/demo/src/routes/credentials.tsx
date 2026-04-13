@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { FlowCard } from '@/components/app/flow-card';
 import { Button } from '@/components/ui/button';
 import { useDemo } from '@/app/providers/demo-provider';
@@ -57,8 +57,15 @@ function getCredentialCapability(accessToken: string): CredentialCapability {
     : 'not-manageable';
 }
 
+type DemoMe = Awaited<
+  ReturnType<NonNullable<ReturnType<typeof useDemo>['sdk']>['me']['fetch']>
+>;
+
 export function CredentialsRoute() {
-  const { config, sdk, session, user } = useDemo();
+  const { config, sdk, session } = useDemo();
+  const [me, setMe] = useState<DemoMe | null>(null);
+  const [loadingMe, setLoadingMe] = useState(false);
+  const [meError, setMeError] = useState('');
   const [pendingSections, setPendingSections] = useState({
     passkey: false,
     ed25519: false,
@@ -87,6 +94,33 @@ export function CredentialsRoute() {
     ? getCredentialCapability(effectiveAccessToken)
     : 'not-manageable';
   const credentialManageable = credentialCapability === 'manageable';
+
+  const loadMe = useCallback(async () => {
+    if (!authenticated || !sdk || config.status !== 'ready') {
+      setMe(null);
+      setMeError('');
+      setLoadingMe(false);
+      return;
+    }
+
+    setLoadingMe(true);
+    setMeError('');
+
+    try {
+      setMe(await sdk.me.fetch());
+    } catch (cause) {
+      setMe(null);
+      setMeError(
+        cause instanceof Error ? cause.message : 'Unable to load current account.',
+      );
+    } finally {
+      setLoadingMe(false);
+    }
+  }, [authenticated, config.status, sdk]);
+
+  useEffect(() => {
+    void loadMe();
+  }, [loadMe]);
 
   useEffect(() => {
     if (
@@ -121,9 +155,9 @@ export function CredentialsRoute() {
     session.refreshToken,
   ]);
 
-  const email = user?.email ?? '';
-  const passkeys = user?.webauthn_credentials ?? [];
-  const ed25519Credentials = user?.ed25519_credentials ?? [];
+  const email = me?.email ?? '';
+  const passkeys = me?.webauthn_credentials ?? [];
+  const ed25519Credentials = me?.ed25519_credentials ?? [];
 
   async function deleteCredential(input: {
     section: 'passkey' | 'ed25519';
@@ -161,9 +195,9 @@ export function CredentialsRoute() {
         throw new Error(`Delete failed with status ${response.status}`);
       }
 
-      await sdk.me.reload();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Delete failed');
+       await loadMe();
+     } catch (cause) {
+       setError(cause instanceof Error ? cause.message : 'Delete failed');
     } finally {
       pendingSectionsRef.current[input.section] = false;
       setPendingSections((current) => ({
@@ -179,6 +213,11 @@ export function CredentialsRoute() {
       description="Inspect the current account credentials and remove bound authenticators when needed."
     >
       <div className="space-y-6">
+        {loadingMe ? (
+          <p className="text-sm text-slate-600">Loading current account…</p>
+        ) : null}
+        {meError ? <p className="text-sm text-rose-600">{meError}</p> : null}
+
         <section
           aria-labelledby="credentials-email-heading"
           className="space-y-3 rounded-xl border border-slate-200 bg-white p-4"

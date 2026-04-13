@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { FlowCard } from '@/components/app/flow-card';
 import { JsonPanel } from '@/components/app/json-panel';
 import { Button } from '@/components/ui/button';
@@ -11,8 +11,12 @@ import {
   validateBase64Url32,
 } from '@/lib/demo-ed25519';
 
+type DemoMe = Awaited<
+  ReturnType<NonNullable<ReturnType<typeof useDemo>['sdk']>['me']['fetch']>
+>;
+
 export function Ed25519Route() {
-  const { adoptDemoSession, config, sdk, session, user } = useDemo();
+  const { adoptDemoSession, config, sdk, session } = useDemo();
   const [credentialName, setCredentialName] = useState('');
   const [publicKey, setPublicKey] = useState('');
   const [credentialId, setCredentialId] = useState('');
@@ -34,6 +38,9 @@ export function Ed25519Route() {
     register: null,
     signIn: null,
   });
+  const [me, setMe] = useState<DemoMe | null>(null);
+  const [loadingMe, setLoadingMe] = useState(false);
+  const [meError, setMeError] = useState('');
 
   const setupReady = config.status === 'ready' && Boolean(sdk);
   const hasRegisterSession =
@@ -54,6 +61,35 @@ export function Ed25519Route() {
     credentialId.trim() !== '' &&
     seedValidationError === '' &&
     pendingAction === null;
+
+  const loadMe = useCallback(async () => {
+    if (!sdk || config.status !== 'ready' || !session.authenticated) {
+      setMe(null);
+      setMeError('');
+      setLoadingMe(false);
+      return;
+    }
+
+    setLoadingMe(true);
+    setMeError('');
+
+    try {
+      setMe(await sdk.me.fetch());
+    } catch (cause) {
+      setMe(null);
+      setMeError(
+        cause instanceof Error
+          ? cause.message
+          : 'Unable to load current credentials.',
+      );
+    } finally {
+      setLoadingMe(false);
+    }
+  }, [config.status, sdk, session.authenticated]);
+
+  useEffect(() => {
+    void loadMe();
+  }, [loadMe]);
 
   function formatDemoError(cause: unknown): string {
     if (cause instanceof Error) {
@@ -135,7 +171,7 @@ export function Ed25519Route() {
         name: credentialName.trim(),
         public_key: publicKey.trim(),
       });
-      await sdk.me.reload();
+      await loadMe();
 
       setLastResponses((current) => ({ ...current, register: result }));
       setLastRegisteredCredentialId(
@@ -310,10 +346,13 @@ export function Ed25519Route() {
         <div className="grid gap-4 xl:grid-cols-3">
           <JsonPanel title="session" value={session} />
           <JsonPanel title="last responses" value={lastResponses} />
-          <JsonPanel
-            title="current credentials"
-            value={user?.ed25519_credentials ?? []}
-          />
+          <div className="space-y-3">
+            {loadingMe ? (
+              <p className="text-sm text-slate-600">Loading current credentials…</p>
+            ) : null}
+            {meError ? <p className="text-sm text-rose-600">{meError}</p> : null}
+            <JsonPanel title="current credentials" value={me?.ed25519_credentials ?? []} />
+          </div>
         </div>
       </div>
     </FlowCard>

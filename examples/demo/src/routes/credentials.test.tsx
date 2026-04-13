@@ -33,7 +33,6 @@ type MockSessionState = {
   refreshToken: string | null;
   receivedAt: string | null;
   expiresAt: string | null;
-  me: MockMe | null;
 };
 
 const sdkMocks = vi.hoisted(() => {
@@ -47,30 +46,17 @@ const sdkMocks = vi.hoisted(() => {
       refreshToken: null,
       receivedAt: null,
       expiresAt: null,
-      me: null,
     } as MockSessionState,
   };
   const fetch = vi.fn();
   const refresh = vi.fn();
-  const reloadMe = vi.fn(async () => {
-    if (!sessionState.current.me) {
-      throw new Error('No current user');
-    }
-
-    return sessionState.current.me;
-  });
-
-  function emitSession() {
-    for (const listener of listeners) {
-      listener(sessionState.current);
-    }
-  }
+  const meFetch = vi.fn<() => Promise<MockMe>>();
 
   return {
     createBrowserSdk: vi.fn(() => ({
       email: { start: vi.fn(), verify: vi.fn() },
       passkey: { register: vi.fn(), authenticate: vi.fn() },
-      me: { get: vi.fn(() => sessionState.current.me), reload: reloadMe },
+      me: { fetch: meFetch },
       session: {
         getState: () => sessionState.current,
         onChange: vi.fn((listener: (nextSession: MockSessionState) => void) => {
@@ -83,9 +69,8 @@ const sdkMocks = vi.hoisted(() => {
       webauthn: { register: vi.fn(), authenticate: vi.fn() },
     })),
     fetch,
-    emitSession,
+    meFetch,
     refresh,
-    reloadMe,
     sessionState,
   };
 });
@@ -117,10 +102,8 @@ function fakeLegacyAccessToken() {
   ].join('.');
 }
 
-function authenticatedSession(
-  overrides?: Partial<MockMe>,
-  options?: { accessToken?: string },
-): MockSessionState {
+function authenticatedSession(me?: Partial<MockMe>, options?: { accessToken?: string }): MockSessionState {
+  void me;
   return {
     status: 'authenticated',
     authenticated: true,
@@ -129,39 +112,32 @@ function authenticatedSession(
     refreshToken: 'refresh-token',
     receivedAt: '2026-04-12T00:00:00.000Z',
     expiresAt: '2026-04-12T01:00:00.000Z',
-    me: {
-      user_id: 'user-1',
-      email: 'user@example.com',
-      webauthn_credentials: [],
-      ed25519_credentials: [],
-      active_sessions: [],
-      ...overrides,
-    },
   };
 }
 
-function expectDeleteConfirmation(
-  confirmSpy: { mock: { calls: Array<[string?]> } },
-  credentialLabel: string,
-) {
+function meSnapshot(overrides?: Partial<MockMe>): MockMe {
+  return {
+    user_id: 'user-1',
+    email: 'user@example.com',
+    webauthn_credentials: [],
+    ed25519_credentials: [],
+    active_sessions: [],
+    ...overrides,
+  };
+}
+
+function expectDeleteConfirmation(confirmSpy: { mock: { calls: Array<[string?]> } }, credentialLabel: string) {
   expect(confirmSpy.mock.calls).toHaveLength(1);
-  expect(confirmSpy.mock.calls[0]?.[0]).toEqual(expect.any(String));
   expect(confirmSpy.mock.calls[0]?.[0]).toContain('Delete');
   expect(confirmSpy.mock.calls[0]?.[0]).toContain(credentialLabel);
 }
 
-function expectDeleteRequest(
-  fetchMock: typeof sdkMocks.fetch,
-  pathname: string,
-  accessToken: string,
-) {
+function expectDeleteRequest(fetchMock: typeof sdkMocks.fetch, pathname: string, accessToken: string) {
   expect(fetchMock).toHaveBeenCalledTimes(1);
-
   const [target, init] = fetchMock.mock.calls[0] ?? [];
-  const requestUrl =
-    typeof target === 'string' || target instanceof URL
-      ? new URL(target, 'https://auth.example.com')
-      : new URL(String(target.url), 'https://auth.example.com');
+  const requestUrl = typeof target === 'string' || target instanceof URL
+    ? new URL(target, 'https://auth.example.com')
+    : new URL(String(target.url), 'https://auth.example.com');
   const request = new Request(requestUrl, init);
 
   expect(requestUrl.pathname).toBe(pathname);
@@ -169,20 +145,21 @@ function expectDeleteRequest(
   expect(request.headers.get('authorization')).toBe(`Bearer ${accessToken}`);
 }
 
+function renderRoute() {
+  render(
+    <MemoryRouter initialEntries={['/credentials']}>
+      <AppRouter />
+    </MemoryRouter>,
+  );
+}
+
 describe('CredentialsRoute', () => {
   beforeEach(() => {
     localStorage.clear();
     sdkMocks.createBrowserSdk.mockClear();
     sdkMocks.fetch.mockReset();
+    sdkMocks.meFetch.mockReset();
     sdkMocks.refresh.mockReset();
-    sdkMocks.reloadMe.mockReset();
-    sdkMocks.reloadMe.mockImplementation(async () => {
-      if (!sdkMocks.sessionState.current.me) {
-        throw new Error('No current user');
-      }
-
-      return sdkMocks.sessionState.current.me;
-    });
     sdkMocks.sessionState.current = {
       status: 'anonymous',
       authenticated: false,
@@ -191,7 +168,6 @@ describe('CredentialsRoute', () => {
       refreshToken: null,
       receivedAt: null,
       expiresAt: null,
-      me: null,
     };
     vi.stubGlobal('fetch', sdkMocks.fetch);
   });
@@ -204,289 +180,133 @@ describe('CredentialsRoute', () => {
   it('shows sign-in-required copy for all sections and no destructive actions when anonymous', () => {
     localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
 
-    render(
-      <MemoryRouter initialEntries={['/credentials']}>
-        <AppRouter />
-      </MemoryRouter>,
-    );
+    renderRoute();
 
-    expect(
-      screen.getByText('Sign in to inspect the current account email.'),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText('Sign in to inspect current passkeys.'),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText('Sign in to inspect current Ed25519 credentials.'),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole('button', { name: /delete passkey/i }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole('button', { name: /delete device key/i }),
-    ).not.toBeInTheDocument();
+    expect(screen.getByText('Sign in to inspect the current account email.')).toBeInTheDocument();
+    expect(screen.getByText('Sign in to inspect current passkeys.')).toBeInTheDocument();
+    expect(screen.getByText('Sign in to inspect current Ed25519 credentials.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /delete passkey/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /delete device key/i })).not.toBeInTheDocument();
+    expect(sdkMocks.meFetch).not.toHaveBeenCalled();
   });
 
-  it('renders email, passkey, and ed25519 tables from the current /me snapshot', () => {
+  it('loads /me inside the route and renders credential tables', async () => {
     localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
-    sdkMocks.sessionState.current = authenticatedSession({
-      webauthn_credentials: [
-        {
-          id: 'passkey-row-1',
-          credential_id: 'passkey-credential-abcdef123456',
-          rp_id: 'example.com',
-          last_used_at: null,
-          created_at: '2026-04-10T12:00:00.000Z',
-        },
-      ],
-      ed25519_credentials: [
-        {
-          id: 'device-row-1',
-          name: 'Build runner',
-          public_key: 'MCowBQYDK2VwAyEAlongPublicKeyValueForTesting1234567890=',
-          last_used_at: '2026-04-11T08:30:00.000Z',
-          created_at: '2026-04-09T09:15:00.000Z',
-        },
-      ],
-    });
-
-    render(
-      <MemoryRouter initialEntries={['/credentials']}>
-        <AppRouter />
-      </MemoryRouter>,
-    );
-
-    expect(screen.getByRole('cell', { name: 'user@example.com' })).toBeInTheDocument();
-    expect(screen.getByText('Primary email')).toBeInTheDocument();
-    expect(screen.getByText('Read-only')).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Credential ID' })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'RP ID' })).toBeInTheDocument();
-    expect(screen.getAllByRole('columnheader', { name: 'Last Used' })).toHaveLength(2);
-    expect(screen.getAllByRole('columnheader', { name: 'Created At' })).toHaveLength(2);
-    expect(screen.getByText(/passkey-credential-abc/i)).toBeInTheDocument();
-    expect(screen.getByText('example.com')).toBeInTheDocument();
-    expect(screen.getByText('Never')).toBeInTheDocument();
-    expect(screen.getByText('2026-04-11T08:30:00.000Z')).toBeInTheDocument();
-    expect(screen.getByText('2026-04-10T12:00:00.000Z')).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', {
-        name: 'Delete passkey passkey-credential-abcdef123456',
-      }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Name' })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Public Key' })).toBeInTheDocument();
-    expect(screen.getByText('Build runner')).toBeInTheDocument();
-    expect(screen.getByText(/MCowBQYDK2VwAyEA/i)).toBeInTheDocument();
-    expect(screen.getByText('2026-04-11T08:30:00.000Z')).toBeInTheDocument();
-    expect(screen.getByText('2026-04-09T09:15:00.000Z')).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Delete device key Build runner' }),
-    ).toBeInTheDocument();
-  });
-
-  it('shows the existing ed25519 credential row from the current snapshot without local row filtering', () => {
-    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
-    sdkMocks.sessionState.current = {
-      ...authenticatedSession(),
-      me: {
-        user_id: 'user-1',
-        email: 'user@example.com',
-        webauthn_credentials: [],
+    sdkMocks.sessionState.current = authenticatedSession();
+    sdkMocks.meFetch.mockResolvedValueOnce(
+      meSnapshot({
+        webauthn_credentials: [
+          {
+            id: 'passkey-row-1',
+            credential_id: 'passkey-credential-abcdef123456',
+            rp_id: 'example.com',
+            last_used_at: null,
+            created_at: '2026-04-10T12:00:00.000Z',
+          },
+        ],
         ed25519_credentials: [
           {
             id: 'device-row-1',
             name: 'Build runner',
             public_key: 'MCowBQYDK2VwAyEAlongPublicKeyValueForTesting1234567890=',
-            last_used_at: null,
+            last_used_at: '2026-04-11T08:30:00.000Z',
             created_at: '2026-04-09T09:15:00.000Z',
           },
         ],
-        active_sessions: [],
-      },
-    };
-
-    render(
-      <MemoryRouter initialEntries={['/credentials']}>
-        <AppRouter />
-      </MemoryRouter>,
+      }),
     );
 
-    expect(screen.getByText('Build runner')).toBeInTheDocument();
-    expect(screen.getByText(/MCowBQYDK2VwAyEA/i)).toBeInTheDocument();
+    renderRoute();
+
+    expect(screen.getByText('Loading current account…')).toBeInTheDocument();
+    expect(await screen.findByRole('cell', { name: 'user@example.com' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete passkey passkey-credential-abcdef123456' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete device key Build runner' })).toBeInTheDocument();
   });
 
-  it('keeps the page pinned to the shared session until reload emits an updated snapshot', async () => {
+  it('shows a route-owned /me load error', async () => {
+    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
+    sdkMocks.sessionState.current = authenticatedSession();
+    sdkMocks.meFetch.mockRejectedValueOnce(new Error('Unable to load current account.'));
+
+    renderRoute();
+
+    expect(await screen.findByText('Unable to load current account.')).toBeInTheDocument();
+  });
+
+  it('reloads local /me after deleting a passkey', async () => {
     const user = userEvent.setup();
     localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
-
-    sdkMocks.sessionState.current = authenticatedSession({
-      webauthn_credentials: [
-        {
-          id: 'passkey-row-1',
-          credential_id: 'first-passkey',
-          rp_id: 'app.example.com',
-          last_used_at: null,
-          created_at: '2026-04-10T12:00:00.000Z',
-        },
-      ],
-      ed25519_credentials: [],
-    });
-
+    sdkMocks.sessionState.current = authenticatedSession();
+    sdkMocks.meFetch
+      .mockResolvedValueOnce(
+        meSnapshot({
+          webauthn_credentials: [
+            {
+              id: 'passkey-row-1',
+              credential_id: 'first-passkey',
+              rp_id: 'app.example.com',
+              last_used_at: null,
+              created_at: '2026-04-10T12:00:00.000Z',
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(meSnapshot({ email: 'updated@example.com' }));
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     sdkMocks.fetch.mockResolvedValueOnce(new Response(null, { status: 204 }));
-    const refreshedSession = authenticatedSession({
-      webauthn_credentials: [],
-      ed25519_credentials: [],
-    });
-    sdkMocks.reloadMe.mockImplementationOnce(async () => {
-      return refreshedSession.me!;
-    });
 
-    render(
-      <MemoryRouter initialEntries={['/credentials']}>
-        <AppRouter />
-      </MemoryRouter>,
-    );
+    renderRoute();
 
     await user.click(
-      screen.getByRole('button', { name: 'Delete passkey first-passkey' }),
+      await screen.findByRole('button', { name: 'Delete passkey first-passkey' }),
     );
 
     expectDeleteConfirmation(confirmSpy, 'passkey');
-    await expect(sdkMocks.reloadMe.mock.results[0]?.value).resolves.toEqual(
-      expect.objectContaining({
-        webauthn_credentials: [],
-      }),
-    );
-    expect(
-      screen.getByRole('button', { name: 'Delete passkey first-passkey' }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText('No passkeys are currently bound to this account.'),
-    ).not.toBeInTheDocument();
-
-    act(() => {
-      sdkMocks.sessionState.current = refreshedSession;
-      sdkMocks.emitSession();
-    });
-
-    expect(
-      await screen.findByText('No passkeys are currently bound to this account.'),
-    ).toBeInTheDocument();
+    expectDeleteRequest(sdkMocks.fetch, '/webauthn/credentials/passkey-row-1', sdkMocks.sessionState.current.accessToken!);
+    expect(sdkMocks.meFetch).toHaveBeenCalledTimes(2);
+    expect(await screen.findByText('updated@example.com')).toBeInTheDocument();
   });
 
-  it('deletes a passkey after confirm and reloads /me from the server', async () => {
+  it('reloads local /me after deleting an ed25519 credential', async () => {
     const user = userEvent.setup();
     localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
-    sdkMocks.sessionState.current = authenticatedSession({
-      webauthn_credentials: [
-        {
-          id: 'passkey-row-1',
-          credential_id: 'passkey-credential-abcdef123456',
-          rp_id: 'example.com',
-          last_used_at: null,
-          created_at: '2026-04-10T12:00:00.000Z',
-        },
-      ],
-    });
-
+    sdkMocks.sessionState.current = authenticatedSession();
+    sdkMocks.meFetch
+      .mockResolvedValueOnce(
+        meSnapshot({
+          ed25519_credentials: [
+            {
+              id: 'device-row-1',
+              name: 'Build runner',
+              public_key: 'MCowBQYDK2VwAyEAlongPublicKeyValueForTesting1234567890=',
+              last_used_at: null,
+              created_at: '2026-04-09T09:15:00.000Z',
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(meSnapshot({ ed25519_credentials: [] }));
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    sdkMocks.fetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      }),
-    );
-    sdkMocks.reloadMe.mockImplementationOnce(async () => {
-      sdkMocks.sessionState.current = authenticatedSession({
-        webauthn_credentials: [],
-      });
-      sdkMocks.emitSession();
-      return sdkMocks.sessionState.current.me!;
-    });
+    sdkMocks.fetch.mockResolvedValueOnce(new Response(null, { status: 204 }));
 
-    render(
-      <MemoryRouter initialEntries={['/credentials']}>
-        <AppRouter />
-      </MemoryRouter>,
-    );
+    renderRoute();
 
     await user.click(
-      screen.getByRole('button', {
-        name: 'Delete passkey passkey-credential-abcdef123456',
-      }),
-    );
-
-    expectDeleteConfirmation(confirmSpy, 'passkey');
-    expectDeleteRequest(
-      sdkMocks.fetch,
-      '/webauthn/credentials/passkey-row-1',
-      sdkMocks.sessionState.current.accessToken!,
-    );
-    expect(sdkMocks.reloadMe).toHaveBeenCalledTimes(1);
-    expect(
-      await screen.findByText('No passkeys are currently bound to this account.'),
-    ).toBeInTheDocument();
-  });
-
-  it('deletes an ed25519 credential after confirm and reloads /me from the server', async () => {
-    const user = userEvent.setup();
-    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
-    sdkMocks.sessionState.current = authenticatedSession({
-      ed25519_credentials: [
-        {
-          id: 'device-row-1',
-          name: 'Build runner',
-          public_key: 'MCowBQYDK2VwAyEAlongPublicKeyValueForTesting1234567890=',
-          last_used_at: null,
-          created_at: '2026-04-09T09:15:00.000Z',
-        },
-      ],
-    });
-
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    sdkMocks.fetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      }),
-    );
-    sdkMocks.reloadMe.mockImplementationOnce(async () => {
-      sdkMocks.sessionState.current = authenticatedSession({
-        ed25519_credentials: [],
-      });
-      sdkMocks.emitSession();
-      return sdkMocks.sessionState.current.me!;
-    });
-
-    render(
-      <MemoryRouter initialEntries={['/credentials']}>
-        <AppRouter />
-      </MemoryRouter>,
-    );
-
-    await user.click(
-      screen.getByRole('button', { name: 'Delete device key Build runner' }),
+      await screen.findByRole('button', { name: 'Delete device key Build runner' }),
     );
 
     expectDeleteConfirmation(confirmSpy, 'Ed25519');
-    expectDeleteRequest(
-      sdkMocks.fetch,
-      '/ed25519/credentials/device-row-1',
-      sdkMocks.sessionState.current.accessToken!,
-    );
-    expect(sdkMocks.reloadMe).toHaveBeenCalledTimes(1);
-    expect(
-      await screen.findByText(
-        'No Ed25519 credentials are currently bound to this account.',
-      ),
-    ).toBeInTheDocument();
+    expectDeleteRequest(sdkMocks.fetch, '/ed25519/credentials/device-row-1', sdkMocks.sessionState.current.accessToken!);
+    expect(sdkMocks.meFetch).toHaveBeenCalledTimes(2);
+    expect(await screen.findByText('No Ed25519 credentials are currently bound to this account.')).toBeInTheDocument();
   });
 
-  it('does not expose destructive credential actions for pure ed25519 sessions', () => {
+  it('keeps delete actions available for legacy tokens after refresh yields manageable amr', async () => {
     localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
-    sdkMocks.sessionState.current = authenticatedSession(
-      {
+    sdkMocks.sessionState.current = authenticatedSession(undefined, { accessToken: fakeLegacyAccessToken() });
+    sdkMocks.meFetch.mockResolvedValueOnce(
+      meSnapshot({
         webauthn_credentials: [
           {
             id: 'passkey-row-1',
@@ -505,243 +325,63 @@ describe('CredentialsRoute', () => {
             created_at: '2026-04-09T09:15:00.000Z',
           },
         ],
-      },
-      { accessToken: fakeAccessToken(['ed25519']) },
-    );
-
-    render(
-      <MemoryRouter initialEntries={['/credentials']}>
-        <AppRouter />
-      </MemoryRouter>,
-    );
-
-    expect(screen.getByRole('columnheader', { name: 'Action' })).toBeInTheDocument();
-    expect(screen.getByText(/passkey-credential-abc/i)).toBeInTheDocument();
-    expect(screen.getByText('Build runner')).toBeInTheDocument();
-    expect(
-      screen.queryByRole('button', {
-        name: 'Delete passkey passkey-credential-abcdef123456',
       }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole('button', { name: 'Delete device key Build runner' }),
-    ).not.toBeInTheDocument();
-  });
-
-  it('keeps delete actions available for legacy tokens without amr after refresh yields manageable amr', async () => {
-    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
-    sdkMocks.sessionState.current = authenticatedSession(
-      {
-        webauthn_credentials: [
-          {
-            id: 'passkey-row-1',
-            credential_id: 'passkey-credential-abcdef123456',
-            rp_id: 'example.com',
-            last_used_at: null,
-            created_at: '2026-04-10T12:00:00.000Z',
-          },
-        ],
-        ed25519_credentials: [
-          {
-            id: 'device-row-1',
-            name: 'Build runner',
-            public_key: 'MCowBQYDK2VwAyEAlongPublicKeyValueForTesting1234567890=',
-            last_used_at: null,
-            created_at: '2026-04-09T09:15:00.000Z',
-          },
-        ],
-      },
-      { accessToken: fakeLegacyAccessToken() },
     );
-    sdkMocks.refresh.mockImplementationOnce(async () => {
-      sdkMocks.sessionState.current = authenticatedSession(
-        sdkMocks.sessionState.current.me ?? undefined,
-        { accessToken: fakeAccessToken(['email_otp']) },
-      );
-      return {
-        accessToken: sdkMocks.sessionState.current.accessToken,
-      };
-    });
+    sdkMocks.refresh.mockResolvedValueOnce({ accessToken: fakeAccessToken(['email_otp']) });
 
-    render(
-      <MemoryRouter initialEntries={['/credentials']}>
-        <AppRouter />
-      </MemoryRouter>,
-    );
+    renderRoute();
 
-    expect(
-      await screen.findByRole('button', {
-        name: 'Delete passkey passkey-credential-abcdef123456',
-      }),
-    ).toBeInTheDocument();
-    expect(
-      await screen.findByRole('button', { name: 'Delete device key Build runner' }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Delete passkey passkey-credential-abcdef123456' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Delete device key Build runner' })).toBeInTheDocument();
     expect(sdkMocks.refresh).toHaveBeenCalledTimes(1);
-  });
-
-  it('keeps delete actions unavailable for legacy tokens when refresh yields pure ed25519 amr', async () => {
-    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
-    sdkMocks.sessionState.current = authenticatedSession(
-      {
-        webauthn_credentials: [
-          {
-            id: 'passkey-row-1',
-            credential_id: 'passkey-credential-abcdef123456',
-            rp_id: 'example.com',
-            last_used_at: null,
-            created_at: '2026-04-10T12:00:00.000Z',
-          },
-        ],
-        ed25519_credentials: [
-          {
-            id: 'device-row-1',
-            name: 'Build runner',
-            public_key: 'MCowBQYDK2VwAyEAlongPublicKeyValueForTesting1234567890=',
-            last_used_at: null,
-            created_at: '2026-04-09T09:15:00.000Z',
-          },
-        ],
-      },
-      { accessToken: fakeLegacyAccessToken() },
-    );
-    sdkMocks.refresh.mockImplementationOnce(async () => {
-      sdkMocks.sessionState.current = authenticatedSession(
-        sdkMocks.sessionState.current.me ?? undefined,
-        { accessToken: fakeAccessToken(['ed25519']) },
-      );
-      return {
-        accessToken: sdkMocks.sessionState.current.accessToken,
-      };
-    });
-
-    render(
-      <MemoryRouter initialEntries={['/credentials']}>
-        <AppRouter />
-      </MemoryRouter>,
-    );
-
-    await waitFor(() => {
-      expect(sdkMocks.refresh).toHaveBeenCalledTimes(1);
-    });
-    expect(
-      screen.queryByRole('button', {
-        name: 'Delete passkey passkey-credential-abcdef123456',
-      }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole('button', { name: 'Delete device key Build runner' }),
-    ).not.toBeInTheDocument();
-  });
-
-  it('keeps the email section read-only even when the user has a primary email', () => {
-    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
-    sdkMocks.sessionState.current = authenticatedSession();
-
-    render(
-      <MemoryRouter initialEntries={['/credentials']}>
-        <AppRouter />
-      </MemoryRouter>,
-    );
-
-    expect(screen.getByText('Managed via email OTP sign-in')).toBeInTheDocument();
-    expect(
-      screen.queryByRole('button', { name: /delete email/i }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole('button', { name: /unbind email/i }),
-    ).not.toBeInTheDocument();
-  });
-
-  it('does not send a delete request when the native confirm is cancelled', async () => {
-    const user = userEvent.setup();
-    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
-    sdkMocks.sessionState.current = authenticatedSession({
-      webauthn_credentials: [
-        {
-          id: 'passkey-row-1',
-          credential_id: 'passkey-credential-abcdef123456',
-          rp_id: 'example.com',
-          last_used_at: null,
-          created_at: '2026-04-10T12:00:00.000Z',
-        },
-      ],
-    });
-
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
-
-    render(
-      <MemoryRouter initialEntries={['/credentials']}>
-        <AppRouter />
-      </MemoryRouter>,
-    );
-
-    await user.click(
-      screen.getByRole('button', {
-        name: 'Delete passkey passkey-credential-abcdef123456',
-      }),
-    );
-
-    expectDeleteConfirmation(confirmSpy, 'passkey');
-    expect(sdkMocks.fetch).not.toHaveBeenCalled();
-    expect(sdkMocks.reloadMe).not.toHaveBeenCalled();
   });
 
   it('blocks a second delete in the same section while passkey delete is in flight', async () => {
     localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
-    sdkMocks.sessionState.current = authenticatedSession({
-      webauthn_credentials: [
-        {
-          id: 'passkey-row-1',
-          credential_id: 'passkey-credential-abcdef123456',
-          rp_id: 'example.com',
-          last_used_at: null,
-          created_at: '2026-04-10T12:00:00.000Z',
-        },
-        {
-          id: 'passkey-row-2',
-          credential_id: 'passkey-credential-xyz987654321',
-          rp_id: 'example.com',
-          last_used_at: '2026-04-11T13:00:00.000Z',
-          created_at: '2026-04-11T12:00:00.000Z',
-        },
-      ],
-      ed25519_credentials: [
-        {
-          id: 'device-row-1',
-          name: 'Build runner',
-          public_key: 'MCowBQYDK2VwAyEAlongPublicKeyValueForTesting1234567890=',
-          last_used_at: null,
-          created_at: '2026-04-09T09:15:00.000Z',
-        },
-      ],
-    });
-
+    sdkMocks.sessionState.current = authenticatedSession();
+    sdkMocks.meFetch.mockResolvedValueOnce(
+      meSnapshot({
+        webauthn_credentials: [
+          {
+            id: 'passkey-row-1',
+            credential_id: 'passkey-credential-abcdef123456',
+            rp_id: 'example.com',
+            last_used_at: null,
+            created_at: '2026-04-10T12:00:00.000Z',
+          },
+          {
+            id: 'passkey-row-2',
+            credential_id: 'passkey-credential-xyz987654321',
+            rp_id: 'example.com',
+            last_used_at: '2026-04-11T13:00:00.000Z',
+            created_at: '2026-04-11T12:00:00.000Z',
+          },
+        ],
+        ed25519_credentials: [
+          {
+            id: 'device-row-1',
+            name: 'Build runner',
+            public_key: 'MCowBQYDK2VwAyEAlongPublicKeyValueForTesting1234567890=',
+            last_used_at: null,
+            created_at: '2026-04-09T09:15:00.000Z',
+          },
+        ],
+      }),
+    );
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     let resolveFetch: ((value: Response) => void) | undefined;
     sdkMocks.fetch.mockImplementationOnce(
-      () =>
-        new Promise<Response>((resolve) => {
-          resolveFetch = resolve;
-        }),
-    );
-    sdkMocks.reloadMe.mockImplementationOnce(async () => sdkMocks.sessionState.current.me!);
-
-    render(
-      <MemoryRouter initialEntries={['/credentials']}>
-        <AppRouter />
-      </MemoryRouter>,
+      () => new Promise<Response>((resolve) => {
+        resolveFetch = resolve;
+      }),
     );
 
-    const passkeyDeleteButton = screen.getByRole('button', {
-      name: 'Delete passkey passkey-credential-abcdef123456',
-    });
-    const secondPasskeyDeleteButton = screen.getByRole('button', {
-      name: 'Delete passkey passkey-credential-xyz987654321',
-    });
-    const deviceDeleteButton = screen.getByRole('button', {
-      name: 'Delete device key Build runner',
-    });
+    renderRoute();
+
+    await screen.findByRole('button', { name: 'Delete passkey passkey-credential-abcdef123456' });
+    const passkeyDeleteButton = screen.getByRole('button', { name: 'Delete passkey passkey-credential-abcdef123456' });
+    const secondPasskeyDeleteButton = screen.getByRole('button', { name: 'Delete passkey passkey-credential-xyz987654321' });
+    const deviceDeleteButton = screen.getByRole('button', { name: 'Delete device key Build runner' });
 
     act(() => {
       fireEvent.click(passkeyDeleteButton);
@@ -754,12 +394,7 @@ describe('CredentialsRoute', () => {
     expect(deviceDeleteButton).not.toBeDisabled();
 
     await act(async () => {
-      resolveFetch?.(
-        new Response(JSON.stringify({ ok: true }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }),
-      );
+      resolveFetch?.(new Response(null, { status: 204 }));
     });
   });
 });

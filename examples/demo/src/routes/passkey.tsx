@@ -1,8 +1,12 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { FlowCard } from '@/components/app/flow-card';
 import { JsonPanel } from '@/components/app/json-panel';
 import { Button } from '@/components/ui/button';
 import { useDemo } from '@/app/providers/demo-provider';
+
+type DemoMe = Awaited<
+  ReturnType<NonNullable<ReturnType<typeof useDemo>['sdk']>['me']['fetch']>
+>;
 
 export function PasskeyRoute() {
   const { config, sdk, session } = useDemo();
@@ -11,10 +15,39 @@ export function PasskeyRoute() {
   >(null);
   const [lastResult, setLastResult] = useState<unknown>(null);
   const [error, setError] = useState('');
+  const [me, setMe] = useState<DemoMe | null>(null);
+  const [loadingMe, setLoadingMe] = useState(false);
+  const [meError, setMeError] = useState('');
 
   const setupReady = config.status === 'ready' && Boolean(sdk);
-  const canRegister =
-    setupReady && session.authenticated && session.me !== null;
+  const canRegister = setupReady && session.authenticated && me !== null;
+
+  const loadMe = useCallback(async () => {
+    if (!sdk || config.status !== 'ready' || !session.authenticated) {
+      setMe(null);
+      setMeError('');
+      setLoadingMe(false);
+      return;
+    }
+
+    setLoadingMe(true);
+    setMeError('');
+
+    try {
+      setMe(await sdk.me.fetch());
+    } catch (cause) {
+      setMe(null);
+      setMeError(
+        cause instanceof Error ? cause.message : 'Unable to load current user.',
+      );
+    } finally {
+      setLoadingMe(false);
+    }
+  }, [config.status, sdk, session.authenticated]);
+
+  useEffect(() => {
+    void loadMe();
+  }, [loadMe]);
 
   async function runAction(action: 'register' | 'authenticate') {
     if (!sdk || (action === 'register' && !canRegister)) return;
@@ -72,9 +105,15 @@ export function PasskeyRoute() {
           </p>
         ) : null}
 
+        {loadingMe ? (
+          <p className="text-sm text-slate-600">Loading current user…</p>
+        ) : null}
+        {meError ? <p className="text-sm text-rose-600">{meError}</p> : null}
+
         {error ? <p className="text-sm text-rose-600">{error}</p> : null}
 
         <JsonPanel title="session" value={session} />
+        <JsonPanel title="current user" value={me} />
         <JsonPanel title="last response" value={lastResult} />
       </div>
     </FlowCard>
