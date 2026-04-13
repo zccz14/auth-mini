@@ -255,6 +255,48 @@ describe('session routes', () => {
     );
   });
 
+  it('rotateRefreshToken keeps the original session snapshot fields', async () => {
+    const dbPath = await createTempDbPath();
+    await bootstrapDatabase(dbPath);
+    const db = createDatabaseClient(dbPath);
+
+    try {
+      db.prepare(
+        'INSERT INTO users (id, email, email_verified_at) VALUES (?, ?, ?)',
+      ).run('user-1', 'user-1@example.com', '2030-01-01T00:00:00.000Z');
+
+      const currentRefreshTokenHash = hashValue('refresh-token');
+      const session = createSession(db, {
+        userId: 'user-1',
+        refreshTokenHash: currentRefreshTokenHash,
+        authMethod: 'email_otp',
+        ip: '203.0.113.20',
+        userAgent: 'Mozilla/5.0 rotate-test',
+        expiresAt: '2099-01-01T00:00:00.000Z',
+      });
+
+      const rotated = rotateRefreshToken(db, {
+        sessionId: session.id,
+        currentRefreshTokenHash,
+        nextRefreshTokenHash: hashValue('next-refresh-token'),
+        now: '2030-01-01T00:00:00.000Z',
+      });
+
+      expect(rotated).toMatchObject({
+        id: session.id,
+        ip: '203.0.113.20',
+        userAgent: 'Mozilla/5.0 rotate-test',
+      });
+      expect(getSessionById(db, session.id)).toMatchObject({
+        id: session.id,
+        ip: '203.0.113.20',
+        userAgent: 'Mozilla/5.0 rotate-test',
+      });
+    } finally {
+      db.close();
+    }
+  });
+
   it('refresh rejects revoked session reuse', async () => {
     const testApp = await createSignedInApp('refresh-reuse@example.com');
     openApps.push(testApp);
