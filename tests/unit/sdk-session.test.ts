@@ -229,6 +229,60 @@ describe('sdk session flows', () => {
     });
   });
 
+  it('rejects /me payloads that omit active_sessions ip', async () => {
+    const sdk = createAuthMiniForTest({
+      storage: fakeAuthenticatedStorage(),
+      fetch: vi.fn().mockResolvedValueOnce(
+        jsonResponse({
+          user_id: 'u1',
+          email: 'updated@example.com',
+          webauthn_credentials: [],
+          ed25519_credentials: [],
+          active_sessions: [
+            {
+              id: 'session-1',
+              auth_method: 'webauthn',
+              created_at: '...',
+              expires_at: '...',
+              user_agent: null,
+            },
+          ],
+        }),
+      ),
+    });
+
+    await expect(sdk.me.fetch()).rejects.toMatchObject({
+      error: 'request_failed',
+    });
+  });
+
+  it('rejects /me payloads that omit active_sessions user_agent', async () => {
+    const sdk = createAuthMiniForTest({
+      storage: fakeAuthenticatedStorage(),
+      fetch: vi.fn().mockResolvedValueOnce(
+        jsonResponse({
+          user_id: 'u1',
+          email: 'updated@example.com',
+          webauthn_credentials: [],
+          ed25519_credentials: [],
+          active_sessions: [
+            {
+              id: 'session-1',
+              auth_method: 'webauthn',
+              created_at: '...',
+              expires_at: '...',
+              ip: null,
+            },
+          ],
+        }),
+      ),
+    });
+
+    await expect(sdk.me.fetch()).rejects.toMatchObject({
+      error: 'request_failed',
+    });
+  });
+
   it('startup recovery settles authenticated without any implicit /me load', async () => {
     const fetch = vi.fn().mockResolvedValueOnce(
       jsonResponse({
