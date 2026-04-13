@@ -17,14 +17,17 @@ const dtsConsumerTsconfig = JSON.parse(
 );
 
 describe('sdk api package wiring', () => {
-  it('declares generator scripts without publishing the wrapper export yet', () => {
+  it('declares generator scripts and publishes the api wrapper export', () => {
     expect(packageJson.devDependencies['@hey-api/openapi-ts']).toBeTruthy();
     expect(packageJson.devDependencies.jiti).toBeTruthy();
     expect(packageJson.scripts['generate:api']).toBe('openapi-ts');
     expect(packageJson.scripts['check:generated:api']).toBe(
       'node scripts/check-generated-api-sdk.mjs',
     );
-    expect(packageJson.exports['./sdk/api']).toBeUndefined();
+    expect(packageJson.exports['./sdk/api']).toEqual({
+      import: './dist/sdk/api.js',
+      types: './dist/sdk/api.d.ts',
+    });
   });
 
   it('reuses the shared openapi generator config in the drift checker', () => {
@@ -34,7 +37,7 @@ describe('sdk api package wiring', () => {
     expect(checkGeneratedApiSdkScript).toContain('output: tempRoot');
   });
 
-  it('does not wire the api consumer dts fixture before the wrapper exists', () => {
+  it('wires the api consumer dts fixture once the wrapper exists', () => {
     expect(
       existsSync(
         resolve(
@@ -42,7 +45,7 @@ describe('sdk api package wiring', () => {
           'tests/fixtures/sdk-dts-consumer/module-api-usage.ts',
         ),
       ),
-    ).toBe(false);
-    expect(dtsConsumerTsconfig.files).not.toContain('./module-api-usage.ts');
+    ).toBe(true);
+    expect(dtsConsumerTsconfig.files).toContain('./module-api-usage.ts');
   });
 });

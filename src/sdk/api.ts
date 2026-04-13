@@ -25,13 +25,15 @@ import { createSdkError } from './errors.js';
 export type * from '../generated/api/index.js';
 export type { Auth } from '../generated/api/client/index.js';
 
-export type CreateApiSdkOptions = {
+export type ApiSdkOptions = {
   baseUrl: string;
   fetch?: typeof fetch;
   auth?: GeneratedApiClientConfig['auth'];
 };
 
-export function createApiSdk(options: CreateApiSdkOptions) {
+export type CreateApiSdkOptions = ApiSdkOptions;
+
+export function createApiSdk(options: ApiSdkOptions) {
   if (!options.baseUrl) {
     throw createSdkError('sdk_init_failed', 'Missing API base URL');
   }

@@ -46,4 +46,39 @@ describe('api sdk wrapper', () => {
       requestUrl instanceof Request ? requestUrl.method : requestInit?.method,
     ).toBe('GET');
   });
+
+  it('propagates auth through generated secured requests', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async (...args) => {
+      void args;
+      return jsonResponse({
+        active_sessions: [],
+        ed25519_credentials: [],
+        email: 'user@example.com',
+        user_id: 'user-1',
+        webauthn_credentials: [],
+      });
+    });
+    const sdk = createApiSdk({
+      auth: () => 'access-token',
+      baseUrl: 'https://sdk.example.test:9443/auth/base',
+      fetch,
+    });
+
+    await sdk.me.get();
+
+    const firstCall = fetch.mock.calls[0];
+
+    expect(firstCall).toBeDefined();
+    if (!firstCall) {
+      throw new Error('expected fetch to be called');
+    }
+
+    const [requestUrl, requestInit] = firstCall;
+    const authorizationHeader =
+      requestUrl instanceof Request
+        ? requestUrl.headers.get('authorization')
+        : new Headers(requestInit?.headers).get('authorization');
+
+    expect(authorizationHeader).toBe('Bearer access-token');
+  });
 });
