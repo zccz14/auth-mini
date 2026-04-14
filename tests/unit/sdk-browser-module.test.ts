@@ -2,11 +2,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createBrowserSdk } from '../../src/sdk/browser.js';
-import { renderSingletonIifeSource } from '../../src/sdk/singleton-entry.js';
 import type { AuthMiniApi } from '../../src/sdk/types.js';
 import {
-  browserSdkStorageKey,
-  executeServedSdk,
   fakeStorage,
   jsonResponse,
   seedBrowserSdkStorage,
@@ -273,145 +270,6 @@ describe('browser module sdk', () => {
     }
   });
 
-  it('rejects malformed /me payloads in explicit singleton me.fetch calls', async () => {
-    const storage = fakeStorage();
-
-    seedBrowserSdkStorage(storage, 'https://app.example.com', {
-      sessionId: 'session-1',
-      accessToken: 'access-1',
-      refreshToken: 'refresh-1',
-      receivedAt: '2036-04-03T00:00:00.000Z',
-      expiresAt: '2036-04-03T00:15:00.000Z',
-    });
-
-    const fetch = vi.fn(async (input: string | URL) => {
-      const requestUrl = new URL(String(input));
-
-      if (requestUrl.pathname.endsWith('/me')) {
-        return jsonResponse({
-          user_id: 'user-1',
-          email: 'user@example.com',
-          webauthn_credentials: [],
-          active_sessions: [],
-        });
-      }
-
-      return jsonResponse({ error: 'unexpected' }, 500);
-    });
-
-    vi.stubGlobal('fetch', fetch);
-
-    try {
-      const windowObject = executeServedSdk(renderSingletonIifeSource(), {
-        currentScriptSrc: 'https://app.example.com/sdk/singleton-iife.js',
-        storage,
-      });
-
-      await expect(windowObject.AuthMini.me.fetch()).rejects.toMatchObject({
-        error: 'request_failed',
-      });
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
-  it('singleton startup recovery keeps token-only state without requesting /me', async () => {
-    const storage = fakeStorage();
-
-    seedBrowserSdkStorage(storage, 'https://app.example.com', {
-      sessionId: 'session-1',
-      accessToken: 'access-1',
-      refreshToken: 'refresh-1',
-      receivedAt: '2036-04-03T00:00:00.000Z',
-      expiresAt: '2036-04-03T00:15:00.000Z',
-    });
-
-    const fetch = vi.fn(async (input: string | URL) => {
-      new URL(String(input));
-
-      return jsonResponse({ error: 'unexpected' }, 500);
-    });
-
-    vi.stubGlobal('fetch', fetch);
-
-    try {
-      const windowObject = executeServedSdk(renderSingletonIifeSource(), {
-        currentScriptSrc: 'https://app.example.com/sdk/singleton-iife.js',
-        storage,
-      });
-      const ready = (
-        windowObject.AuthMini as AuthMiniApi & { ready: Promise<void> }
-      ).ready;
-
-      await expect(ready).resolves.toBeUndefined();
-      expect(windowObject.AuthMini.session.getState()).toMatchObject({
-        status: 'authenticated',
-        authenticated: true,
-        sessionId: 'session-1',
-        accessToken: 'access-1',
-        refreshToken: 'refresh-1',
-      });
-      expect(windowObject.AuthMini.session.getState()).not.toHaveProperty('me');
-      expect(fetch).not.toHaveBeenCalled();
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
-  it('ignores legacy persisted me blobs when the served singleton restores from localStorage', async () => {
-    const storage = fakeStorage();
-    const fetch = vi.fn(async () => jsonResponse({ error: 'unexpected' }, 500));
-
-    storage.setItem(
-      browserSdkStorageKey('https://app.example.com'),
-      JSON.stringify({
-        sessionId: 'session-1',
-        accessToken: 'access-1',
-        refreshToken: 'refresh-1',
-        receivedAt: '2036-04-03T00:00:00.000Z',
-        expiresAt: '2036-04-03T00:15:00.000Z',
-        me: {
-          user_id: 'user-1',
-          email: 'user@example.com',
-          webauthn_credentials: [],
-          ed25519_credentials: [
-            {
-              id: 'cred-1',
-              public_key: 'public-key',
-              created_at: '2036-04-03T00:00:00.000Z',
-              last_used_at: null,
-            },
-          ],
-          active_sessions: [],
-        },
-      }),
-    );
-
-    vi.stubGlobal('fetch', fetch);
-
-    try {
-      const windowObject = executeServedSdk(renderSingletonIifeSource(), {
-        currentScriptSrc: 'https://app.example.com/sdk/singleton-iife.js',
-        storage,
-      });
-
-      await expect(
-        (windowObject.AuthMini as AuthMiniApi & { ready: Promise<void> }).ready,
-      ).resolves.toBeUndefined();
-      expect(windowObject.AuthMini.session.getState()).toMatchObject({
-        status: 'authenticated',
-        authenticated: true,
-        sessionId: 'session-1',
-        accessToken: 'access-1',
-        refreshToken: 'refresh-1',
-      });
-      expect(windowObject.AuthMini.session.getState()).not.toHaveProperty('me');
-      expect(fetch).not.toHaveBeenCalled();
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
   it('keeps the browser module declaration free of singleton global typings', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/sdk/browser.ts'),
@@ -419,7 +277,7 @@ describe('browser module sdk', () => {
     );
 
     expect(source).not.toMatch(
-      /type\s+BrowserSdkFactoryOptions[\s\S]*from '\.\/singleton-entry\.js'/,
+      /type\s+BrowserSdkFactoryOptions[\s\S]*from '\.\/browser-runtime\.js'/,
     );
     expect(source).toContain('createBrowserSdkInternal');
     expect(source).toContain("from './types.js'");
@@ -429,14 +287,14 @@ describe('browser module sdk', () => {
     );
   });
 
-  it('keeps singleton entry as a browser runtime bridge', () => {
+  it('keeps shared test helpers free of served singleton utilities', () => {
     const source = readFileSync(
-      resolve(process.cwd(), 'src/sdk/singleton-entry.ts'),
+      resolve(process.cwd(), 'tests/helpers/sdk.ts'),
       'utf8',
     );
 
-    expect(source).not.toContain('function createRuntime(');
-    expect(source).toContain('renderBrowserRuntimeSource');
+    expect(source).not.toContain('executeServedSdk');
+    expect(source).not.toContain('singleton-iife.js');
   });
 
   it('does not export createDeviceSdk from the browser module', () => {
