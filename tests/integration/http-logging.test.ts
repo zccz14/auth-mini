@@ -236,7 +236,11 @@ describe('http request logging', () => {
 
 function requestLogsFor(logs: Array<Record<string, unknown>>) {
   const started = logs.find((entry) => entry.event === 'http.request.started');
-  const requestId = String(started?.request_id);
+
+  expect(started).toBeDefined();
+  expect(started?.request_id).toEqual(expect.any(String));
+
+  const requestId = started?.request_id as string;
   const completedEntries = completedEntriesForRequest(logs, requestId);
   const completed = completedEntries[0];
 
