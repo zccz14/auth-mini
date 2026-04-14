@@ -1,20 +1,12 @@
 import { parseMeResponse } from './me.js';
 import type {
-  AuthMiniApi,
   AuthMiniInternal,
-  EmailStartInput,
-  EmailStartResponse,
-  EmailVerifyInput,
   FetchLike,
   InternalSdkDeps,
   Listener,
-  MeResponse,
   NavigatorCredentialsLike,
-  PasskeyOptionsInput,
   PersistedSdkState,
-  SessionResult,
   SessionSnapshot,
-  WebauthnVerifyResponse,
 } from './types.js';
 
 export type BrowserSdkFactoryOptions = {
@@ -27,11 +19,6 @@ type SdkError = Error & {
   code: string;
   error?: string;
   status?: number;
-};
-
-type BrowserSdkRuntimeInput = BrowserSdkFactoryOptions & {
-  baseUrl: string;
-  recoveryTimeoutMs?: number;
 };
 
 type StorageSync = {
@@ -50,11 +37,6 @@ type RequestOptions = {
   body?: unknown;
 };
 
-type HttpClient = {
-  getJson(path: string, options?: Omit<RequestOptions, 'body'>): Promise<unknown>;
-  postJson(path: string, body: unknown, options?: Omit<RequestOptions, 'body'>): Promise<unknown>;
-};
-
 type SessionStore = {
   getState(): SessionSnapshot;
   onChange(listener: Listener): () => void;
@@ -65,29 +47,17 @@ type SessionStore = {
   setAnonymousLocal(): void;
 };
 
-type SessionController = {
-  getState(): SessionSnapshot;
-  onChange(listener: Listener): () => void;
-  acceptSessionResponse(
-    response: unknown,
-    options?: { clearOnMeFailure?: 'auth-invalidating' },
-  ): Promise<SessionResult>;
-  refresh(): Promise<SessionResult>;
-  recover(): Promise<void>;
-  fetchMe(): Promise<MeResponse>;
-  logout(): Promise<void>;
-};
-
 type SessionControllerInput = {
-  http: HttpClient;
+  http: {
+    getJson(path: string, options?: Omit<RequestOptions, 'body'>): Promise<unknown>;
+    postJson(path: string, body: unknown, options?: Omit<RequestOptions, 'body'>): Promise<unknown>;
+  };
   now: () => number;
   readSharedState?: () => PersistedSdkState | null | undefined;
   recoveryTimeoutMs?: number;
   state: SessionStore;
   waitForExternalStorage?: (timeoutMs: number) => Promise<void>;
 };
-
-type SessionLike = Pick<SessionController, 'acceptSessionResponse' | 'refresh' | 'fetchMe' | 'logout'>;
 
 type WebauthnPublicKeyCredential = {
   id: string;
@@ -344,12 +314,12 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     }
   }
 
-  function createHttpClient(input: { baseUrl: string; fetch: FetchLike }): HttpClient {
+  function createHttpClient(input: { baseUrl: string; fetch: FetchLike }) {
     return {
-      getJson(path, options = {}) {
+      getJson(path: string, options = {}) {
         return sendJson('GET', path, options);
       },
-      postJson(path, body, options = {}) {
+      postJson(path: string, body: unknown, options = {}) {
         return sendJson('POST', path, { ...options, body });
       },
     };
@@ -420,7 +390,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     return shouldRefresh(now, expiresAt, receivedAt);
   }
 
-  function normalizeTokenResponse(payload: unknown, now: () => number): SessionResult {
+  function normalizeTokenResponse(payload: unknown, now: () => number) {
     const value = payload as Record<string, unknown> | null;
     if (!value || typeof value !== 'object') {
       throw createSdkError('request_failed', 'Invalid session payload');
@@ -445,17 +415,20 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     };
   }
 
-  function createSessionController(input: SessionControllerInput): SessionController {
-    let refreshPromise: Promise<SessionResult> | null = null;
+  function createSessionController(input: SessionControllerInput) {
+    let refreshPromise: Promise<ReturnType<typeof normalizeTokenResponse>> | null = null;
     let supersededRecoveryPromise: Promise<void> | null = null;
-    const controller: SessionController = {
+    const controller = {
       getState() {
         return input.state.getState();
       },
-      onChange(listener) {
+      onChange(listener: Listener) {
         return input.state.onChange(listener);
       },
-      async acceptSessionResponse(response, options = {}) {
+      async acceptSessionResponse(
+        response: unknown,
+        options: { clearOnMeFailure?: 'auth-invalidating' } = {},
+      ) {
         const session = normalizeTokenResponse(response, input.now);
         input.state.setRecovering(session);
         try {
@@ -679,14 +652,24 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
   }
 
   function createEmailModule(input: {
-    http: HttpClient;
-    session: Pick<SessionController, 'acceptSessionResponse'>;
+    http: {
+      getJson(path: string, options?: Omit<RequestOptions, 'body'>): Promise<unknown>;
+      postJson(path: string, body: unknown, options?: Omit<RequestOptions, 'body'>): Promise<unknown>;
+    };
+    session: {
+      acceptSessionResponse(
+        response: unknown,
+        options?: { clearOnMeFailure?: 'auth-invalidating' },
+      ): Promise<ReturnType<typeof normalizeTokenResponse>>;
+    };
   }) {
     return {
-      start(payload: EmailStartInput): Promise<EmailStartResponse> {
-        return input.http.postJson('/email/start', payload) as Promise<EmailStartResponse>;
+      start(payload: Parameters<AuthMiniInternal['email']['start']>[0]) {
+        return input.http.postJson('/email/start', payload) as ReturnType<
+          AuthMiniInternal['email']['start']
+        >;
       },
-      async verify(payload: EmailVerifyInput): Promise<SessionResult> {
+      async verify(payload: Parameters<AuthMiniInternal['email']['verify']>[0]) {
         const response = await input.http.postJson('/email/verify', payload);
         return await input.session.acceptSessionResponse(response);
       },
@@ -694,15 +677,26 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
   }
 
   function createWebauthnModule(input: {
-    http: HttpClient;
+    http: {
+      getJson(path: string, options?: Omit<RequestOptions, 'body'>): Promise<unknown>;
+      postJson(path: string, body: unknown, options?: Omit<RequestOptions, 'body'>): Promise<unknown>;
+    };
     navigatorCredentials?: NavigatorCredentialsLike;
     now: () => number;
     publicKeyCredential?: unknown;
-    session: Pick<SessionController, 'acceptSessionResponse' | 'refresh'>;
+    session: {
+      acceptSessionResponse(
+        response: unknown,
+        options?: { clearOnMeFailure?: 'auth-invalidating' },
+      ): Promise<ReturnType<typeof normalizeTokenResponse>>;
+      refresh(): Promise<ReturnType<typeof normalizeTokenResponse>>;
+    };
     state: SessionStore;
-  }): AuthMiniApi['passkey'] {
+  }) {
     return {
-      async authenticate(payload: PasskeyOptionsInput = {}) {
+      async authenticate(
+        payload: Parameters<AuthMiniInternal['passkey']['authenticate']>[0] = {},
+      ) {
         ensureWebauthnSupport('authenticate');
         const options = await input.http.postJson(
           '/webauthn/authenticate/options',
@@ -726,7 +720,9 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
         );
         return await input.session.acceptSessionResponse(response);
       },
-      async register(payload: PasskeyOptionsInput = {}) {
+      async register(
+        payload: Parameters<AuthMiniInternal['passkey']['register']>[0] = {},
+      ) {
         ensureWebauthnSupport('register');
         const optionsAccessToken = await requireAccessToken();
         const options = await input.http.postJson(
@@ -751,7 +747,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
             credential: serializeCredential(credential),
           },
           { accessToken: verifyAccessToken },
-        ) as Promise<WebauthnVerifyResponse>;
+        ) as ReturnType<AuthMiniInternal['passkey']['register']>;
       },
     };
 
@@ -817,7 +813,9 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
       return snapshot.accessToken;
     }
 
-    function createOptionsPayload(payload: PasskeyOptionsInput) {
+    function createOptionsPayload(
+      payload: Parameters<AuthMiniInternal['passkey']['authenticate']>[0],
+    ) {
       const rpId =
         typeof payload?.rpId === 'string' && payload.rpId.length > 0
           ? payload.rpId
@@ -931,7 +929,12 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     return Object.assign(api, { ready });
   }
 
-  function createBrowserSdkInternal(input: BrowserSdkRuntimeInput) {
+  function createBrowserSdkInternal(
+    input: BrowserSdkFactoryOptions & {
+      baseUrl: string;
+      recoveryTimeoutMs?: number;
+    },
+  ) {
     const browser = typeof window === 'undefined' ? globalThis : window;
     const baseUrl = input.baseUrl;
 
