@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createBrowserSdkInternal } from '../../src/sdk/singleton-entry.js';
+import { createBrowserSdkInternal } from '../../src/sdk/browser-runtime.js';
 import { createStateStore } from '../../src/sdk/state.js';
 import type { PersistedSdkState } from '../../src/sdk/types.js';
 import {
