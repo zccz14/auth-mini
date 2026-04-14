@@ -41,18 +41,6 @@ type SessionStore = {
   setAnonymousLocal(): void;
 };
 
-type SessionControllerInput = {
-  http: {
-    getJson(path: string, options?: Omit<RequestOptions, 'body'>): Promise<unknown>;
-    postJson(path: string, body: unknown, options?: Omit<RequestOptions, 'body'>): Promise<unknown>;
-  };
-  now: () => number;
-  readSharedState?: () => PersistedSdkState | null | undefined;
-  recoveryTimeoutMs?: number;
-  state: SessionStore;
-  waitForExternalStorage?: (timeoutMs: number) => Promise<void>;
-};
-
 type WebauthnPublicKeyCredential = {
   id: string;
   rawId: ArrayBuffer | ArrayBufferView;

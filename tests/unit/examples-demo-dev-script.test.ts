@@ -294,8 +294,10 @@ esac
     expect(buildScript).toContain(
       'tsc -p tsconfig.build.json --declaration --watch --preserveWatchOutput',
     );
-    expect(buildScript).not.toContain('build-singleton-iife');
-    expect(buildScript).not.toContain('build-singleton-dts');
+    expect(buildScript.match(/await runCommand\(/g)).toHaveLength(3);
+    expect(buildScript).toContain('await runCommand(generateApiCommand);');
+    expect(buildScript).toContain('await runCommand(buildCommand);');
+    expect(buildScript).toContain('const child = spawn(watchCommand, {');
     expect(testSource).not.toContain(legacyReadySignal);
   });
 

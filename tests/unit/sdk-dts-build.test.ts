@@ -59,8 +59,10 @@ describe('sdk d.ts build artifact', () => {
     expect(buildScriptSource.indexOf('npm run generate:api')).toBeLessThan(
       buildScriptSource.indexOf('tsc -p tsconfig.build.json --declaration'),
     );
-    expect(buildScriptSource).not.toContain('build-singleton-iife');
-    expect(buildScriptSource).not.toContain('build-singleton-dts');
+    expect(buildScriptSource.match(/await runCommand\(/g)).toHaveLength(3);
+    expect(buildScriptSource).toContain('await runCommand(generateApiCommand);');
+    expect(buildScriptSource).toContain('await runCommand(buildCommand);');
+    expect(buildScriptSource).toContain('const child = spawn(watchCommand, {');
     expect(testRunnerSource).toContain(
       "run('npm', ['run', 'check:generated:api'])",
     );
@@ -112,16 +114,20 @@ describe('sdk d.ts build artifact', () => {
   });
 
   it('keeps the dts consumer fixture focused on maintained module entrypoints', () => {
-    const tsconfig = readFileSync(
-      resolve(process.cwd(), 'tests/fixtures/sdk-dts-consumer/tsconfig.json'),
-      'utf8',
-    );
+    const tsconfig = JSON.parse(
+      readFileSync(
+        resolve(process.cwd(), 'tests/fixtures/sdk-dts-consumer/tsconfig.json'),
+        'utf8',
+      ),
+    ) as {
+      files?: string[];
+    };
 
-    expect(tsconfig).toContain('./module-api-usage.ts');
-    expect(tsconfig).toContain('./module-browser-usage.ts');
-    expect(tsconfig).toContain('./module-device-usage.ts');
-    expect(tsconfig).not.toContain('singleton-iife.d.ts');
-    expect(tsconfig).not.toContain('global-usage.ts');
+    expect(tsconfig.files).toEqual([
+      './module-api-usage.ts',
+      './module-browser-usage.ts',
+      './module-device-usage.ts',
+    ]);
   });
 
   it('aliases only the structurally equivalent browser sdk public types', () => {
