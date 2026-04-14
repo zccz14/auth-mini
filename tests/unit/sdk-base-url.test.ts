@@ -12,6 +12,7 @@ describe('sdk base url inference', () => {
     );
 
     expect(source).not.toContain("from './singleton-entry.js'");
+    expect(source).not.toContain(': any');
   });
 
   it('fails direct browser sdk creation when baseUrl is omitted', () => {
