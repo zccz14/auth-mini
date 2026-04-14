@@ -150,30 +150,110 @@ describe('http request logging', () => {
     });
   });
 
-  it('captures client ip from the direct socket path', async () => {
+  it('logs the CF-Connecting-IP value over lower-precedence proxy headers', async () => {
     const runtime = await startLoggedServer();
     openResources.push(runtime);
 
     const response = await fetch(`${runtime.url}/jwks`, {
       headers: {
-        'x-forwarded-for': '198.51.100.9',
+        'cf-connecting-ip': '198.51.100.10',
+        forwarded: 'for=198.51.100.12',
+        'x-forwarded-for': '198.51.100.11, 198.51.100.13',
       },
     });
 
     expect(response.status).toBe(200);
 
-    const completed = runtime.logs.find(
-      (entry) => entry.event === 'http.request.completed',
-    );
+    const requestLogs = expectRequestLogsFor(runtime.logs);
 
-    expect(completed).toMatchObject({
+    expect(requestLogs.started).toMatchObject({
+      event: 'http.request.started',
+      method: 'GET',
+      path: '/jwks',
+      ip: '198.51.100.10',
+    });
+    expect(requestLogs.completed).toMatchObject({
       event: 'http.request.completed',
       status_code: 200,
-      ip: expect.any(String),
+      ip: '198.51.100.10',
     });
-    expect(completed?.ip).not.toBe('198.51.100.9');
+  });
+
+  it('logs the first X-Forwarded-For value when higher-precedence headers are absent', async () => {
+    const runtime = await startLoggedServer();
+    openResources.push(runtime);
+
+    const response = await fetch(`${runtime.url}/jwks`, {
+      headers: {
+        'x-forwarded-for': '198.51.100.31, 198.51.100.32',
+      },
+    });
+
+    expect(response.status).toBe(200);
+
+    const requestLogs = expectRequestLogsFor(runtime.logs);
+
+    expect(requestLogs.started).toMatchObject({
+      event: 'http.request.started',
+      method: 'GET',
+      path: '/jwks',
+      ip: '198.51.100.31',
+    });
+    expect(requestLogs.completed).toMatchObject({
+      event: 'http.request.completed',
+      status_code: 200,
+      ip: '198.51.100.31',
+    });
+  });
+
+  it('logs the Forwarded for= value when higher-precedence headers are absent', async () => {
+    const runtime = await startLoggedServer();
+    openResources.push(runtime);
+
+    const response = await fetch(`${runtime.url}/jwks`, {
+      headers: {
+        forwarded: 'proto=https;for="198.51.100.21:8443";by=203.0.113.20',
+      },
+    });
+
+    expect(response.status).toBe(200);
+
+    const requestLogs = expectRequestLogsFor(runtime.logs);
+
+    expect(requestLogs.started).toMatchObject({
+      event: 'http.request.started',
+      method: 'GET',
+      path: '/jwks',
+      ip: '198.51.100.21',
+    });
+    expect(requestLogs.completed).toMatchObject({
+      event: 'http.request.completed',
+      status_code: 200,
+      ip: '198.51.100.21',
+    });
   });
 });
+
+function requestLogsFor(logs: Array<Record<string, unknown>>) {
+  const started = logs.find((entry) => entry.event === 'http.request.started');
+
+  expect(started).toBeDefined();
+  expect(started?.request_id).toEqual(expect.any(String));
+
+  const requestId = started?.request_id as string;
+  const completedEntries = completedEntriesForRequest(logs, requestId);
+  const completed = completedEntries[0];
+
+  return { completed, completionEntries: completedEntries, started };
+}
+
+function expectRequestLogsFor(logs: Array<Record<string, unknown>>) {
+  const requestLogs = requestLogsFor(logs);
+
+  expect(requestLogs.completionEntries).toHaveLength(1);
+
+  return requestLogs;
+}
 
 async function startLoggedServer() {
   const dbPath = await createTempDbPath();

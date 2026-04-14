@@ -82,7 +82,7 @@
 #### 存储规则
 
 - `user_agent` 按原始字符串落库，不做脱敏、解析、裁剪或标准化。
-- `ip` 按服务端当前已采用的 client IP 判定结果落库；本轮不额外重新定义代理链解析策略，只复用现有请求上下文获取方式。
+- `ip` 按服务端当前默认优先级判定结果落库：`CF-Connecting-IP` -> `X-Forwarded-For` 首个 IP -> `Forwarded for=` -> `req.socket.remoteAddress`；其中 `X-Forwarded-For` 只看首个 token，若该 token 无效，则直接回退到更低优先级来源，不扫描后续条目。
 - session 创建完成后，`ip` 与 `user_agent` 视为该 session 的创建时快照，不再由后续请求更新。
 
 ### refresh 语义
