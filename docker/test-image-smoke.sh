@@ -155,6 +155,17 @@ import urllib.request
 base = os.environ['AUTH_MINI_URL']
 last_error = None
 
+def expect_http_error(path: str, expected_status: int, description: str) -> None:
+    try:
+        urllib.request.urlopen(f'{base}{path}', timeout=5)
+        raise SystemExit(f'{description} unexpectedly succeeded')
+    except urllib.error.HTTPError as error:
+        error.read()
+        if error.code != expected_status:
+            raise SystemExit(
+                f'unexpected {description} response: expected {expected_status}, got {error.code}'
+            )
+
 for _ in range(120):
     try:
         with urllib.request.urlopen(f'{base}/jwks', timeout=2) as response:
@@ -168,10 +179,8 @@ for _ in range(120):
 else:
     raise SystemExit(f'jwks readiness failed: {last_error}')
 
-with urllib.request.urlopen(f'{base}/sdk/singleton-iife.js', timeout=5) as response:
-    body = response.read().decode()
-    if response.status != 200 or 'AuthMini' not in body:
-        raise SystemExit('sdk endpoint did not return expected AuthMini bundle')
+expect_http_error('/sdk/singleton-iife.js', 404, 'sdk singleton bundle request')
+expect_http_error('/sdk/singleton-iife.d.ts', 404, 'sdk singleton types request')
 
 try:
     urllib.request.urlopen(f'{base}/me', timeout=5)
