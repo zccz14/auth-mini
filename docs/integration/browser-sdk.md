@@ -27,7 +27,7 @@ Browser SDK persistence semantics remain browser-only: the maintained browser mo
 
 Browser pages may be hosted on a different origin than the auth server as long as the page origin is explicitly stored in the instance with `npx auth-mini origin add <instance> --value <page-origin>`.
 
-Same-origin proxy deployment is still supported if you prefer to front auth-mini through your app origin, but direct cross-origin loading is the primary browser SDK path.
+Same-origin proxy deployment is still supported if you prefer to front auth-mini through your app origin, but direct cross-origin browser access to the auth-mini API is the primary browser SDK path.
 
 ### Localhost example
 
@@ -36,7 +36,7 @@ This page:
 - page origin: `http://localhost:3000`
 - auth server origin: `http://127.0.0.1:7777`
 
-works when `http://localhost:3000` has been added with `npx auth-mini origin add ./auth-mini.sqlite --value http://localhost:3000` and the page loads the SDK from the auth server:
+works when `http://localhost:3000` has been added with `npx auth-mini origin add ./auth-mini.sqlite --value http://localhost:3000` and the browser app initializes the SDK with the auth server origin:
 
 ```ts
 import { createBrowserSdk } from 'auth-mini/sdk/browser';
