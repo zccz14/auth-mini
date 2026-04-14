@@ -317,10 +317,12 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
   // @ts-expect-error preserve extracted helper signature
   function createHttpClient(input) {
     return {
-      getJson(path: string, options = {}) {
+      // @ts-expect-error preserve extracted helper signature
+      getJson(path, options = {}) {
         return sendJson('GET', path, options);
       },
-      postJson(path: string, body: unknown, options = {}) {
+      // @ts-expect-error preserve extracted helper signature
+      postJson(path, body, options = {}) {
         return sendJson('POST', path, { ...options, body });
       },
     };
@@ -418,7 +420,8 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
 
   // @ts-expect-error preserve extracted helper signature
   function createSessionController(input) {
-    let refreshPromise: Promise<ReturnType<typeof normalizeTokenResponse>> | null = null;
+    // @ts-expect-error preserve extracted helper local state
+    let refreshPromise = null;
     let supersededRecoveryPromise: Promise<void> | null = null;
     const controller = {
       getState() {
@@ -447,6 +450,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
         }
       },
       async refresh() {
+        // @ts-expect-error preserve extracted helper local state
         if (refreshPromise) {
           return refreshPromise;
         }
@@ -871,7 +875,8 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
         readPersistedSdkState(input.storage, storageKey),
       recoveryTimeoutMs: input.recoveryTimeoutMs,
       state,
-      waitForExternalStorage(timeoutMs: number) {
+      // @ts-expect-error preserve extracted helper signature
+      waitForExternalStorage(timeoutMs) {
         return new Promise<void>((resolve) => {
           let settled = false;
           const done = () => {
