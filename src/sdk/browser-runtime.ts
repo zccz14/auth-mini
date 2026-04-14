@@ -15,12 +15,6 @@ export type BrowserSdkFactoryOptions = {
   storage?: Storage;
 };
 
-type SdkError = Error & {
-  code: string;
-  error?: string;
-  status?: number;
-};
-
 type StorageSync = {
   getSnapshot?(): PersistedSdkState | null;
   subscribe(listener: (next: PersistedSdkState | null) => void): () => void;
@@ -124,18 +118,24 @@ function getRuntime() {
 function createRuntime(parseMeResponseImpl = parseMeResponse) {
   const SDK_STORAGE_KEY = 'auth-mini.sdk';
 
-  function createSdkError(code: string, message: string): SdkError {
-    const error = new Error(`${code}: ${message}`) as SdkError;
+  // @ts-expect-error preserve extracted helper signature
+  function createSdkError(code, message) {
+    const error = new Error(`${code}: ${message}`) as Error & {
+      code?: string;
+      error?: string;
+      status?: number;
+    };
     error.name = 'AuthMiniSdkError';
     error.code = code;
     return error;
   }
 
-  function createRequestError(status: number, payload: unknown): SdkError {
+  // @ts-expect-error preserve extracted helper signature
+  function createRequestError(status, payload) {
     const error = createSdkError(
       'request_failed',
-      typeof (payload as { error?: unknown })?.error === 'string'
-        ? (payload as { error: string }).error
+      typeof payload?.error === 'string'
+        ? payload.error
         : `Request failed with status ${status}`,
     );
     error.status = status;
@@ -314,7 +314,8 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     }
   }
 
-  function createHttpClient(input: { baseUrl: string; fetch: FetchLike }) {
+  // @ts-expect-error preserve extracted helper signature
+  function createHttpClient(input) {
     return {
       getJson(path: string, options = {}) {
         return sendJson('GET', path, options);
@@ -415,7 +416,8 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     };
   }
 
-  function createSessionController(input: SessionControllerInput) {
+  // @ts-expect-error preserve extracted helper signature
+  function createSessionController(input) {
     let refreshPromise: Promise<ReturnType<typeof normalizeTokenResponse>> | null = null;
     let supersededRecoveryPromise: Promise<void> | null = null;
     const controller = {
@@ -869,7 +871,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
         readPersistedSdkState(input.storage, storageKey),
       recoveryTimeoutMs: input.recoveryTimeoutMs,
       state,
-      waitForExternalStorage(timeoutMs) {
+      waitForExternalStorage(timeoutMs: number) {
         return new Promise<void>((resolve) => {
           let settled = false;
           const done = () => {
