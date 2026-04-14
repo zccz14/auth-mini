@@ -512,6 +512,7 @@ export function executeServedSdk(
   source: string,
   options: {
     currentScriptSrc?: string | null;
+    fetch?: typeof globalThis.fetch;
     storage?: Storage;
     storageUnavailable?: boolean;
   } = {},
@@ -562,6 +563,13 @@ export function executeServedSdk(
       listener(event);
     }
   };
+
+  if (options.fetch) {
+    Object.defineProperty(windowObject, 'fetch', {
+      configurable: true,
+      value: options.fetch,
+    });
+  }
 
   const run = new Function('window', 'document', source);
   run(windowObject, document);
