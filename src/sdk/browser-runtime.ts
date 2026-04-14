@@ -162,19 +162,15 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
   }
 
   function createRequestError(status: number, payload: unknown): SdkError {
-    const payloadRecord =
-      payload && typeof payload === 'object'
-        ? (payload as Record<string, unknown>)
-        : null;
     const error = createSdkError(
       'request_failed',
-      typeof payloadRecord?.error === 'string'
-        ? payloadRecord.error
+      typeof (payload as { error?: unknown })?.error === 'string'
+        ? (payload as { error: string }).error
         : `Request failed with status ${status}`,
     );
     error.status = status;
-    if (payloadRecord) {
-      Object.assign(error, payloadRecord);
+    if (payload && typeof payload === 'object') {
+      Object.assign(error, payload);
     }
     if (!('error' in error)) {
       error.error = 'request_failed';
@@ -565,11 +561,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
           throw createSdkError('missing_session', 'Missing refresh token');
         }
         if (!snapshot.accessToken || needsRefresh(snapshot, input.now())) {
-          const refreshed = await controller.refresh();
-          if (!refreshed.accessToken) {
-            throw createSdkError('missing_session', 'Missing access token');
-          }
-          return await fetchMe(refreshed.accessToken);
+          return await fetchMe((await controller.refresh()).accessToken as string);
         }
         if (!snapshot.sessionId) {
           throw createSdkError('missing_session', 'Missing session id');
@@ -905,33 +897,30 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
       session,
       state,
     });
-    const api: AuthMiniInternal = Object.assign(
-      {
-        email: createEmailModule({ http, session }),
-        me: {
-          fetch() {
-            return session.fetchMe();
-          },
+    const api = {
+      email: createEmailModule({ http, session }),
+      me: {
+        fetch() {
+          return session.fetchMe();
         },
-        session: {
-          getState() {
-            return state.getState();
-          },
-          onChange(listener: Listener) {
-            return state.onChange(listener);
-          },
-          refresh() {
-            return session.refresh();
-          },
-          logout() {
-            return session.logout();
-          },
-        },
-        passkey,
-        webauthn: passkey,
       },
-      { ready: Promise.resolve() },
-    );
+      session: {
+        getState() {
+          return state.getState();
+        },
+        onChange(listener: Listener) {
+          return state.onChange(listener);
+        },
+        refresh() {
+          return session.refresh();
+        },
+        logout() {
+          return session.logout();
+        },
+      },
+      passkey,
+      webauthn: passkey,
+    };
     const ready =
       input.autoRecover !== false && state.getState().status === 'recovering'
         ? Promise.resolve().then(() => session.recover())
