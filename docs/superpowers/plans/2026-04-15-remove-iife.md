@@ -63,9 +63,11 @@
 - Test: `tests/unit/sdk-webauthn.test.ts`
 - Test: `tests/unit/sdk-base-url.test.ts`
 
-- [ ] **Step 1: Move the shared runtime exports into a new neutral module**
+- [ ] **Step 1: Extract the shared runtime into a new neutral module**
 
-Create `src/sdk/browser-runtime.ts` by moving the runtime pieces from `src/sdk/singleton-entry.ts` and dropping the script-bootstrap-only export:
+Create `src/sdk/browser-runtime.ts` by extracting the shared browser runtime from `src/sdk/singleton-entry.ts`. Keep the runtime behavior unchanged, remove only the conceptually IIFE-only pieces, and allow only the minimal TypeScript-only adaptations needed to make `src/sdk/browser-runtime.ts` compile as a standalone module. Do not use this step for broader refactoring, helper rewrites, or behavior changes.
+
+The new module should still expose the same shared runtime surface used by the module SDK and shared-runtime tests:
 
 ```ts
 import { parseMeResponse } from './me.js';
@@ -109,9 +111,9 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
 }
 ```
 
-Then paste the full helper block from `src/sdk/singleton-entry.ts` starting at `function createSdkError(code, message) {` and ending at the returned object that exposes `createAuthMiniInternal` and `createBrowserSdkInternal`, preserving those helper bodies exactly while removing only the IIFE-specific pieces called out below.
+Populate `createRuntime(...)` with the shared helper logic extracted from `src/sdk/singleton-entry.ts`, preserving the existing runtime semantics. Minimal TypeScript-only edits are allowed where required for module-local scoping, imports, or standalone compilation, but the extracted runtime should otherwise remain behaviorally equivalent to the existing shared runtime.
 
-Inside the moved `createRuntime(...)`, delete the IIFE-only base-url inference pieces:
+Inside the extracted runtime, remove the IIFE-only base-url inference pieces:
 
 ```ts
 const SDK_PATH_SUFFIX = '/sdk/singleton-iife.js';
