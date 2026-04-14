@@ -1,43 +1,18 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
 import { parseMeResponse, renderMeParserSource } from './me.js';
+export {
+  createAuthMiniInternal,
+  createBrowserSdkInternal,
+} from './browser-runtime.js';
 import type {
   AuthMiniInternal,
   FetchLike,
   InternalSdkDeps,
 } from './types.js';
 
-type BrowserSdkFactoryOptions = {
-  fetch?: FetchLike;
-  now?: () => number;
-  storage?: Storage;
-};
-
-let runtimeCache: ReturnType<typeof createRuntime> | null = null;
-
-export function createAuthMiniInternal(
-  input: InternalSdkDeps,
-): AuthMiniInternal {
-  return getRuntime().createAuthMiniInternal(input) as AuthMiniInternal;
-}
-
-export function createBrowserSdkInternal(
-  baseUrl: string,
-  options: BrowserSdkFactoryOptions = {},
-): AuthMiniInternal {
-  return getRuntime().createBrowserSdkInternal({
-    ...options,
-    baseUrl,
-  }) as AuthMiniInternal;
-}
-
 export function renderSingletonIifeSource(): string {
   return `(()=>{${renderMeParserSource()}return (${createRuntime.toString()})(parseMeResponse).installOnWindow(window, document);})()`;
-}
-
-function getRuntime() {
-  runtimeCache ??= createRuntime();
-  return runtimeCache;
 }
 
 function createRuntime(parseMeResponseImpl = parseMeResponse) {
