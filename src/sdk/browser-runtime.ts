@@ -110,6 +110,10 @@ export function createBrowserSdkInternal(
   }) as AuthMiniInternal;
 }
 
+export function renderBrowserRuntimeSource(): string {
+  return `(${createRuntime.toString()})(parseMeResponse)`;
+}
+
 function getRuntime() {
   runtimeCache ??= createRuntime();
   return runtimeCache;

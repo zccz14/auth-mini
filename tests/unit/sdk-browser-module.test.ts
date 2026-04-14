@@ -429,6 +429,16 @@ describe('browser module sdk', () => {
     );
   });
 
+  it('keeps singleton entry as a browser runtime bridge', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/sdk/singleton-entry.ts'),
+      'utf8',
+    );
+
+    expect(source).not.toContain('function createRuntime(');
+    expect(source).toContain('renderBrowserRuntimeSource');
+  });
+
   it('does not export createDeviceSdk from the browser module', () => {
     expect(createBrowserSdk).toBeTypeOf('function');
     expect(
