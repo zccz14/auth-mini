@@ -2,7 +2,6 @@
 // @ts-nocheck
 import { parseMeResponse, renderMeParserSource } from './me.js';
 import type {
-  AuthMiniApi,
   AuthMiniInternal,
   FetchLike,
   InternalSdkDeps,
@@ -14,23 +13,6 @@ type BrowserSdkFactoryOptions = {
   storage?: Storage;
 };
 
-type BootstrapInput = {
-  currentScript: { src?: string | null } | null;
-  fetch?: FetchLike;
-  now?: () => number;
-  storage?: Storage;
-};
-
-type SingletonInput = BrowserSdkFactoryOptions & {
-  baseUrl: string;
-};
-
-declare global {
-  interface Window {
-    AuthMini: AuthMiniApi;
-  }
-}
-
 let runtimeCache: ReturnType<typeof createRuntime> | null = null;
 
 export function createAuthMiniInternal(
@@ -39,25 +21,14 @@ export function createAuthMiniInternal(
   return getRuntime().createAuthMiniInternal(input) as AuthMiniInternal;
 }
 
-export function createSingletonSdk(input: SingletonInput): AuthMiniInternal {
-  return createBrowserSdkInternal(input.baseUrl, input);
-}
-
 export function createBrowserSdkInternal(
   baseUrl: string,
   options: BrowserSdkFactoryOptions = {},
 ): AuthMiniInternal {
-  return getRuntime().createSingletonSdk({
+  return getRuntime().createBrowserSdkInternal({
     ...options,
     baseUrl,
   }) as AuthMiniInternal;
-}
-
-export function bootstrapSingletonSdk(input: BootstrapInput) {
-  return getRuntime().bootstrapSingletonSdk(input) as {
-    baseUrl: string;
-    sdk: AuthMiniInternal;
-  };
 }
 
 export function renderSingletonIifeSource(): string {
@@ -842,7 +813,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     return Object.assign(api, { ready });
   }
 
-  function createSingletonSdk(input = {}) {
+  function createBrowserSdkInternal(input) {
     const browser = typeof window === 'undefined' ? globalThis : window;
     const baseUrl = input.baseUrl;
 
@@ -897,7 +868,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     };
   }
 
-  function bootstrapSingletonSdk(input) {
+  function bootstrapWindowSdk(input) {
     const scriptUrl = input.currentScript?.src;
     if (!scriptUrl) {
       throw createSdkError(
@@ -908,7 +879,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     const baseUrl = inferBaseUrl(scriptUrl);
     return {
       baseUrl,
-      sdk: createSingletonSdk({
+      sdk: createBrowserSdkInternal({
         baseUrl,
         fetch: input.fetch,
         now: input.now,
@@ -918,7 +889,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
   }
 
   function installOnWindow(window, document) {
-    window.AuthMini = bootstrapSingletonSdk({
+    window.AuthMini = bootstrapWindowSdk({
       currentScript: document.currentScript,
       fetch: resolveFetch(window.fetch?.bind(window)),
     }).sdk;
@@ -1109,8 +1080,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
 
   return {
     createAuthMiniInternal,
-    createSingletonSdk,
-    bootstrapSingletonSdk,
+    createBrowserSdkInternal,
     installOnWindow,
   };
 }

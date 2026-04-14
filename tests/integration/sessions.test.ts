@@ -1,13 +1,10 @@
-import { mkdtemp, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { OtpMailSeam } from '../helpers/mock-smtp.js';
 import { bootstrapDatabase } from '../../src/infra/db/bootstrap.js';
 import { createDatabaseClient } from '../../src/infra/db/client.js';
-import { importSmtpConfigs } from '../../src/infra/smtp/config-import.js';
+import { insertSmtpConfig } from '../../src/infra/smtp/repo.js';
 import { runStartCommand } from '../../src/app/commands/start.js';
 import { bootstrapKeys } from '../../src/modules/jwks/service.js';
 import * as jwksService from '../../src/modules/jwks/service.js';
@@ -1448,17 +1445,16 @@ describe('session routes', () => {
     await bootstrapDatabase(dbPath);
     const db = createDatabaseClient(dbPath);
 
-    await importSmtpConfigs(
-      db,
-      await writeRuntimeSmtpConfigJson({
-        host: '127.0.0.1',
-        port: smtpServer.port,
-        username: 'mailer',
-        password: 'secret',
-        from_email: 'noreply@example.com',
-        from_name: 'auth-mini',
-      }),
-    );
+    insertSmtpConfig(db, {
+      host: '127.0.0.1',
+      port: smtpServer.port,
+      username: 'mailer',
+      password: 'secret',
+      fromEmail: 'noreply@example.com',
+      fromName: 'auth-mini',
+      secure: false,
+      weight: 1,
+    });
     db.prepare('INSERT INTO allowed_origins (origin) VALUES (?)').run(
       'https://app.example.com',
     );
@@ -1494,17 +1490,16 @@ describe('session routes', () => {
     await bootstrapDatabase(dbPath);
     const db = createDatabaseClient(dbPath);
 
-    await importSmtpConfigs(
-      db,
-      await writeRuntimeSmtpConfigJson({
-        host: '127.0.0.1',
-        port: smtpServer.port,
-        username: 'mailer',
-        password: 'secret',
-        from_email: 'noreply@example.com',
-        from_name: 'auth-mini',
-      }),
-    );
+    insertSmtpConfig(db, {
+      host: '127.0.0.1',
+      port: smtpServer.port,
+      username: 'mailer',
+      password: 'secret',
+      fromEmail: 'noreply@example.com',
+      fromName: 'auth-mini',
+      secure: false,
+      weight: 1,
+    });
     db.prepare('INSERT INTO allowed_origins (origin) VALUES (?)').run(
       'https://app.example.com',
     );
@@ -1622,17 +1617,16 @@ describe('session routes', () => {
     await bootstrapDatabase(dbPath);
     const db = createDatabaseClient(dbPath);
 
-    await importSmtpConfigs(
-      db,
-      await writeRuntimeSmtpConfigJson({
-        host: '127.0.0.1',
-        port: smtpServer.port,
-        username: 'mailer',
-        password: 'secret',
-        from_email: 'noreply@example.com',
-        from_name: 'auth-mini',
-      }),
-    );
+    insertSmtpConfig(db, {
+      host: '127.0.0.1',
+      port: smtpServer.port,
+      username: 'mailer',
+      password: 'secret',
+      fromEmail: 'noreply@example.com',
+      fromName: 'auth-mini',
+      secure: false,
+      weight: 1,
+    });
     db.prepare('INSERT INTO allowed_origins (origin) VALUES (?)').run(
       'https://app.example.com',
     );
@@ -1765,24 +1759,6 @@ async function loadMockedAppHelpers() {
   });
 
   return import('../helpers/app.js');
-}
-
-async function writeRuntimeSmtpConfigJson(row: {
-  host: string;
-  port: number;
-  username: string;
-  password: string;
-  from_email: string;
-  from_name: string;
-}) {
-  const directoryPath = await mkdtemp(
-    join(tmpdir(), 'auth-mini-runtime-smtp-'),
-  );
-  const filePath = join(directoryPath, 'smtp.json');
-
-  await writeFile(filePath, JSON.stringify([row]), 'utf8');
-
-  return filePath;
 }
 
 async function getAvailablePort(): Promise<number> {

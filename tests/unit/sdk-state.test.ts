@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createSingletonSdk } from '../../src/sdk/singleton-entry.js';
+import { createBrowserSdkInternal } from '../../src/sdk/singleton-entry.js';
 import { createStateStore } from '../../src/sdk/state.js';
 import type { PersistedSdkState } from '../../src/sdk/types.js';
 import {
@@ -169,8 +169,7 @@ describe('sdk state store', () => {
       expiresAt: '2026-04-03T00:00:00.000Z',
     });
 
-    const sdk = createSingletonSdk({
-      baseUrl: 'https://auth.example.com',
+    const sdk = createBrowserSdkInternal('https://auth.example.com', {
       storage,
     });
     const listener = vi.fn();
@@ -191,8 +190,7 @@ describe('sdk state store', () => {
       expiresAt: '2026-04-03T00:00:00.000Z',
     });
 
-    const sdk = createSingletonSdk({
-      baseUrl: 'https://auth.example.com',
+    const sdk = createBrowserSdkInternal('https://auth.example.com', {
       storage,
     });
     const snapshot = sdk.session.getState();
