@@ -5,10 +5,6 @@ const generateApiCommand = 'npm run generate:api';
 const buildCommand = 'tsc -p tsconfig.build.json --declaration';
 const watchCommand =
   'tsc -p tsconfig.build.json --declaration --watch --preserveWatchOutput';
-const postBuildCommands = [
-  'node dist/sdk/build-singleton-iife.js',
-  'node dist/sdk/build-singleton-dts.js',
-];
 
 async function runCommand(command) {
   await new Promise((resolve, reject) => {
@@ -33,16 +29,9 @@ async function runCommand(command) {
   });
 }
 
-async function runPostBuild() {
-  for (const command of postBuildCommands) {
-    await runCommand(command);
-  }
-}
-
 async function runBuild() {
   await runCommand(generateApiCommand);
   await runCommand(buildCommand);
-  await runPostBuild();
 }
 
 async function runWatch() {
@@ -53,70 +42,36 @@ async function runWatch() {
     shell: true,
   });
 
-  let runningPostBuild = false;
-  let rerunPostBuild = false;
   let statusBuffer = '';
-  let shuttingDown = false;
 
-  const maybeRunPostBuild = async () => {
-    if (runningPostBuild || shuttingDown) {
-      rerunPostBuild = true;
-      return;
-    }
-
-    runningPostBuild = true;
-
-    try {
-      await runPostBuild();
-    } catch (error) {
-      shuttingDown = true;
-      child.kill('SIGTERM');
-      throw error;
-    } finally {
-      runningPostBuild = false;
-    }
-
-    if (rerunPostBuild && !shuttingDown) {
-      rerunPostBuild = false;
-      await maybeRunPostBuild();
-    }
-  };
-
-  const readStatus = async (chunk, writer) => {
+  const readStatus = (chunk, writer) => {
     const text = chunk.toString();
     writer.write(text);
     statusBuffer += text;
 
     const lines = statusBuffer.split(/\r?\n/);
     statusBuffer = lines.pop() ?? '';
-
-    for (const line of lines) {
-      if (line.includes('Found 0 errors. Watching for file changes.')) {
-        await maybeRunPostBuild();
-      }
-    }
   };
 
   child.stdout.on('data', (chunk) => {
-    void readStatus(chunk, process.stdout).catch((error) => {
+    try {
+      readStatus(chunk, process.stdout);
+    } catch (error) {
       console.error(error instanceof Error ? error.message : error);
       process.exitCode = 1;
-    });
+    }
   });
 
   child.stderr.on('data', (chunk) => {
-    void readStatus(chunk, process.stderr).catch((error) => {
+    try {
+      readStatus(chunk, process.stderr);
+    } catch (error) {
       console.error(error instanceof Error ? error.message : error);
       process.exitCode = 1;
-    });
+    }
   });
 
   const shutdown = (signal) => {
-    if (shuttingDown) {
-      return;
-    }
-
-    shuttingDown = true;
     child.kill(signal);
   };
 

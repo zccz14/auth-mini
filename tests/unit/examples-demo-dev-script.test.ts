@@ -5,9 +5,9 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = process.cwd();
-const singletonGlobalPath = resolve(repoRoot, 'src/sdk/singleton-global.ts');
-const singletonIifePath = resolve(repoRoot, 'dist/sdk/singleton-iife.js');
-const singletonDtsPath = resolve(repoRoot, 'dist/sdk/singleton-iife.d.ts');
+const browserModuleSourcePath = resolve(repoRoot, 'src/sdk/browser.ts');
+const browserModulePath = resolve(repoRoot, 'dist/sdk/browser.js');
+const browserDtsPath = resolve(repoRoot, 'dist/sdk/browser.d.ts');
 
 async function waitFor(check: () => Promise<boolean>, timeoutMs: number) {
   const startedAt = Date.now();
@@ -98,13 +98,13 @@ function killProcess(pid: number, signal: NodeJS.Signals) {
 }
 
 async function readArtifactMtimes() {
-  const [iifeStat, dtsStat] = await Promise.all([
-    stat(singletonIifePath),
-    stat(singletonDtsPath),
+  const [moduleStat, dtsStat] = await Promise.all([
+    stat(browserModulePath),
+    stat(browserDtsPath),
   ]);
 
   return {
-    iife: iifeStat.mtimeMs,
+    module: moduleStat.mtimeMs,
     dts: dtsStat.mtimeMs,
   };
 }
@@ -112,7 +112,7 @@ async function readArtifactMtimes() {
 async function sdkArtifactsReadySince(sinceMs: number) {
   try {
     const mtimes = await readArtifactMtimes();
-    return mtimes.iife >= sinceMs && mtimes.dts >= sinceMs;
+    return mtimes.module >= sinceMs && mtimes.dts >= sinceMs;
   } catch {
     return false;
   }
@@ -136,17 +136,19 @@ async function waitForWatchStartup(
 async function waitForArtifactRebuild(
   child: ReturnType<typeof spawn>,
   getOutput: () => string,
-  baseline: { iife: number; dts: number },
+  baseline: { module: number; dts: number },
   timeoutMs: number,
 ) {
   await waitFor(async () => {
     if (child.exitCode !== null) {
       throw new Error(`build watch exited before rebuild:\n${getOutput()}`);
     }
-
+    
     const nextMtimes = await readArtifactMtimes();
 
-    return nextMtimes.iife > baseline.iife && nextMtimes.dts > baseline.dts;
+    return (
+      nextMtimes.module > baseline.module && nextMtimes.dts > baseline.dts
+    );
   }, timeoutMs);
 }
 
@@ -292,8 +294,8 @@ esac
     expect(buildScript).toContain(
       'tsc -p tsconfig.build.json --declaration --watch --preserveWatchOutput',
     );
-    expect(buildScript).toContain('node dist/sdk/build-singleton-iife.js');
-    expect(buildScript).toContain('node dist/sdk/build-singleton-dts.js');
+    expect(buildScript).not.toContain('build-singleton-iife');
+    expect(buildScript).not.toContain('build-singleton-dts');
     expect(testSource).not.toContain(legacyReadySignal);
   });
 
@@ -314,7 +316,7 @@ esac
       return;
     }
 
-    const originalSource = readFileSync(singletonGlobalPath, 'utf8');
+    const originalSource = readFileSync(browserModuleSourcePath, 'utf8');
     const watchStartedAt = Date.now();
     const child = spawn('npm', ['run', 'build', '--', '--watch'], {
       cwd: repoRoot,
@@ -341,7 +343,7 @@ esac
       for (const probe of watchProbes) {
         const baseline = await readArtifactMtimes();
         await writeFile(
-          singletonGlobalPath,
+          browserModuleSourcePath,
           `${originalSource}\n// ${probe}`,
           'utf8',
         );
@@ -362,7 +364,7 @@ esac
       try {
         await stopChild(child, 5000);
       } finally {
-        await writeFile(singletonGlobalPath, originalSource, 'utf8');
+        await writeFile(browserModuleSourcePath, originalSource, 'utf8');
       }
     }
   }, 30000);
