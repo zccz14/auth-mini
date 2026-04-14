@@ -294,7 +294,17 @@ describe('browser module sdk', () => {
     );
 
     expect(source).not.toContain('executeServedSdk');
-    expect(source).not.toContain('singleton-iife.js');
+  });
+
+  it('does not reference the removed legacy bundle name in this test file', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'tests/unit/sdk-browser-module.test.ts'),
+      'utf8',
+    );
+
+    const forbidden = ['singleton', 'iife.js'].join('-');
+
+    expect(source).not.toContain(forbidden);
   });
 
   it('does not export createDeviceSdk from the browser module', () => {
