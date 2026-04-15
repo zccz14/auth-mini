@@ -156,13 +156,14 @@ Then deploy it with Cloudflare Tunnel or your preferred hosting method.
 
 Minimal browser SDK usage:
 
-```html
-<script src="https://auth.your-domain.com/sdk/singleton-iife.js"></script>
-<script>
-  window.AuthMini.session.onChange((state) => {
-    console.log('auth status:', state.status);
-  });
-</script>
+```ts
+import { createBrowserSdk } from 'auth-mini/sdk/browser';
+
+const sdk = createBrowserSdk('https://auth.your-domain.com');
+
+sdk.session.onChange((state) => {
+  console.log('auth status:', state.status);
+});
 ```
 
 Minimal device SDK usage:

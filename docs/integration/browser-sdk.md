@@ -6,8 +6,6 @@ auth-mini exposes one low-level API SDK plus higher-level runtime SDKs:
 - `auth-mini/sdk/browser`: high-level browser SDK with browser storage and cross-tab semantics.
 - `auth-mini/sdk/device`: high-level device SDK for isolated memory-only sessions in non-browser clients. See [Device SDK integration](./device-sdk.md).
 
-For browser delivery, auth-mini also serves the browser SDK as `GET /sdk/singleton-iife.js`, which exposes `window.AuthMini` and infers its API base URL from the script `src`.
-
 For the low-level HTTP API contract, see `openapi.yaml` and [`auth-mini/sdk/api`](./api-sdk.md).
 This guide covers higher-level runtime behavior for the browser SDK only.
 
@@ -18,37 +16,18 @@ Import the browser SDK module and construct it with your auth server origin:
 ```ts
 import { createBrowserSdk } from 'auth-mini/sdk/browser';
 
-const AuthMini = createBrowserSdk('https://auth.zccz14.com');
+const sdk = createBrowserSdk('https://auth.zccz14.com');
 ```
 
 The current `examples/demo/` app follows that module path as a Vite + React bundle. It imports `auth-mini/sdk/browser` at build time, mounts under a `HashRouter`, stays docs-only until you provide `/#/setup?auth-origin=https://your-auth-origin`, then reads `auth-origin` from `window.location.hash` and passes that origin into `createBrowserSdk(serverBaseUrl)`. The published demo now uses the bundled app entrypoint instead of any hand-wired browser bundle path.
 
-Browser SDK persistence semantics remain browser-only: the module and singleton browser paths still use browser storage and browser-oriented recovery behavior. The new device SDK does not change those semantics.
-
-## Singleton script usage
-
-auth-mini also serves a singleton browser SDK at `GET /sdk/singleton-iife.js`.
-
-For TypeScript consumers, the matching declaration file is available at `GET /sdk/singleton-iife.d.ts`. It types `window.AuthMini`, so you can download that file and include it in your TS project. If your toolchain supports it, you can also use that same file as the source for a triple-slash reference or editor-only workflow.
-
-Load the script from the auth server origin. The singleton SDK infers its API base URL from its own `src`, so the script origin and API origin must match.
-
-```html
-<script src="https://auth.zccz14.com/sdk/singleton-iife.js"></script>
-<script>
-  window.AuthMini.session.onChange((state) => {
-    console.log('auth status:', state.status);
-  });
-</script>
-```
-
-v1 is intentionally zero-config: the script infers its API base URL from its own `src`, persists session state in `localStorage`, and automatically refreshes access tokens.
+Browser SDK persistence semantics remain browser-only: the maintained browser module path uses browser storage and browser-oriented recovery behavior. The new device SDK does not change those semantics.
 
 ## Cross-origin guidance
 
 Browser pages may be hosted on a different origin than the auth server as long as the page origin is explicitly stored in the instance with `npx auth-mini origin add <instance> --value <page-origin>`.
 
-Same-origin proxy deployment is still supported if you prefer to front auth-mini through your app origin, but direct cross-origin loading is the primary browser SDK path.
+Same-origin proxy deployment is still supported if you prefer to front auth-mini through your app origin, but direct cross-origin browser access to the auth-mini API is the primary browser SDK path.
 
 ### Localhost example
 
@@ -57,43 +36,46 @@ This page:
 - page origin: `http://localhost:3000`
 - auth server origin: `http://127.0.0.1:7777`
 
-works when `http://localhost:3000` has been added with `npx auth-mini origin add ./auth-mini.sqlite --value http://localhost:3000` and the page loads the SDK from the auth server:
+works when `http://localhost:3000` has been added with `npx auth-mini origin add ./auth-mini.sqlite --value http://localhost:3000` and the browser app initializes the SDK with the auth server origin:
 
-```html
-<script src="http://127.0.0.1:7777/sdk/singleton-iife.js"></script>
+```ts
+import { createBrowserSdk } from 'auth-mini/sdk/browser';
+
+const sdk = createBrowserSdk('http://127.0.0.1:7777');
 ```
 
 ## Startup state model
 
-If a refresh token is already stored, startup enters `recovering` first and then settles to `authenticated` or `anonymous` after recovery completes. `AuthMini.session.getState()` only exposes session/auth fields; it never includes a cached `/me` snapshot.
+If a refresh token is already stored, startup enters `recovering` first and then settles to `authenticated` or `anonymous` after recovery completes. `sdk.session.getState()` only exposes session/auth fields; it never includes a cached `/me` snapshot.
 
 ## Explicit `/me` reads
 
-- `await AuthMini.me.fetch()` performs one explicit authenticated `/me` request and resolves with that response.
-- `AuthMini.me.fetch()` may refresh the access token first when the stored session requires it, but it does not write `/me` into shared session state or browser storage.
+- `await sdk.me.fetch()` performs one explicit authenticated `/me` request and resolves with that response.
+- `sdk.me.fetch()` may refresh the access token first when the stored session requires it, but it does not write `/me` into shared session state or browser storage.
 - Callers own any local memoization, loading state, error state, and refresh timing for `/me`.
 
 ## Passkey example
 
-```html
-<script src="https://auth.zccz14.com/sdk/singleton-iife.js"></script>
-<script>
-  async function signIn(email, code) {
-    await window.AuthMini.email.start({ email });
-    await window.AuthMini.email.verify({ email, code });
-    console.log(await window.AuthMini.me.fetch());
-  }
+```ts
+import { createBrowserSdk } from 'auth-mini/sdk/browser';
 
-  async function signInWithPasskey() {
-    await window.AuthMini.webauthn.authenticate();
-    console.log(await window.AuthMini.me.fetch());
-  }
-</script>
+const sdk = createBrowserSdk('https://auth.zccz14.com');
+
+async function signIn(email: string, code: string) {
+  await sdk.email.start({ email });
+  await sdk.email.verify({ email, code });
+  console.log(await sdk.me.fetch());
+}
+
+async function signInWithPasskey() {
+  await sdk.webauthn.authenticate();
+  console.log(await sdk.me.fetch());
+}
 ```
 
 ## Operational limits
 
-- The SDK script origin must match the auth API origin because the singleton client derives its base URL from the script `src`.
+- The browser SDK requires an explicit auth server origin via `createBrowserSdk(serverBaseUrl)`.
 - Cross-origin browser pages are supported only when the page origin is stored via the `origin` topic commands.
 - Multiple tabs sharing one session can still race during refresh-token rotation, but the loser tab enters `recovering` and usually converges to the latest shared session state.
 - That convergence only shares session tokens/status; `/me` remains caller-owned and must be fetched explicitly in each tab when needed.

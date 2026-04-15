@@ -1,17 +1,84 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
-// @ts-nocheck
-import { parseMeResponse, renderMeParserSource } from './me.js';
+import { parseMeResponse } from './me.js';
 import type {
   AuthMiniInternal,
   FetchLike,
   InternalSdkDeps,
+  Listener,
+  NavigatorCredentialsLike,
+  PersistedSdkState,
+  SessionSnapshot,
 } from './types.js';
 
-type BrowserSdkFactoryOptions = {
+export type BrowserSdkFactoryOptions = {
   fetch?: FetchLike;
   now?: () => number;
   storage?: Storage;
 };
+
+type StorageSync = {
+  getSnapshot?(): PersistedSdkState | null;
+  subscribe(listener: (next: PersistedSdkState | null) => void): () => void;
+};
+
+type InternalRuntimeDeps = InternalSdkDeps & {
+  recoveryTimeoutMs?: number;
+  storageKey?: string;
+  storageSync?: StorageSync | null;
+};
+
+type RequestOptions = {
+  accessToken?: string | null;
+  body?: unknown;
+};
+
+type SessionStore = {
+  getState(): SessionSnapshot;
+  onChange(listener: Listener): () => void;
+  setRecovering(next: PersistedSdkState): void;
+  setAuthenticated(next: PersistedSdkState): void;
+  setAnonymous(): void;
+  applyPersistedState(next: PersistedSdkState | null): void;
+  setAnonymousLocal(): void;
+};
+
+type WebauthnPublicKeyCredential = {
+  id: string;
+  rawId: ArrayBuffer | ArrayBufferView;
+  type: string;
+  response: {
+    clientDataJSON: ArrayBuffer | ArrayBufferView;
+    getTransports?: () => string[];
+    attestationObject?: ArrayBuffer | ArrayBufferView | null;
+    authenticatorData?: ArrayBuffer | ArrayBufferView | null;
+    signature?: ArrayBuffer | ArrayBufferView | null;
+    userHandle?: ArrayBuffer | ArrayBufferView | null;
+  };
+  getClientExtensionResults?: () => unknown;
+  clientExtensionResults?: unknown;
+};
+
+type RegistrationPublicKey = Record<string, unknown> & {
+  challenge: string;
+  user: Record<string, unknown> & { id: string };
+  excludeCredentials?: Array<Record<string, unknown> & { id: string }>;
+};
+
+type AuthenticationPublicKey = Record<string, unknown> & {
+  challenge: string;
+  allowCredentials?: Array<Record<string, unknown> & { id: string }>;
+};
+
+type RegistrationOptionsResponse = {
+  request_id: string;
+  publicKey: RegistrationPublicKey;
+};
+
+type AuthenticationOptionsResponse = {
+  request_id: string;
+  publicKey: AuthenticationPublicKey;
+};
+
+type CredentialOptions = CredentialCreationOptions | CredentialRequestOptions;
 
 let runtimeCache: ReturnType<typeof createRuntime> | null = null;
 
@@ -31,8 +98,8 @@ export function createBrowserSdkInternal(
   }) as AuthMiniInternal;
 }
 
-export function renderSingletonIifeSource(): string {
-  return `(()=>{${renderMeParserSource()}return (${createRuntime.toString()})(parseMeResponse).installOnWindow(window, document);})()`;
+export function renderBrowserRuntimeSource(): string {
+  return `(${createRuntime.toString()})(parseMeResponse)`;
 }
 
 function getRuntime() {
@@ -41,16 +108,21 @@ function getRuntime() {
 }
 
 function createRuntime(parseMeResponseImpl = parseMeResponse) {
-  const SDK_PATH_SUFFIX = '/sdk/singleton-iife.js';
   const SDK_STORAGE_KEY = 'auth-mini.sdk';
 
+  // @ts-expect-error preserve extracted helper signature
   function createSdkError(code, message) {
-    const error = new Error(`${code}: ${message}`);
+    const error = new Error(`${code}: ${message}`) as Error & {
+      code?: string;
+      error?: string;
+      status?: number;
+    };
     error.name = 'AuthMiniSdkError';
     error.code = code;
     return error;
   }
 
+  // @ts-expect-error preserve extracted helper signature
   function createRequestError(status, payload) {
     const error = createSdkError(
       'request_failed',
@@ -68,16 +140,10 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     return error;
   }
 
-  function inferBaseUrl(scriptUrl) {
-    const url = new URL(scriptUrl);
-    if (!url.pathname.endsWith(SDK_PATH_SUFFIX)) {
-      throw createSdkError('sdk_init_failed', 'Cannot infer SDK base URL');
-    }
-    const basePath = url.pathname.slice(0, -SDK_PATH_SUFFIX.length);
-    return `${url.origin}${basePath}`;
-  }
-
-  function resolveSdkStorage(input) {
+  function resolveSdkStorage(input: {
+    storage?: Storage;
+    getDefaultStorage: () => Storage | undefined;
+  }) {
     if (input.storage) {
       return input.storage;
     }
@@ -93,7 +159,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     return storage;
   }
 
-  function resolveFetch(fetchImpl) {
+  function resolveFetch(fetchImpl: FetchLike | undefined) {
     const resolved = fetchImpl ?? globalThis.fetch?.bind(globalThis);
     if (!resolved) {
       throw createSdkError('sdk_init_failed', 'fetch is unavailable');
@@ -101,11 +167,11 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     return resolved;
   }
 
-  function getStorageKey(baseUrl) {
+  function getStorageKey(baseUrl: string) {
     return `${SDK_STORAGE_KEY}:${normalizeBaseUrl(baseUrl).toString()}`;
   }
 
-  function normalizeBaseUrl(baseUrl) {
+  function normalizeBaseUrl(baseUrl: string) {
     const url = new URL(baseUrl);
     url.search = '';
     url.hash = '';
@@ -115,7 +181,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     return url;
   }
 
-  function readPersistedSdkState(storage, storageKey) {
+  function readPersistedSdkState(storage: Storage, storageKey: string) {
     const raw = storage.getItem(storageKey);
     if (!raw) {
       return null;
@@ -125,11 +191,12 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
       if (!value || typeof value !== 'object') {
         return null;
       }
-      const sessionId = toNullableString(value.sessionId);
-      const accessToken = toNullableString(value.accessToken);
-      const refreshToken = toNullableString(value.refreshToken);
-      const receivedAt = toNullableString(value.receivedAt);
-      const expiresAt = toNullableString(value.expiresAt);
+      const valueRecord = value as Record<string, unknown>;
+      const sessionId = toNullableString(valueRecord.sessionId);
+      const accessToken = toNullableString(valueRecord.accessToken);
+      const refreshToken = toNullableString(valueRecord.refreshToken);
+      const receivedAt = toNullableString(valueRecord.receivedAt);
+      const expiresAt = toNullableString(valueRecord.expiresAt);
       if (
         sessionId === undefined ||
         accessToken === undefined ||
@@ -154,16 +221,20 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     }
   }
 
-  function writePersistedSdkState(storage, storageKey, snapshot) {
+  function writePersistedSdkState(
+    storage: Storage,
+    storageKey: string,
+    snapshot: PersistedSdkState,
+  ) {
     storage.setItem(storageKey, JSON.stringify(snapshot));
   }
 
-  function clearPersistedSdkState(storage, storageKey) {
+  function clearPersistedSdkState(storage: Storage, storageKey: string) {
     storage.removeItem(storageKey);
   }
 
-  function createStateStore(storage, storageKey) {
-    const listeners = new Set();
+  function createStateStore(storage: Storage, storageKey: string): SessionStore {
+    const listeners = new Set<Listener>();
     let state = hydrateState();
 
     return {
@@ -204,7 +275,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
       return hydrateSnapshot(readPersistedSdkState(storage, storageKey));
     }
 
-    function hydrateSnapshot(persisted) {
+    function hydrateSnapshot(persisted: PersistedSdkState | null) {
       if (!persisted?.refreshToken || !persisted.sessionId) {
         return createSnapshot('anonymous');
       }
@@ -215,7 +286,9 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
       });
     }
 
-    function updatePersisted(next) {
+    function updatePersisted(
+      next: SessionSnapshot & PersistedSdkState,
+    ) {
       const persisted = clonePersisted(next);
       writePersistedSdkState(storage, storageKey, persisted);
       updateState({
@@ -225,7 +298,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
       });
     }
 
-    function updateState(next) {
+    function updateState(next: SessionSnapshot) {
       state = freezeSnapshot(next);
       for (const listener of listeners) {
         listener(cloneSnapshot(state));
@@ -233,17 +306,24 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     }
   }
 
+  // @ts-expect-error preserve extracted helper signature
   function createHttpClient(input) {
     return {
+      // @ts-expect-error preserve extracted helper signature
       getJson(path, options = {}) {
         return sendJson('GET', path, options);
       },
+      // @ts-expect-error preserve extracted helper signature
       postJson(path, body, options = {}) {
         return sendJson('POST', path, { ...options, body });
       },
     };
 
-    async function sendJson(method, path, options) {
+    async function sendJson(
+      method: string,
+      path: string,
+      options: RequestOptions,
+    ) {
       const response = await input.fetch(
         new URL(path.replace(/^\//, ''), input.baseUrl),
         {
@@ -263,8 +343,8 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
       return payload;
     }
 
-    function createHeaders(options) {
-      const headers = { accept: 'application/json' };
+    function createHeaders(options: RequestOptions): Record<string, string> {
+      const headers: Record<string, string> = { accept: 'application/json' };
       if (options.body !== undefined) {
         headers['content-type'] = 'application/json';
       }
@@ -274,7 +354,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
       return headers;
     }
 
-    async function readJson(response) {
+    async function readJson(response: Response) {
       const text = await response.text();
       if (!text) {
         return null;
@@ -287,13 +367,13 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     }
   }
 
-  function shouldRefresh(now, expiresAt, receivedAt) {
+  function shouldRefresh(now: number, expiresAt: number, receivedAt: number) {
     const lifetimeMs = expiresAt - receivedAt;
     const thresholdMs = lifetimeMs < 10 * 60_000 ? lifetimeMs / 2 : 5 * 60_000;
     return now >= expiresAt - thresholdMs;
   }
 
-  function needsRefresh(snapshot, now) {
+  function needsRefresh(snapshot: PersistedSdkState, now: number) {
     if (!snapshot.expiresAt || !snapshot.receivedAt) {
       return true;
     }
@@ -305,41 +385,47 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     return shouldRefresh(now, expiresAt, receivedAt);
   }
 
-  function normalizeTokenResponse(payload, now) {
-    if (!payload || typeof payload !== 'object') {
+  function normalizeTokenResponse(payload: unknown, now: () => number) {
+    const value = payload as Record<string, unknown> | null;
+    if (!value || typeof value !== 'object') {
       throw createSdkError('request_failed', 'Invalid session payload');
     }
     if (
-      typeof payload.access_token !== 'string' ||
-      typeof payload.session_id !== 'string' ||
-      typeof payload.refresh_token !== 'string' ||
-      typeof payload.expires_in !== 'number'
+      typeof value.access_token !== 'string' ||
+      typeof value.session_id !== 'string' ||
+      typeof value.refresh_token !== 'string' ||
+      typeof value.expires_in !== 'number'
     ) {
       throw createSdkError('request_failed', 'Invalid session payload');
     }
     const receivedAtMs = now();
     return {
-      sessionId: payload.session_id,
-      accessToken: payload.access_token,
-      refreshToken: payload.refresh_token,
+      sessionId: value.session_id,
+      accessToken: value.access_token,
+      refreshToken: value.refresh_token,
       receivedAt: new Date(receivedAtMs).toISOString(),
       expiresAt: new Date(
-        receivedAtMs + payload.expires_in * 1000,
+        receivedAtMs + value.expires_in * 1000,
       ).toISOString(),
     };
   }
 
+  // @ts-expect-error preserve extracted helper signature
   function createSessionController(input) {
+    // @ts-expect-error preserve extracted helper local state
     let refreshPromise = null;
-    let supersededRecoveryPromise = null;
+    let supersededRecoveryPromise: Promise<void> | null = null;
     const controller = {
       getState() {
         return input.state.getState();
       },
-      onChange(listener) {
+      onChange(listener: Listener) {
         return input.state.onChange(listener);
       },
-      async acceptSessionResponse(response, options = {}) {
+      async acceptSessionResponse(
+        response: unknown,
+        options: { clearOnMeFailure?: 'auth-invalidating' } = {},
+      ) {
         const session = normalizeTokenResponse(response, input.now);
         input.state.setRecovering(session);
         try {
@@ -356,6 +442,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
         }
       },
       async refresh() {
+        // @ts-expect-error preserve extracted helper local state
         if (refreshPromise) {
           return refreshPromise;
         }
@@ -445,7 +532,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
           throw createSdkError('missing_session', 'Missing refresh token');
         }
         if (!snapshot.accessToken || needsRefresh(snapshot, input.now())) {
-          return await fetchMe((await controller.refresh()).accessToken);
+          return await fetchMe((await controller.refresh()).accessToken as string);
         }
         if (!snapshot.sessionId) {
           throw createSdkError('missing_session', 'Missing session id');
@@ -485,7 +572,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
 
     return controller;
 
-    async function fetchMe(accessToken) {
+    async function fetchMe(accessToken: string) {
       if (!accessToken) {
         throw createSdkError('missing_session', 'Missing access token');
       }
@@ -495,7 +582,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
       );
     }
 
-    async function startSupersededRecovery(snapshot) {
+    async function startSupersededRecovery(snapshot: SessionSnapshot) {
       input.state.setRecovering({
         sessionId: snapshot.sessionId,
         accessToken: snapshot.accessToken,
@@ -532,7 +619,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
       input.state.setAnonymousLocal();
     }
 
-    function adoptRecoveredSharedState(snapshot) {
+    function adoptRecoveredSharedState(snapshot: SessionSnapshot) {
       const shared = input.readSharedState?.();
 
       if (!shared?.sessionId || !shared.refreshToken) {
@@ -545,18 +632,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
 
       if (
         shared.accessToken &&
-        !needsRefresh(
-          {
-            status: 'recovering',
-            authenticated: false,
-            sessionId: shared.sessionId,
-            accessToken: shared.accessToken,
-            refreshToken: shared.refreshToken,
-            receivedAt: shared.receivedAt,
-            expiresAt: shared.expiresAt,
-          },
-          input.now(),
-        )
+        !needsRefresh(shared, input.now())
       ) {
         input.state.setAuthenticated({
           sessionId: shared.sessionId,
@@ -573,31 +649,64 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     }
   }
 
-  function createEmailModule(input) {
+  function createEmailModule(input: {
+    http: {
+      getJson(path: string, options?: Omit<RequestOptions, 'body'>): Promise<unknown>;
+      postJson(path: string, body: unknown, options?: Omit<RequestOptions, 'body'>): Promise<unknown>;
+    };
+    session: {
+      acceptSessionResponse(
+        response: unknown,
+        options?: { clearOnMeFailure?: 'auth-invalidating' },
+      ): Promise<ReturnType<typeof normalizeTokenResponse>>;
+    };
+  }) {
     return {
-      start(payload) {
-        return input.http.postJson('/email/start', payload);
+      start(payload: Parameters<AuthMiniInternal['email']['start']>[0]) {
+        return input.http.postJson('/email/start', payload) as ReturnType<
+          AuthMiniInternal['email']['start']
+        >;
       },
-      async verify(payload) {
+      async verify(payload: Parameters<AuthMiniInternal['email']['verify']>[0]) {
         const response = await input.http.postJson('/email/verify', payload);
         return await input.session.acceptSessionResponse(response);
       },
     };
   }
 
-  function createWebauthnModule(input) {
+  function createWebauthnModule(input: {
+    http: {
+      getJson(path: string, options?: Omit<RequestOptions, 'body'>): Promise<unknown>;
+      postJson(path: string, body: unknown, options?: Omit<RequestOptions, 'body'>): Promise<unknown>;
+    };
+    navigatorCredentials?: NavigatorCredentialsLike;
+    now: () => number;
+    publicKeyCredential?: unknown;
+    session: {
+      acceptSessionResponse(
+        response: unknown,
+        options?: { clearOnMeFailure?: 'auth-invalidating' },
+      ): Promise<ReturnType<typeof normalizeTokenResponse>>;
+      refresh(): Promise<ReturnType<typeof normalizeTokenResponse>>;
+    };
+    state: SessionStore;
+  }) {
     return {
-      async authenticate(payload = {}) {
+      async authenticate(
+        payload: Parameters<AuthMiniInternal['passkey']['authenticate']>[0] = {},
+      ) {
         ensureWebauthnSupport('authenticate');
         const options = await input.http.postJson(
           '/webauthn/authenticate/options',
           createOptionsPayload(payload),
-        );
+        ) as AuthenticationOptionsResponse;
         const credential = await requestCredential(
           'authenticate',
-          input.navigatorCredentials.get,
+          input.navigatorCredentials?.get,
           {
-            publicKey: decodeAuthenticationOptions(options.publicKey),
+            publicKey: decodeAuthenticationOptions(
+              options.publicKey,
+            ) as PublicKeyCredentialRequestOptions,
           },
         );
         const response = await input.http.postJson(
@@ -609,19 +718,23 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
         );
         return await input.session.acceptSessionResponse(response);
       },
-      async register(payload = {}) {
+      async register(
+        payload: Parameters<AuthMiniInternal['passkey']['register']>[0] = {},
+      ) {
         ensureWebauthnSupport('register');
         const optionsAccessToken = await requireAccessToken();
         const options = await input.http.postJson(
           '/webauthn/register/options',
           createOptionsPayload(payload),
           { accessToken: optionsAccessToken },
-        );
+        ) as RegistrationOptionsResponse;
         const credential = await requestCredential(
           'register',
-          input.navigatorCredentials.create,
+          input.navigatorCredentials?.create,
           {
-            publicKey: decodeRegistrationOptions(options.publicKey),
+            publicKey: decodeRegistrationOptions(
+              options.publicKey,
+            ) as unknown as PublicKeyCredentialCreationOptions,
           },
         );
         const verifyAccessToken = await requireAccessToken();
@@ -632,11 +745,11 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
             credential: serializeCredential(credential),
           },
           { accessToken: verifyAccessToken },
-        );
+        ) as ReturnType<AuthMiniInternal['passkey']['register']>;
       },
     };
 
-    function ensureWebauthnSupport(mode) {
+    function ensureWebauthnSupport(mode: 'authenticate' | 'register') {
       const hasMethod =
         mode === 'register'
           ? typeof input.navigatorCredentials?.create === 'function'
@@ -649,7 +762,17 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
       }
     }
 
-    async function requestCredential(mode, invoke, options) {
+    async function requestCredential<T extends CredentialOptions>(
+      mode: 'authenticate' | 'register',
+      invoke: ((options?: T) => Promise<unknown>) | undefined,
+      options: T,
+    ): Promise<WebauthnPublicKeyCredential> {
+      if (!invoke) {
+        throw createSdkError(
+          'webauthn_unsupported',
+          'WebAuthn is unavailable in this browser',
+        );
+      }
       try {
         const credential = await invoke(options);
         if (!credential) {
@@ -660,7 +783,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
               : 'Passkey authentication cancelled',
           );
         }
-        return credential;
+        return credential as WebauthnPublicKeyCredential;
       } catch (error) {
         if (isWebauthnCancelledError(error)) {
           throw createSdkError(
@@ -688,7 +811,9 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
       return snapshot.accessToken;
     }
 
-    function createOptionsPayload(payload) {
+    function createOptionsPayload(
+      payload: Parameters<AuthMiniInternal['passkey']['authenticate']>[0],
+    ) {
       const rpId =
         typeof payload?.rpId === 'string' && payload.rpId.length > 0
           ? payload.rpId
@@ -698,31 +823,20 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     }
   }
 
-  function createAuthMiniInternal(input) {
+  function createAuthMiniInternal(input: InternalRuntimeDeps) {
     const storageKey = input.storageKey ?? SDK_STORAGE_KEY;
     const state = createStateStore(input.storage, storageKey);
-    const externalStorageListeners = new Set();
+    const externalStorageListeners = new Set<() => void>();
     const http = createHttpClient({
       baseUrl: input.baseUrl,
       fetch: input.fetch,
     });
-    const adoptExternalState = (next) => {
+    const adoptExternalState = (next: PersistedSdkState | null) => {
       if (
         next?.sessionId &&
         next.refreshToken &&
         next.accessToken &&
-        !needsRefresh(
-          {
-            status: 'recovering',
-            authenticated: false,
-            sessionId: next.sessionId,
-            accessToken: next.accessToken,
-            refreshToken: next.refreshToken,
-            receivedAt: next.receivedAt,
-            expiresAt: next.expiresAt,
-          },
-          input.now ?? (() => Date.now())(),
-        )
+        !needsRefresh(next, (input.now ?? (() => Date.now()))())
       ) {
         state.setAuthenticated({
           sessionId: next.sessionId,
@@ -753,8 +867,9 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
         readPersistedSdkState(input.storage, storageKey),
       recoveryTimeoutMs: input.recoveryTimeoutMs,
       state,
+      // @ts-expect-error preserve extracted helper signature
       waitForExternalStorage(timeoutMs) {
-        return new Promise((resolve) => {
+        return new Promise<void>((resolve) => {
           let settled = false;
           const done = () => {
             if (settled) {
@@ -790,7 +905,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
         getState() {
           return state.getState();
         },
-        onChange(listener) {
+        onChange(listener: Listener) {
           return state.onChange(listener);
         },
         refresh() {
@@ -813,7 +928,12 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     return Object.assign(api, { ready });
   }
 
-  function createBrowserSdkInternal(input) {
+  function createBrowserSdkInternal(
+    input: BrowserSdkFactoryOptions & {
+      baseUrl: string;
+      recoveryTimeoutMs?: number;
+    },
+  ) {
     const browser = typeof window === 'undefined' ? globalThis : window;
     const baseUrl = input.baseUrl;
 
@@ -842,7 +962,11 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     });
   }
 
-  function createBrowserStorageSync(browser, storage, storageKey) {
+  function createBrowserStorageSync(
+    browser: typeof globalThis,
+    storage: Storage,
+    storageKey: string,
+  ): StorageSync | null {
     if (typeof browser?.addEventListener !== 'function') {
       return null;
     }
@@ -852,7 +976,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
         return readPersistedSdkState(storage, storageKey);
       },
       subscribe(listener) {
-        const handleStorage = (event) => {
+        const handleStorage = (event: StorageEvent) => {
           if (event.key !== storageKey || event.storageArea !== storage) {
             return;
           }
@@ -868,42 +992,14 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     };
   }
 
-  function bootstrapWindowSdk(input) {
-    const scriptUrl = input.currentScript?.src;
-    if (!scriptUrl) {
-      throw createSdkError(
-        'sdk_init_failed',
-        'Cannot determine SDK script URL',
-      );
-    }
-    const baseUrl = inferBaseUrl(scriptUrl);
-    return {
-      baseUrl,
-      sdk: createBrowserSdkInternal({
-        baseUrl,
-        fetch: input.fetch,
-        now: input.now,
-        storage: input.storage,
-      }),
-    };
-  }
-
-  function installOnWindow(window, document) {
-    window.AuthMini = bootstrapWindowSdk({
-      currentScript: document.currentScript,
-      fetch: resolveFetch(window.fetch?.bind(window)),
-    }).sdk;
-    /* v1 supports direct browser loading from allowed origins. */
-  }
-
-  function toNullableString(value) {
+  function toNullableString(value: unknown) {
     if (value === undefined || value === null) {
       return null;
     }
     return typeof value === 'string' ? value : undefined;
   }
 
-  function decodeRegistrationOptions(publicKey) {
+  function decodeRegistrationOptions(publicKey: RegistrationPublicKey) {
     return {
       ...publicKey,
       challenge: decodeBase64Url(publicKey.challenge),
@@ -920,7 +1016,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     };
   }
 
-  function decodeAuthenticationOptions(publicKey) {
+  function decodeAuthenticationOptions(publicKey: AuthenticationPublicKey) {
     return {
       ...publicKey,
       challenge: decodeBase64Url(publicKey.challenge),
@@ -933,9 +1029,15 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     };
   }
 
-  function serializeCredential(credential) {
+  function serializeCredential(credential: WebauthnPublicKeyCredential) {
     const response = credential.response;
-    const serialized = {
+    const serialized: {
+      id: string;
+      rawId: string;
+      type: string;
+      response: Record<string, unknown>;
+      clientExtensionResults?: unknown;
+    } = {
       id: credential.id,
       rawId: encodeBase64Url(credential.rawId),
       type: credential.type,
@@ -973,35 +1075,42 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     return serialized;
   }
 
-  function isWebauthnCancelledError(error) {
+  function isWebauthnCancelledError(error: unknown) {
+    const value = error as { code?: unknown; name?: unknown } | null;
     return (
-      error?.code === 'webauthn_cancelled' ||
-      error?.name === 'AbortError' ||
-      error?.name === 'NotAllowedError'
+      value?.code === 'webauthn_cancelled' ||
+      value?.name === 'AbortError' ||
+      value?.name === 'NotAllowedError'
     );
   }
 
-  function isAuthInvalidatingError(error) {
+  function isAuthInvalidatingError(error: unknown) {
+    const value = error as { error?: unknown; status?: unknown } | null;
     return (
-      error?.error === 'invalid_refresh_token' ||
-      error?.error === 'session_invalidated' ||
-      (error?.status === 401 && error?.error !== 'session_superseded')
+      value?.error === 'invalid_refresh_token' ||
+      value?.error === 'session_invalidated' ||
+      (value?.status === 401 && value?.error !== 'session_superseded')
     );
   }
 
-  function isContractDriftError(error) {
+  function isContractDriftError(error: unknown) {
+    const value = error as { code?: unknown; message?: unknown } | null;
     return (
-      error?.code === 'request_failed' &&
-      (error?.message === 'request_failed: Invalid session payload' ||
-        error?.message === 'request_failed: Invalid /me payload')
+      value?.code === 'request_failed' &&
+      (value?.message === 'request_failed: Invalid session payload' ||
+        value?.message === 'request_failed: Invalid /me payload')
     );
   }
 
-  function isSessionSupersededError(error) {
-    return error?.error === 'session_superseded';
+  function isSessionSupersededError(error: unknown) {
+    const value = error as { error?: unknown } | null;
+    return value?.error === 'session_superseded';
   }
 
-  function hasSharedSessionChanged(snapshot, shared) {
+  function hasSharedSessionChanged(
+    snapshot: PersistedSdkState,
+    shared: PersistedSdkState,
+  ) {
     return (
       snapshot.sessionId !== shared.sessionId ||
       snapshot.accessToken !== shared.accessToken ||
@@ -1011,14 +1120,17 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     );
   }
 
-  function isSameRecoveringSession(current, snapshot) {
+  function isSameRecoveringSession(
+    current: SessionSnapshot,
+    snapshot: PersistedSdkState,
+  ) {
     return (
       current.status === 'recovering' &&
       current.sessionId === snapshot.sessionId
     );
   }
 
-  function decodeBase64Url(value) {
+  function decodeBase64Url(value: string) {
     const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
     const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=');
     const buffer =
@@ -1030,13 +1142,13 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     return new Uint8Array(buffer);
   }
 
-  function encodeBase64Url(value) {
+  function encodeBase64Url(value: ArrayBuffer | ArrayBufferView) {
     const bytes =
       value instanceof Uint8Array
         ? value
         : value instanceof ArrayBuffer
           ? new Uint8Array(value)
-          : new Uint8Array(value.buffer ?? value);
+          : new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
     const base64 =
       typeof Buffer !== 'undefined'
         ? Buffer.from(bytes).toString('base64')
@@ -1044,7 +1156,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
   }
 
-  function createSnapshot(status) {
+  function createSnapshot(status: SessionSnapshot['status']): SessionSnapshot {
     return freezeSnapshot({
       status,
       authenticated: status === 'authenticated',
@@ -1056,7 +1168,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     });
   }
 
-  function clonePersisted(snapshot) {
+  function clonePersisted(snapshot: PersistedSdkState): PersistedSdkState {
     return {
       sessionId: snapshot.sessionId,
       accessToken: snapshot.accessToken,
@@ -1066,11 +1178,11 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     };
   }
 
-  function freezeSnapshot(snapshot) {
+  function freezeSnapshot<T extends SessionSnapshot>(snapshot: T): T {
     return Object.freeze(snapshot);
   }
 
-  function cloneSnapshot(snapshot) {
+  function cloneSnapshot(snapshot: SessionSnapshot): SessionSnapshot {
     return freezeSnapshot({
       status: snapshot.status,
       authenticated: snapshot.authenticated,
@@ -1081,6 +1193,5 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
   return {
     createAuthMiniInternal,
     createBrowserSdkInternal,
-    installOnWindow,
   };
 }

@@ -1,4 +1,4 @@
-import { createBrowserSdkInternal } from './singleton-entry.js';
+import { createBrowserSdkInternal } from './browser-runtime.js';
 import type { AuthMiniApi } from './types.js';
 
 export type {

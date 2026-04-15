@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createAuthMiniInternal } from '../../src/sdk/singleton-entry.js';
+import { createAuthMiniInternal } from '../../src/sdk/browser-runtime.js';
 import type { NavigatorCredentialsLike } from '../../src/sdk/types.js';
 import {
   cancelledNavigatorCredentials,
