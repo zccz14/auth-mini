@@ -7,7 +7,7 @@ export type OpenApiDocument = {
 };
 
 export async function loadOpenApiDocument(): Promise<OpenApiDocument> {
-  const yamlText = await readFile(new URL('../../openapi.yaml', import.meta.url), 'utf8');
+  const yamlText = await readOpenApiYamlText();
   const parsed = parse(yamlText);
 
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -18,4 +18,20 @@ export async function loadOpenApiDocument(): Promise<OpenApiDocument> {
     yamlText,
     jsonDocument: parsed as Record<string, unknown>,
   };
+}
+
+async function readOpenApiYamlText(): Promise<string> {
+  try {
+    return await readFile(new URL('../openapi.yaml', import.meta.url), 'utf8');
+  } catch (error) {
+    if (!isMissingFileError(error)) {
+      throw error;
+    }
+
+    return readFile(new URL('../../openapi.yaml', import.meta.url), 'utf8');
+  }
+}
+
+function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error && error.code === 'ENOENT';
 }
