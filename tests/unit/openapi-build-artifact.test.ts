@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { readFile, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { promisify } from 'node:util';
@@ -51,7 +51,79 @@ describe('openapi build artifact', () => {
       'package/dist/openapi.yaml',
     );
   });
+
+  it('copies the repo spec into dist when running in watch mode', async () => {
+    await rm(distOpenApiPath, { force: true });
+
+    const child = spawn(
+      resolveShellCommand('npm'),
+      ['run', 'build', '--', '--watch'],
+      {
+        cwd: repoRoot,
+        detached: true,
+        stdio: 'ignore',
+      },
+    );
+
+    try {
+      await waitFor(async () => {
+        if (child.exitCode !== null) {
+          throw new Error(
+            `build watch exited early with code ${child.exitCode}`,
+          );
+        }
+
+        try {
+          const [repoOpenApi, distOpenApi] = await Promise.all([
+            readFile(repoOpenApiPath, 'utf8'),
+            readFile(distOpenApiPath, 'utf8'),
+          ]);
+
+          return distOpenApi === repoOpenApi;
+        } catch {
+          return false;
+        }
+      }, 10000);
+    } finally {
+      stopProcessGroup(child);
+    }
+  }, 15000);
 });
+
+async function waitFor(check: () => Promise<boolean>, timeoutMs: number) {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    if (await check()) {
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  throw new Error(`timed out after ${timeoutMs}ms`);
+}
+
+function stopProcessGroup(child: ReturnType<typeof spawn>) {
+  const pid = child.pid;
+
+  if (!pid) {
+    child.kill('SIGTERM');
+    return;
+  }
+
+  try {
+    process.kill(-pid, 'SIGTERM');
+  } catch (error) {
+    if (
+      !(error instanceof Error) ||
+      !('code' in error) ||
+      error.code !== 'ESRCH'
+    ) {
+      throw error;
+    }
+  }
+}
 
 function getPackedFilename(stdout: string): string {
   const jsonStart = stdout.indexOf('[');

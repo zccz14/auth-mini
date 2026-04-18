@@ -34,11 +34,12 @@ async function runCommand(command) {
 async function runBuild() {
   await runCommand(generateApiCommand);
   await runCommand(buildCommand);
-  await copyFile(resolve('openapi.yaml'), resolve('dist/openapi.yaml'));
+  await copyOpenApiArtifact();
 }
 
 async function runWatch() {
   await runCommand(generateApiCommand);
+  await copyOpenApiArtifact();
 
   const child = spawn(watchCommand, {
     stdio: ['inherit', 'pipe', 'pipe'],
@@ -89,6 +90,10 @@ async function runWatch() {
 
     process.exit(code ?? process.exitCode ?? 1);
   });
+}
+
+async function copyOpenApiArtifact() {
+  await copyFile(resolve('openapi.yaml'), resolve('dist/openapi.yaml'));
 }
 
 if (isWatchMode) {
