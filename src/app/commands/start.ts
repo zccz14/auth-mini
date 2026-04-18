@@ -14,6 +14,7 @@ import { bootstrapKeys } from '../../modules/jwks/service.js';
 import { createApp } from '../../server/app.js';
 import { parseRuntimeConfig } from '../../shared/config.js';
 import { createRootLogger, withErrorFields } from '../../shared/logger.js';
+import { loadOpenApiDocument } from '../../shared/openapi.js';
 
 type StartCommandInput = {
   loggerSink?: { write(line: string): void };
@@ -43,6 +44,7 @@ export async function runStartCommand(
     assertRequiredTablesAndColumns(db, requiredRuntimeSchema);
 
     await bootstrapKeys(db, { logger });
+    const openApi = await loadOpenApiDocument();
 
     const clientIps = new WeakMap<Request, string | null>();
 
@@ -56,6 +58,7 @@ export async function runStartCommand(
       },
       issuer: config.issuer,
       logger,
+      openApi,
     });
 
     const server = createServer((req, res) => {

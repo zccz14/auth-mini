@@ -206,7 +206,7 @@ describe('openapi contract', () => {
     });
   });
 
-  it('serves the packaged openapi document as yaml and json', async () => {
+  it('serves the cached openapi yaml and derived json from the same source file', async () => {
     const testApp = await createTestApp();
     openApps.push(testApp);
 

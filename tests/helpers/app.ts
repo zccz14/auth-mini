@@ -3,6 +3,7 @@ import { createDatabaseClient } from '../../src/infra/db/client.js';
 import { listAllowedOrigins } from '../../src/infra/origins/repo.js';
 import { createApp } from '../../src/server/app.js';
 import { bootstrapKeys } from '../../src/modules/jwks/service.js';
+import { loadOpenApiDocument } from '../../src/shared/openapi.js';
 import { createTempDbPath } from './db.js';
 import { createMemoryLogCollector } from './logging.js';
 
@@ -28,6 +29,7 @@ export async function createTestApp(options: CreateTestAppOptions = {}) {
   const db = createDatabaseClient(dbPath);
   const logCollector = createMemoryLogCollector();
   const allowedOrigins = options.origins ?? ['https://app.example.com'];
+  const openApi = await loadOpenApiDocument();
 
   await bootstrapKeys(db);
 
@@ -80,6 +82,7 @@ export async function createTestApp(options: CreateTestAppOptions = {}) {
     },
     issuer: 'https://issuer.example',
     logger: logCollector.logger,
+    openApi,
   });
 
   return {

@@ -7,6 +7,7 @@ const assertRequiredTablesAndColumns = vi.fn();
 const bootstrapDatabase = vi.fn();
 const bootstrapKeys = vi.fn();
 const createApp = vi.fn();
+const loadOpenApiDocument = vi.fn();
 const createRootLogger = vi.fn();
 const loggerChild = vi.fn();
 const loggerInfo = vi.fn();
@@ -35,6 +36,10 @@ vi.mock('../../src/modules/jwks/service.js', () => ({
 
 vi.mock('../../src/server/app.js', () => ({
   createApp,
+}));
+
+vi.mock('../../src/shared/openapi.js', () => ({
+  loadOpenApiDocument,
 }));
 
 vi.mock('../../src/shared/logger.js', () => ({
@@ -91,6 +96,10 @@ describe('runStartCommand', () => {
     vi.clearAllMocks();
 
     bootstrapDatabase.mockResolvedValue(undefined);
+    loadOpenApiDocument.mockResolvedValue({
+      yamlText: 'openapi: 3.1.0\n',
+      jsonDocument: { openapi: '3.1.0' },
+    });
     loggerChild.mockReturnValue({
       child: loggerChild,
       info: loggerInfo,
@@ -281,6 +290,43 @@ describe('runStartCommand', () => {
     ).rejects.toThrow('schema incompatible');
     expect(createDatabaseClient).not.toHaveBeenCalled();
     expect(bootstrapKeys).not.toHaveBeenCalled();
+  });
+
+  it('loads the packaged openapi document once before creating the app', async () => {
+    const server = createMockServer();
+    const db = {
+      close: vi.fn(),
+      prepare: vi.fn().mockReturnValue({
+        all: vi.fn().mockReturnValue([]),
+      }),
+    };
+    const openApi = {
+      yamlText: 'openapi: 3.1.0\n',
+      jsonDocument: { openapi: '3.1.0' },
+    };
+
+    createDatabaseClient.mockReturnValue(db);
+    bootstrapKeys.mockResolvedValue({ id: 'key-1', kid: 'kid-1' });
+    createServer.mockReturnValue(server);
+    createApp.mockReturnValue({ fetch: vi.fn() });
+    loadOpenApiDocument.mockResolvedValue(openApi);
+
+    const runStartCommand = await loadRunStartCommand();
+    const runningServer = await runStartCommand({
+      dbPath: '/tmp/auth-mini.db',
+    });
+
+    expect(loadOpenApiDocument).toHaveBeenCalledTimes(1);
+    expect(createApp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        db,
+        getOrigins: expect.any(Function),
+        issuer: 'https://issuer.example',
+        openApi,
+      }),
+    );
+
+    await runningServer.close();
   });
 
   it('uses the highest-precedence client ip header inside handleRequest', async () => {

@@ -4,6 +4,7 @@ import { bootstrapDatabase } from '../../src/infra/db/bootstrap.js';
 import { createDatabaseClient } from '../../src/infra/db/client.js';
 import { runStartCommand } from '../../src/app/commands/start.js';
 import { createApp } from '../../src/server/app.js';
+import { loadOpenApiDocument } from '../../src/shared/openapi.js';
 import { createTestApp } from '../helpers/app.js';
 import { createTempDbPath } from '../helpers/db.js';
 import {
@@ -94,6 +95,7 @@ describe('http request logging', () => {
     const db = createDatabaseClient(dbPath);
     const logCollector = createMemoryLogCollector();
     const clientIps = new WeakMap<Request, string | null>();
+    const openApi = await loadOpenApiDocument();
     const app = createApp({
       db,
       getClientIp(request) {
@@ -104,6 +106,7 @@ describe('http request logging', () => {
       },
       issuer: 'https://issuer.example',
       logger: logCollector.logger,
+      openApi,
     });
 
     openResources.push({
