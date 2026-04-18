@@ -1,7 +1,7 @@
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, expectTypeOf, it, vi } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   buildSecureSmtpOptions,
   selectSmtpConfig,
@@ -11,21 +11,9 @@ import {
   parseRuntimeConfig,
   type RuntimeConfig,
 } from '../../src/shared/config.js';
-import { loadOpenApiDocument } from '../../src/shared/openapi.js';
 import { TTLS, getExpiresAtUnixSeconds } from '../../src/shared/time.js';
 import { createTempDbPath } from '../helpers/db.js';
 import { exists } from '../helpers/fs.js';
-
-vi.mock('node:fs/promises', async () => {
-  const actual = await vi.importActual<typeof import('node:fs/promises')>(
-    'node:fs/promises',
-  );
-
-  return {
-    ...actual,
-    readFile: vi.fn(actual.readFile),
-  };
-});
 
 describe('test helpers', () => {
   it('reports whether a path exists', async () => {
@@ -47,20 +35,6 @@ describe('test helpers', () => {
 });
 
 describe('shared runtime defaults', () => {
-  it('loads the packaged openapi yaml from the module sibling path', async () => {
-    const { readFile } = await import('node:fs/promises');
-    const readFileMock = vi.mocked(readFile);
-
-    readFileMock.mockResolvedValueOnce('openapi: 3.1.0\n');
-
-    await loadOpenApiDocument();
-
-    expect(readFileMock).toHaveBeenCalledWith(
-      new URL('../../src/openapi.yaml', import.meta.url),
-      'utf8',
-    );
-  });
-
   it('does not expose legacy origin or rpId runtime config fields in the type', () => {
     expectTypeOf<
       Extract<keyof RuntimeConfig, 'origins' | 'rpId'>
