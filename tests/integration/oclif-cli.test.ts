@@ -488,7 +488,13 @@ async function startBuiltCliAndWaitForListening(
 
       if (!shuttingDown && stdout.includes('server.listening')) {
         shuttingDown = true;
-        child.kill('SIGTERM');
+
+        // The readiness log is emitted before the oclif command finishes
+        // installing its signal handlers. Defer SIGTERM by one turn so the
+        // child can shut down gracefully instead of exiting from the signal.
+        setTimeout(() => {
+          child.kill('SIGTERM');
+        }, 0);
       }
     });
     child.stderr.on('data', (chunk: Buffer) => {
