@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process';
+import { copyFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 
 const isWatchMode = process.argv.includes('--watch');
 const generateApiCommand = 'npm run generate:api';
@@ -32,6 +34,7 @@ async function runCommand(command) {
 async function runBuild() {
   await runCommand(generateApiCommand);
   await runCommand(buildCommand);
+  await copyFile(resolve('openapi.yaml'), resolve('dist/openapi.yaml'));
 }
 
 async function runWatch() {
