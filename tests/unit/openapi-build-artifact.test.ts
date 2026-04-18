@@ -50,6 +50,19 @@ describe('openapi build artifact', () => {
     expect(tarResult.stdout.split(/\r?\n/)).toContain(
       'package/dist/openapi.yaml',
     );
+
+    const packageJsonResult = await execFileAsync(resolveShellCommand('tar'), [
+      '-xOf',
+      tarballPath,
+      'package/package.json',
+    ]);
+    const packedManifest = JSON.parse(packageJsonResult.stdout) as {
+      dependencies?: Record<string, string>;
+    };
+
+    expect(packedManifest.dependencies).toMatchObject({
+      yaml: expect.any(String),
+    });
   });
 
   it('copies the repo spec into dist when running in watch mode', async () => {

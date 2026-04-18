@@ -7,9 +7,7 @@ export type OpenApiDocument = {
 };
 
 export async function loadOpenApiDocument(): Promise<OpenApiDocument> {
-  return parseOpenApiDocument(
-    await readFile(new URL('../openapi.yaml', import.meta.url), 'utf8'),
-  );
+  return parseOpenApiDocument(await readOpenApiYaml());
 }
 
 export function parseOpenApiDocument(yamlText: string): OpenApiDocument {
@@ -23,4 +21,30 @@ export function parseOpenApiDocument(yamlText: string): OpenApiDocument {
     yamlText,
     jsonDocument: parsed as Record<string, unknown>,
   };
+}
+
+async function readOpenApiYaml(): Promise<string> {
+  for (const candidateUrl of [
+    new URL('../../openapi.yaml', import.meta.url),
+    new URL('../openapi.yaml', import.meta.url),
+  ]) {
+    try {
+      return await readFile(candidateUrl, 'utf8');
+    } catch (error) {
+      if (!isMissingFileError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error('Could not locate openapi.yaml from source or dist runtime');
+}
+
+function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
+  return (
+    !!error &&
+    typeof error === 'object' &&
+    'code' in error &&
+    error.code === 'ENOENT'
+  );
 }

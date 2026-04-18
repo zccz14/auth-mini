@@ -71,6 +71,7 @@
     "nodemailer": "^8.0.4",
     "oclif": "^4.22.0",
     "pino": "^10.3.1",
+    "yaml": "2.8.3",
     "zod": "^4.1.11"
   },
   "devDependencies": {
@@ -87,7 +88,6 @@
     "prettier": "^3.6.2",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.46.0",
-    "vitest": "^4.0.0",
-    "yaml": "2.8.3"
+    "vitest": "^4.0.0"
   }
 }
