@@ -75,7 +75,7 @@ On first start, the entrypoint auto-initializes the instance when `/data/auth.sq
 
 After the container is healthy, complete normal instance setup inside the persisted database:
 
-- add allowed browser origins with `npx auth-mini origin add /data/auth.sqlite --value https://app.example.com`
+- store browser page origins for WebAuthn/browser origin checks with `npx auth-mini origin add /data/auth.sqlite --value https://app.example.com`
 - add SMTP config so email OTP can be delivered
 - apply any other instance setup your deployment needs
 

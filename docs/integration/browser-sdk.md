@@ -25,9 +25,9 @@ Browser SDK persistence semantics remain browser-only: the maintained browser mo
 
 ## Cross-origin guidance
 
-Browser pages may be hosted on a different origin than the auth server as long as the page origin is explicitly stored in the instance with `npx auth-mini origin add <instance> --value <page-origin>`.
+Browser pages may be hosted on a different origin than the auth server. Store the page origin in the instance with `npx auth-mini origin add <instance> --value <page-origin>` for WebAuthn and related origin checks; HTTP CORS is served separately with `Access-Control-Allow-Origin: *`.
 
-Same-origin proxy deployment is still supported if you prefer to front auth-mini through your app origin, but direct cross-origin browser access to the auth-mini API is the primary browser SDK path.
+Same-origin proxy deployment is still supported if you prefer to front auth-mini through your app origin, but direct cross-origin browser access to the auth-mini API is also supported. Because auth-mini serves wildcard CORS for HTTP routes, downstream apps should decide whether to keep direct access or place their own proxy/gateway controls in front.
 
 ### Localhost example
 
@@ -76,7 +76,7 @@ async function signInWithPasskey() {
 ## Operational limits
 
 - The browser SDK requires an explicit auth server origin via `createBrowserSdk(serverBaseUrl)`.
-- Cross-origin browser pages are supported only when the page origin is stored via the `origin` topic commands.
+- Store the browser page origin via the `origin` topic commands for WebAuthn and related origin checks; this is separate from the HTTP CORS policy.
 - Multiple tabs sharing one session can still race during refresh-token rotation, but the loser tab enters `recovering` and usually converges to the latest shared session state.
 - That convergence only shares session tokens/status; `/me` remains caller-owned and must be fetched explicitly in each tab when needed.
 
@@ -91,7 +91,7 @@ The current publish flow builds the demo with the root-level `demo:build` script
 - Treat `examples/demo/` as the source for the interactive demo and `examples/demo/dist` as the publish artifact.
 - For GitHub Pages, upload `examples/demo/dist` directly rather than a sibling `demo/` + `dist/` artifact layout.
 - The published page should be served from the site root for that artifact, such as `https://<user>.github.io/auth-mini/` for project Pages or `https://your-domain.example/` for a custom domain.
-- `npx auth-mini origin add <instance> --value ...` must use the final **page origin** (`window.location.origin`), not the auth server origin.
+- `npx auth-mini origin add <instance> --value ...` must use the final **page origin** (`window.location.origin`) for WebAuthn/browser origin checks, not the auth server origin.
 - If the docs page and auth server live on different origins, keep the page on its static host and append `/#/setup?auth-origin=https://your-auth-origin` so the published demo continues calling `createBrowserSdk(...)` against the auth host.
 - If you attach a custom GitHub Pages domain, publish a matching `CNAME` file in the deployed site root so GitHub serves that domain consistently; then store `https://your-domain.example` with `npx auth-mini origin add <instance> --value https://your-domain.example`.
 

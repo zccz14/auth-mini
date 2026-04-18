@@ -3,7 +3,7 @@ import { runOriginDeleteCommand } from '../../app/commands/origin/delete.js';
 import { BaseCommand, withCliErrorMetadata } from '../../oclif/base-command.js';
 
 export default class OriginDeleteCommand extends BaseCommand {
-  static summary = 'Delete an allowed origin for an auth-mini instance';
+  static summary = 'Delete a stored browser origin for WebAuthn policy';
 
   static args = {
     instance: Args.string({
@@ -15,7 +15,7 @@ export default class OriginDeleteCommand extends BaseCommand {
   static flags = {
     id: Flags.integer({
       required: true,
-      description: 'Allowed origin id',
+      description: 'Stored browser origin id',
     }),
   };
 

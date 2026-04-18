@@ -122,23 +122,11 @@ export function createApp(input: {
 
   app.use(async (c, next) => {
     const origin = c.req.header('Origin');
-    const allowedOrigin =
-      origin && c.var.origins.includes(origin) ? origin : undefined;
     const requestedMethod = c.req.header('Access-Control-Request-Method');
 
     if (origin && requestedMethod && c.req.method === 'OPTIONS') {
       c.res = new Response(null, { status: 204 });
-      applyOriginVaryHeader(c.res.headers);
-
-      if (allowedOrigin) {
-        applyCorsHeaders(
-          c.res.headers,
-          allowedOrigin,
-          true,
-          corsAllowMethods,
-          corsAllowHeaders,
-        );
-      }
+      applyCorsHeaders(c.res.headers, true, corsAllowMethods, corsAllowHeaders);
 
       return;
     }
@@ -146,13 +134,8 @@ export function createApp(input: {
     await next();
 
     if (origin) {
-      applyOriginVaryHeader(c.res.headers);
-    }
-
-    if (allowedOrigin) {
       applyCorsHeaders(
         c.res.headers,
-        allowedOrigin,
         false,
         corsAllowMethods,
         corsAllowHeaders,
@@ -622,13 +605,11 @@ function toRouteField(routePath: string): string | undefined {
 
 function applyCorsHeaders(
   headers: Headers,
-  origin: string,
   includePreflightHeaders: boolean,
   allowMethods: string,
   allowHeaders: string,
 ) {
-  headers.set('access-control-allow-origin', origin);
-  applyOriginVaryHeader(headers);
+  headers.set('access-control-allow-origin', '*');
 
   if (!includePreflightHeaders) {
     return;
@@ -671,13 +652,8 @@ function buildErrorResponse(
   const origin = c.req.header('Origin');
 
   if (origin) {
-    applyOriginVaryHeader(response.headers);
-  }
-
-  if (origin && input.allowedOrigins.includes(origin)) {
     applyCorsHeaders(
       response.headers,
-      origin,
       false,
       input.allowMethods,
       input.allowHeaders,
@@ -685,25 +661,4 @@ function buildErrorResponse(
   }
 
   return response;
-}
-
-function applyOriginVaryHeader(headers: Headers) {
-  headers.set('vary', appendVaryHeader(headers.get('vary'), 'Origin'));
-}
-
-function appendVaryHeader(existing: string | null, value: string): string {
-  if (!existing) {
-    return value;
-  }
-
-  const values = existing
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-
-  if (values.includes(value)) {
-    return existing;
-  }
-
-  return `${existing}, ${value}`;
 }

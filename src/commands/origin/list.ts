@@ -3,7 +3,7 @@ import { runOriginListCommand } from '../../app/commands/origin/list.js';
 import { BaseCommand, withCliErrorMetadata } from '../../oclif/base-command.js';
 
 export default class OriginListCommand extends BaseCommand {
-  static summary = 'List allowed origins for an auth-mini instance';
+  static summary = 'List stored browser origins for WebAuthn policy';
 
   static args = {
     instance: Args.string({

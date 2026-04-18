@@ -18,7 +18,7 @@ Minimal, opinionated authentication server for apps that just need a solid authe
   - Issue opaque refresh tokens for long-term sessions and easy revocation while keeping JWTs short-lived
 - You control the server and data. Not Google. Not AWS. Not Auth0. You.
   - Simple SQLite storage without extra Database servers (no Postgres, MySQL, Redis, etc. required)
-  - CORS included for accessing from cross-origin front-ends.
+  - Wildcard CORS (`Access-Control-Allow-Origin: *`) for cross-origin front-ends.
 - UUID-based user ID keeps it simple and opaque, and could be foreign keys for your app's user records if you want.
 
 ❌ Not trying to include: (But you can build these on top if you want!)
@@ -138,13 +138,13 @@ Setup SMTP config:
 npx auth-mini smtp add ./auth-mini.sqlite  --from-email 'sample@your-domain.com' --from-name 'sample-name' --host 'smtp.sample.com' --port 465 --secure --username 'sample@your-domain.com' --password '<smtp-password>'
 ```
 
-Setup Origin config:
+Setup browser origin policy:
 
 ```bash
 npx auth-mini origin add ./auth-mini.sqlite --value 'https://frontend.your-domain.com'
 ```
 
-No need to add backend API origins.
+Store browser page origins here for WebAuthn and related origin checks. HTTP CORS is served with `Access-Control-Allow-Origin: *`, so downstream apps need to manage that exposure carefully. No need to add backend API origins.
 
 Start the server:
 
@@ -200,7 +200,7 @@ async function verifyAccessToken(token) {
 
 From there, typical integration looks like this:
 
-- add your app origin with the CLI
+- store your app/page origin with the CLI for WebAuthn/browser origin checks
 - start auth-mini with your issuer
 - configure SMTP, then sign in via email OTP and optionally register a passkey
 - send the access token to your backend and verify it with `/jwks`

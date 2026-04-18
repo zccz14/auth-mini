@@ -14,9 +14,9 @@ npx auth-mini init ./auth-mini.sqlite
 
 `create` remains available as a compatibility alias during the transition.
 
-## Allowed browser origins
+## Stored browser origins
 
-Manage allowed browser origins with the `origin` topic:
+Manage browser page origins for WebAuthn and related origin checks with the `origin` topic. This does not control HTTP CORS; auth-mini serves `Access-Control-Allow-Origin: *` on CORS responses.
 
 ```bash
 npx auth-mini origin add ./auth-mini.sqlite --value https://app.example.com

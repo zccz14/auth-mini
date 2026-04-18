@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createTestApp } from '../helpers/app.js';
 
 describe('server cors', () => {
-  it('returns allow-origin and vary headers for allowed origins on normal responses', async () => {
+  it('returns wildcard allow-origin headers on normal responses from arbitrary origins', async () => {
     const testApp = await createTestApp({
       origins: ['https://app.example.com'],
     });
@@ -13,16 +13,14 @@ describe('server cors', () => {
       });
 
       expect(response.status).toBe(200);
-      expect(response.headers.get('access-control-allow-origin')).toBe(
-        'https://app.example.com',
-      );
-      expect(response.headers.get('vary')).toBe('Origin');
+      expect(response.headers.get('access-control-allow-origin')).toBe('*');
+      expect(response.headers.get('vary')).toBeNull();
     } finally {
       testApp.close();
     }
   });
 
-  it('omits allow headers for disallowed origins on normal responses', async () => {
+  it('returns wildcard allow-origin headers for origins outside the stored origin policy list', async () => {
     const testApp = await createTestApp({
       origins: ['https://app.example.com'],
     });
@@ -33,8 +31,8 @@ describe('server cors', () => {
       });
 
       expect(response.status).toBe(200);
-      expect(response.headers.get('access-control-allow-origin')).toBeNull();
-      expect(response.headers.get('vary')).toBe('Origin');
+      expect(response.headers.get('access-control-allow-origin')).toBe('*');
+      expect(response.headers.get('vary')).toBeNull();
       expect(response.headers.get('access-control-allow-methods')).toBeNull();
       expect(response.headers.get('access-control-allow-headers')).toBeNull();
     } finally {
@@ -42,7 +40,7 @@ describe('server cors', () => {
     }
   });
 
-  it('applies newly added allowed origins without restarting the server', async () => {
+  it('does not depend on stored origin policy updates to answer with wildcard origins', async () => {
     const testApp = await createTestApp({
       origins: ['https://app.example.com'],
     });
@@ -53,9 +51,7 @@ describe('server cors', () => {
       });
 
       expect(beforeResponse.status).toBe(200);
-      expect(
-        beforeResponse.headers.get('access-control-allow-origin'),
-      ).toBeNull();
+      expect(beforeResponse.headers.get('access-control-allow-origin')).toBe('*');
 
       testApp.db
         .prepare('INSERT INTO allowed_origins (origin) VALUES (?)')
@@ -66,16 +62,14 @@ describe('server cors', () => {
       });
 
       expect(afterResponse.status).toBe(200);
-      expect(afterResponse.headers.get('access-control-allow-origin')).toBe(
-        'https://admin.example.com',
-      );
-      expect(afterResponse.headers.get('vary')).toBe('Origin');
+      expect(afterResponse.headers.get('access-control-allow-origin')).toBe('*');
+      expect(afterResponse.headers.get('vary')).toBeNull();
     } finally {
       testApp.close();
     }
   });
 
-  it('handles global preflight for allowed origins', async () => {
+  it('handles global preflight with wildcard allow-origin headers', async () => {
     const testApp = await createTestApp({
       origins: ['https://app.example.com'],
     });
@@ -91,10 +85,8 @@ describe('server cors', () => {
       });
 
       expect(response.ok).toBe(true);
-      expect(response.headers.get('access-control-allow-origin')).toBe(
-        'https://app.example.com',
-      );
-      expect(response.headers.get('vary')).toBe('Origin');
+      expect(response.headers.get('access-control-allow-origin')).toBe('*');
+      expect(response.headers.get('vary')).toBeNull();
       expect(response.headers.get('access-control-allow-methods')).toBe(
         'GET, POST, PATCH, DELETE, OPTIONS',
       );
@@ -106,7 +98,7 @@ describe('server cors', () => {
     }
   });
 
-  it('omits allow headers for disallowed-origin preflight requests', async () => {
+  it('handles global preflight with wildcard headers for arbitrary origins', async () => {
     const testApp = await createTestApp({
       origins: ['https://app.example.com'],
     });
@@ -122,16 +114,20 @@ describe('server cors', () => {
       });
 
       expect(response.ok).toBe(true);
-      expect(response.headers.get('access-control-allow-origin')).toBeNull();
-      expect(response.headers.get('vary')).toBe('Origin');
-      expect(response.headers.get('access-control-allow-methods')).toBeNull();
-      expect(response.headers.get('access-control-allow-headers')).toBeNull();
+      expect(response.headers.get('access-control-allow-origin')).toBe('*');
+      expect(response.headers.get('vary')).toBeNull();
+      expect(response.headers.get('access-control-allow-methods')).toBe(
+        'GET, POST, PATCH, DELETE, OPTIONS',
+      );
+      expect(response.headers.get('access-control-allow-headers')).toBe(
+        'Authorization, Content-Type',
+      );
     } finally {
       testApp.close();
     }
   });
 
-  it('keeps cors headers on error responses for allowed origins', async () => {
+  it('keeps wildcard cors headers on validation error responses', async () => {
     const testApp = await createTestApp({
       origins: ['https://app.example.com'],
     });
@@ -147,16 +143,14 @@ describe('server cors', () => {
       });
 
       expect(response.status).toBe(400);
-      expect(response.headers.get('access-control-allow-origin')).toBe(
-        'https://app.example.com',
-      );
-      expect(response.headers.get('vary')).toBe('Origin');
+      expect(response.headers.get('access-control-allow-origin')).toBe('*');
+      expect(response.headers.get('vary')).toBeNull();
     } finally {
       testApp.close();
     }
   });
 
-  it('keeps cors headers on auth error responses for allowed origins', async () => {
+  it('keeps wildcard cors headers on auth error responses', async () => {
     const testApp = await createTestApp({
       origins: ['https://app.example.com'],
     });
@@ -169,10 +163,8 @@ describe('server cors', () => {
       });
 
       expect(response.status).toBe(401);
-      expect(response.headers.get('access-control-allow-origin')).toBe(
-        'https://app.example.com',
-      );
-      expect(response.headers.get('vary')).toBe('Origin');
+      expect(response.headers.get('access-control-allow-origin')).toBe('*');
+      expect(response.headers.get('vary')).toBeNull();
     } finally {
       testApp.close();
     }
@@ -227,10 +219,8 @@ describe('server cors', () => {
       });
 
       expect(response.status).toBe(404);
-      expect(response.headers.get('access-control-allow-origin')).toBe(
-        'https://app.example.com',
-      );
-      expect(response.headers.get('vary')).toBe('Origin');
+      expect(response.headers.get('access-control-allow-origin')).toBe('*');
+      expect(response.headers.get('vary')).toBeNull();
       expect(response.headers.get('access-control-allow-methods')).toBeNull();
       expect(response.headers.get('access-control-allow-headers')).toBeNull();
     } finally {
