@@ -3,7 +3,7 @@ import { runOriginAddCommand } from '../../app/commands/origin/add.js';
 import { BaseCommand, withCliErrorMetadata } from '../../oclif/base-command.js';
 
 export default class OriginAddCommand extends BaseCommand {
-  static summary = 'Add an allowed origin for an auth-mini instance';
+  static summary = 'Add a stored browser origin for WebAuthn policy';
 
   static args = {
     instance: Args.string({
@@ -15,7 +15,7 @@ export default class OriginAddCommand extends BaseCommand {
   static flags = {
     value: Flags.string({
       required: true,
-      description: 'Allowed origin value',
+      description: 'Browser page origin used for WebAuthn/browser origin checks',
     }),
   };
 
