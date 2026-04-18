@@ -1,15 +1,13 @@
 import { execFile, spawn } from 'node:child_process';
-import { readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 
 const execFileAsync = promisify(execFile);
 const repoRoot = process.cwd();
-const repoOpenApiPath = resolve(repoRoot, 'openapi.yaml');
-const distOpenApiPath = resolve(repoRoot, 'dist/openapi.yaml');
 const createdTarballs = new Set<string>();
-let openApiFilesToRestore: null | { repo: string; dist: string } = null;
+const stagedWorkspaces = new Set<string>();
 
 afterEach(async () => {
   await Promise.all(
@@ -19,21 +17,24 @@ afterEach(async () => {
     }),
   );
 
-  if (openApiFilesToRestore) {
-    await Promise.all([
-      writeFile(repoOpenApiPath, openApiFilesToRestore.repo, 'utf8'),
-      writeFile(distOpenApiPath, openApiFilesToRestore.dist, 'utf8'),
-    ]);
-    openApiFilesToRestore = null;
-  }
+  await Promise.all(
+    [...stagedWorkspaces].map(async (workspacePath) => {
+      await rm(workspacePath, { force: true, recursive: true });
+      stagedWorkspaces.delete(workspacePath);
+    }),
+  );
 });
 
 describe('openapi build artifact', () => {
   it('copies the repo spec into dist and includes it in the packed tarball', async () => {
+    const workspaceRoot = await createStagedWorkspace();
+    const repoOpenApiPath = resolve(workspaceRoot, 'openapi.yaml');
+    const distOpenApiPath = resolve(workspaceRoot, 'dist/openapi.yaml');
+
     await rm(distOpenApiPath, { force: true });
 
     await execFileAsync(resolveShellCommand('npm'), ['run', 'build'], {
-      cwd: repoRoot,
+      cwd: workspaceRoot,
     });
 
     const [repoOpenApi, distOpenApi] = await Promise.all([
@@ -46,9 +47,12 @@ describe('openapi build artifact', () => {
     const packResult = await execFileAsync(
       resolveShellCommand('npm'),
       ['pack', '--json'],
-      { cwd: repoRoot },
+      { cwd: workspaceRoot },
     );
-    const tarballPath = resolve(repoRoot, getPackedFilename(packResult.stdout));
+    const tarballPath = resolve(
+      workspaceRoot,
+      getPackedFilename(packResult.stdout),
+    );
     createdTarballs.add(tarballPath);
 
     const tarResult = await execFileAsync(resolveShellCommand('tar'), [
@@ -75,13 +79,17 @@ describe('openapi build artifact', () => {
   });
 
   it('copies the repo spec into dist when running in watch mode', async () => {
+    const workspaceRoot = await createStagedWorkspace();
+    const repoOpenApiPath = resolve(workspaceRoot, 'openapi.yaml');
+    const distOpenApiPath = resolve(workspaceRoot, 'dist/openapi.yaml');
+
     await rm(distOpenApiPath, { force: true });
 
     const child = spawn(
       resolveShellCommand('npm'),
       ['run', 'build', '--', '--watch'],
       {
-        cwd: repoRoot,
+        cwd: workspaceRoot,
         detached: true,
         stdio: 'ignore',
       },
@@ -112,14 +120,13 @@ describe('openapi build artifact', () => {
   }, 15000);
 
   it('loads the packaged dist spec from built runtime even when repo source differs', async () => {
-    await execFileAsync(resolveShellCommand('npm'), ['run', 'build'], {
-      cwd: repoRoot,
-    });
+    const workspaceRoot = await createStagedWorkspace();
+    const repoOpenApiPath = resolve(workspaceRoot, 'openapi.yaml');
+    const distOpenApiPath = resolve(workspaceRoot, 'dist/openapi.yaml');
 
-    openApiFilesToRestore = {
-      repo: await readFile(repoOpenApiPath, 'utf8'),
-      dist: await readFile(distOpenApiPath, 'utf8'),
-    };
+    await execFileAsync(resolveShellCommand('npm'), ['run', 'build'], {
+      cwd: workspaceRoot,
+    });
 
     await Promise.all([
       writeFile(
@@ -136,7 +143,7 @@ describe('openapi build artifact', () => {
 
     const script = [
       "import { pathToFileURL } from 'node:url';",
-      `const moduleUrl = pathToFileURL(${JSON.stringify(resolve(repoRoot, 'dist/shared/openapi.js'))}).href;`,
+      `const moduleUrl = pathToFileURL(${JSON.stringify(resolve(workspaceRoot, 'dist/shared/openapi.js'))}).href;`,
       'const { loadOpenApiDocument } = await import(moduleUrl);',
       'const document = await loadOpenApiDocument();',
       'process.stdout.write(JSON.stringify(document));',
@@ -146,7 +153,7 @@ describe('openapi build artifact', () => {
       process.execPath,
       ['--input-type=module', '--eval', script],
       {
-        cwd: repoRoot,
+        cwd: workspaceRoot,
       },
     );
     const document = JSON.parse(result.stdout) as {
@@ -211,6 +218,51 @@ function getPackedFilename(stdout: string): string {
   }
 
   return filename;
+}
+
+async function createStagedWorkspace(): Promise<string> {
+  const workspaceRoot = resolve(
+    repoRoot,
+    '.tmp-vitest',
+    `openapi-build-artifact-${process.pid}-${Date.now()}-${stagedWorkspaces.size}`,
+  );
+
+  await mkdir(workspaceRoot, { recursive: true });
+  await mkdir(resolve(workspaceRoot, 'dist'), { recursive: true });
+
+  const filesToCopy = [
+    'LICENSE',
+    'README.md',
+    'openapi.yaml',
+    'openapi-ts.config.ts',
+    'package-lock.json',
+    'package.json',
+    'tsconfig.build.json',
+    'tsconfig.json',
+  ];
+  const directoriesToCopy = ['scripts', 'src'];
+
+  await Promise.all([
+    ...filesToCopy.map((filePath) =>
+      cp(resolve(repoRoot, filePath), resolve(workspaceRoot, filePath)),
+    ),
+    ...directoriesToCopy.map((directoryPath) =>
+      cp(
+        resolve(repoRoot, directoryPath),
+        resolve(workspaceRoot, directoryPath),
+        {
+          recursive: true,
+        },
+      ),
+    ),
+    symlink(
+      resolve(repoRoot, 'node_modules'),
+      resolve(workspaceRoot, 'node_modules'),
+    ),
+  ]);
+
+  stagedWorkspaces.add(workspaceRoot);
+  return workspaceRoot;
 }
 
 function resolveShellCommand(command: string): string {
