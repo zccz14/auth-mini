@@ -329,6 +329,42 @@ describe('runStartCommand', () => {
     await runningServer.close();
   });
 
+  it('fails startup and closes the database when the packaged openapi file is missing', async () => {
+    const db = { close: vi.fn() };
+
+    createDatabaseClient.mockReturnValue(db);
+    bootstrapKeys.mockResolvedValue({ id: 'key-1', kid: 'kid-1' });
+    loadOpenApiDocument.mockRejectedValue(new Error('ENOENT: openapi.yaml'));
+
+    const runStartCommand = await loadRunStartCommand();
+
+    await expect(
+      runStartCommand({ dbPath: '/tmp/auth-mini.db' }),
+    ).rejects.toThrow('ENOENT: openapi.yaml');
+    expect(createServer).not.toHaveBeenCalled();
+    expect(createApp).not.toHaveBeenCalled();
+    expect(db.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails startup and closes the database when the packaged openapi yaml is invalid', async () => {
+    const db = { close: vi.fn() };
+
+    createDatabaseClient.mockReturnValue(db);
+    bootstrapKeys.mockResolvedValue({ id: 'key-1', kid: 'kid-1' });
+    loadOpenApiDocument.mockRejectedValue(
+      new TypeError('openapi.yaml must parse to an object document'),
+    );
+
+    const runStartCommand = await loadRunStartCommand();
+
+    await expect(
+      runStartCommand({ dbPath: '/tmp/auth-mini.db' }),
+    ).rejects.toThrow('openapi.yaml must parse to an object document');
+    expect(createServer).not.toHaveBeenCalled();
+    expect(createApp).not.toHaveBeenCalled();
+    expect(db.close).toHaveBeenCalledTimes(1);
+  });
+
   it('uses the highest-precedence client ip header inside handleRequest', async () => {
     const server = createMockServer();
     const db = {

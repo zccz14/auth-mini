@@ -16,7 +16,7 @@ export function parseOpenApiDocument(yamlText: string): OpenApiDocument {
   const parsed = parse(yamlText);
 
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new TypeError('Packaged openapi.yaml must parse to an object document');
+    throw new TypeError('openapi.yaml must parse to an object document');
   }
 
   return {
