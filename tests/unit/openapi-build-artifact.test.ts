@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
-import { readFile, rm } from 'node:fs/promises';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -9,6 +9,7 @@ const repoRoot = process.cwd();
 const repoOpenApiPath = resolve(repoRoot, 'openapi.yaml');
 const distOpenApiPath = resolve(repoRoot, 'dist/openapi.yaml');
 const createdTarballs = new Set<string>();
+let openApiFilesToRestore: null | { repo: string; dist: string } = null;
 
 afterEach(async () => {
   await Promise.all(
@@ -17,6 +18,14 @@ afterEach(async () => {
       createdTarballs.delete(tarballPath);
     }),
   );
+
+  if (openApiFilesToRestore) {
+    await Promise.all([
+      writeFile(repoOpenApiPath, openApiFilesToRestore.repo, 'utf8'),
+      writeFile(distOpenApiPath, openApiFilesToRestore.dist, 'utf8'),
+    ]);
+    openApiFilesToRestore = null;
+  }
 });
 
 describe('openapi build artifact', () => {
@@ -101,6 +110,53 @@ describe('openapi build artifact', () => {
       stopProcessGroup(child);
     }
   }, 15000);
+
+  it('loads the packaged dist spec from built runtime even when repo source differs', async () => {
+    await execFileAsync(resolveShellCommand('npm'), ['run', 'build'], {
+      cwd: repoRoot,
+    });
+
+    openApiFilesToRestore = {
+      repo: await readFile(repoOpenApiPath, 'utf8'),
+      dist: await readFile(distOpenApiPath, 'utf8'),
+    };
+
+    await Promise.all([
+      writeFile(
+        repoOpenApiPath,
+        'openapi: 3.1.0\ninfo:\n  title: repo\n',
+        'utf8',
+      ),
+      writeFile(
+        distOpenApiPath,
+        'openapi: 3.1.0\ninfo:\n  title: dist\n',
+        'utf8',
+      ),
+    ]);
+
+    const script = [
+      "import { pathToFileURL } from 'node:url';",
+      `const moduleUrl = pathToFileURL(${JSON.stringify(resolve(repoRoot, 'dist/shared/openapi.js'))}).href;`,
+      'const { loadOpenApiDocument } = await import(moduleUrl);',
+      'const document = await loadOpenApiDocument();',
+      'process.stdout.write(JSON.stringify(document));',
+    ].join(' ');
+
+    const result = await execFileAsync(
+      process.execPath,
+      ['--input-type=module', '--eval', script],
+      {
+        cwd: repoRoot,
+      },
+    );
+    const document = JSON.parse(result.stdout) as {
+      yamlText: string;
+      jsonDocument: { info?: { title?: string } };
+    };
+
+    expect(document.yamlText).toBe('openapi: 3.1.0\ninfo:\n  title: dist\n');
+    expect(document.jsonDocument.info?.title).toBe('dist');
+  });
 });
 
 async function waitFor(check: () => Promise<boolean>, timeoutMs: number) {

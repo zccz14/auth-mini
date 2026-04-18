@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import {
   loadOpenApiDocument,
@@ -24,7 +25,13 @@ describe('parseOpenApiDocument', () => {
 
 describe('loadOpenApiDocument', () => {
   it('loads the repo openapi spec when running from source', async () => {
+    const repoOpenApi = await readFile(
+      new URL('../../openapi.yaml', import.meta.url),
+      'utf8',
+    );
+
     await expect(loadOpenApiDocument()).resolves.toMatchObject({
+      yamlText: repoOpenApi,
       jsonDocument: {
         openapi: '3.1.0',
       },

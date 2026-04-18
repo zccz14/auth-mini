@@ -1,4 +1,6 @@
 import { readFile } from 'node:fs/promises';
+import { basename, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 
 export type OpenApiDocument = {
@@ -24,27 +26,23 @@ export function parseOpenApiDocument(yamlText: string): OpenApiDocument {
 }
 
 async function readOpenApiYaml(): Promise<string> {
-  for (const candidateUrl of [
-    new URL('../../openapi.yaml', import.meta.url),
-    new URL('../openapi.yaml', import.meta.url),
-  ]) {
-    try {
-      return await readFile(candidateUrl, 'utf8');
-    } catch (error) {
-      if (!isMissingFileError(error)) {
-        throw error;
-      }
-    }
-  }
-
-  throw new Error('Could not locate openapi.yaml from source or dist runtime');
+  return readFile(resolveOpenApiUrl(), 'utf8');
 }
 
-function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
-  return (
-    !!error &&
-    typeof error === 'object' &&
-    'code' in error &&
-    error.code === 'ENOENT'
+function resolveOpenApiUrl(): URL {
+  const runtimeRoot = basename(
+    dirname(dirname(fileURLToPath(import.meta.url))),
+  );
+
+  if (runtimeRoot === 'src') {
+    return new URL('../../openapi.yaml', import.meta.url);
+  }
+
+  if (runtimeRoot === 'dist') {
+    return new URL('../openapi.yaml', import.meta.url);
+  }
+
+  throw new Error(
+    `Could not determine openapi.yaml location from runtime root: ${runtimeRoot}`,
   );
 }
