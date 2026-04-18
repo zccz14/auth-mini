@@ -535,6 +535,35 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/JwksResponse'
+  /openapi.yaml:
+    get:
+      security: []
+      tags:
+        - openapi
+      operationId: getOpenApiYaml
+      summary: Return the packaged OpenAPI YAML document
+      responses:
+        '200':
+          description: OpenAPI YAML document
+          content:
+            application/yaml:
+              schema:
+                type: string
+  /openapi.json:
+    get:
+      security: []
+      tags:
+        - openapi
+      operationId: getOpenApiJson
+      summary: Return the packaged OpenAPI document as JSON
+      responses:
+        '200':
+          description: OpenAPI JSON document
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
 components:
   securitySchemes:
     bearerAuth:
