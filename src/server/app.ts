@@ -62,6 +62,7 @@ import {
   type AppLogger,
   withErrorFields,
 } from '../shared/logger.js';
+import type { OpenApiDocument } from '../shared/openapi.js';
 import {
   requireAccessToken,
   requirePasskeyManagementAuth,
@@ -99,6 +100,7 @@ export function createApp(input: {
   getOrigins(): string[];
   issuer: string;
   logger: AppLogger;
+  openApi: OpenApiDocument;
 }) {
   const app = new Hono<{ Variables: AppVariables }>();
 
@@ -198,6 +200,18 @@ export function createApp(input: {
       logger: 'logger' in c.var ? c.var.logger : undefined,
       logUnhandled: true,
     });
+  });
+
+  app.get('/openapi.yaml', () => {
+    return new Response(input.openApi.yamlText, {
+      headers: {
+        'content-type': 'application/yaml; charset=utf-8',
+      },
+    });
+  });
+
+  app.get('/openapi.json', (c) => {
+    return c.json(input.openApi.jsonDocument);
   });
 
   app.post('/email/start', async (c) => {

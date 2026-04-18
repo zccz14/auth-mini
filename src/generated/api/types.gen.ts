@@ -724,3 +724,37 @@ export type ListJwksResponses = {
 };
 
 export type ListJwksResponse = ListJwksResponses[keyof ListJwksResponses];
+
+export type GetOpenApiYamlData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/openapi.yaml';
+};
+
+export type GetOpenApiYamlResponses = {
+    /**
+     * OpenAPI YAML document
+     */
+    200: string;
+};
+
+export type GetOpenApiYamlResponse = GetOpenApiYamlResponses[keyof GetOpenApiYamlResponses];
+
+export type GetOpenApiJsonData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/openapi.json';
+};
+
+export type GetOpenApiJsonResponses = {
+    /**
+     * OpenAPI JSON document
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type GetOpenApiJsonResponse = GetOpenApiJsonResponses[keyof GetOpenApiJsonResponses];

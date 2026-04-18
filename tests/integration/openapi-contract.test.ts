@@ -34,6 +34,8 @@ import { createTestApp } from '../helpers/app.js';
 const openApps: Array<{ close(): void }> = [];
 
 const contractOperations = [
+  { path: '/openapi.yaml', methods: ['get'] },
+  { path: '/openapi.json', methods: ['get'] },
   { path: '/email/start', methods: ['post'] },
   { path: '/email/verify', methods: ['post'] },
   { path: '/me', methods: ['get'] },
@@ -204,6 +206,30 @@ describe('openapi contract', () => {
     });
   });
 
+  it('serves the cached openapi yaml and derived json from the same source file', async () => {
+    const testApp = await createTestApp();
+    openApps.push(testApp);
+
+    const expectedYaml = await readFile(
+      new URL('../../openapi.yaml', import.meta.url),
+      'utf8',
+    );
+    const expectedJson = parse(expectedYaml);
+
+    const yamlResponse = await testApp.app.request('/openapi.yaml');
+    const yamlText = await yamlResponse.text();
+    const jsonResponse = await testApp.app.request('/openapi.json');
+
+    expect(yamlResponse.status).toBe(200);
+    expect(yamlResponse.headers.get('content-type')).toContain(
+      'application/yaml',
+    );
+    expect(yamlText).toBe(expectedYaml);
+
+    expect(jsonResponse.status).toBe(200);
+    expect(await jsonResponse.json()).toEqual(expectedJson);
+  });
+
   it('documents the expanded SessionSummary schema', async () => {
     const document = await readOpenApiContract();
 
@@ -261,6 +287,8 @@ type OpenApiOperation = {
 };
 
 const publicOperations = [
+  { path: '/openapi.yaml', method: 'get' },
+  { path: '/openapi.json', method: 'get' },
   { path: '/email/start', method: 'post' },
   { path: '/email/verify', method: 'post' },
   { path: '/session/refresh', method: 'post' },
