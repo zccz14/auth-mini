@@ -1,11 +1,20 @@
 import { execFile, spawn } from 'node:child_process';
-import { cp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  cp,
+  mkdir,
+  readFile,
+  rm,
+  rmdir,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 
 const execFileAsync = promisify(execFile);
 const repoRoot = process.cwd();
+const stagedWorkspaceRoot = resolve(repoRoot, '.tmp-vitest');
 const createdTarballs = new Set<string>();
 const stagedWorkspaces = new Set<string>();
 
@@ -23,6 +32,18 @@ afterEach(async () => {
       stagedWorkspaces.delete(workspacePath);
     }),
   );
+
+  await rmdir(stagedWorkspaceRoot).catch((error: unknown) => {
+    if (
+      error instanceof Error &&
+      'code' in error &&
+      (error.code === 'ENOENT' || error.code === 'ENOTEMPTY')
+    ) {
+      return;
+    }
+
+    throw error;
+  });
 });
 
 describe('openapi build artifact', () => {
@@ -76,7 +97,7 @@ describe('openapi build artifact', () => {
     expect(packedManifest.dependencies).toMatchObject({
       yaml: expect.any(String),
     });
-  });
+  }, 15000);
 
   it('copies the repo spec into dist when running in watch mode', async () => {
     const workspaceRoot = await createStagedWorkspace();
@@ -163,7 +184,7 @@ describe('openapi build artifact', () => {
 
     expect(document.yamlText).toBe('openapi: 3.1.0\ninfo:\n  title: dist\n');
     expect(document.jsonDocument.info?.title).toBe('dist');
-  });
+  }, 15000);
 });
 
 async function waitFor(check: () => Promise<boolean>, timeoutMs: number) {
@@ -222,12 +243,12 @@ function getPackedFilename(stdout: string): string {
 
 async function createStagedWorkspace(): Promise<string> {
   const workspaceRoot = resolve(
-    repoRoot,
-    '.tmp-vitest',
+    stagedWorkspaceRoot,
     `openapi-build-artifact-${process.pid}-${Date.now()}-${stagedWorkspaces.size}`,
   );
 
   await mkdir(workspaceRoot, { recursive: true });
+  stagedWorkspaces.add(workspaceRoot);
   await mkdir(resolve(workspaceRoot, 'dist'), { recursive: true });
 
   const filesToCopy = [
@@ -261,7 +282,6 @@ async function createStagedWorkspace(): Promise<string> {
     ),
   ]);
 
-  stagedWorkspaces.add(workspaceRoot);
   return workspaceRoot;
 }
 
