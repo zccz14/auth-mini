@@ -3,18 +3,10 @@ ARG NODE_IMAGE=node:24.14.1-trixie-slim
 FROM ${NODE_IMAGE} AS runtime
 
 # https://github.com/nodejs/docker-node/blob/main/docs/BestPractices.md#handling-kernel-signals
-ARG TINI_VERSION=v0.19.0
-ARG TARGETARCH
-ARG TINI_SHA256_AMD64=c5b0666b4cb676901f90dfcb37106783c5fe2077b04590973b885950611b30ee
-ARG TINI_SHA256_ARM64=eae1d3aa50c48fb23b8cbdf4e369d0910dfc538566bfd09df89a774aa84a48b9
-ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-static-${TARGETARCH} /tini
-RUN case "${TARGETARCH}" in \
-		amd64) tini_sha256="${TINI_SHA256_AMD64}" ;; \
-		arm64) tini_sha256="${TINI_SHA256_ARM64}" ;; \
-		*) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
-	esac \
-	&& printf '%s  %s\n' "${tini_sha256}" /tini | sha256sum -c - \
-	&& chmod a+x /tini
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends tini \
+	&& rm -rf /var/lib/apt/lists/* \
+	&& ln -sf /usr/bin/tini /tini
 ENTRYPOINT ["/tini", "--"]
 
 WORKDIR /app
