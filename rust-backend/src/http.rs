@@ -3,7 +3,9 @@ use std::net::{TcpListener, TcpStream};
 
 use crate::config::Config;
 use crate::db::initialize_database;
-use crate::email_verify::parse_email_verify_request;
+use crate::email_verify::{
+    consume_email_verify_otp, parse_email_verify_request, EmailVerifyOutcome,
+};
 use crate::openapi::read_openapi_yaml;
 
 pub fn run_server(config: Config) -> Result<(), Box<dyn std::error::Error>> {
@@ -80,16 +82,27 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
     }
 
     if request.method == "POST" && request.path == "/email/verify" {
-        return Ok(handle_email_verify(request));
+        return handle_email_verify(request, config);
     }
 
     Ok(Response::json_error(404, "not_found"))
 }
 
-fn handle_email_verify(request: &Request) -> Response {
-    match parse_email_verify_request(&request.body) {
-        Ok(_) => Response::json_error(501, "not_implemented"),
-        Err(_) => Response::json_error(400, "invalid_request"),
+fn handle_email_verify(request: &Request, config: &Config) -> io::Result<Response> {
+    let parsed = match parse_email_verify_request(&request.body) {
+        Ok(parsed) => parsed,
+        Err(_) => return Ok(Response::json_error(400, "invalid_request")),
+    };
+
+    let Some(database) = &config.database else {
+        return Ok(Response::json_error(501, "not_implemented"));
+    };
+
+    match consume_email_verify_otp(&database.db_path, &parsed)
+        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?
+    {
+        EmailVerifyOutcome::InvalidOtp => Ok(Response::json_error(401, "invalid_email_otp")),
+        EmailVerifyOutcome::OtpConsumed => Ok(Response::json_error(501, "not_implemented")),
     }
 }
 
@@ -144,6 +157,7 @@ impl Response {
 fn reason_phrase(status: u16) -> &'static str {
     match status {
         200 => "OK",
+        401 => "Unauthorized",
         404 => "Not Found",
         501 => "Not Implemented",
         _ => "Internal Server Error",
@@ -153,6 +167,8 @@ fn reason_phrase(status: u16) -> &'static str {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+
+    use rusqlite::Connection;
 
     use super::*;
 
@@ -238,6 +254,97 @@ mod tests {
     }
 
     #[test]
+    fn consumes_valid_email_verify_otp_before_session_logic_is_migrated() {
+        let db_path = test_db_path("http-consumes-email-otp");
+        let connection = Connection::open(&db_path).expect("database opens");
+        connection
+            .execute_batch(
+                "CREATE TABLE email_otps (
+                    email TEXT PRIMARY KEY,
+                    code_hash TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    consumed_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );",
+            )
+            .expect("email_otps table exists");
+        connection
+            .execute(
+                "INSERT INTO email_otps (email, code_hash, expires_at) VALUES (?1, ?2, ?3)",
+                (
+                    "user@example.com",
+                    "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92",
+                    "9999-01-01T00:00:00.000Z",
+                ),
+            )
+            .expect("email otp inserted");
+        drop(connection);
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/email/verify".to_string(),
+                body: r#"{"email":"user@example.com","code":"123456"}"#.to_string(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path: db_path.clone(),
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("email verify response builds");
+
+        let connection = Connection::open(db_path).expect("database opens");
+        let consumed_at: Option<String> = connection
+            .query_row(
+                "SELECT consumed_at FROM email_otps WHERE email = ?1",
+                ["user@example.com"],
+                |row| row.get(0),
+            )
+            .expect("consumed_at reads");
+
+        assert_eq!(response, Response::json_error(501, "not_implemented"));
+        assert!(consumed_at.is_some());
+    }
+
+    #[test]
+    fn rejects_invalid_email_verify_otp_over_http_boundary() {
+        let db_path = test_db_path("http-rejects-email-otp");
+        let connection = Connection::open(&db_path).expect("database opens");
+        connection
+            .execute_batch(
+                "CREATE TABLE email_otps (
+                    email TEXT PRIMARY KEY,
+                    code_hash TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    consumed_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );",
+            )
+            .expect("email_otps table exists");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/email/verify".to_string(),
+                body: r#"{"email":"missing@example.com","code":"123456"}"#.to_string(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path,
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("email verify response builds");
+
+        assert_eq!(response, Response::json_error(401, "invalid_email_otp"));
+    }
+
+    #[test]
     fn rejects_invalid_email_verify_request_over_http_boundary() {
         let response = route_request(
             &Request {
@@ -260,5 +367,12 @@ mod tests {
         assert!(text.starts_with("HTTP/1.1 200 OK\r\n"));
         assert!(text.contains("content-length: 2\r\n"));
         assert!(text.ends_with("\r\n\r\nok"));
+    }
+
+    fn test_db_path(name: &str) -> PathBuf {
+        let directory = PathBuf::from("target/test-dbs");
+        std::fs::create_dir_all(&directory).expect("test db directory exists");
+
+        directory.join(format!("{name}-{}.sqlite", std::process::id()))
     }
 }
