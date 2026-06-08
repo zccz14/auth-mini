@@ -16,19 +16,23 @@
 - `cargo build --manifest-path rust-backend/Cargo.toml`
 - `npm run typecheck`
 
-## 阶段 2：数据库只读与 schema 校验
+## 阶段 2：数据库初始化与 schema 校验
 
 实现内容：
 
 - 在 Rust 中接入 SQLite。
-- 复用 `sql/schema.sql` 的 schema 合同。
-- 迁移只读查询：用户、会话、凭据、JWKS。
-- 增加数据库 fixture 测试，确保 Rust 查询结果与现有 TypeScript 语义一致。
+- 新增显式 `--db` 与 `--schema` 参数；提供 `--db` 时启动前执行数据库初始化。
+- 复用 `sql/schema.sql` 的 schema 合同，不新增或修改 schema。
+- 校验后续认证迁移所需核心表和列：用户、会话、JWKS、allowed origins、WebAuthn 凭据、Ed25519 凭据。
+- 增加 Rust 测试，覆盖数据库参数解析、schema 初始化、缺失 schema 拒绝。
+- 不迁移 TypeScript 的旧数据库兼容修复路径；该兼容逻辑后续如需迁移，必须明确旧版本依赖和删除条件。
 
 验证命令：
 
-- Rust 数据库单元测试。
-- 现有 TypeScript 数据库相关测试。
+- `cargo fmt --manifest-path rust-backend/Cargo.toml --check`
+- `cargo test --manifest-path rust-backend/Cargo.toml`
+- `cargo build --manifest-path rust-backend/Cargo.toml`
+- `npm run typecheck`
 
 ## 阶段 3：认证 API 迁移
 
@@ -63,4 +67,4 @@
 
 ## 当前 PR 范围
 
-本 PR 只执行阶段 1。阶段 2 到阶段 4 需要后续 PR，避免在同一变更中同时引入数据库驱动、认证密码学和部署入口切换造成不可审查风险。
+本 PR 执行阶段 2 的最小数据库初始化与 schema 校验切片。阶段 3 到阶段 4 需要后续 PR，避免在同一变更中同时引入认证密码学、公开 API 行为和部署入口切换造成不可审查风险。
