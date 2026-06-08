@@ -73,7 +73,23 @@
 - `cargo build --manifest-path rust-backend/Cargo.toml`
 - `npm run typecheck`
 
-## 阶段 5：生产入口切换
+## 阶段 5：邮件验证用户记录切片
+
+实现内容：
+
+- 在 Rust `POST /email/verify` 成功消费 OTP 后，迁移 TypeScript `getUserByEmail`、`createUser`、`markUserEmailVerified` 对应的最小数据库行为。
+- 首次 email 创建用户并标记 `email_verified_at`；已有未验证用户写入验证时间；已有已验证用户不重复创建。
+- 成功处理用户后仍返回 `501 not_implemented`，因为 session 创建和 token 签发未迁移。
+- 不切换 TypeScript 生产入口，不迁移 `/email/start`、SMTP、JWT/JWKS、session token 签发、WebAuthn、Ed25519 或 SDK。
+
+验证命令：
+
+- `cargo fmt --manifest-path rust-backend/Cargo.toml --check`
+- `cargo test --manifest-path rust-backend/Cargo.toml`
+- `cargo build --manifest-path rust-backend/Cargo.toml`
+- `npm run typecheck`
+
+## 阶段 6：生产入口切换
 
 实现内容：
 
@@ -91,4 +107,4 @@
 
 ## 当前 PR 范围
 
-本 PR 执行阶段 4 的最小认证数据库切片：Rust 后端在配置数据库时为 `POST /email/verify` 新增 OTP 查询、校验和消费，OTP 无效返回 `401 invalid_email_otp`，OTP 成功消费后仍返回 `501 not_implemented`。完整邮件 OTP 登录、用户创建、JWT/JWKS、session token 签发、WebAuthn、Ed25519 与生产入口切换需要后续 PR，避免在同一变更中同时引入认证密码学、公开 API 行为和部署入口切换造成不可审查风险。
+本 PR 执行阶段 5 的最小认证数据库切片：Rust 后端在配置数据库时为 `POST /email/verify` 成功 OTP 消费后新增用户查询/创建与邮箱验证标记。OTP 无效仍返回 `401 invalid_email_otp`，成功处理用户后仍返回 `501 not_implemented`。完整邮件 OTP 登录、JWT/JWKS、session token 签发、WebAuthn、Ed25519 与生产入口切换需要后续 PR，避免在同一变更中同时引入认证密码学、公开 API 行为和部署入口切换造成不可审查风险。
