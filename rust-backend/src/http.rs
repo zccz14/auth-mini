@@ -265,6 +265,12 @@ mod tests {
                     expires_at TEXT NOT NULL,
                     consumed_at TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE users (
+                    id TEXT PRIMARY KEY,
+                    email TEXT UNIQUE NOT NULL,
+                    email_verified_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );",
             )
             .expect("email_otps table exists");
@@ -303,9 +309,17 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("consumed_at reads");
+        let user_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM users WHERE email = ?1 AND email_verified_at IS NOT NULL",
+                ["user@example.com"],
+                |row| row.get(0),
+            )
+            .expect("user count reads");
 
         assert_eq!(response, Response::json_error(501, "not_implemented"));
         assert!(consumed_at.is_some());
+        assert_eq!(user_count, 1);
     }
 
     #[test]
@@ -319,6 +333,12 @@ mod tests {
                     code_hash TEXT NOT NULL,
                     expires_at TEXT NOT NULL,
                     consumed_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE users (
+                    id TEXT PRIMARY KEY,
+                    email TEXT UNIQUE NOT NULL,
+                    email_verified_at TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );",
             )
