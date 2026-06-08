@@ -1,9 +1,10 @@
 use std::fs;
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
+use serde::Deserialize;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
@@ -233,6 +234,7 @@ fn read_request(stream: &mut TcpStream) -> io::Result<Request> {
     let mut reader = BufReader::new(stream);
     let mut request_line = String::new();
     reader.read_line(&mut request_line)?;
+    let mut content_length = 0;
 
     loop {
         let mut line = String::new();
@@ -240,13 +242,27 @@ fn read_request(stream: &mut TcpStream) -> io::Result<Request> {
         if line == "\r\n" || line == "\n" || line.is_empty() {
             break;
         }
+
+        if let Some((name, value)) = line.split_once(':') {
+            if name.eq_ignore_ascii_case("content-length") {
+                content_length = value.trim().parse().map_err(|_| {
+                    io::Error::new(io::ErrorKind::InvalidInput, "invalid content-length")
+                })?;
+            }
+        }
     }
 
     let mut parts = request_line.split_whitespace();
     let method = parts.next().unwrap_or_default().to_string();
     let path = parts.next().unwrap_or_default().to_string();
+    let mut body = vec![0; content_length];
+    reader.read_exact(&mut body)?;
 
-    Ok(Request { method, path })
+    Ok(Request {
+        method,
+        path,
+        body: String::from_utf8_lossy(&body).into_owned(),
+    })
 }
 
 fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
@@ -263,13 +279,55 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
         return Ok(Response::json_error(501, "not_implemented"));
     }
 
+    if request.method == "POST" && request.path == "/email/verify" {
+        return Ok(handle_email_verify(request));
+    }
+
     Ok(Response::json_error(404, "not_found"))
+}
+
+fn handle_email_verify(request: &Request) -> Response {
+    match parse_email_verify_request(&request.body) {
+        Ok(_) => Response::json_error(501, "not_implemented"),
+        Err(_) => Response::json_error(400, "invalid_request"),
+    }
+}
+
+fn parse_email_verify_request(body: &str) -> Result<EmailVerifyRequest, serde_json::Error> {
+    let request: EmailVerifyRequest = serde_json::from_str(body)?;
+
+    if is_email_address(&request.email) && is_six_digit_code(&request.code) {
+        return Ok(request);
+    }
+
+    Err(serde_json::Error::io(io::Error::new(
+        io::ErrorKind::InvalidInput,
+        "invalid email verify request",
+    )))
+}
+
+fn is_email_address(value: &str) -> bool {
+    value
+        .split_once('@')
+        .is_some_and(|(local, domain)| !local.is_empty() && !domain.is_empty())
+}
+
+fn is_six_digit_code(value: &str) -> bool {
+    value.len() == 6 && value.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 #[derive(Debug, PartialEq, Eq)]
 struct Request {
     method: String,
     path: String,
+    body: String,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct EmailVerifyRequest {
+    email: String,
+    code: String,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -394,6 +452,7 @@ mod tests {
             &Request {
                 method: "GET".to_string(),
                 path: "/healthz".to_string(),
+                body: String::new(),
             },
             &Config::default(),
         )
@@ -412,6 +471,7 @@ mod tests {
             &Request {
                 method: "GET".to_string(),
                 path: "/openapi.yaml".to_string(),
+                body: String::new(),
             },
             &config,
         )
@@ -428,6 +488,7 @@ mod tests {
             &Request {
                 method: "GET".to_string(),
                 path: "/openapi.json".to_string(),
+                body: String::new(),
             },
             &Config::default(),
         )
@@ -442,12 +503,58 @@ mod tests {
             &Request {
                 method: "POST".to_string(),
                 path: "/email/start".to_string(),
+                body: String::new(),
             },
             &Config::default(),
         )
         .expect("not found response builds");
 
         assert_eq!(response, Response::json_error(404, "not_found"));
+    }
+
+    #[test]
+    fn accepts_email_verify_request_contract_before_business_logic_is_migrated() {
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/email/verify".to_string(),
+                body: r#"{"email":"user@example.com","code":"123456"}"#.to_string(),
+            },
+            &Config::default(),
+        )
+        .expect("email verify response builds");
+
+        assert_eq!(response, Response::json_error(501, "not_implemented"));
+    }
+
+    #[test]
+    fn rejects_invalid_email_verify_request_shape() {
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/email/verify".to_string(),
+                body: r#"{"email":"user@example.com","code":"12345"}"#.to_string(),
+            },
+            &Config::default(),
+        )
+        .expect("email verify response builds");
+
+        assert_eq!(response, Response::json_error(400, "invalid_request"));
+    }
+
+    #[test]
+    fn rejects_unknown_email_verify_request_fields() {
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/email/verify".to_string(),
+                body: r#"{"email":"user@example.com","code":"123456","extra":true}"#.to_string(),
+            },
+            &Config::default(),
+        )
+        .expect("email verify response builds");
+
+        assert_eq!(response, Response::json_error(400, "invalid_request"));
     }
 
     #[test]

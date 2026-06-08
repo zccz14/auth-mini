@@ -44,10 +44,18 @@
 - 迁移 WebAuthn 注册、登录和凭据管理。
 - 每个路径迁移时对照 `openapi.yaml` 增加 API 测试。
 
+当前 PR 的阶段 3 最小切片：
+
+- 先迁移 `POST /email/verify` 的 Rust 请求边界，而不是完整邮件 OTP 登录链路。
+- HTTP 请求读取 body，Rust 端按 OpenAPI 合同校验 JSON 对象、`email` 字段、6 位数字 `code` 字段，并拒绝额外字段。
+- 有效请求返回 `501 not_implemented`，表示 OTP 消费、用户创建、session 创建和 token 签发尚未迁移；无效请求返回 `400 invalid_request`。
+- 不切换 TypeScript 生产入口，不新增兼容路径，不迁移 SMTP、JWT/JWKS、WebAuthn、Ed25519 或 SDK。
+
 验证命令：
 
 - Rust API 集成测试。
 - 现有 SDK 测试和 API drift 检查。
+- 当前 PR 最小验证：`cargo fmt --manifest-path rust-backend/Cargo.toml --check`、`cargo test --manifest-path rust-backend/Cargo.toml`、`cargo build --manifest-path rust-backend/Cargo.toml`、`npm run typecheck`。
 
 ## 阶段 4：生产入口切换
 
@@ -67,4 +75,4 @@
 
 ## 当前 PR 范围
 
-本 PR 执行阶段 2 的最小数据库初始化与 schema 校验切片。阶段 3 到阶段 4 需要后续 PR，避免在同一变更中同时引入认证密码学、公开 API 行为和部署入口切换造成不可审查风险。
+本 PR 执行阶段 3 的最小认证 API 请求边界切片：Rust 后端新增 `POST /email/verify` 请求解析与校验，并保持业务逻辑为显式 `501 not_implemented`。完整邮件 OTP 登录、JWT/JWKS、session token 签发、WebAuthn、Ed25519 与生产入口切换需要后续 PR，避免在同一变更中同时引入认证密码学、公开 API 行为和部署入口切换造成不可审查风险。
