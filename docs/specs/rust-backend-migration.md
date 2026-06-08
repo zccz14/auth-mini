@@ -44,6 +44,14 @@
 - schema 校验覆盖 `users`、`sessions`、`jwks_keys`、`allowed_origins`、`webauthn_credentials`、`ed25519_credentials` 的后续迁移所需列。
 - schema 缺失时启动失败；不得静默降级为无数据库模式。
 
+第三阶段当前切片必须新增下列可验证行为：
+
+- Rust 后端开始覆盖公开认证端点 `POST /email/verify` 的请求边界。
+- `POST /email/verify` 必须读取 HTTP body，按 OpenAPI 合同解析 JSON 对象：只接受 `email` 与 `code` 字段，`email` 必须是非空本地部分和非空域名部分组成的邮箱字符串，`code` 必须是 6 位数字字符串。
+- 请求 JSON 无效、字段缺失、字段类型错误、存在额外字段或字段值不满足上述规则时，返回 `400` 与 `{"error":"invalid_request"}`。
+- 请求合同有效但 OTP 消费、用户创建、会话创建和 token 签发尚未迁移时，返回 `501` 与 `{"error":"not_implemented"}`，明确该 Rust 端点当前只覆盖请求边界。
+- 第三阶段当前切片不得切换 TypeScript 生产入口，不得迁移 SMTP 发送、OTP 存取、JWT/JWKS 或 session token 签发。
+
 ## API 兼容范围
 
 第一阶段不替换生产 API。兼容范围限定为新增 Rust 切片自身的基础端点，不声明覆盖现有认证 API。
@@ -57,6 +65,7 @@
 - 第一阶段 Rust 切片不写入数据库，不执行迁移，不改变 schema。
 - 第二阶段 Rust 切片只执行 `sql/schema.sql` 中的 `CREATE TABLE IF NOT EXISTS`，不新增 schema，不执行 TypeScript 中已有的旧库修复逻辑。
 - 后续 Rust 数据库访问必须复用现有表名、列名、约束和时间/令牌语义；需要迁移兼容逻辑时必须有明确旧版本依赖和删除条件。
+- 第三阶段当前切片不写入数据库；后续迁移 `POST /email/verify` 业务逻辑时必须继续复用现有 `email_otps`、`users`、`sessions` 与 `jwks_keys` 语义。
 
 ## 配置边界
 
@@ -74,6 +83,7 @@
 
 - 不在第一阶段或第二阶段重写邮件发送、JWT/JWKS、WebAuthn、Ed25519 或 SDK。
 - 不在第二阶段迁移 TypeScript 的旧数据库兼容修复路径。
+- 不在第三阶段当前切片迁移邮件发送、OTP 消费、用户创建、session token 签发、WebAuthn、Ed25519 或 SDK。
 - 不引入新的数据库、缓存、队列或配置格式。
 - 不改变现有 OpenAPI 合同。
 - 不增加 TypeScript 与 Rust 之间的代理兼容层。
@@ -86,4 +96,5 @@
 - `cargo build --manifest-path rust-backend/Cargo.toml` 通过。
 - `npm run typecheck` 通过，证明现有 TypeScript 入口未被破坏。
 - 第二阶段 Rust 测试覆盖数据库配置解析、schema 初始化和缺失 schema 拒绝。
+- 第三阶段当前切片 Rust 测试覆盖 `POST /email/verify` 的有效请求、无效字段值和额外字段拒绝。
 - 代码提交在对应迁移分支并通过 PR 合入流程推进。
