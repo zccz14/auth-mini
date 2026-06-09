@@ -19,6 +19,7 @@ pub(crate) struct RefreshRequest {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum SessionError {
     InvalidAccessToken,
+    InsufficientAuthenticationMethod,
     SessionInvalidated,
     SessionSuperseded,
     PeerLogoutSelfTarget,
@@ -35,6 +36,7 @@ pub(crate) struct TokenPair {
 pub(crate) struct AuthContext {
     pub(crate) user_id: String,
     pub(crate) session_id: String,
+    pub(crate) auth_method: String,
 }
 
 pub(crate) fn parse_refresh_request(body: &str) -> Result<RefreshRequest, serde_json::Error> {
@@ -164,7 +166,16 @@ pub(crate) fn authenticate_access_token(
     Ok(AuthContext {
         user_id: user_id.to_string(),
         session_id: session_id.to_string(),
+        auth_method: session.auth_method,
     })
+}
+
+pub(crate) fn require_passkey_management_auth(auth: &AuthContext) -> Result<(), SessionError> {
+    if auth.auth_method == "email_otp" || auth.auth_method == "webauthn" {
+        return Ok(());
+    }
+
+    Err(SessionError::InsufficientAuthenticationMethod)
 }
 
 pub(crate) fn logout_session(connection: &Connection, session_id: &str) -> rusqlite::Result<()> {
@@ -421,6 +432,7 @@ mod tests {
             &AuthContext {
                 user_id: "user-1".to_string(),
                 session_id: "session-1".to_string(),
+                auth_method: "email_otp".to_string(),
             },
         )
         .expect("current user response builds");
