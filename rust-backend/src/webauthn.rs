@@ -18,6 +18,17 @@ pub(crate) enum RegisterOptionsError {
     InvalidAccessToken,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum AuthenticationOptionsError {
+    InvalidRequest,
+    InvalidWebauthnAuthentication,
+}
+
+struct ResolvedOptionsInput {
+    origin: String,
+    rp_id: String,
+}
+
 pub(crate) fn parse_options_request(body: &str) -> Result<OptionsRequest, serde_json::Error> {
     let request: OptionsRequest = serde_json::from_str(body)?;
 
@@ -38,25 +49,8 @@ pub(crate) fn register_options(
     origin: &str,
 ) -> Result<Value, RegisterOptionsError> {
     let email = user_email(connection, user_id)?;
-    let origin = normalize_allowed_origin(origin)
+    let resolved = resolve_options_input(connection, request, origin)
         .map_err(|_| RegisterOptionsError::InvalidWebauthnRegistration)?;
-    let origin_hostname =
-        origin_hostname(&origin).ok_or(RegisterOptionsError::InvalidWebauthnRegistration)?;
-    let rp_id = normalize_rp_id(&request.rp_id)
-        .map_err(|_| RegisterOptionsError::InvalidWebauthnRegistration)?;
-    let allowed_origins = list_allowed_origins(connection)?;
-
-    if !allowed_origins.iter().any(|allowed| allowed == &origin) {
-        return Err(RegisterOptionsError::InvalidWebauthnRegistration);
-    }
-
-    if !is_rp_id_allowed_for_origin(&origin_hostname, &rp_id) {
-        return Err(RegisterOptionsError::InvalidWebauthnRegistration);
-    }
-
-    if !rp_id_covered_by_allowed_origins(&allowed_origins, &rp_id) {
-        return Err(RegisterOptionsError::InvalidWebauthnRegistration);
-    }
 
     let request_id = random_uuid(connection).map_err(|_| RegisterOptionsError::InvalidRequest)?;
     let challenge =
@@ -79,7 +73,14 @@ pub(crate) fn register_options(
             "INSERT INTO webauthn_challenges
              (request_id, type, challenge, user_id, expires_at, rp_id, origin)
              VALUES (?1, 'register', ?2, ?3, ?4, ?5, ?6)",
-            params![request_id, challenge, user_id, expires_at, rp_id, origin],
+            params![
+                request_id,
+                challenge,
+                user_id,
+                expires_at,
+                resolved.rp_id,
+                resolved.origin
+            ],
         )
         .map_err(|_| RegisterOptionsError::InvalidRequest)?;
 
@@ -87,7 +88,7 @@ pub(crate) fn register_options(
         "request_id": request_id,
         "publicKey": {
             "challenge": challenge,
-            "rp": { "name": "auth-mini", "id": rp_id },
+            "rp": { "name": "auth-mini", "id": resolved.rp_id },
             "user": { "id": user_handle, "name": email, "displayName": email },
             "pubKeyCredParams": [
                 { "type": "public-key", "alg": -7 },
@@ -98,6 +99,46 @@ pub(crate) fn register_options(
                 "residentKey": "required",
                 "userVerification": "preferred"
             }
+        }
+    }))
+}
+
+pub(crate) fn authentication_options(
+    connection: &Connection,
+    request: &OptionsRequest,
+    origin: &str,
+) -> Result<Value, AuthenticationOptionsError> {
+    let resolved = resolve_options_input(connection, request, origin)
+        .map_err(|_| AuthenticationOptionsError::InvalidWebauthnAuthentication)?;
+    let request_id =
+        random_uuid(connection).map_err(|_| AuthenticationOptionsError::InvalidRequest)?;
+    let challenge =
+        random_base64url(connection).map_err(|_| AuthenticationOptionsError::InvalidRequest)?;
+    let expires_at = (Utc::now() + Duration::seconds(WEBAUTHN_CHALLENGE_SECONDS))
+        .to_rfc3339_opts(SecondsFormat::Millis, true);
+
+    connection
+        .execute(
+            "INSERT INTO webauthn_challenges
+             (request_id, type, challenge, user_id, expires_at, rp_id, origin)
+             VALUES (?1, 'authenticate', ?2, NULL, ?3, ?4, ?5)",
+            params![
+                request_id,
+                challenge,
+                expires_at,
+                resolved.rp_id,
+                resolved.origin
+            ],
+        )
+        .map_err(|_| AuthenticationOptionsError::InvalidRequest)?;
+
+    Ok(json!({
+        "request_id": request_id,
+        "publicKey": {
+            "challenge": challenge,
+            "rpId": resolved.rp_id,
+            "timeout": 300000,
+            "userVerification": "preferred"
         }
     }))
 }
@@ -145,6 +186,31 @@ fn list_allowed_origins(connection: &Connection) -> Result<Vec<String>, Register
     }
 
     Ok(origins)
+}
+
+fn resolve_options_input(
+    connection: &Connection,
+    request: &OptionsRequest,
+    origin: &str,
+) -> Result<ResolvedOptionsInput, ()> {
+    let origin = normalize_allowed_origin(origin)?;
+    let origin_hostname = origin_hostname(&origin).ok_or(())?;
+    let rp_id = normalize_rp_id(&request.rp_id)?;
+    let allowed_origins = list_allowed_origins(connection).map_err(|_| ())?;
+
+    if !allowed_origins.iter().any(|allowed| allowed == &origin) {
+        return Err(());
+    }
+
+    if !is_rp_id_allowed_for_origin(&origin_hostname, &rp_id) {
+        return Err(());
+    }
+
+    if !rp_id_covered_by_allowed_origins(&allowed_origins, &rp_id) {
+        return Err(());
+    }
+
+    Ok(ResolvedOptionsInput { origin, rp_id })
 }
 
 fn normalize_allowed_origin(input: &str) -> Result<String, ()> {
@@ -464,6 +530,69 @@ mod tests {
             .expect_err("sibling rp id is rejected");
 
         assert_eq!(error, RegisterOptionsError::InvalidWebauthnRegistration);
+    }
+
+    #[test]
+    fn creates_authentication_options_and_stores_anonymous_challenge() {
+        let connection = Connection::open_in_memory().expect("database opens");
+        create_register_options_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO allowed_origins (origin) VALUES (?1)",
+                ["https://app.example.com"],
+            )
+            .expect("origin inserts");
+        let request = OptionsRequest {
+            rp_id: "EXAMPLE.COM.".to_string(),
+        };
+
+        let body = authentication_options(&connection, &request, "https://app.example.com")
+            .expect("options generate");
+        let request_id = body["request_id"].as_str().expect("request id");
+        let stored: (String, Option<String>, String, String) = connection
+            .query_row(
+                "SELECT type, user_id, rp_id, origin FROM webauthn_challenges WHERE request_id = ?1",
+                [request_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("challenge reads");
+
+        assert_eq!(body["publicKey"]["rpId"], "example.com");
+        assert_eq!(body["publicKey"]["timeout"], 300000);
+        assert_eq!(body["publicKey"]["userVerification"], "preferred");
+        assert!(body["publicKey"].get("allowCredentials").is_none());
+        assert_eq!(
+            stored,
+            (
+                "authenticate".to_string(),
+                None,
+                "example.com".to_string(),
+                "https://app.example.com".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn rejects_authentication_options_for_unallowlisted_request_origin() {
+        let connection = Connection::open_in_memory().expect("database opens");
+        create_register_options_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO allowed_origins (origin) VALUES (?1)",
+                ["https://app.example.com"],
+            )
+            .expect("origin inserts");
+        let request = OptionsRequest {
+            rp_id: "example.com".to_string(),
+        };
+
+        let error = authentication_options(&connection, &request, "https://evil.example.com")
+            .expect_err("unallowlisted request origin is rejected");
+
+        assert_eq!(
+            error,
+            AuthenticationOptionsError::InvalidWebauthnAuthentication
+        );
     }
 
     fn create_register_options_schema(connection: &Connection) {

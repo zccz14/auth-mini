@@ -107,7 +107,26 @@
 
 ## 当前 PR 范围
 
-本轮继续按 WebAuthn 迁移要求，调研后选择 WebAuthn 中下一个最小可测试闭环：迁移 `POST /webauthn/register/options`。该切片只生成 registration challenge/options 并持久化 challenge，不执行 registration verify，因此不会在 Rust 未接入可信 WebAuthn 密码学验证库时产生假成功路径。
+本轮继续按 WebAuthn 迁移要求，调研后选择 WebAuthn 中下一个最小可测试闭环：迁移 `POST /webauthn/authenticate/options`。该切片只生成 authentication challenge/options 并持久化 challenge，不执行 authentication verify，因此不会在 Rust 未接入可信 WebAuthn 密码学验证库时产生假成功路径。
+
+- Rust `POST /webauthn/authenticate/options` 不要求 bearer access token，按 OpenAPI 合同公开生成登录 challenge。
+- Rust 解析仅包含 `rp_id` 的请求 body；无效 JSON、缺失/空 `rp_id` 或额外字段返回 `400 invalid_request`。
+- Rust 复用 WebAuthn options 的核心 origin/rp_id 规则：请求 origin 必须在 `allowed_origins`，`rp_id` 必须是请求 origin host 本身或父域，并且被至少一个 allowlist origin 覆盖；失败返回 `400 invalid_webauthn_authentication`。
+- 成功时 Rust 生成 `request_id`、base64url challenge、authentication `publicKey` options，写入 `webauthn_challenges` 的 `authenticate` challenge，且 `user_id` 为空。
+- 不迁移 `/webauthn/authenticate/verify` 或 `/webauthn/register/verify`；这些仍依赖 TypeScript 的 `@simplewebauthn/server`。
+- 不删除 TypeScript 后端代码；未迁移的 WebAuthn verify、CLI、TLS SMTP、Ed25519 verify/authenticate 完成链路仍由 TypeScript 覆盖。
+
+验证命令：
+
+- `cargo fmt --manifest-path rust-backend/Cargo.toml --check`
+- `cargo test --manifest-path rust-backend/Cargo.toml`
+- `cargo build --manifest-path rust-backend/Cargo.toml`
+- `npm run typecheck`
+- `npm run build`
+
+## 上一轮 PR 范围
+
+上一轮继续按 WebAuthn 迁移要求，调研后选择 WebAuthn 中下一个最小可测试闭环：迁移 `POST /webauthn/register/options`。该切片只生成 registration challenge/options 并持久化 challenge，不执行 registration verify，因此不会在 Rust 未接入可信 WebAuthn 密码学验证库时产生假成功路径。
 
 - Rust `POST /webauthn/register/options` 要求 bearer access token 与 passkey-management 授权；缺失或无效 token 返回 `401 invalid_access_token`，`ed25519` session 返回 `403 insufficient_authentication_method`。
 - Rust 解析仅包含 `rp_id` 的请求 body；无效 JSON、缺失/空 `rp_id` 或额外字段返回 `400 invalid_request`。
