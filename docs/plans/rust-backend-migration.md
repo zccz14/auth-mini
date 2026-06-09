@@ -107,12 +107,13 @@
 
 ## 当前 PR 范围
 
-本轮按用户“优先 WebAuthn”要求，调研后选择 WebAuthn 中最小可测试闭环：迁移 `DELETE /webauthn/credentials/{id}` 凭据删除管理端点。该切片不涉及 WebAuthn 密码学验证，能复用 Rust 已有 access token 与 passkey-management 授权能力，避免在注册/登录 verify 尚未接入可信验证库时出现假成功路径。
+本轮继续按 WebAuthn 迁移要求，调研后选择 WebAuthn 中下一个最小可测试闭环：迁移 `POST /webauthn/register/options`。该切片只生成 registration challenge/options 并持久化 challenge，不执行 registration verify，因此不会在 Rust 未接入可信 WebAuthn 密码学验证库时产生假成功路径。
 
-- Rust `DELETE /webauthn/credentials/{id}` 要求 bearer access token，缺失或无效 token 返回 `401 invalid_access_token`。
-- Rust 复用 passkey-management 授权规则：`email_otp` 与 `webauthn` session 可管理凭据，`ed25519` session 返回 `403 insufficient_authentication_method`。
-- 删除仅按 `id + user_id` 作用于当前用户自己的 `webauthn_credentials` 行；删除成功返回 `200 {"ok":true}`，其他用户或不存在的凭据返回 `404 credential_not_found`。
-- 不迁移 `/webauthn/register/options`、`/webauthn/register/verify`、`/webauthn/authenticate/options`、`/webauthn/authenticate/verify`；这些仍依赖 TypeScript 的 `@simplewebauthn/server`。
+- Rust `POST /webauthn/register/options` 要求 bearer access token 与 passkey-management 授权；缺失或无效 token 返回 `401 invalid_access_token`，`ed25519` session 返回 `403 insufficient_authentication_method`。
+- Rust 解析仅包含 `rp_id` 的请求 body；无效 JSON、缺失/空 `rp_id` 或额外字段返回 `400 invalid_request`。
+- Rust 复用 TypeScript 的核心 origin/rp_id 规则：请求 origin 必须在 `allowed_origins`，`rp_id` 必须是请求 origin host 本身或父域，并且被至少一个 allowlist origin 覆盖；失败返回 `400 invalid_webauthn_registration`。
+- 成功时 Rust 生成 `request_id`、base64url challenge、registration `publicKey` options，写入 `webauthn_challenges`，并消费当前用户未使用的旧 register challenge。
+- 不迁移 `/webauthn/register/verify`、`/webauthn/authenticate/options`、`/webauthn/authenticate/verify`；这些仍依赖 TypeScript 的 `@simplewebauthn/server`。
 - 不删除 TypeScript 后端代码；未迁移的 WebAuthn 注册/登录、CLI、TLS SMTP、Ed25519 verify/authenticate 完成链路仍由 TypeScript 覆盖。
 
 验证命令：
