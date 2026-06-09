@@ -42,6 +42,31 @@ fn assert_required_schema(connection: &Connection) -> rusqlite::Result<()> {
             "jwks_keys",
             &["id", "kid", "alg", "public_jwk", "private_jwk"][..],
         ),
+        (
+            "email_otps",
+            &[
+                "email",
+                "code_hash",
+                "expires_at",
+                "consumed_at",
+                "created_at",
+            ][..],
+        ),
+        (
+            "smtp_configs",
+            &[
+                "id",
+                "host",
+                "port",
+                "username",
+                "password",
+                "from_email",
+                "from_name",
+                "secure",
+                "is_active",
+                "weight",
+            ][..],
+        ),
         ("allowed_origins", &["id", "origin", "created_at"][..]),
         (
             "webauthn_credentials",
