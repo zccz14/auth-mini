@@ -107,7 +107,15 @@
 
 ## 当前 PR 范围
 
-本 PR 继续阶段 3/5 之后的最大可验证切片：
+上一轮 PR 已完成阶段 3/5 之后的会话、JWKS 公开结构、CORS 与 OpenAPI 端点基础行为。本 PR 选择剩余范围中最小且可完整闭环的 OpenAPI JSON YAML-to-JSON 切片：
+
+- Rust `GET /openapi.json` 不再返回占位 JSON，而是读取配置的 `openapi.yaml` 并解析为 JSON 响应。
+- Rust OpenAPI 解析沿用 TypeScript `parseOpenApiDocument` 的核心合同：有效 YAML 必须解析为对象文档；标量、数组或空文档等非对象结果视为无效 OpenAPI 文档。
+- `GET /openapi.yaml` 和 `GET /openapi.json` 共享同一个配置文件来源，避免 JSON 与 YAML 合同漂移。
+- 不迁移 JWKS/Ed25519 真实签名验签、WebAuthn、真实 SMTP、CLI 命令、Docker/package scripts 或生产入口切换。
+- 不删除 TypeScript 后端代码；OpenAPI SDK 生成与未迁移后端范围仍由 TypeScript 覆盖。
+
+上一轮 PR 的阶段 3/5 之后可验证切片：
 
 - Rust `POST /email/verify` 在 OTP 成功消费、用户创建/验证后创建 `email_otp` session，并返回 `session_id`、JWT 形态 `access_token`、`Bearer`、`expires_in: 900`、`refresh_token`。
 - Rust 迁移 session 公共 API：`POST /session/refresh`、`POST /session/logout`、`POST /session/:session_id/logout`、`GET /me`。

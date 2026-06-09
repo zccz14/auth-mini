@@ -7,7 +7,7 @@ use crate::email_verify::{
     consume_email_verify_otp, parse_email_verify_request, EmailVerifyOutcome,
 };
 use crate::jwks::list_public_keys;
-use crate::openapi::read_openapi_yaml;
+use crate::openapi::{read_openapi_json, read_openapi_yaml};
 use crate::session::{
     authenticate_access_token, current_user_response, logout_peer_session, logout_session,
     mint_session_tokens, parse_refresh_request, refresh_session_tokens, token_json, SessionError,
@@ -96,16 +96,8 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
     }
 
     if request.method == "GET" && request.path == "/openapi.json" {
-        return Ok(cors(
-            request,
-            Response::json_value(
-                200,
-                serde_json::json!({
-                    "openapi": "3.1.0",
-                    "info": { "title": "auth-mini HTTP API" }
-                }),
-            ),
-        ));
+        let body = read_openapi_json(&config.openapi_path)?;
+        return Ok(cors(request, Response::json_value(200, body)));
     }
 
     if request.method == "POST" && request.path == "/email/start" {
@@ -440,6 +432,10 @@ mod tests {
 
     #[test]
     fn serves_openapi_json_contract() {
+        let config = Config {
+            openapi_path: PathBuf::from("../openapi.yaml"),
+            ..Config::default()
+        };
         let response = route_request(
             &Request {
                 method: "GET".to_string(),
@@ -447,12 +443,16 @@ mod tests {
                 headers: Vec::new(),
                 body: String::new(),
             },
-            &Config::default(),
+            &config,
         )
         .expect("json response builds");
+        let document: serde_json::Value =
+            serde_json::from_str(&response.body).expect("openapi json parses");
 
         assert_eq!(response.status, 200);
-        assert!(response.body.contains("auth-mini HTTP API"));
+        assert_eq!(document["openapi"], "3.1.0");
+        assert!(document["paths"].is_object());
+        assert!(document["components"].is_object());
     }
 
     #[test]
