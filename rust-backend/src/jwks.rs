@@ -1,7 +1,7 @@
 use chrono::{Duration, Utc};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 
 const ACCESS_TOKEN_SECONDS: i64 = 900;
 
@@ -39,7 +39,7 @@ pub(crate) fn sign_access_token(
         "exp": (Utc::now() + Duration::seconds(ACCESS_TOKEN_SECONDS)).timestamp(),
     });
 
-    Ok(sign_json(&payload, &key))
+    sign_json(&payload, &key)
 }
 
 pub(crate) fn verify_access_token(connection: &Connection, token: &str) -> rusqlite::Result<Value> {
@@ -54,9 +54,7 @@ pub(crate) fn verify_access_token(connection: &Connection, token: &str) -> rusql
         .and_then(Value::as_str)
         .ok_or(rusqlite::Error::InvalidQuery)?;
     let key = key_by_kid(connection, kid)?.ok_or(rusqlite::Error::InvalidQuery)?;
-    let expected = signature_segment(segments[0], segments[1], &key.private_jwk);
-
-    if expected != segments[2] {
+    if !verify_signature_segment(segments[0], segments[1], segments[2], &key.public_jwk)? {
         return Err(rusqlite::Error::InvalidQuery);
     }
 
@@ -83,13 +81,15 @@ fn bootstrap_keys(connection: &Connection) -> rusqlite::Result<()> {
 fn insert_key_if_missing(connection: &Connection, slot: &str) -> rusqlite::Result<()> {
     let kid = random_uuid(connection)?;
     let secret = random_secret(connection)?;
+    let signing_key = signing_key_from_secret(&secret)?;
+    let public_x = encode_segment(&signing_key.verifying_key().to_bytes());
     let public_jwk = json!({
         "alg": "EdDSA",
         "crv": "Ed25519",
         "kid": kid,
         "kty": "OKP",
         "use": "sig",
-        "x": public_x(&secret),
+        "x": public_x,
     });
     let private_jwk = json!({
         "alg": "EdDSA",
@@ -97,7 +97,7 @@ fn insert_key_if_missing(connection: &Connection, slot: &str) -> rusqlite::Resul
         "kid": kid,
         "kty": "OKP",
         "use": "sig",
-        "x": public_x(&secret),
+        "x": public_x,
         "d": secret,
     });
 
@@ -111,52 +111,95 @@ fn insert_key_if_missing(connection: &Connection, slot: &str) -> rusqlite::Resul
 }
 
 #[derive(Debug, PartialEq, Eq)]
-struct SigningKey {
+struct StoredSigningKey {
     kid: String,
+    public_jwk: String,
     private_jwk: String,
 }
 
-fn current_key(connection: &Connection) -> rusqlite::Result<SigningKey> {
+fn current_key(connection: &Connection) -> rusqlite::Result<StoredSigningKey> {
     connection.query_row(
-        "SELECT kid, private_jwk FROM jwks_keys WHERE id = 'CURRENT' LIMIT 1",
+        "SELECT kid, public_jwk, private_jwk FROM jwks_keys WHERE id = 'CURRENT' LIMIT 1",
         [],
         |row| {
-            Ok(SigningKey {
+            Ok(StoredSigningKey {
                 kid: row.get(0)?,
-                private_jwk: row.get(1)?,
+                public_jwk: row.get(1)?,
+                private_jwk: row.get(2)?,
             })
         },
     )
 }
 
-fn key_by_kid(connection: &Connection, kid: &str) -> rusqlite::Result<Option<SigningKey>> {
+fn key_by_kid(connection: &Connection, kid: &str) -> rusqlite::Result<Option<StoredSigningKey>> {
     connection
         .query_row(
-            "SELECT kid, private_jwk FROM jwks_keys WHERE kid = ?1 LIMIT 1",
+            "SELECT kid, public_jwk, private_jwk FROM jwks_keys WHERE kid = ?1 LIMIT 1",
             [kid],
             |row| {
-                Ok(SigningKey {
+                Ok(StoredSigningKey {
                     kid: row.get(0)?,
-                    private_jwk: row.get(1)?,
+                    public_jwk: row.get(1)?,
+                    private_jwk: row.get(2)?,
                 })
             },
         )
         .optional()
 }
 
-fn sign_json(payload: &Value, key: &SigningKey) -> String {
+fn sign_json(payload: &Value, key: &StoredSigningKey) -> rusqlite::Result<String> {
     let header = json!({ "alg": "EdDSA", "kid": key.kid, "typ": "JWT" });
     let encoded_header = encode_segment(header.to_string().as_bytes());
     let encoded_payload = encode_segment(payload.to_string().as_bytes());
-    let signature = signature_segment(&encoded_header, &encoded_payload, &key.private_jwk);
+    let signature = signature_segment(&encoded_header, &encoded_payload, &key.private_jwk)?;
 
-    format!("{encoded_header}.{encoded_payload}.{signature}")
+    Ok(format!("{encoded_header}.{encoded_payload}.{signature}"))
 }
 
-fn signature_segment(encoded_header: &str, encoded_payload: &str, private_jwk: &str) -> String {
-    let digest =
-        Sha256::digest(format!("{encoded_header}.{encoded_payload}.{private_jwk}").as_bytes());
-    encode_segment(&digest)
+fn signature_segment(
+    encoded_header: &str,
+    encoded_payload: &str,
+    private_jwk: &str,
+) -> rusqlite::Result<String> {
+    let private_jwk = serde_json::from_str::<Value>(private_jwk).map_err(to_sql_error)?;
+    let secret = private_jwk
+        .get("d")
+        .and_then(Value::as_str)
+        .ok_or(rusqlite::Error::InvalidQuery)?;
+    let signing_key = signing_key_from_secret(secret)?;
+    let signature = signing_key.sign(format!("{encoded_header}.{encoded_payload}").as_bytes());
+
+    Ok(encode_segment(&signature.to_bytes()))
+}
+
+fn verify_signature_segment(
+    encoded_header: &str,
+    encoded_payload: &str,
+    encoded_signature: &str,
+    public_jwk: &str,
+) -> rusqlite::Result<bool> {
+    let public_jwk = serde_json::from_str::<Value>(public_jwk).map_err(to_sql_error)?;
+    let public_x = public_jwk
+        .get("x")
+        .and_then(Value::as_str)
+        .ok_or(rusqlite::Error::InvalidQuery)?;
+    let public_key = decode_segment(public_x)?;
+    let signature = decode_segment(encoded_signature)?;
+    let verifying_key = VerifyingKey::from_bytes(
+        public_key
+            .as_slice()
+            .try_into()
+            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+    )
+    .map_err(|_| rusqlite::Error::InvalidQuery)?;
+    let signature = Signature::from_slice(&signature).map_err(|_| rusqlite::Error::InvalidQuery)?;
+
+    Ok(verifying_key
+        .verify(
+            format!("{encoded_header}.{encoded_payload}").as_bytes(),
+            &signature,
+        )
+        .is_ok())
 }
 
 fn decode_json_segment(segment: &str) -> rusqlite::Result<Value> {
@@ -190,6 +233,10 @@ fn encode_segment(bytes: &[u8]) -> String {
 }
 
 fn decode_segment(segment: &str) -> rusqlite::Result<Vec<u8>> {
+    if segment.len() % 4 == 1 {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
+
     let mut values = Vec::new();
     for byte in segment.bytes() {
         values.push(match byte {
@@ -224,11 +271,6 @@ fn decode_segment(segment: &str) -> rusqlite::Result<Vec<u8>> {
     Ok(output)
 }
 
-fn public_x(secret: &str) -> String {
-    let digest = Sha256::digest(secret.as_bytes());
-    encode_segment(&digest)
-}
-
 fn random_uuid(connection: &Connection) -> rusqlite::Result<String> {
     connection.query_row(
         "SELECT lower(hex(randomblob(4))) || '-' ||
@@ -242,7 +284,20 @@ fn random_uuid(connection: &Connection) -> rusqlite::Result<String> {
 }
 
 fn random_secret(connection: &Connection) -> rusqlite::Result<String> {
-    connection.query_row("SELECT lower(hex(randomblob(32)))", [], |row| row.get(0))
+    let secret =
+        connection.query_row("SELECT randomblob(32)", [], |row| row.get::<_, Vec<u8>>(0))?;
+
+    Ok(encode_segment(&secret))
+}
+
+fn signing_key_from_secret(secret: &str) -> rusqlite::Result<SigningKey> {
+    let secret = decode_segment(secret)?;
+    let key_bytes = secret
+        .as_slice()
+        .try_into()
+        .map_err(|_| rusqlite::Error::InvalidQuery)?;
+
+    Ok(SigningKey::from_bytes(key_bytes))
 }
 
 fn to_sql_error(error: serde_json::Error) -> rusqlite::Error {
@@ -251,6 +306,8 @@ fn to_sql_error(error: serde_json::Error) -> rusqlite::Error {
 
 #[cfg(test)]
 mod tests {
+    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+
     use super::*;
 
     #[test]
@@ -277,5 +334,76 @@ mod tests {
         assert_eq!(keys.len(), 2);
         assert_eq!(keys[0].get("alg").and_then(Value::as_str), Some("EdDSA"));
         assert!(keys[0].get("d").is_none());
+    }
+
+    #[test]
+    fn signs_access_token_with_current_ed25519_key() {
+        let connection = jwks_connection();
+        let token = sign_access_token(&connection, "user-1", "session-1", "auth-mini", "email_otp")
+            .expect("token signs");
+        let segments = token.split('.').collect::<Vec<_>>();
+        let header = decode_json_segment(segments[0]).expect("header decodes");
+        let kid = header["kid"].as_str().expect("kid exists");
+        let public_jwk = public_jwk_for_kid(&connection, kid);
+        let public_key_bytes = decode_segment(public_jwk["x"].as_str().expect("public x exists"))
+            .expect("public key decodes");
+        let verifying_key = VerifyingKey::from_bytes(
+            public_key_bytes
+                .as_slice()
+                .try_into()
+                .expect("ed25519 public key is 32 bytes"),
+        )
+        .expect("verifying key builds");
+        let signature =
+            Signature::from_slice(&decode_segment(segments[2]).expect("signature decodes"))
+                .expect("signature is ed25519 sized");
+
+        verifying_key
+            .verify(
+                format!("{}.{}", segments[0], segments[1]).as_bytes(),
+                &signature,
+            )
+            .expect("signature verifies with public jwk");
+    }
+
+    #[test]
+    fn rejects_tampered_access_token_signature() {
+        let connection = jwks_connection();
+        let token = sign_access_token(&connection, "user-1", "session-1", "auth-mini", "email_otp")
+            .expect("token signs");
+        let mut segments = token.split('.').collect::<Vec<_>>();
+        segments[1] = "eyJzdWIiOiJhdHRhY2tlciJ9";
+        let tampered = segments.join(".");
+
+        verify_access_token(&connection, &tampered).expect_err("tampered token rejects");
+    }
+
+    fn jwks_connection() -> Connection {
+        let connection = Connection::open_in_memory().expect("database opens");
+        connection
+            .execute_batch(
+                "CREATE TABLE jwks_keys (
+                    id TEXT PRIMARY KEY CHECK (id IN ('CURRENT', 'STANDBY')),
+                    kid TEXT NOT NULL UNIQUE,
+                    alg TEXT NOT NULL,
+                    public_jwk TEXT NOT NULL,
+                    private_jwk TEXT NOT NULL
+                );",
+            )
+            .expect("schema exists");
+
+        connection
+    }
+
+    fn public_jwk_for_kid(connection: &Connection, kid: &str) -> Value {
+        let public_jwk: String = connection
+            .query_row(
+                "SELECT public_jwk FROM jwks_keys WHERE kid = ?1 LIMIT 1",
+                [kid],
+                |row| row.get(0),
+            )
+            .expect("public jwk reads");
+
+        serde_json::from_str(&public_jwk).expect("public jwk parses")
     }
 }

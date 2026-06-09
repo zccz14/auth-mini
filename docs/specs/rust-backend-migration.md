@@ -22,9 +22,9 @@
 
 - 邮件 OTP 登录：`POST /email/start`、`POST /email/verify`。
 - 会话管理：`GET /me`、`POST /session/refresh`、`POST /session/logout`、`POST /session/{session_id}/logout`。
-- Ed25519 登录和凭据管理。
+- Ed25519 challenge 验证完成登录。
 - WebAuthn 注册、登录和凭据管理。
-- JWKS 公钥发布和 JWT 签发、验证语义。
+- JWKS 轮换 CLI 与生产入口语义。
 - SQLite schema 文件 `sql/schema.sql` 及现有迁移兼容行为。
 - npm 包导出的 SDK、CLI 命令和现有 Docker 发布链路。
 
@@ -66,8 +66,15 @@
 - 若 email 首次出现，必须创建一条用户记录，并写入 `email_verified_at`。
 - 若 email 已有用户且 `email_verified_at` 为空，必须写入当前验证时间。
 - 若 email 已有已验证用户，必须复用该用户，不得创建重复用户。
-- 成功处理用户后，session 创建和 token 签发仍未迁移，必须继续返回 `501` 与 `{"error":"not_implemented"}`。
+- 旧第五阶段只处理到用户记录；后续 PR 已继续迁移 session 创建和 token 签发。
 - OTP 无效路径仍返回 `401 invalid_email_otp`，不得创建或更新用户。
+
+本轮 Ed25519 JWT/JWKS 切片必须新增下列可验证行为：
+
+- Rust 后端签发 access token 时必须使用 `jwks_keys.CURRENT.private_jwk` 中的 Ed25519 JWK 私钥执行 EdDSA 签名。
+- `GET /jwks` 发布的公钥必须能够验证 Rust 签发的 access token 签名，且不得暴露私钥字段 `d`。
+- Rust access token 验证必须拒绝 payload 或签名被篡改的 token。
+- 本切片不迁移 JWKS 轮换 CLI，不切换生产入口，不补齐 Ed25519 challenge 验证完成登录。
 
 ## API 兼容范围
 
@@ -82,7 +89,7 @@
 - 第一阶段 Rust 切片不写入数据库，不执行迁移，不改变 schema。
 - 第二阶段 Rust 切片只执行 `sql/schema.sql` 中的 `CREATE TABLE IF NOT EXISTS`，不新增 schema，不执行 TypeScript 中已有的旧库修复逻辑。
 - 后续 Rust 数据库访问必须复用现有表名、列名、约束和时间/令牌语义；需要迁移兼容逻辑时必须有明确旧版本依赖和删除条件。
-- 第三阶段当前切片不写入数据库；第四阶段当前切片只写入 `email_otps.consumed_at`；第五阶段当前切片在 OTP 成功消费后写入 `users`。后续迁移 `POST /email/verify` 剩余业务逻辑时必须继续复用现有 `sessions` 与 `jwks_keys` 语义。
+- 第三阶段当前切片不写入数据库；第四阶段当前切片只写入 `email_otps.consumed_at`；第五阶段当前切片在 OTP 成功消费后写入 `users`。Rust token 签发与验证必须复用 `jwks_keys` 中的 Ed25519 JWK 语义。
 
 ## 配置边界
 
@@ -103,6 +110,7 @@
 - 不在第三阶段当前切片迁移邮件发送、OTP 消费、用户创建、session token 签发、WebAuthn、Ed25519 或 SDK。
 - 不在第四阶段当前切片迁移邮件发送、用户创建、session token 签发、WebAuthn、Ed25519 或 SDK。
 - 不在第五阶段当前切片迁移邮件发送、session token 签发、WebAuthn、Ed25519 或 SDK。
+- 不在本轮 Ed25519 JWT/JWKS 切片迁移 JWKS 轮换 CLI、WebAuthn、真实 SMTP、生产入口或 Ed25519 完成登录。
 - 不引入新的数据库、缓存、队列或配置格式。
 - 不改变现有 OpenAPI 合同。
 - 不增加 TypeScript 与 Rust 之间的代理兼容层。
@@ -118,4 +126,5 @@
 - 第三阶段当前切片 Rust 测试覆盖 `POST /email/verify` 的有效请求、无效字段值和额外字段拒绝。
 - 第四阶段当前切片 Rust 测试覆盖有效 OTP 消费、过期/已消费/缺失/错误 code 拒绝，以及 HTTP 层 `401 invalid_email_otp` 与成功消费后 `501 not_implemented`。
 - 第五阶段当前切片 Rust 测试覆盖首次 email 创建用户、复用已有用户不重复创建、已有未验证用户写入 `email_verified_at`，以及 HTTP 层成功处理用户后仍返回 `501 not_implemented`。
+- 本轮 Rust 测试覆盖 access token 可由 JWKS 公钥完成 Ed25519 验签，并覆盖篡改 token 被拒绝。
 - 代码提交在对应迁移分支并通过 PR 合入流程推进。
