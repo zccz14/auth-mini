@@ -3,6 +3,7 @@ use std::net::{TcpListener, TcpStream};
 
 use crate::config::Config;
 use crate::db::initialize_database;
+use crate::ed25519::list_credentials as list_ed25519_credentials;
 use crate::email_verify::{
     consume_email_verify_otp, parse_email_verify_request, EmailVerifyOutcome,
 };
@@ -124,6 +125,10 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
         return handle_peer_session_logout(request, config).map(|response| cors(request, response));
     }
 
+    if request.method == "GET" && request.path == "/ed25519/credentials" {
+        return handle_ed25519_credentials(request, config).map(|response| cors(request, response));
+    }
+
     if request.method == "GET" && request.path == "/me" {
         return handle_me(request, config).map(|response| cors(request, response));
     }
@@ -232,6 +237,22 @@ fn handle_peer_session_logout(request: &Request, config: &Config) -> io::Result<
         }
         Err(_) => Ok(Response::json_error(401, "session_invalidated")),
     }
+}
+
+fn handle_ed25519_credentials(request: &Request, config: &Config) -> io::Result<Response> {
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    if require_passkey_management_auth(&auth).is_err() {
+        return Ok(Response::json_error(
+            403,
+            "insufficient_authentication_method",
+        ));
+    }
+    let body = list_ed25519_credentials(&connection, &auth.user_id)
+        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+
+    Ok(Response::json_value(200, body))
 }
 
 fn handle_me(request: &Request, config: &Config) -> io::Result<Response> {
@@ -702,6 +723,105 @@ mod tests {
             },
         )
         .expect("peer logout response builds");
+
+        assert_eq!(
+            response,
+            Response::json_error(403, "insufficient_authentication_method")
+        );
+    }
+
+    #[test]
+    fn returns_ed25519_credentials_over_http_boundary() {
+        let db_path = test_db_path("http-ed25519-credentials");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserted");
+        connection
+            .execute(
+                "INSERT INTO ed25519_credentials
+                 (id, user_id, name, public_key, last_used_at, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                (
+                    "credential-1",
+                    "user-1",
+                    "Laptop",
+                    "public-key",
+                    Some("2026-01-02T00:00:00.000Z"),
+                    "2026-01-01T00:00:00.000Z",
+                ),
+            )
+            .expect("credential inserted");
+        let pair = mint_session_tokens(&connection, "user-1", "email_otp", "auth-mini", None, None)
+            .expect("session minted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "GET".to_string(),
+                path: "/ed25519/credentials".to_string(),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", pair.access_token),
+                )],
+                body: String::new(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path,
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("ed25519 credentials response builds");
+        let body: serde_json::Value =
+            serde_json::from_str(&response.body).expect("credentials response parses");
+
+        assert_eq!(response.status, 200);
+        assert_eq!(body[0]["id"], "credential-1");
+        assert_eq!(body[0]["name"], "Laptop");
+        assert_eq!(body[0]["public_key"], "public-key");
+    }
+
+    #[test]
+    fn rejects_ed25519_credentials_without_passkey_management_auth() {
+        let db_path = test_db_path("http-ed25519-credentials-rejects-auth-method");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserted");
+        let pair = mint_session_tokens(&connection, "user-1", "ed25519", "auth-mini", None, None)
+            .expect("session minted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "GET".to_string(),
+                path: "/ed25519/credentials".to_string(),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", pair.access_token),
+                )],
+                body: String::new(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path,
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("ed25519 credentials response builds");
 
         assert_eq!(
             response,
