@@ -21,6 +21,7 @@ use crate::session::{
     mint_session_tokens, parse_refresh_request, refresh_session_tokens,
     require_passkey_management_auth, token_json, SessionError,
 };
+use crate::webauthn::delete_credential as delete_webauthn_credential;
 
 pub fn run_server(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(database) = &config.database {
@@ -152,6 +153,11 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
 
     if request.method == "DELETE" && ed25519_credential_id(request).is_some() {
         return handle_ed25519_credential_delete(request, config)
+            .map(|response| cors(request, response));
+    }
+
+    if request.method == "DELETE" && webauthn_credential_id(request).is_some() {
+        return handle_webauthn_credential_delete(request, config)
             .map(|response| cors(request, response));
     }
 
@@ -356,6 +362,27 @@ fn handle_ed25519_credential_delete(request: &Request, config: &Config) -> io::R
     Ok(Response::json_error(404, "credential_not_found"))
 }
 
+fn handle_webauthn_credential_delete(request: &Request, config: &Config) -> io::Result<Response> {
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    if require_passkey_management_auth(&auth).is_err() {
+        return Ok(Response::json_error(
+            403,
+            "insufficient_authentication_method",
+        ));
+    }
+    let credential_id = webauthn_credential_id(request).expect("route ensures credential id");
+    let deleted = delete_webauthn_credential(&connection, credential_id, &auth.user_id)
+        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+
+    if deleted {
+        return Ok(Response::json_value(200, serde_json::json!({ "ok": true })));
+    }
+
+    Ok(Response::json_error(404, "credential_not_found"))
+}
+
 fn handle_ed25519_start(request: &Request, config: &Config) -> io::Result<Response> {
     let parsed = match parse_start_authentication_request(&request.body) {
         Ok(parsed) => parsed,
@@ -426,6 +453,16 @@ fn bearer_token(request: &Request) -> Option<String> {
 
 fn ed25519_credential_id(request: &Request) -> Option<&str> {
     let credential_id = request.path.strip_prefix("/ed25519/credentials/")?;
+
+    if !credential_id.is_empty() && !credential_id.contains('/') {
+        return Some(credential_id);
+    }
+
+    None
+}
+
+fn webauthn_credential_id(request: &Request) -> Option<&str> {
+    let credential_id = request.path.strip_prefix("/webauthn/credentials/")?;
 
     if !credential_id.is_empty() && !credential_id.contains('/') {
         return Some(credential_id);
@@ -1224,6 +1261,169 @@ mod tests {
         .expect("ed25519 credential delete response builds");
 
         assert_eq!(response, Response::json_error(404, "credential_not_found"));
+    }
+
+    #[test]
+    fn deletes_webauthn_credential_over_http_boundary() {
+        let db_path = test_db_path("http-webauthn-credential-delete");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserted");
+        connection
+            .execute(
+                "INSERT INTO webauthn_credentials
+                 (id, user_id, credential_id, public_key, counter, transports, rp_id, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                (
+                    "credential-1",
+                    "user-1",
+                    "webauthn-credential-id",
+                    "public-key",
+                    0,
+                    "internal",
+                    "app.example.com",
+                    "2026-01-01T00:00:00.000Z",
+                ),
+            )
+            .expect("credential inserted");
+        let pair = mint_session_tokens(&connection, "user-1", "email_otp", "auth-mini", None, None)
+            .expect("session minted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "DELETE".to_string(),
+                path: "/webauthn/credentials/credential-1".to_string(),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", pair.access_token),
+                )],
+                body: String::new(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path: db_path.clone(),
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("webauthn credential delete response builds");
+        let connection = Connection::open(db_path).expect("database opens");
+        let remaining: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM webauthn_credentials WHERE id = ?1",
+                ["credential-1"],
+                |row| row.get(0),
+            )
+            .expect("credential count reads");
+
+        assert_eq!(
+            response,
+            Response::json_value(200, serde_json::json!({ "ok": true }))
+        );
+        assert_eq!(remaining, 0);
+    }
+
+    #[test]
+    fn delete_webauthn_credential_returns_not_found_for_other_user() {
+        let db_path = test_db_path("http-webauthn-credential-delete-not-found");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserted");
+        connection
+            .execute(
+                "INSERT INTO webauthn_credentials
+                 (id, user_id, credential_id, public_key, counter, transports, rp_id, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                (
+                    "credential-1",
+                    "user-2",
+                    "webauthn-credential-id",
+                    "public-key",
+                    0,
+                    "internal",
+                    "app.example.com",
+                    "2026-01-01T00:00:00.000Z",
+                ),
+            )
+            .expect("credential inserted");
+        let pair = mint_session_tokens(&connection, "user-1", "email_otp", "auth-mini", None, None)
+            .expect("session minted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "DELETE".to_string(),
+                path: "/webauthn/credentials/credential-1".to_string(),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", pair.access_token),
+                )],
+                body: String::new(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path,
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("webauthn credential delete response builds");
+
+        assert_eq!(response, Response::json_error(404, "credential_not_found"));
+    }
+
+    #[test]
+    fn rejects_webauthn_credential_delete_without_passkey_management_auth() {
+        let db_path = test_db_path("http-webauthn-credential-delete-rejects-auth-method");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserted");
+        let pair = mint_session_tokens(&connection, "user-1", "ed25519", "auth-mini", None, None)
+            .expect("session minted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "DELETE".to_string(),
+                path: "/webauthn/credentials/credential-1".to_string(),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", pair.access_token),
+                )],
+                body: String::new(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path,
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("webauthn credential delete response builds");
+
+        assert_eq!(
+            response,
+            Response::json_error(403, "insufficient_authentication_method")
+        );
     }
 
     #[test]

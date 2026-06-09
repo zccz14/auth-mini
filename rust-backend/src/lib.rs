@@ -7,6 +7,7 @@ mod http;
 mod jwks;
 mod openapi;
 mod session;
+mod webauthn;
 
 pub use config::{Config, DatabaseConfig};
 pub use db::initialize_database;
