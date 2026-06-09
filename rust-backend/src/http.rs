@@ -4,7 +4,8 @@ use std::net::{TcpListener, TcpStream};
 use crate::config::Config;
 use crate::db::initialize_database;
 use crate::ed25519::{
-    delete_credential as delete_ed25519_credential, list_credentials as list_ed25519_credentials,
+    create_credential as create_ed25519_credential, delete_credential as delete_ed25519_credential,
+    list_credentials as list_ed25519_credentials, parse_credential_create_request,
     parse_credential_update_request, update_credential as update_ed25519_credential,
 };
 use crate::email_verify::{
@@ -130,6 +131,11 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
 
     if request.method == "GET" && request.path == "/ed25519/credentials" {
         return handle_ed25519_credentials(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "POST" && request.path == "/ed25519/credentials" {
+        return handle_ed25519_credential_create(request, config)
+            .map(|response| cors(request, response));
     }
 
     if request.method == "PATCH" && ed25519_credential_id(request).is_some() {
@@ -263,6 +269,26 @@ fn handle_ed25519_credentials(request: &Request, config: &Config) -> io::Result<
         ));
     }
     let body = list_ed25519_credentials(&connection, &auth.user_id)
+        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+
+    Ok(Response::json_value(200, body))
+}
+
+fn handle_ed25519_credential_create(request: &Request, config: &Config) -> io::Result<Response> {
+    let parsed = match parse_credential_create_request(&request.body) {
+        Ok(parsed) => parsed,
+        Err(_) => return Ok(Response::json_error(400, "invalid_ed25519_credential")),
+    };
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    if require_passkey_management_auth(&auth).is_err() {
+        return Ok(Response::json_error(
+            403,
+            "insufficient_authentication_method",
+        ));
+    }
+    let body = create_ed25519_credential(&connection, &auth.user_id, &parsed)
         .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
 
     Ok(Response::json_value(200, body))
@@ -796,6 +822,53 @@ mod tests {
             response,
             Response::json_error(403, "insufficient_authentication_method")
         );
+    }
+
+    #[test]
+    fn creates_ed25519_credential_over_http_boundary() {
+        let db_path = test_db_path("http-ed25519-credential-create");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserted");
+        let pair = mint_session_tokens(&connection, "user-1", "email_otp", "auth-mini", None, None)
+            .expect("session minted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/ed25519/credentials".to_string(),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", pair.access_token),
+                )],
+                body: r#"{"name":"Laptop","public_key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#
+                    .to_string(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path,
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("ed25519 credential create response builds");
+        let body: serde_json::Value =
+            serde_json::from_str(&response.body).expect("credential response parses");
+
+        assert_eq!(response.status, 200);
+        assert_eq!(body["name"], "Laptop");
+        assert_eq!(
+            body["public_key"],
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        );
+        assert_eq!(body["last_used_at"], serde_json::Value::Null);
     }
 
     #[test]
