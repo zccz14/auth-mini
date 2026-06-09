@@ -827,6 +827,25 @@ mod tests {
                     alg TEXT NOT NULL,
                     public_jwk TEXT NOT NULL,
                     private_jwk TEXT NOT NULL
+                );
+                CREATE TABLE webauthn_credentials (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    credential_id TEXT NOT NULL UNIQUE,
+                    public_key TEXT NOT NULL,
+                    counter INTEGER NOT NULL DEFAULT 0,
+                    transports TEXT NOT NULL DEFAULT '',
+                    rp_id TEXT NOT NULL,
+                    last_used_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE ed25519_credentials (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    public_key TEXT NOT NULL,
+                    last_used_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );",
             )
             .expect("auth schema exists");
