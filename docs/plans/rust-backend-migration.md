@@ -107,6 +107,25 @@
 
 ## 当前 PR 范围
 
+本轮在最新 Rust Ed25519 凭据管理和 `/ed25519/start` 基础上，选择最小安全闭环：补齐 Rust JWT/JWKS 的真实 Ed25519 签名与验签。
+
+- Rust `sign_access_token` 改为使用 `jwks_keys.CURRENT.private_jwk` 的 Ed25519 JWK 私钥执行 EdDSA 签名。
+- Rust `verify_access_token` 改为使用 token `kid` 对应的公开 JWK 验证签名，并继续拒绝过期 token。
+- Rust 初始 JWKS bootstrap 生成真实 Ed25519 JWK key pair；`GET /jwks` 继续只发布公钥，不暴露 `d`。
+- 增加 Rust 测试覆盖 access token 可由 JWKS 公钥验签，以及篡改 payload 后被拒绝。
+- 不迁移 JWKS 轮换 CLI、WebAuthn、真实 SMTP、Docker/package scripts、生产入口切换或 Ed25519 完成登录。
+- 不删除 TypeScript 后端代码；未迁移的 CLI、WebAuthn、真实 SMTP、Ed25519 verify/authenticate 完成链路仍由 TypeScript 覆盖。
+
+验证命令：
+
+- `cargo fmt --manifest-path rust-backend/Cargo.toml --check`
+- `cargo test --manifest-path rust-backend/Cargo.toml`
+- `cargo build --manifest-path rust-backend/Cargo.toml`
+- `npm run typecheck`
+- `npm run build`
+
+## 上一轮 PR 范围
+
 上一轮 PR 已完成阶段 3/5 之后的会话、JWKS 公开结构、CORS 与 OpenAPI 端点基础行为。本 PR 选择剩余范围中最小且可完整闭环的 OpenAPI JSON YAML-to-JSON 切片：
 
 - Rust `GET /openapi.json` 不再返回占位 JSON，而是读取配置的 `openapi.yaml` 并解析为 JSON 响应。
@@ -127,9 +146,9 @@
 
 - 命令入口：`src/index.ts`、`src/commands/**` 仍负责 oclif CLI、init/start、origin/smtp/jwks 命令。
 - HTTP server/app：`src/server/app.ts` 中 WebAuthn、Ed25519、真实 SMTP 邮件、日志边界、Hono 中间件仍未迁移。
-- 认证模块：WebAuthn 与 Ed25519 服务/凭据管理未迁移；邮件 start 的真实 SMTP 发送未迁移。
+- 认证模块：WebAuthn、Ed25519 challenge 验证完成登录、邮件 start 的真实 SMTP 发送未迁移；Ed25519 凭据管理和 start challenge 已由 Rust 覆盖。
 - DB repo/bootstrap：TypeScript repo 仍覆盖 CLI 管理、WebAuthn/Ed25519、SMTP、origin 管理与旧路径。
-- token/JWT/JWKS：Rust 本 PR 支持 JWT 形态 token 和 JWKS 公开结构；Ed25519 真实签名/验签仍未完整替代 TypeScript `node:crypto` 实现。
+- token/JWT/JWKS：Rust 已支持 access token Ed25519 真实签名/验签和 JWKS 公钥发布；JWKS 轮换 CLI 仍在 TypeScript。
 - CORS/origin：Rust 迁移 HTTP CORS 通用行为；origin CLI 管理仍在 TypeScript。
 - OpenAPI endpoints：Rust 迁移 yaml/json endpoints；OpenAPI SDK 生成仍使用 Node package scripts。
 - Docker/package scripts：未切换，避免破坏仍依赖 TypeScript CLI/SDK 的发布与构建。
