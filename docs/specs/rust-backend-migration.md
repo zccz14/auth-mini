@@ -92,6 +92,14 @@
 - 成功时 Rust 生成 WebAuthn registration options，写入 `webauthn_challenges` 的 `register` challenge，并将该用户未消费的旧 register challenge 标记为 consumed；响应包含 `request_id` 与 `publicKey`，其中 rp/user/pubKeyCredParams/timeout/authenticatorSelection 复用 TypeScript 公开合同。
 - 本切片不迁移 `/webauthn/register/verify`，不迁移登录 options/verify，不实现任何 WebAuthn 假验证成功路径。
 
+本轮 WebAuthn authenticate/options 切片必须新增下列可验证行为：
+
+- Rust 后端覆盖 `POST /webauthn/authenticate/options`，该端点保持公开，无需 bearer access token。
+- 请求 body 必须是仅包含非空 `rp_id` 的 JSON 对象；无效 body 返回 `400 invalid_request`。
+- Rust 必须按已允许 origin 校验请求 origin 与 `rp_id`：请求 origin 必须存在于 `allowed_origins`，`rp_id` 必须是该 origin host 本身或父域，且必须被任一 allowlist origin 覆盖；不满足时返回 `400 invalid_webauthn_authentication`。
+- 成功时 Rust 生成 WebAuthn authentication options，写入 `webauthn_challenges` 的 `authenticate` challenge，`user_id` 必须为空；响应包含 `request_id` 与 `publicKey.challenge/rpId/timeout/userVerification`，且不得包含 `allowCredentials`。
+- 本切片不迁移 `/webauthn/authenticate/verify`，不迁移 `/webauthn/register/verify`，不实现任何 WebAuthn 假验证成功路径。
+
 ## API 兼容范围
 
 第一阶段不替换生产 API。兼容范围限定为新增 Rust 切片自身的基础端点，不声明覆盖现有认证 API。
@@ -129,6 +137,7 @@
 - 不在本轮 Ed25519 JWT/JWKS 切片迁移 JWKS 轮换 CLI、WebAuthn、真实 SMTP、生产入口或 Ed25519 完成登录。
 - 不在本轮 SMTP plain transport 切片迁移 TLS/SMTPS/STARTTLS、SMTP CLI、SMTP 多 provider 生产可观测日志、WebAuthn 或生产入口切换。
 - 不在本轮 WebAuthn register/options 切片迁移 WebAuthn register/verify、authenticate/options、authenticate/verify 或生产入口切换。
+- 不在本轮 WebAuthn authenticate/options 切片迁移 WebAuthn register/verify、authenticate/verify 或生产入口切换。
 - 不引入新的数据库、缓存、队列或配置格式。
 - 不改变现有 OpenAPI 合同。
 - 不增加 TypeScript 与 Rust 之间的代理兼容层。
@@ -148,4 +157,5 @@
 - 本轮 SMTP Rust 测试覆盖 email start 请求边界、无 active SMTP 配置、明文 SMTP 成功时 OTP 创建和邮件内容、SMTP 失败时 OTP 失效、secure SMTP 不返回假成功，以及 HTTP 层 invalid_request/smtp_not_configured 边界。
 - 本轮 WebAuthn 凭据删除切片必须新增下列可验证行为：Rust 后端覆盖 `DELETE /webauthn/credentials/{id}`，要求有效 access token 且认证方式为 `email_otp` 或 `webauthn`；只允许删除当前用户自己的 WebAuthn 凭据，成功返回 `200 {"ok":true}`，其他用户或不存在的凭据返回 `404 credential_not_found`，不满足管理凭据认证方式返回 `403 insufficient_authentication_method`。本切片不迁移 WebAuthn 注册/登录 options 或 verify，不实现任何 WebAuthn 假验证成功路径。
 - 本轮 WebAuthn register/options Rust 测试覆盖成功生成 options 并持久化 challenge、父域 rp_id 规范化、二次 options 消费旧 challenge、sibling rp_id 拒绝、缺失 access token 拒绝、非 passkey-management 认证方式拒绝。
+- 本轮 WebAuthn authenticate/options Rust 测试覆盖成功生成 options 并持久化匿名 challenge、父域 rp_id 规范化、`allowCredentials` 省略、未 allowlist origin 拒绝，以及 HTTP 层 `invalid_request`/`invalid_webauthn_authentication` 边界。
 - 代码提交在对应迁移分支并通过 PR 合入流程推进。

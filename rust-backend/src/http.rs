@@ -22,8 +22,10 @@ use crate::session::{
     require_passkey_management_auth, token_json, SessionError,
 };
 use crate::webauthn::{
+    authentication_options as webauthn_authentication_options,
     delete_credential as delete_webauthn_credential, parse_options_request,
-    register_options as webauthn_register_options, RegisterOptionsError,
+    register_options as webauthn_register_options, AuthenticationOptionsError,
+    RegisterOptionsError,
 };
 
 pub fn run_server(config: Config) -> Result<(), Box<dyn std::error::Error>> {
@@ -151,6 +153,11 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
 
     if request.method == "POST" && request.path == "/webauthn/register/options" {
         return handle_webauthn_register_options(request, config)
+            .map(|response| cors(request, response));
+    }
+
+    if request.method == "POST" && request.path == "/webauthn/authenticate/options" {
+        return handle_webauthn_authentication_options(request, config)
             .map(|response| cors(request, response));
     }
 
@@ -419,6 +426,34 @@ fn handle_webauthn_register_options(request: &Request, config: &Config) -> io::R
         }
         Err(RegisterOptionsError::InvalidAccessToken) => {
             Ok(Response::json_error(401, "invalid_access_token"))
+        }
+    }
+}
+
+fn handle_webauthn_authentication_options(
+    request: &Request,
+    config: &Config,
+) -> io::Result<Response> {
+    let parsed = match parse_options_request(&request.body) {
+        Ok(parsed) => parsed,
+        Err(_) => return Ok(Response::json_error(400, "invalid_request")),
+    };
+    let Some(database) = &config.database else {
+        return Ok(Response::json_error(501, "not_implemented"));
+    };
+    let Some(origin) = options_request_origin(request) else {
+        return Ok(Response::json_error(400, "invalid_webauthn_authentication"));
+    };
+    let connection = rusqlite::Connection::open(&database.db_path)
+        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+
+    match webauthn_authentication_options(&connection, &parsed, &origin) {
+        Ok(body) => Ok(Response::json_value(200, body)),
+        Err(AuthenticationOptionsError::InvalidRequest) => {
+            Ok(Response::json_error(400, "invalid_request"))
+        }
+        Err(AuthenticationOptionsError::InvalidWebauthnAuthentication) => {
+            Ok(Response::json_error(400, "invalid_webauthn_authentication"))
         }
     }
 }
@@ -1653,6 +1688,94 @@ mod tests {
 
         assert_eq!(response.status, 400);
         assert_eq!(response.body, r#"{"error":"invalid_request"}"#);
+    }
+
+    #[test]
+    fn creates_webauthn_authentication_options_over_http_boundary() {
+        let db_path = test_db_path("http-webauthn-authentication-options");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO allowed_origins (origin) VALUES (?1)",
+                ["https://app.example.com"],
+            )
+            .expect("origin inserted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/webauthn/authenticate/options".to_string(),
+                headers: vec![("Origin".to_string(), "https://app.example.com".to_string())],
+                body: r#"{"rp_id":"EXAMPLE.COM."}"#.to_string(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path: db_path.clone(),
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("webauthn authentication options response builds");
+        let body: serde_json::Value =
+            serde_json::from_str(&response.body).expect("options response parses");
+        let connection = Connection::open(db_path).expect("database opens");
+        let stored: (String, Option<String>, String, String) = connection
+            .query_row(
+                "SELECT type, user_id, rp_id, origin FROM webauthn_challenges WHERE request_id = ?1",
+                [body["request_id"].as_str().expect("request id")],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("challenge reads");
+
+        assert_eq!(response.status, 200);
+        assert_eq!(body["publicKey"]["rpId"], "example.com");
+        assert_eq!(body["publicKey"]["timeout"], 300000);
+        assert_eq!(body["publicKey"]["userVerification"], "preferred");
+        assert!(body["publicKey"].get("allowCredentials").is_none());
+        assert_eq!(stored.0, "authenticate");
+        assert_eq!(stored.1, None);
+        assert_eq!(stored.2, "example.com");
+        assert_eq!(stored.3, "https://app.example.com");
+    }
+
+    #[test]
+    fn rejects_webauthn_authentication_options_unallowlisted_origin() {
+        let db_path = test_db_path("http-webauthn-authentication-options-bad-origin");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO allowed_origins (origin) VALUES (?1)",
+                ["https://app.example.com"],
+            )
+            .expect("origin inserted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/webauthn/authenticate/options".to_string(),
+                headers: vec![("Origin".to_string(), "https://evil.example.com".to_string())],
+                body: r#"{"rp_id":"example.com"}"#.to_string(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path,
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("webauthn authentication options response builds");
+
+        assert_eq!(response.status, 400);
+        assert_eq!(
+            response.body,
+            r#"{"error":"invalid_webauthn_authentication"}"#
+        );
     }
 
     #[test]
