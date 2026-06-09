@@ -2,7 +2,9 @@ mod config;
 mod db;
 mod email_verify;
 mod http;
+mod jwks;
 mod openapi;
+mod session;
 
 pub use config::{Config, DatabaseConfig};
 pub use db::initialize_database;
