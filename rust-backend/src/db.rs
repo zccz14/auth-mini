@@ -68,6 +68,17 @@ fn assert_required_schema(connection: &Connection) -> rusqlite::Result<()> {
                 "created_at",
             ][..],
         ),
+        (
+            "ed25519_challenges",
+            &[
+                "request_id",
+                "credential_id",
+                "challenge",
+                "expires_at",
+                "consumed_at",
+                "created_at",
+            ][..],
+        ),
     ];
 
     for (table_name, column_names) in required_schema {

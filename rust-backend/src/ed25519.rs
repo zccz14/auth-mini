@@ -1,4 +1,4 @@
-use chrono::{SecondsFormat, Utc};
+use chrono::{Duration, SecondsFormat, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -12,6 +12,12 @@ pub(crate) struct CredentialCreateRequest {
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 pub(crate) struct CredentialUpdateRequest {
     pub(crate) name: String,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StartAuthenticationRequest {
+    pub(crate) credential_id: String,
 }
 
 pub(crate) fn parse_credential_create_request(
@@ -36,6 +42,18 @@ pub(crate) fn parse_credential_update_request(
     }
 
     Err(invalid_request_error("invalid credential update request"))
+}
+
+pub(crate) fn parse_start_authentication_request(
+    body: &str,
+) -> Result<StartAuthenticationRequest, serde_json::Error> {
+    let request: StartAuthenticationRequest = serde_json::from_str(body)?;
+
+    if is_uuid_like(&request.credential_id) {
+        return Ok(request);
+    }
+
+    Err(invalid_request_error("invalid ed25519 start request"))
 }
 
 pub(crate) fn create_credential(
@@ -109,6 +127,32 @@ pub(crate) fn delete_credential(
     Ok(result > 0)
 }
 
+pub(crate) fn start_authentication(
+    connection: &Connection,
+    request: &StartAuthenticationRequest,
+) -> rusqlite::Result<Option<Value>> {
+    let Some(credential_id) = existing_credential_id(connection, &request.credential_id)? else {
+        return Ok(None);
+    };
+
+    let request_id = random_uuid(connection)?;
+    let challenge = random_token(connection)?;
+    let created_at = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    let expires_at =
+        (Utc::now() + Duration::seconds(300)).to_rfc3339_opts(SecondsFormat::Millis, true);
+
+    connection.execute(
+        "INSERT INTO ed25519_challenges (request_id, credential_id, challenge, expires_at, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![request_id, credential_id, challenge, expires_at, created_at],
+    )?;
+
+    Ok(Some(json!({
+        "request_id": request_id,
+        "challenge": challenge,
+    })))
+}
+
 fn credential_response(
     connection: &Connection,
     credential_id: &str,
@@ -128,6 +172,19 @@ fn credential_response(
                     "created_at": row.get::<_, String>(4)?,
                 }))
             },
+        )
+        .optional()
+}
+
+fn existing_credential_id(
+    connection: &Connection,
+    credential_id: &str,
+) -> rusqlite::Result<Option<String>> {
+    connection
+        .query_row(
+            "SELECT id FROM ed25519_credentials WHERE id = ?1 LIMIT 1",
+            [credential_id],
+            |row| row.get(0),
         )
         .optional()
 }
@@ -165,6 +222,14 @@ fn random_uuid(connection: &Connection) -> rusqlite::Result<String> {
         [],
         |row| row.get(0),
     )
+}
+
+fn random_token(connection: &Connection) -> rusqlite::Result<String> {
+    connection.query_row("SELECT lower(hex(randomblob(32)))", [], |row| row.get(0))
+}
+
+fn is_uuid_like(value: &str) -> bool {
+    value.len() == 36
 }
 
 fn invalid_request_error(message: &str) -> serde_json::Error {
@@ -274,6 +339,21 @@ mod tests {
             r#"{"name":"","public_key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#,
         )
         .expect_err("empty name rejects");
+    }
+
+    #[test]
+    fn parses_start_authentication_request_contract() {
+        let request = parse_start_authentication_request(
+            r#"{"credential_id":"00000000-0000-4000-8000-000000000000"}"#,
+        )
+        .expect("request parses");
+
+        assert_eq!(
+            request.credential_id,
+            "00000000-0000-4000-8000-000000000000"
+        );
+        parse_start_authentication_request(r#"{"credential_id":"not-a-uuid"}"#)
+            .expect_err("malformed credential id rejects");
     }
 
     #[test]
@@ -478,5 +558,95 @@ mod tests {
             delete_credential(&connection, "credential-1", "user-1").expect("delete attempts");
 
         assert!(!deleted);
+    }
+
+    #[test]
+    fn starts_authentication_challenge_for_existing_credential() {
+        let connection = Connection::open_in_memory().expect("database opens");
+        connection
+            .execute_batch(
+                "CREATE TABLE ed25519_credentials (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    public_key TEXT NOT NULL,
+                    last_used_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE ed25519_challenges (
+                    request_id TEXT PRIMARY KEY,
+                    credential_id TEXT NOT NULL,
+                    challenge TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    consumed_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );",
+            )
+            .expect("schema exists");
+        connection
+            .execute(
+                "INSERT INTO ed25519_credentials
+                 (id, user_id, name, public_key, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                (
+                    "00000000-0000-4000-8000-000000000000",
+                    "user-1",
+                    "Laptop",
+                    "public-key",
+                    "2026-01-01T00:00:00.000Z",
+                ),
+            )
+            .expect("credential inserts");
+
+        let challenge = start_authentication(
+            &connection,
+            &StartAuthenticationRequest {
+                credential_id: "00000000-0000-4000-8000-000000000000".to_string(),
+            },
+        )
+        .expect("challenge starts")
+        .expect("credential exists");
+        let stored_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM ed25519_challenges", [], |row| {
+                row.get(0)
+            })
+            .expect("challenge count reads");
+
+        assert_eq!(
+            challenge["request_id"].as_str().expect("request id").len(),
+            36
+        );
+        assert_eq!(
+            challenge["challenge"].as_str().expect("challenge").len(),
+            64
+        );
+        assert_eq!(stored_count, 1);
+    }
+
+    #[test]
+    fn start_authentication_rejects_unknown_credential() {
+        let connection = Connection::open_in_memory().expect("database opens");
+        connection
+            .execute_batch(
+                "CREATE TABLE ed25519_credentials (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    public_key TEXT NOT NULL,
+                    last_used_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );",
+            )
+            .expect("schema exists");
+
+        let challenge = start_authentication(
+            &connection,
+            &StartAuthenticationRequest {
+                credential_id: "00000000-0000-4000-8000-000000000000".to_string(),
+            },
+        )
+        .expect("challenge start attempts");
+
+        assert!(challenge.is_none());
     }
 }

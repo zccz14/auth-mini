@@ -6,7 +6,9 @@ use crate::db::initialize_database;
 use crate::ed25519::{
     create_credential as create_ed25519_credential, delete_credential as delete_ed25519_credential,
     list_credentials as list_ed25519_credentials, parse_credential_create_request,
-    parse_credential_update_request, update_credential as update_ed25519_credential,
+    parse_credential_update_request, parse_start_authentication_request,
+    start_authentication as start_ed25519_authentication,
+    update_credential as update_ed25519_credential,
 };
 use crate::email_verify::{
     consume_email_verify_otp, parse_email_verify_request, EmailVerifyOutcome,
@@ -136,6 +138,10 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
     if request.method == "POST" && request.path == "/ed25519/credentials" {
         return handle_ed25519_credential_create(request, config)
             .map(|response| cors(request, response));
+    }
+
+    if request.method == "POST" && request.path == "/ed25519/start" {
+        return handle_ed25519_start(request, config).map(|response| cors(request, response));
     }
 
     if request.method == "PATCH" && ed25519_credential_id(request).is_some() {
@@ -337,6 +343,25 @@ fn handle_ed25519_credential_delete(request: &Request, config: &Config) -> io::R
     }
 
     Ok(Response::json_error(404, "credential_not_found"))
+}
+
+fn handle_ed25519_start(request: &Request, config: &Config) -> io::Result<Response> {
+    let parsed = match parse_start_authentication_request(&request.body) {
+        Ok(parsed) => parsed,
+        Err(_) => return Ok(Response::json_error(400, "invalid_request")),
+    };
+    let Some(database) = &config.database else {
+        return Ok(Response::json_error(501, "not_implemented"));
+    };
+    let connection = rusqlite::Connection::open(&database.db_path)
+        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+    let challenge = start_ed25519_authentication(&connection, &parsed)
+        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+
+    match challenge {
+        Some(body) => Ok(Response::json_value(200, body)),
+        None => Ok(Response::json_error(400, "invalid_ed25519_authentication")),
+    }
 }
 
 fn handle_me(request: &Request, config: &Config) -> io::Result<Response> {
@@ -872,6 +897,87 @@ mod tests {
     }
 
     #[test]
+    fn starts_ed25519_authentication_over_http_boundary() {
+        let db_path = test_db_path("http-ed25519-start");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserted");
+        connection
+            .execute(
+                "INSERT INTO ed25519_credentials
+                 (id, user_id, name, public_key, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                (
+                    "00000000-0000-4000-8000-000000000000",
+                    "user-1",
+                    "Laptop",
+                    "public-key",
+                    "2026-01-01T00:00:00.000Z",
+                ),
+            )
+            .expect("credential inserted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/ed25519/start".to_string(),
+                headers: Vec::new(),
+                body: r#"{"credential_id":"00000000-0000-4000-8000-000000000000"}"#.to_string(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path,
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("ed25519 start response builds");
+        let body: serde_json::Value =
+            serde_json::from_str(&response.body).expect("start response parses");
+
+        assert_eq!(response.status, 200);
+        assert_eq!(body["request_id"].as_str().expect("request id").len(), 36);
+        assert_eq!(body["challenge"].as_str().expect("challenge").len(), 64);
+    }
+
+    #[test]
+    fn rejects_unknown_ed25519_start_credential_over_http_boundary() {
+        let db_path = test_db_path("http-ed25519-start-unknown");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/ed25519/start".to_string(),
+                headers: Vec::new(),
+                body: r#"{"credential_id":"00000000-0000-4000-8000-000000000000"}"#.to_string(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path,
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("ed25519 start response builds");
+
+        assert_eq!(
+            response,
+            Response::json_error(400, "invalid_ed25519_authentication")
+        );
+    }
+
+    #[test]
     fn returns_ed25519_credentials_over_http_boundary() {
         let db_path = test_db_path("http-ed25519-credentials");
         let connection = Connection::open(&db_path).expect("database opens");
@@ -1322,6 +1428,14 @@ mod tests {
                     name TEXT NOT NULL,
                     public_key TEXT NOT NULL,
                     last_used_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE ed25519_challenges (
+                    request_id TEXT PRIMARY KEY,
+                    credential_id TEXT NOT NULL,
+                    challenge TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    consumed_at TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );",
             )
