@@ -107,7 +107,25 @@
 
 ## 当前 PR 范围
 
-本轮按用户“优先完成 SMTP 和 WebAuthn”要求，调研后选择 SMTP 中最小可测试闭环：迁移 `POST /email/start` 的 OTP 创建与明文 SMTP 发送边界。WebAuthn 仍依赖 TypeScript 的 `@simplewebauthn/server` 完成注册/登录验证，本轮不拆出不可验证的局部占位。
+本轮按用户“优先 WebAuthn”要求，调研后选择 WebAuthn 中最小可测试闭环：迁移 `DELETE /webauthn/credentials/{id}` 凭据删除管理端点。该切片不涉及 WebAuthn 密码学验证，能复用 Rust 已有 access token 与 passkey-management 授权能力，避免在注册/登录 verify 尚未接入可信验证库时出现假成功路径。
+
+- Rust `DELETE /webauthn/credentials/{id}` 要求 bearer access token，缺失或无效 token 返回 `401 invalid_access_token`。
+- Rust 复用 passkey-management 授权规则：`email_otp` 与 `webauthn` session 可管理凭据，`ed25519` session 返回 `403 insufficient_authentication_method`。
+- 删除仅按 `id + user_id` 作用于当前用户自己的 `webauthn_credentials` 行；删除成功返回 `200 {"ok":true}`，其他用户或不存在的凭据返回 `404 credential_not_found`。
+- 不迁移 `/webauthn/register/options`、`/webauthn/register/verify`、`/webauthn/authenticate/options`、`/webauthn/authenticate/verify`；这些仍依赖 TypeScript 的 `@simplewebauthn/server`。
+- 不删除 TypeScript 后端代码；未迁移的 WebAuthn 注册/登录、CLI、TLS SMTP、Ed25519 verify/authenticate 完成链路仍由 TypeScript 覆盖。
+
+验证命令：
+
+- `cargo fmt --manifest-path rust-backend/Cargo.toml --check`
+- `cargo test --manifest-path rust-backend/Cargo.toml`
+- `cargo build --manifest-path rust-backend/Cargo.toml`
+- `npm run typecheck`
+- `npm run build`
+
+## 上一轮 PR 范围
+
+上一轮按用户“优先完成 SMTP 和 WebAuthn”要求，调研后选择 SMTP 中最小可测试闭环：迁移 `POST /email/start` 的 OTP 创建与明文 SMTP 发送边界。WebAuthn 仍依赖 TypeScript 的 `@simplewebauthn/server` 完成注册/登录验证，本轮不拆出不可验证的局部占位。
 
 - Rust `POST /email/start` 按 OpenAPI 请求合同校验 `email`，并复用 TypeScript 行为 trim + lowercase。
 - 配置 `--db` 时读取 `smtp_configs` active 配置；无 active 配置返回 `503 smtp_not_configured`。

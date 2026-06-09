@@ -137,4 +137,5 @@
 - 第五阶段当前切片 Rust 测试覆盖首次 email 创建用户、复用已有用户不重复创建、已有未验证用户写入 `email_verified_at`，以及 HTTP 层成功处理用户后仍返回 `501 not_implemented`。
 - 本轮 Rust 测试覆盖 access token 可由 JWKS 公钥完成 Ed25519 验签，并覆盖篡改 token 被拒绝。
 - 本轮 SMTP Rust 测试覆盖 email start 请求边界、无 active SMTP 配置、明文 SMTP 成功时 OTP 创建和邮件内容、SMTP 失败时 OTP 失效、secure SMTP 不返回假成功，以及 HTTP 层 invalid_request/smtp_not_configured 边界。
+- 本轮 WebAuthn 凭据删除切片必须新增下列可验证行为：Rust 后端覆盖 `DELETE /webauthn/credentials/{id}`，要求有效 access token 且认证方式为 `email_otp` 或 `webauthn`；只允许删除当前用户自己的 WebAuthn 凭据，成功返回 `200 {"ok":true}`，其他用户或不存在的凭据返回 `404 credential_not_found`，不满足管理凭据认证方式返回 `403 insufficient_authentication_method`。本切片不迁移 WebAuthn 注册/登录 options 或 verify，不实现任何 WebAuthn 假验证成功路径。
 - 代码提交在对应迁移分支并通过 PR 合入流程推进。
