@@ -3,7 +3,10 @@ use std::net::{TcpListener, TcpStream};
 
 use crate::config::Config;
 use crate::db::initialize_database;
-use crate::ed25519::list_credentials as list_ed25519_credentials;
+use crate::ed25519::{
+    list_credentials as list_ed25519_credentials, parse_credential_update_request,
+    update_credential as update_ed25519_credential,
+};
 use crate::email_verify::{
     consume_email_verify_otp, parse_email_verify_request, EmailVerifyOutcome,
 };
@@ -127,6 +130,11 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
 
     if request.method == "GET" && request.path == "/ed25519/credentials" {
         return handle_ed25519_credentials(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "PATCH" && ed25519_credential_id(request).is_some() {
+        return handle_ed25519_credential_update(request, config)
+            .map(|response| cors(request, response));
     }
 
     if request.method == "GET" && request.path == "/me" {
@@ -255,6 +263,30 @@ fn handle_ed25519_credentials(request: &Request, config: &Config) -> io::Result<
     Ok(Response::json_value(200, body))
 }
 
+fn handle_ed25519_credential_update(request: &Request, config: &Config) -> io::Result<Response> {
+    let parsed = match parse_credential_update_request(&request.body) {
+        Ok(parsed) => parsed,
+        Err(_) => return Ok(Response::json_error(400, "invalid_request")),
+    };
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    if require_passkey_management_auth(&auth).is_err() {
+        return Ok(Response::json_error(
+            403,
+            "insufficient_authentication_method",
+        ));
+    }
+    let credential_id = ed25519_credential_id(request).expect("route ensures credential id");
+    let credential = update_ed25519_credential(&connection, credential_id, &auth.user_id, &parsed)
+        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+
+    match credential {
+        Some(body) => Ok(Response::json_value(200, body)),
+        None => Ok(Response::json_error(404, "credential_not_found")),
+    }
+}
+
 fn handle_me(request: &Request, config: &Config) -> io::Result<Response> {
     let Some((connection, auth)) = authenticated_connection(request, config)? else {
         return Ok(Response::json_error(401, "invalid_access_token"));
@@ -302,6 +334,16 @@ fn bearer_token(request: &Request) -> Option<String> {
     request
         .header("Authorization")
         .and_then(|header| header.strip_prefix("Bearer ").map(str::to_string))
+}
+
+fn ed25519_credential_id(request: &Request) -> Option<&str> {
+    let credential_id = request.path.strip_prefix("/ed25519/credentials/")?;
+
+    if !credential_id.is_empty() && !credential_id.contains('/') {
+        return Some(credential_id);
+    }
+
+    None
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -786,6 +828,63 @@ mod tests {
         assert_eq!(body[0]["id"], "credential-1");
         assert_eq!(body[0]["name"], "Laptop");
         assert_eq!(body[0]["public_key"], "public-key");
+    }
+
+    #[test]
+    fn updates_ed25519_credential_over_http_boundary() {
+        let db_path = test_db_path("http-ed25519-credential-update");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserted");
+        connection
+            .execute(
+                "INSERT INTO ed25519_credentials
+                 (id, user_id, name, public_key, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                (
+                    "credential-1",
+                    "user-1",
+                    "Laptop",
+                    "public-key",
+                    "2026-01-01T00:00:00.000Z",
+                ),
+            )
+            .expect("credential inserted");
+        let pair = mint_session_tokens(&connection, "user-1", "email_otp", "auth-mini", None, None)
+            .expect("session minted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "PATCH".to_string(),
+                path: "/ed25519/credentials/credential-1".to_string(),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", pair.access_token),
+                )],
+                body: r#"{"name":"Renamed laptop"}"#.to_string(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path,
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("ed25519 credential update response builds");
+        let body: serde_json::Value =
+            serde_json::from_str(&response.body).expect("credential response parses");
+
+        assert_eq!(response.status, 200);
+        assert_eq!(body["id"], "credential-1");
+        assert_eq!(body["name"], "Renamed laptop");
+        assert_eq!(body["public_key"], "public-key");
     }
 
     #[test]
