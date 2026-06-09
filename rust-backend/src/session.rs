@@ -215,20 +215,75 @@ pub(crate) fn current_user_response(
     let active_sessions =
         list_active_sessions(connection, &user_id).map_err(|_| SessionError::InvalidAccessToken)?;
 
+    let webauthn_credentials = list_webauthn_credentials(connection, &user_id)
+        .map_err(|_| SessionError::InvalidAccessToken)?;
+    let ed25519_credentials = list_ed25519_credentials(connection, &user_id)
+        .map_err(|_| SessionError::InvalidAccessToken)?;
+
     Ok(json!({
         "user_id": user_id,
         "email": email,
-        "webauthn_credentials": [],
-        "ed25519_credentials": [],
+        "webauthn_credentials": webauthn_credentials,
+        "ed25519_credentials": ed25519_credentials,
         "active_sessions": active_sessions,
     }))
+}
+
+fn list_webauthn_credentials(
+    connection: &Connection,
+    user_id: &str,
+) -> rusqlite::Result<Vec<Value>> {
+    let mut statement = connection.prepare(
+        "SELECT id, credential_id, transports, rp_id, last_used_at, created_at
+         FROM webauthn_credentials WHERE user_id = ?1 ORDER BY created_at ASC, id ASC",
+    )?;
+    let rows = statement.query_map([user_id], |row| {
+        let transports = row
+            .get::<_, String>(2)?
+            .split(',')
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+
+        Ok(json!({
+            "id": row.get::<_, String>(0)?,
+            "credential_id": row.get::<_, String>(1)?,
+            "transports": transports,
+            "rp_id": row.get::<_, String>(3)?,
+            "last_used_at": row.get::<_, Option<String>>(4)?,
+            "created_at": row.get::<_, String>(5)?,
+        }))
+    })?;
+
+    rows.collect()
+}
+
+fn list_ed25519_credentials(
+    connection: &Connection,
+    user_id: &str,
+) -> rusqlite::Result<Vec<Value>> {
+    let mut statement = connection.prepare(
+        "SELECT id, name, public_key, last_used_at, created_at
+         FROM ed25519_credentials WHERE user_id = ?1 ORDER BY created_at ASC, id ASC",
+    )?;
+    let rows = statement.query_map([user_id], |row| {
+        Ok(json!({
+            "id": row.get::<_, String>(0)?,
+            "name": row.get::<_, String>(1)?,
+            "public_key": row.get::<_, String>(2)?,
+            "last_used_at": row.get::<_, Option<String>>(3)?,
+            "created_at": row.get::<_, String>(4)?,
+        }))
+    })?;
+
+    rows.collect()
 }
 
 fn list_active_sessions(connection: &Connection, user_id: &str) -> rusqlite::Result<Vec<Value>> {
     let now = now_text();
     let mut statement = connection.prepare(
         "SELECT id, auth_method, ip, user_agent, expires_at, created_at
-         FROM sessions WHERE user_id = ?1 AND expires_at > ?2 ORDER BY created_at ASC",
+         FROM sessions WHERE user_id = ?1 AND expires_at > ?2 ORDER BY created_at ASC, id ASC",
     )?;
     let rows = statement.query_map(params![user_id, now], |row| {
         Ok(json!({
@@ -332,5 +387,93 @@ mod tests {
             r#"{"session_id":"00000000-0000-4000-8000-000000000000","refresh_token":"token","extra":true}"#,
         )
         .expect_err("unknown fields are rejected");
+    }
+
+    #[test]
+    fn current_user_response_includes_user_credentials() {
+        let connection = Connection::open_in_memory().expect("database opens");
+        create_me_response_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email) VALUES ('user-1', 'user@example.com')",
+                [],
+            )
+            .expect("user inserts");
+        connection
+            .execute(
+                "INSERT INTO webauthn_credentials
+                 (id, user_id, credential_id, public_key, transports, rp_id, created_at)
+                 VALUES ('webauthn-1', 'user-1', 'credential-1', 'public-key', 'usb,nfc', 'example.com', '2026-01-01T00:00:00.000Z')",
+                [],
+            )
+            .expect("webauthn credential inserts");
+        connection
+            .execute(
+                "INSERT INTO ed25519_credentials
+                 (id, user_id, name, public_key, last_used_at, created_at)
+                 VALUES ('ed25519-1', 'user-1', 'Laptop', 'ed-public-key', '2026-01-02T00:00:00.000Z', '2026-01-01T00:00:00.000Z')",
+                [],
+            )
+            .expect("ed25519 credential inserts");
+
+        let response = current_user_response(
+            &connection,
+            &AuthContext {
+                user_id: "user-1".to_string(),
+                session_id: "session-1".to_string(),
+            },
+        )
+        .expect("current user response builds");
+
+        assert_eq!(response["webauthn_credentials"][0]["id"], "webauthn-1");
+        assert_eq!(response["webauthn_credentials"][0]["transports"][0], "usb");
+        assert_eq!(response["webauthn_credentials"][0]["transports"][1], "nfc");
+        assert_eq!(response["ed25519_credentials"][0]["name"], "Laptop");
+        assert_eq!(
+            response["ed25519_credentials"][0]["public_key"],
+            "ed-public-key"
+        );
+    }
+
+    fn create_me_response_schema(connection: &Connection) {
+        connection
+            .execute_batch(
+                "CREATE TABLE users (
+                    id TEXT PRIMARY KEY,
+                    email TEXT NOT NULL,
+                    email_verified_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                 );
+                 CREATE TABLE sessions (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    refresh_token_hash TEXT NOT NULL,
+                    auth_method TEXT NOT NULL,
+                    ip TEXT,
+                    user_agent TEXT,
+                    expires_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                 );
+                 CREATE TABLE webauthn_credentials (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    credential_id TEXT NOT NULL,
+                    public_key TEXT NOT NULL,
+                    counter INTEGER NOT NULL DEFAULT 0,
+                    transports TEXT NOT NULL DEFAULT '',
+                    rp_id TEXT NOT NULL,
+                    last_used_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                 );
+                 CREATE TABLE ed25519_credentials (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    public_key TEXT NOT NULL,
+                    last_used_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                 );",
+            )
+            .expect("me response schema exists");
     }
 }
