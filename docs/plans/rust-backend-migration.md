@@ -107,14 +107,15 @@
 
 ## 当前 PR 范围
 
-本轮在最新 Rust Ed25519 凭据管理和 `/ed25519/start` 基础上，选择最小安全闭环：补齐 Rust JWT/JWKS 的真实 Ed25519 签名与验签。
+本轮按用户“优先完成 SMTP 和 WebAuthn”要求，调研后选择 SMTP 中最小可测试闭环：迁移 `POST /email/start` 的 OTP 创建与明文 SMTP 发送边界。WebAuthn 仍依赖 TypeScript 的 `@simplewebauthn/server` 完成注册/登录验证，本轮不拆出不可验证的局部占位。
 
-- Rust `sign_access_token` 改为使用 `jwks_keys.CURRENT.private_jwk` 的 Ed25519 JWK 私钥执行 EdDSA 签名。
-- Rust `verify_access_token` 改为使用 token `kid` 对应的公开 JWK 验证签名，并继续拒绝过期 token。
-- Rust 初始 JWKS bootstrap 生成真实 Ed25519 JWK key pair；`GET /jwks` 继续只发布公钥，不暴露 `d`。
-- 增加 Rust 测试覆盖 access token 可由 JWKS 公钥验签，以及篡改 payload 后被拒绝。
-- 不迁移 JWKS 轮换 CLI、WebAuthn、真实 SMTP、Docker/package scripts、生产入口切换或 Ed25519 完成登录。
-- 不删除 TypeScript 后端代码；未迁移的 CLI、WebAuthn、真实 SMTP、Ed25519 verify/authenticate 完成链路仍由 TypeScript 覆盖。
+- Rust `POST /email/start` 按 OpenAPI 请求合同校验 `email`，并复用 TypeScript 行为 trim + lowercase。
+- 配置 `--db` 时读取 `smtp_configs` active 配置；无 active 配置返回 `503 smtp_not_configured`。
+- 选中 SMTP 配置后生成 6 位 OTP，写入 `email_otps` 的 SHA-256 code hash、10 分钟过期时间，并清空旧 `consumed_at`。
+- 明文 SMTP AUTH LOGIN 发送成功后返回 `200 {"ok":true}`；发送失败或 `secure=1` 不支持时返回 `503 smtp_temporarily_unavailable` 并失效本次 OTP，避免生产路径假成功。
+- 增加本地 TCP SMTP 测试服务器覆盖成功与失败投递边界；测试不连接外部 SMTP 服务。
+- 不迁移 TLS/SMTPS/STARTTLS、SMTP CLI、WebAuthn、Docker/package scripts、生产入口切换或 Ed25519 完成登录。
+- 不删除 TypeScript 后端代码；未迁移的 CLI、WebAuthn、TLS SMTP、Ed25519 verify/authenticate 完成链路仍由 TypeScript 覆盖。
 
 验证命令：
 

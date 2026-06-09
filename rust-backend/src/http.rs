@@ -10,6 +10,7 @@ use crate::ed25519::{
     start_authentication as start_ed25519_authentication,
     update_credential as update_ed25519_credential,
 };
+use crate::email_start::{parse_email_start_request, start_email_auth, EmailStartError};
 use crate::email_verify::{
     consume_email_verify_otp, parse_email_verify_request, EmailVerifyOutcome,
 };
@@ -109,7 +110,7 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
     }
 
     if request.method == "POST" && request.path == "/email/start" {
-        return Ok(cors(request, handle_email_start(request)));
+        return handle_email_start(request, config).map(|response| cors(request, response));
     }
 
     if request.method == "POST" && request.path == "/email/verify" {
@@ -165,17 +166,27 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
     Ok(cors(request, Response::json_error(404, "not_found")))
 }
 
-fn handle_email_start(request: &Request) -> Response {
-    match serde_json::from_str::<serde_json::Value>(&request.body) {
-        Ok(value)
-            if value
-                .get("email")
-                .and_then(serde_json::Value::as_str)
-                .is_some() =>
-        {
-            Response::json_error(503, "smtp_not_configured")
+fn handle_email_start(request: &Request, config: &Config) -> io::Result<Response> {
+    let parsed = match parse_email_start_request(&request.body) {
+        Ok(parsed) => parsed,
+        Err(_) => return Ok(Response::json_error(400, "invalid_request")),
+    };
+    let Some(database) = &config.database else {
+        return Ok(Response::json_error(503, "smtp_not_configured"));
+    };
+
+    match start_email_auth(&database.db_path, &parsed) {
+        Ok(()) => Ok(Response::json_value(200, serde_json::json!({ "ok": true }))),
+        Err(EmailStartError::SmtpNotConfigured) => {
+            Ok(Response::json_error(503, "smtp_not_configured"))
         }
-        _ => Response::json_error(400, "invalid_request"),
+        Err(EmailStartError::SmtpTemporarilyUnavailable) => {
+            Ok(Response::json_error(503, "smtp_temporarily_unavailable"))
+        }
+        Err(EmailStartError::Database) => Err(io::Error::new(
+            io::ErrorKind::Other,
+            "email start database error",
+        )),
     }
 }
 
@@ -617,6 +628,22 @@ mod tests {
         .expect("email start response builds");
 
         assert_eq!(response, Response::json_error(503, "smtp_not_configured"));
+    }
+
+    #[test]
+    fn email_start_rejects_invalid_request_over_http_boundary() {
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/email/start".to_string(),
+                headers: Vec::new(),
+                body: r#"{"email":"missing-domain@"}"#.to_string(),
+            },
+            &Config::default(),
+        )
+        .expect("email start response builds");
+
+        assert_eq!(response, Response::json_error(400, "invalid_request"));
     }
 
     #[test]

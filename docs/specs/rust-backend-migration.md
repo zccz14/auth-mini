@@ -76,6 +76,14 @@
 - Rust access token 验证必须拒绝 payload 或签名被篡改的 token。
 - 本切片不迁移 JWKS 轮换 CLI，不切换生产入口，不补齐 Ed25519 challenge 验证完成登录。
 
+本轮 SMTP plain transport 切片必须新增下列可验证行为：
+
+- Rust 后端 `POST /email/start` 必须按 OpenAPI 合同解析 JSON 对象，只接受 `email` 字段，并将邮箱 trim 后小写化；无效 JSON、无效 email 或额外字段返回 `400 invalid_request`。
+- 配置 `--db` 时，Rust 后端必须读取 `smtp_configs` 中的 active 配置；无 active 配置返回 `503 smtp_not_configured`。
+- 选中 SMTP 配置后，Rust 后端必须创建 6 位 OTP，按 SHA-256 hex 写入 `email_otps`，设置 10 分钟过期时间，并清空旧 `consumed_at`。
+- 本切片只迁移可测试的明文 SMTP AUTH LOGIN 发送边界；发送成功后返回 `200 {"ok":true}`，发送失败或配置为 `secure=1` 时返回 `503 smtp_temporarily_unavailable`，并立即写入 `consumed_at` 使本次 OTP 不可被验证。
+- 本切片不得在无法完成 SMTP 投递时返回假成功；不得连接外部 SMTP 服务进行测试。
+
 ## API 兼容范围
 
 第一阶段不替换生产 API。兼容范围限定为新增 Rust 切片自身的基础端点，不声明覆盖现有认证 API。
@@ -89,7 +97,7 @@
 - 第一阶段 Rust 切片不写入数据库，不执行迁移，不改变 schema。
 - 第二阶段 Rust 切片只执行 `sql/schema.sql` 中的 `CREATE TABLE IF NOT EXISTS`，不新增 schema，不执行 TypeScript 中已有的旧库修复逻辑。
 - 后续 Rust 数据库访问必须复用现有表名、列名、约束和时间/令牌语义；需要迁移兼容逻辑时必须有明确旧版本依赖和删除条件。
-- 第三阶段当前切片不写入数据库；第四阶段当前切片只写入 `email_otps.consumed_at`；第五阶段当前切片在 OTP 成功消费后写入 `users`。Rust token 签发与验证必须复用 `jwks_keys` 中的 Ed25519 JWK 语义。
+- 第三阶段当前切片不写入数据库；第四阶段当前切片只写入 `email_otps.consumed_at`；第五阶段当前切片在 OTP 成功消费后写入 `users`。Rust token 签发与验证必须复用 `jwks_keys` 中的 Ed25519 JWK 语义。Rust `POST /email/start` 必须复用 `smtp_configs` 与 `email_otps` 表；schema 初始化必须校验这些表的本轮所需列存在。
 
 ## 配置边界
 
@@ -111,6 +119,7 @@
 - 不在第四阶段当前切片迁移邮件发送、用户创建、session token 签发、WebAuthn、Ed25519 或 SDK。
 - 不在第五阶段当前切片迁移邮件发送、session token 签发、WebAuthn、Ed25519 或 SDK。
 - 不在本轮 Ed25519 JWT/JWKS 切片迁移 JWKS 轮换 CLI、WebAuthn、真实 SMTP、生产入口或 Ed25519 完成登录。
+- 不在本轮 SMTP plain transport 切片迁移 TLS/SMTPS/STARTTLS、SMTP CLI、SMTP 多 provider 生产可观测日志、WebAuthn 或生产入口切换。
 - 不引入新的数据库、缓存、队列或配置格式。
 - 不改变现有 OpenAPI 合同。
 - 不增加 TypeScript 与 Rust 之间的代理兼容层。
@@ -127,4 +136,5 @@
 - 第四阶段当前切片 Rust 测试覆盖有效 OTP 消费、过期/已消费/缺失/错误 code 拒绝，以及 HTTP 层 `401 invalid_email_otp` 与成功消费后 `501 not_implemented`。
 - 第五阶段当前切片 Rust 测试覆盖首次 email 创建用户、复用已有用户不重复创建、已有未验证用户写入 `email_verified_at`，以及 HTTP 层成功处理用户后仍返回 `501 not_implemented`。
 - 本轮 Rust 测试覆盖 access token 可由 JWKS 公钥完成 Ed25519 验签，并覆盖篡改 token 被拒绝。
+- 本轮 SMTP Rust 测试覆盖 email start 请求边界、无 active SMTP 配置、明文 SMTP 成功时 OTP 创建和邮件内容、SMTP 失败时 OTP 失效、secure SMTP 不返回假成功，以及 HTTP 层 invalid_request/smtp_not_configured 边界。
 - 代码提交在对应迁移分支并通过 PR 合入流程推进。
