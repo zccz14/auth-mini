@@ -21,7 +21,10 @@ use crate::session::{
     mint_session_tokens, parse_refresh_request, refresh_session_tokens,
     require_passkey_management_auth, token_json, SessionError,
 };
-use crate::webauthn::delete_credential as delete_webauthn_credential;
+use crate::webauthn::{
+    delete_credential as delete_webauthn_credential, parse_options_request,
+    register_options as webauthn_register_options, RegisterOptionsError,
+};
 
 pub fn run_server(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(database) = &config.database {
@@ -144,6 +147,11 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
 
     if request.method == "POST" && request.path == "/ed25519/start" {
         return handle_ed25519_start(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "POST" && request.path == "/webauthn/register/options" {
+        return handle_webauthn_register_options(request, config)
+            .map(|response| cors(request, response));
     }
 
     if request.method == "PATCH" && ed25519_credential_id(request).is_some() {
@@ -383,6 +391,38 @@ fn handle_webauthn_credential_delete(request: &Request, config: &Config) -> io::
     Ok(Response::json_error(404, "credential_not_found"))
 }
 
+fn handle_webauthn_register_options(request: &Request, config: &Config) -> io::Result<Response> {
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    if require_passkey_management_auth(&auth).is_err() {
+        return Ok(Response::json_error(
+            403,
+            "insufficient_authentication_method",
+        ));
+    }
+    let parsed = match parse_options_request(&request.body) {
+        Ok(parsed) => parsed,
+        Err(_) => return Ok(Response::json_error(400, "invalid_request")),
+    };
+    let Some(origin) = options_request_origin(request) else {
+        return Ok(Response::json_error(400, "invalid_webauthn_registration"));
+    };
+
+    match webauthn_register_options(&connection, &auth.user_id, &parsed, &origin) {
+        Ok(body) => Ok(Response::json_value(200, body)),
+        Err(RegisterOptionsError::InvalidRequest) => {
+            Ok(Response::json_error(400, "invalid_request"))
+        }
+        Err(RegisterOptionsError::InvalidWebauthnRegistration) => {
+            Ok(Response::json_error(400, "invalid_webauthn_registration"))
+        }
+        Err(RegisterOptionsError::InvalidAccessToken) => {
+            Ok(Response::json_error(401, "invalid_access_token"))
+        }
+    }
+}
+
 fn handle_ed25519_start(request: &Request, config: &Config) -> io::Result<Response> {
     let parsed = match parse_start_authentication_request(&request.body) {
         Ok(parsed) => parsed,
@@ -449,6 +489,23 @@ fn bearer_token(request: &Request) -> Option<String> {
     request
         .header("Authorization")
         .and_then(|header| header.strip_prefix("Bearer ").map(str::to_string))
+}
+
+fn options_request_origin(request: &Request) -> Option<String> {
+    if let Some(origin) = request.header("Origin") {
+        return Some(origin);
+    }
+
+    if request.path.starts_with("http://") || request.path.starts_with("https://") {
+        let (scheme, rest) = request.path.split_once("://")?;
+        let host = rest.split('/').next()?;
+
+        if !host.is_empty() {
+            return Some(format!("{scheme}://{host}"));
+        }
+    }
+
+    request.header("Host").map(|host| format!("http://{host}"))
 }
 
 fn ed25519_credential_id(request: &Request) -> Option<&str> {
@@ -680,7 +737,8 @@ mod tests {
         )
         .expect("email start response builds");
 
-        assert_eq!(response, Response::json_error(400, "invalid_request"));
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body, r#"{"error":"invalid_request"}"#);
     }
 
     #[test]
@@ -1427,6 +1485,177 @@ mod tests {
     }
 
     #[test]
+    fn creates_webauthn_register_options_over_http_boundary() {
+        let db_path = test_db_path("http-webauthn-register-options");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserted");
+        connection
+            .execute(
+                "INSERT INTO allowed_origins (origin) VALUES (?1)",
+                ["https://app.example.com"],
+            )
+            .expect("origin inserted");
+        let pair = mint_session_tokens(&connection, "user-1", "email_otp", "auth-mini", None, None)
+            .expect("session minted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/webauthn/register/options".to_string(),
+                headers: vec![
+                    (
+                        "Authorization".to_string(),
+                        format!("Bearer {}", pair.access_token),
+                    ),
+                    ("Origin".to_string(), "https://app.example.com".to_string()),
+                ],
+                body: r#"{"rp_id":"EXAMPLE.COM."}"#.to_string(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path: db_path.clone(),
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("webauthn register options response builds");
+        let body: serde_json::Value =
+            serde_json::from_str(&response.body).expect("options response parses");
+        let connection = Connection::open(db_path).expect("database opens");
+        let stored: (String, String, String) = connection
+            .query_row(
+                "SELECT type, rp_id, origin FROM webauthn_challenges WHERE request_id = ?1",
+                [body["request_id"].as_str().expect("request id")],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("challenge reads");
+
+        assert_eq!(response.status, 200);
+        assert_eq!(body["publicKey"]["rp"]["id"], "example.com");
+        assert_eq!(body["publicKey"]["user"]["name"], "user@example.com");
+        assert_eq!(
+            stored,
+            (
+                "register".to_string(),
+                "example.com".to_string(),
+                "https://app.example.com".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn rejects_webauthn_register_options_without_access_token() {
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/webauthn/register/options".to_string(),
+                headers: vec![("Origin".to_string(), "https://app.example.com".to_string())],
+                body: r#"{"rp_id":"app.example.com"}"#.to_string(),
+            },
+            &Config::default(),
+        )
+        .expect("webauthn register options response builds");
+
+        assert_eq!(response.status, 401);
+        assert_eq!(response.body, r#"{"error":"invalid_access_token"}"#);
+    }
+
+    #[test]
+    fn rejects_webauthn_register_options_without_passkey_management_auth() {
+        let db_path = test_db_path("http-webauthn-register-options-rejects-auth-method");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserted");
+        let pair = mint_session_tokens(&connection, "user-1", "ed25519", "auth-mini", None, None)
+            .expect("session minted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/webauthn/register/options".to_string(),
+                headers: vec![
+                    (
+                        "Authorization".to_string(),
+                        format!("Bearer {}", pair.access_token),
+                    ),
+                    ("Origin".to_string(), "https://app.example.com".to_string()),
+                ],
+                body: r#"{"rp_id":"app.example.com"}"#.to_string(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path,
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("webauthn register options response builds");
+
+        assert_eq!(response.status, 403);
+        assert_eq!(
+            response.body,
+            r#"{"error":"insufficient_authentication_method"}"#
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_webauthn_register_options_request_over_http_boundary() {
+        let db_path = test_db_path("http-webauthn-register-options-invalid-request");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserted");
+        let pair = mint_session_tokens(&connection, "user-1", "email_otp", "auth-mini", None, None)
+            .expect("session minted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/webauthn/register/options".to_string(),
+                headers: vec![
+                    (
+                        "Authorization".to_string(),
+                        format!("Bearer {}", pair.access_token),
+                    ),
+                    ("Origin".to_string(), "https://app.example.com".to_string()),
+                ],
+                body: r#"{"rp_id":"app.example.com","extra":true}"#.to_string(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path,
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("webauthn register options response builds");
+
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body, r#"{"error":"invalid_request"}"#);
+    }
+
+    #[test]
     fn rejects_ed25519_credentials_without_passkey_management_auth() {
         let db_path = test_db_path("http-ed25519-credentials-rejects-auth-method");
         let connection = Connection::open(&db_path).expect("database opens");
@@ -1647,6 +1876,22 @@ mod tests {
                     transports TEXT NOT NULL DEFAULT '',
                     rp_id TEXT NOT NULL,
                     last_used_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE webauthn_challenges (
+                    request_id TEXT PRIMARY KEY,
+                    type TEXT NOT NULL CHECK (type IN ('register', 'authenticate')),
+                    challenge TEXT NOT NULL,
+                    user_id TEXT,
+                    expires_at TEXT NOT NULL,
+                    rp_id TEXT NOT NULL,
+                    origin TEXT NOT NULL,
+                    consumed_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE allowed_origins (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    origin TEXT NOT NULL UNIQUE,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
                 CREATE TABLE ed25519_credentials (

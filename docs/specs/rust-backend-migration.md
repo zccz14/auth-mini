@@ -84,6 +84,14 @@
 - 本切片只迁移可测试的明文 SMTP AUTH LOGIN 发送边界；发送成功后返回 `200 {"ok":true}`，发送失败或配置为 `secure=1` 时返回 `503 smtp_temporarily_unavailable`，并立即写入 `consumed_at` 使本次 OTP 不可被验证。
 - 本切片不得在无法完成 SMTP 投递时返回假成功；不得连接外部 SMTP 服务进行测试。
 
+本轮 WebAuthn register/options 切片必须新增下列可验证行为：
+
+- Rust 后端覆盖 `POST /webauthn/register/options`，请求必须先通过 bearer access token 与 passkey-management 授权；缺失或无效 token 返回 `401 invalid_access_token`，认证方式不是 `email_otp` 或 `webauthn` 返回 `403 insufficient_authentication_method`。
+- 请求 body 必须是仅包含非空 `rp_id` 的 JSON 对象；无效 body 返回 `400 invalid_request`。
+- Rust 必须按已允许 origin 校验请求 origin 与 `rp_id`：请求 origin 必须存在于 `allowed_origins`，`rp_id` 必须是该 origin host 本身或父域，且必须被任一 allowlist origin 覆盖；不满足时返回 `400 invalid_webauthn_registration`。
+- 成功时 Rust 生成 WebAuthn registration options，写入 `webauthn_challenges` 的 `register` challenge，并将该用户未消费的旧 register challenge 标记为 consumed；响应包含 `request_id` 与 `publicKey`，其中 rp/user/pubKeyCredParams/timeout/authenticatorSelection 复用 TypeScript 公开合同。
+- 本切片不迁移 `/webauthn/register/verify`，不迁移登录 options/verify，不实现任何 WebAuthn 假验证成功路径。
+
 ## API 兼容范围
 
 第一阶段不替换生产 API。兼容范围限定为新增 Rust 切片自身的基础端点，不声明覆盖现有认证 API。
@@ -97,7 +105,7 @@
 - 第一阶段 Rust 切片不写入数据库，不执行迁移，不改变 schema。
 - 第二阶段 Rust 切片只执行 `sql/schema.sql` 中的 `CREATE TABLE IF NOT EXISTS`，不新增 schema，不执行 TypeScript 中已有的旧库修复逻辑。
 - 后续 Rust 数据库访问必须复用现有表名、列名、约束和时间/令牌语义；需要迁移兼容逻辑时必须有明确旧版本依赖和删除条件。
-- 第三阶段当前切片不写入数据库；第四阶段当前切片只写入 `email_otps.consumed_at`；第五阶段当前切片在 OTP 成功消费后写入 `users`。Rust token 签发与验证必须复用 `jwks_keys` 中的 Ed25519 JWK 语义。Rust `POST /email/start` 必须复用 `smtp_configs` 与 `email_otps` 表；schema 初始化必须校验这些表的本轮所需列存在。
+- 第三阶段当前切片不写入数据库；第四阶段当前切片只写入 `email_otps.consumed_at`；第五阶段当前切片在 OTP 成功消费后写入 `users`。Rust token 签发与验证必须复用 `jwks_keys` 中的 Ed25519 JWK 语义。Rust `POST /email/start` 必须复用 `smtp_configs` 与 `email_otps` 表；Rust WebAuthn register/options 必须复用 `users`、`allowed_origins` 与 `webauthn_challenges` 表；schema 初始化必须校验这些表的本轮所需列存在。
 
 ## 配置边界
 
@@ -120,6 +128,7 @@
 - 不在第五阶段当前切片迁移邮件发送、session token 签发、WebAuthn、Ed25519 或 SDK。
 - 不在本轮 Ed25519 JWT/JWKS 切片迁移 JWKS 轮换 CLI、WebAuthn、真实 SMTP、生产入口或 Ed25519 完成登录。
 - 不在本轮 SMTP plain transport 切片迁移 TLS/SMTPS/STARTTLS、SMTP CLI、SMTP 多 provider 生产可观测日志、WebAuthn 或生产入口切换。
+- 不在本轮 WebAuthn register/options 切片迁移 WebAuthn register/verify、authenticate/options、authenticate/verify 或生产入口切换。
 - 不引入新的数据库、缓存、队列或配置格式。
 - 不改变现有 OpenAPI 合同。
 - 不增加 TypeScript 与 Rust 之间的代理兼容层。
@@ -138,4 +147,5 @@
 - 本轮 Rust 测试覆盖 access token 可由 JWKS 公钥完成 Ed25519 验签，并覆盖篡改 token 被拒绝。
 - 本轮 SMTP Rust 测试覆盖 email start 请求边界、无 active SMTP 配置、明文 SMTP 成功时 OTP 创建和邮件内容、SMTP 失败时 OTP 失效、secure SMTP 不返回假成功，以及 HTTP 层 invalid_request/smtp_not_configured 边界。
 - 本轮 WebAuthn 凭据删除切片必须新增下列可验证行为：Rust 后端覆盖 `DELETE /webauthn/credentials/{id}`，要求有效 access token 且认证方式为 `email_otp` 或 `webauthn`；只允许删除当前用户自己的 WebAuthn 凭据，成功返回 `200 {"ok":true}`，其他用户或不存在的凭据返回 `404 credential_not_found`，不满足管理凭据认证方式返回 `403 insufficient_authentication_method`。本切片不迁移 WebAuthn 注册/登录 options 或 verify，不实现任何 WebAuthn 假验证成功路径。
+- 本轮 WebAuthn register/options Rust 测试覆盖成功生成 options 并持久化 challenge、父域 rp_id 规范化、二次 options 消费旧 challenge、sibling rp_id 拒绝、缺失 access token 拒绝、非 passkey-management 认证方式拒绝。
 - 代码提交在对应迁移分支并通过 PR 合入流程推进。
