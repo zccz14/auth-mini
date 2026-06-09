@@ -10,7 +10,8 @@ use crate::jwks::list_public_keys;
 use crate::openapi::{read_openapi_json, read_openapi_yaml};
 use crate::session::{
     authenticate_access_token, current_user_response, logout_peer_session, logout_session,
-    mint_session_tokens, parse_refresh_request, refresh_session_tokens, token_json, SessionError,
+    mint_session_tokens, parse_refresh_request, refresh_session_tokens,
+    require_passkey_management_auth, token_json, SessionError,
 };
 
 pub fn run_server(config: Config) -> Result<(), Box<dyn std::error::Error>> {
@@ -212,6 +213,12 @@ fn handle_peer_session_logout(request: &Request, config: &Config) -> io::Result<
     let Some((connection, auth)) = authenticated_connection(request, config)? else {
         return Ok(Response::json_error(401, "invalid_access_token"));
     };
+    if require_passkey_management_auth(&auth).is_err() {
+        return Ok(Response::json_error(
+            403,
+            "insufficient_authentication_method",
+        ));
+    }
     let target = request
         .path
         .strip_prefix("/session/")
@@ -377,6 +384,7 @@ fn reason_phrase(status: u16) -> &'static str {
         204 => "No Content",
         400 => "Bad Request",
         401 => "Unauthorized",
+        403 => "Forbidden",
         404 => "Not Found",
         503 => "Service Unavailable",
         501 => "Not Implemented",
@@ -655,6 +663,50 @@ mod tests {
         assert_eq!(response.status, 200);
         assert!(response.body.contains("user@example.com"));
         assert!(response.body.contains("active_sessions"));
+    }
+
+    #[test]
+    fn rejects_peer_logout_without_passkey_management_auth() {
+        let db_path = test_db_path("http-peer-logout-rejects-ed25519");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserted");
+        let pair = mint_session_tokens(&connection, "user-1", "ed25519", "auth-mini", None, None)
+            .expect("session minted");
+        let peer_pair =
+            mint_session_tokens(&connection, "user-1", "email_otp", "auth-mini", None, None)
+                .expect("peer session minted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: format!("/session/{}/logout", peer_pair.session_id),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", pair.access_token),
+                )],
+                body: String::new(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path,
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("peer logout response builds");
+
+        assert_eq!(
+            response,
+            Response::json_error(403, "insufficient_authentication_method")
+        );
     }
 
     #[test]
