@@ -1,5 +1,6 @@
 mod config;
 mod db;
+mod ed25519;
 mod email_verify;
 mod http;
 mod jwks;
