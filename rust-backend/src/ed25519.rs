@@ -55,6 +55,19 @@ pub(crate) fn update_credential(
     credential_response(connection, credential_id, user_id)
 }
 
+pub(crate) fn delete_credential(
+    connection: &Connection,
+    credential_id: &str,
+    user_id: &str,
+) -> rusqlite::Result<bool> {
+    let result = connection.execute(
+        "DELETE FROM ed25519_credentials WHERE id = ?1 AND user_id = ?2",
+        params![credential_id, user_id],
+    )?;
+
+    Ok(result > 0)
+}
+
 fn credential_response(
     connection: &Connection,
     credential_id: &str,
@@ -248,5 +261,79 @@ mod tests {
         .expect("update attempts");
 
         assert!(credential.is_none());
+    }
+
+    #[test]
+    fn deletes_user_credential() {
+        let connection = Connection::open_in_memory().expect("database opens");
+        connection
+            .execute_batch(
+                "CREATE TABLE ed25519_credentials (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    public_key TEXT NOT NULL,
+                    last_used_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );",
+            )
+            .expect("schema exists");
+        connection
+            .execute(
+                "INSERT INTO ed25519_credentials
+                 (id, user_id, name, public_key, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                (
+                    "credential-1",
+                    "user-1",
+                    "Laptop",
+                    "public-key",
+                    "2026-01-01T00:00:00.000Z",
+                ),
+            )
+            .expect("credential inserts");
+
+        let deleted =
+            delete_credential(&connection, "credential-1", "user-1").expect("credential deletes");
+        let remaining = list_credentials(&connection, "user-1").expect("credentials list");
+
+        assert!(deleted);
+        assert_eq!(remaining.as_array().expect("array response").len(), 0);
+    }
+
+    #[test]
+    fn delete_rejects_other_user_credential() {
+        let connection = Connection::open_in_memory().expect("database opens");
+        connection
+            .execute_batch(
+                "CREATE TABLE ed25519_credentials (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    public_key TEXT NOT NULL,
+                    last_used_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );",
+            )
+            .expect("schema exists");
+        connection
+            .execute(
+                "INSERT INTO ed25519_credentials
+                 (id, user_id, name, public_key, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                (
+                    "credential-1",
+                    "user-2",
+                    "Tablet",
+                    "public-key",
+                    "2026-01-01T00:00:00.000Z",
+                ),
+            )
+            .expect("credential inserts");
+
+        let deleted =
+            delete_credential(&connection, "credential-1", "user-1").expect("delete attempts");
+
+        assert!(!deleted);
     }
 }

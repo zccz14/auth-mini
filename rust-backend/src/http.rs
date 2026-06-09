@@ -4,8 +4,8 @@ use std::net::{TcpListener, TcpStream};
 use crate::config::Config;
 use crate::db::initialize_database;
 use crate::ed25519::{
-    list_credentials as list_ed25519_credentials, parse_credential_update_request,
-    update_credential as update_ed25519_credential,
+    delete_credential as delete_ed25519_credential, list_credentials as list_ed25519_credentials,
+    parse_credential_update_request, update_credential as update_ed25519_credential,
 };
 use crate::email_verify::{
     consume_email_verify_otp, parse_email_verify_request, EmailVerifyOutcome,
@@ -134,6 +134,11 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
 
     if request.method == "PATCH" && ed25519_credential_id(request).is_some() {
         return handle_ed25519_credential_update(request, config)
+            .map(|response| cors(request, response));
+    }
+
+    if request.method == "DELETE" && ed25519_credential_id(request).is_some() {
+        return handle_ed25519_credential_delete(request, config)
             .map(|response| cors(request, response));
     }
 
@@ -285,6 +290,27 @@ fn handle_ed25519_credential_update(request: &Request, config: &Config) -> io::R
         Some(body) => Ok(Response::json_value(200, body)),
         None => Ok(Response::json_error(404, "credential_not_found")),
     }
+}
+
+fn handle_ed25519_credential_delete(request: &Request, config: &Config) -> io::Result<Response> {
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    if require_passkey_management_auth(&auth).is_err() {
+        return Ok(Response::json_error(
+            403,
+            "insufficient_authentication_method",
+        ));
+    }
+    let credential_id = ed25519_credential_id(request).expect("route ensures credential id");
+    let deleted = delete_ed25519_credential(&connection, credential_id, &auth.user_id)
+        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+
+    if deleted {
+        return Ok(Response::json_value(200, serde_json::json!({ "ok": true })));
+    }
+
+    Ok(Response::json_error(404, "credential_not_found"))
 }
 
 fn handle_me(request: &Request, config: &Config) -> io::Result<Response> {
@@ -885,6 +911,113 @@ mod tests {
         assert_eq!(body["id"], "credential-1");
         assert_eq!(body["name"], "Renamed laptop");
         assert_eq!(body["public_key"], "public-key");
+    }
+
+    #[test]
+    fn deletes_ed25519_credential_over_http_boundary() {
+        let db_path = test_db_path("http-ed25519-credential-delete");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserted");
+        connection
+            .execute(
+                "INSERT INTO ed25519_credentials
+                 (id, user_id, name, public_key, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                (
+                    "credential-1",
+                    "user-1",
+                    "Laptop",
+                    "public-key",
+                    "2026-01-01T00:00:00.000Z",
+                ),
+            )
+            .expect("credential inserted");
+        let pair = mint_session_tokens(&connection, "user-1", "email_otp", "auth-mini", None, None)
+            .expect("session minted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "DELETE".to_string(),
+                path: "/ed25519/credentials/credential-1".to_string(),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", pair.access_token),
+                )],
+                body: String::new(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path,
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("ed25519 credential delete response builds");
+
+        assert_eq!(
+            response,
+            Response::json_value(200, serde_json::json!({ "ok": true }))
+        );
+    }
+
+    #[test]
+    fn delete_ed25519_credential_returns_not_found_for_other_user() {
+        let db_path = test_db_path("http-ed25519-credential-delete-not-found");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserted");
+        connection
+            .execute(
+                "INSERT INTO ed25519_credentials
+                 (id, user_id, name, public_key, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                (
+                    "credential-1",
+                    "user-2",
+                    "Tablet",
+                    "public-key",
+                    "2026-01-01T00:00:00.000Z",
+                ),
+            )
+            .expect("credential inserted");
+        let pair = mint_session_tokens(&connection, "user-1", "email_otp", "auth-mini", None, None)
+            .expect("session minted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "DELETE".to_string(),
+                path: "/ed25519/credentials/credential-1".to_string(),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", pair.access_token),
+                )],
+                body: String::new(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path,
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("ed25519 credential delete response builds");
+
+        assert_eq!(response, Response::json_error(404, "credential_not_found"));
     }
 
     #[test]
