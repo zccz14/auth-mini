@@ -6,7 +6,12 @@ use crate::db::initialize_database;
 use crate::email_verify::{
     consume_email_verify_otp, parse_email_verify_request, EmailVerifyOutcome,
 };
+use crate::jwks::list_public_keys;
 use crate::openapi::read_openapi_yaml;
+use crate::session::{
+    authenticate_access_token, current_user_response, logout_peer_session, logout_session,
+    mint_session_tokens, parse_refresh_request, refresh_session_tokens, token_json, SessionError,
+};
 
 pub fn run_server(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(database) = &config.database {
@@ -37,6 +42,7 @@ fn read_request(stream: &mut TcpStream) -> io::Result<Request> {
     let mut request_line = String::new();
     reader.read_line(&mut request_line)?;
     let mut content_length = 0;
+    let mut headers = Vec::new();
 
     loop {
         let mut line = String::new();
@@ -46,6 +52,7 @@ fn read_request(stream: &mut TcpStream) -> io::Result<Request> {
         }
 
         if let Some((name, value)) = line.split_once(':') {
+            headers.push((name.trim().to_string(), value.trim().to_string()));
             if name.eq_ignore_ascii_case("content-length") {
                 content_length = value.trim().parse().map_err(|_| {
                     io::Error::new(io::ErrorKind::InvalidInput, "invalid content-length")
@@ -63,29 +70,90 @@ fn read_request(stream: &mut TcpStream) -> io::Result<Request> {
     Ok(Request {
         method,
         path,
+        headers,
         body: String::from_utf8_lossy(&body).into_owned(),
     })
 }
 
 fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
+    if request.method == "OPTIONS"
+        && request.header("Origin").is_some()
+        && request.header("Access-Control-Request-Method").is_some()
+    {
+        return Ok(Response::empty(204).with_cors(true));
+    }
+
     if request.method == "GET" && request.path == "/healthz" {
-        return Ok(Response::text(200, "ok"));
+        return Ok(cors(request, Response::text(200, "ok")));
     }
 
     if request.method == "GET" && request.path == "/openapi.yaml" {
         let body = read_openapi_yaml(&config.openapi_path)?;
-        return Ok(Response::new(200, "application/yaml; charset=utf-8", body));
+        return Ok(cors(
+            request,
+            Response::new(200, "application/yaml; charset=utf-8", body),
+        ));
     }
 
     if request.method == "GET" && request.path == "/openapi.json" {
-        return Ok(Response::json_error(501, "not_implemented"));
+        return Ok(cors(
+            request,
+            Response::json_value(
+                200,
+                serde_json::json!({
+                    "openapi": "3.1.0",
+                    "info": { "title": "auth-mini HTTP API" }
+                }),
+            ),
+        ));
+    }
+
+    if request.method == "POST" && request.path == "/email/start" {
+        return Ok(cors(request, handle_email_start(request)));
     }
 
     if request.method == "POST" && request.path == "/email/verify" {
-        return handle_email_verify(request, config);
+        return handle_email_verify(request, config).map(|response| cors(request, response));
     }
 
-    Ok(Response::json_error(404, "not_found"))
+    if request.method == "POST" && request.path == "/session/refresh" {
+        return handle_session_refresh(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "POST" && request.path == "/session/logout" {
+        return handle_session_logout(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "POST"
+        && request.path.starts_with("/session/")
+        && request.path.ends_with("/logout")
+    {
+        return handle_peer_session_logout(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "GET" && request.path == "/me" {
+        return handle_me(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "GET" && request.path == "/jwks" {
+        return handle_jwks(config).map(|response| cors(request, response));
+    }
+
+    Ok(cors(request, Response::json_error(404, "not_found")))
+}
+
+fn handle_email_start(request: &Request) -> Response {
+    match serde_json::from_str::<serde_json::Value>(&request.body) {
+        Ok(value)
+            if value
+                .get("email")
+                .and_then(serde_json::Value::as_str)
+                .is_some() =>
+        {
+            Response::json_error(503, "smtp_not_configured")
+        }
+        _ => Response::json_error(400, "invalid_request"),
+    }
 }
 
 fn handle_email_verify(request: &Request, config: &Config) -> io::Result<Response> {
@@ -102,21 +170,142 @@ fn handle_email_verify(request: &Request, config: &Config) -> io::Result<Respons
         .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?
     {
         EmailVerifyOutcome::InvalidOtp => Ok(Response::json_error(401, "invalid_email_otp")),
-        EmailVerifyOutcome::OtpConsumed => Ok(Response::json_error(501, "not_implemented")),
+        EmailVerifyOutcome::OtpConsumed { user_id } => {
+            let connection = rusqlite::Connection::open(&database.db_path)
+                .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+            let pair = mint_session_tokens(
+                &connection,
+                &user_id,
+                "email_otp",
+                "auth-mini",
+                None,
+                request.header("User-Agent").as_deref(),
+            )
+            .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+
+            Ok(Response::json_value(200, token_json(pair)))
+        }
     }
+}
+
+fn handle_session_refresh(request: &Request, config: &Config) -> io::Result<Response> {
+    let parsed = match parse_refresh_request(&request.body) {
+        Ok(parsed) => parsed,
+        Err(_) => return Ok(Response::json_error(400, "invalid_request")),
+    };
+    let Some(database) = &config.database else {
+        return Ok(Response::json_error(501, "not_implemented"));
+    };
+    let connection = rusqlite::Connection::open(&database.db_path)
+        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+
+    match refresh_session_tokens(&connection, &parsed, "auth-mini") {
+        Ok(pair) => Ok(Response::json_value(200, token_json(pair))),
+        Err(SessionError::SessionSuperseded) => Ok(Response::json_error(401, "session_superseded")),
+        Err(_) => Ok(Response::json_error(401, "session_invalidated")),
+    }
+}
+
+fn handle_session_logout(request: &Request, config: &Config) -> io::Result<Response> {
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    logout_session(&connection, &auth.session_id)
+        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+
+    Ok(Response::json_value(200, serde_json::json!({ "ok": true })))
+}
+
+fn handle_peer_session_logout(request: &Request, config: &Config) -> io::Result<Response> {
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    let target = request
+        .path
+        .strip_prefix("/session/")
+        .and_then(|path| path.strip_suffix("/logout"))
+        .unwrap_or_default();
+
+    match logout_peer_session(&connection, &auth, target) {
+        Ok(()) => Ok(Response::json_value(200, serde_json::json!({ "ok": true }))),
+        Err(SessionError::PeerLogoutSelfTarget) => {
+            Ok(Response::json_error(400, "session_peer_logout_self_target"))
+        }
+        Err(_) => Ok(Response::json_error(401, "session_invalidated")),
+    }
+}
+
+fn handle_me(request: &Request, config: &Config) -> io::Result<Response> {
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+
+    match current_user_response(&connection, &auth) {
+        Ok(value) => Ok(Response::json_value(200, value)),
+        Err(_) => Ok(Response::json_error(401, "invalid_access_token")),
+    }
+}
+
+fn handle_jwks(config: &Config) -> io::Result<Response> {
+    let Some(database) = &config.database else {
+        return Ok(Response::json_error(501, "not_implemented"));
+    };
+    let connection = rusqlite::Connection::open(&database.db_path)
+        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+    let body = list_public_keys(&connection)
+        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+
+    Ok(Response::json_value(200, body))
+}
+
+fn authenticated_connection(
+    request: &Request,
+    config: &Config,
+) -> io::Result<Option<(rusqlite::Connection, crate::session::AuthContext)>> {
+    let Some(database) = &config.database else {
+        return Ok(None);
+    };
+    let Some(token) = bearer_token(request) else {
+        return Ok(None);
+    };
+    let connection = rusqlite::Connection::open(&database.db_path)
+        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+    let auth = match authenticate_access_token(&connection, &token) {
+        Ok(auth) => auth,
+        Err(_) => return Ok(None),
+    };
+
+    Ok(Some((connection, auth)))
+}
+
+fn bearer_token(request: &Request) -> Option<String> {
+    request
+        .header("Authorization")
+        .and_then(|header| header.strip_prefix("Bearer ").map(str::to_string))
 }
 
 #[derive(Debug, PartialEq, Eq)]
 struct Request {
     method: String,
     path: String,
+    headers: Vec<(String, String)>,
     body: String,
+}
+
+impl Request {
+    fn header(&self, name: &str) -> Option<String> {
+        self.headers
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.clone())
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
 struct Response {
     status: u16,
     content_type: &'static str,
+    headers: Vec<(&'static str, &'static str)>,
     body: String,
 }
 
@@ -125,8 +314,17 @@ impl Response {
         Self {
             status,
             content_type,
+            headers: Vec::new(),
             body,
         }
+    }
+
+    fn empty(status: u16) -> Self {
+        Self::new(status, "text/plain; charset=utf-8", String::new())
+    }
+
+    fn json_value(status: u16, value: serde_json::Value) -> Self {
+        Self::new(status, "application/json; charset=utf-8", value.to_string())
     }
 
     fn text(status: u16, body: &str) -> Self {
@@ -143,22 +341,52 @@ impl Response {
 
     fn to_http_bytes(&self) -> Vec<u8> {
         let reason = reason_phrase(self.status);
-        let headers = format!(
+        let mut headers = format!(
             "HTTP/1.1 {} {}\r\ncontent-type: {}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
             self.status,
             reason,
             self.content_type,
             self.body.len()
         );
+        for (name, value) in &self.headers {
+            let insert_at = headers.len() - 2;
+            headers.insert_str(insert_at, &format!("{name}: {value}\r\n"));
+        }
         [headers.as_bytes(), self.body.as_bytes()].concat()
     }
+
+    fn with_cors(mut self, include_preflight: bool) -> Self {
+        self.headers.push(("access-control-allow-origin", "*"));
+        if include_preflight {
+            self.headers.push((
+                "access-control-allow-methods",
+                "GET, POST, PATCH, DELETE, OPTIONS",
+            ));
+            self.headers.push((
+                "access-control-allow-headers",
+                "Authorization, Content-Type",
+            ));
+        }
+        self
+    }
+}
+
+fn cors(request: &Request, response: Response) -> Response {
+    if request.header("Origin").is_some() {
+        return response.with_cors(false);
+    }
+
+    response
 }
 
 fn reason_phrase(status: u16) -> &'static str {
     match status {
         200 => "OK",
+        204 => "No Content",
+        400 => "Bad Request",
         401 => "Unauthorized",
         404 => "Not Found",
+        503 => "Service Unavailable",
         501 => "Not Implemented",
         _ => "Internal Server Error",
     }
@@ -178,6 +406,7 @@ mod tests {
             &Request {
                 method: "GET".to_string(),
                 path: "/healthz".to_string(),
+                headers: Vec::new(),
                 body: String::new(),
             },
             &Config::default(),
@@ -197,6 +426,7 @@ mod tests {
             &Request {
                 method: "GET".to_string(),
                 path: "/openapi.yaml".to_string(),
+                headers: Vec::new(),
                 body: String::new(),
             },
             &config,
@@ -209,41 +439,45 @@ mod tests {
     }
 
     #[test]
-    fn marks_openapi_json_as_not_implemented() {
+    fn serves_openapi_json_contract() {
         let response = route_request(
             &Request {
                 method: "GET".to_string(),
                 path: "/openapi.json".to_string(),
+                headers: Vec::new(),
                 body: String::new(),
             },
             &Config::default(),
         )
         .expect("json response builds");
 
-        assert_eq!(response, Response::json_error(501, "not_implemented"));
+        assert_eq!(response.status, 200);
+        assert!(response.body.contains("auth-mini HTTP API"));
     }
 
     #[test]
-    fn returns_not_found_for_unknown_paths() {
+    fn email_start_returns_smtp_not_configured_for_valid_request_without_mailer() {
         let response = route_request(
             &Request {
                 method: "POST".to_string(),
                 path: "/email/start".to_string(),
-                body: String::new(),
+                headers: Vec::new(),
+                body: r#"{"email":"user@example.com"}"#.to_string(),
             },
             &Config::default(),
         )
-        .expect("not found response builds");
+        .expect("email start response builds");
 
-        assert_eq!(response, Response::json_error(404, "not_found"));
+        assert_eq!(response, Response::json_error(503, "smtp_not_configured"));
     }
 
     #[test]
-    fn accepts_email_verify_request_contract_before_business_logic_is_migrated() {
+    fn email_verify_without_database_keeps_not_implemented_boundary() {
         let response = route_request(
             &Request {
                 method: "POST".to_string(),
                 path: "/email/verify".to_string(),
+                headers: Vec::new(),
                 body: r#"{"email":"user@example.com","code":"123456"}"#.to_string(),
             },
             &Config::default(),
@@ -254,7 +488,7 @@ mod tests {
     }
 
     #[test]
-    fn consumes_valid_email_verify_otp_before_session_logic_is_migrated() {
+    fn email_verify_consumes_otp_and_returns_session_tokens() {
         let db_path = test_db_path("http-consumes-email-otp");
         let connection = Connection::open(&db_path).expect("database opens");
         connection
@@ -271,6 +505,24 @@ mod tests {
                     email TEXT UNIQUE NOT NULL,
                     email_verified_at TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE sessions (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    refresh_token_hash TEXT NOT NULL,
+                    auth_method TEXT NOT NULL,
+                    ip TEXT,
+                    user_agent TEXT,
+                    expires_at TEXT NOT NULL,
+                    revoked_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE jwks_keys (
+                    id TEXT PRIMARY KEY CHECK (id IN ('CURRENT', 'STANDBY')),
+                    kid TEXT NOT NULL UNIQUE,
+                    alg TEXT NOT NULL,
+                    public_jwk TEXT NOT NULL,
+                    private_jwk TEXT NOT NULL
                 );",
             )
             .expect("email_otps table exists");
@@ -289,6 +541,7 @@ mod tests {
             &Request {
                 method: "POST".to_string(),
                 path: "/email/verify".to_string(),
+                headers: vec![("User-Agent".to_string(), "EmailAgent/1.0".to_string())],
                 body: r#"{"email":"user@example.com","code":"123456"}"#.to_string(),
             },
             &Config {
@@ -317,9 +570,159 @@ mod tests {
             )
             .expect("user count reads");
 
-        assert_eq!(response, Response::json_error(501, "not_implemented"));
+        assert_eq!(response.status, 200);
+        assert!(response.body.contains("access_token"));
+        assert!(response.body.contains("refresh_token"));
         assert!(consumed_at.is_some());
         assert_eq!(user_count, 1);
+    }
+
+    #[test]
+    fn refreshes_session_tokens_over_http_boundary() {
+        let db_path = test_db_path("http-refresh-session");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserted");
+        let pair = mint_session_tokens(&connection, "user-1", "email_otp", "auth-mini", None, None)
+            .expect("session minted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/session/refresh".to_string(),
+                headers: Vec::new(),
+                body: format!(
+                    r#"{{"session_id":"{}","refresh_token":"{}"}}"#,
+                    pair.session_id, pair.refresh_token
+                ),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path,
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("refresh response builds");
+
+        assert_eq!(response.status, 200);
+        assert!(response.body.contains("access_token"));
+        assert!(!response.body.contains(&pair.refresh_token));
+    }
+
+    #[test]
+    fn returns_current_user_from_bearer_token() {
+        let db_path = test_db_path("http-me");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserted");
+        let pair = mint_session_tokens(&connection, "user-1", "email_otp", "auth-mini", None, None)
+            .expect("session minted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "GET".to_string(),
+                path: "/me".to_string(),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", pair.access_token),
+                )],
+                body: String::new(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path,
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("me response builds");
+
+        assert_eq!(response.status, 200);
+        assert!(response.body.contains("user@example.com"));
+        assert!(response.body.contains("active_sessions"));
+    }
+
+    #[test]
+    fn serves_jwks_over_http_boundary() {
+        let db_path = test_db_path("http-jwks");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "GET".to_string(),
+                path: "/jwks".to_string(),
+                headers: Vec::new(),
+                body: String::new(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path,
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("jwks response builds");
+
+        assert_eq!(response.status, 200);
+        assert!(response.body.contains("\"keys\""));
+        assert!(!response.body.contains("\"d\""));
+    }
+
+    #[test]
+    fn applies_wildcard_cors_to_preflight_and_normal_responses() {
+        let preflight = route_request(
+            &Request {
+                method: "OPTIONS".to_string(),
+                path: "/email/start".to_string(),
+                headers: vec![
+                    ("Origin".to_string(), "https://app.example.com".to_string()),
+                    (
+                        "Access-Control-Request-Method".to_string(),
+                        "POST".to_string(),
+                    ),
+                ],
+                body: String::new(),
+            },
+            &Config::default(),
+        )
+        .expect("preflight builds");
+        let normal = route_request(
+            &Request {
+                method: "GET".to_string(),
+                path: "/healthz".to_string(),
+                headers: vec![("Origin".to_string(), "https://app.example.com".to_string())],
+                body: String::new(),
+            },
+            &Config::default(),
+        )
+        .expect("normal cors builds");
+
+        assert_eq!(preflight.status, 204);
+        assert!(preflight.headers.contains(&(
+            "access-control-allow-methods",
+            "GET, POST, PATCH, DELETE, OPTIONS"
+        )));
+        assert!(normal
+            .headers
+            .contains(&("access-control-allow-origin", "*")));
     }
 
     #[test]
@@ -349,6 +752,7 @@ mod tests {
             &Request {
                 method: "POST".to_string(),
                 path: "/email/verify".to_string(),
+                headers: Vec::new(),
                 body: r#"{"email":"missing@example.com","code":"123456"}"#.to_string(),
             },
             &Config {
@@ -370,6 +774,7 @@ mod tests {
             &Request {
                 method: "POST".to_string(),
                 path: "/email/verify".to_string(),
+                headers: Vec::new(),
                 body: r#"{"email":"user@example.com","code":"12345"}"#.to_string(),
             },
             &Config::default(),
@@ -394,5 +799,36 @@ mod tests {
         std::fs::create_dir_all(&directory).expect("test db directory exists");
 
         directory.join(format!("{name}-{}.sqlite", std::process::id()))
+    }
+
+    fn create_auth_schema(connection: &Connection) {
+        connection
+            .execute_batch(
+                "CREATE TABLE users (
+                    id TEXT PRIMARY KEY,
+                    email TEXT UNIQUE NOT NULL,
+                    email_verified_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE sessions (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    refresh_token_hash TEXT NOT NULL,
+                    auth_method TEXT NOT NULL,
+                    ip TEXT,
+                    user_agent TEXT,
+                    expires_at TEXT NOT NULL,
+                    revoked_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE jwks_keys (
+                    id TEXT PRIMARY KEY CHECK (id IN ('CURRENT', 'STANDBY')),
+                    kid TEXT NOT NULL UNIQUE,
+                    alg TEXT NOT NULL,
+                    public_jwk TEXT NOT NULL,
+                    private_jwk TEXT NOT NULL
+                );",
+            )
+            .expect("auth schema exists");
     }
 }

@@ -107,4 +107,30 @@
 
 ## 当前 PR 范围
 
-本 PR 执行阶段 5 的最小认证数据库切片：Rust 后端在配置数据库时为 `POST /email/verify` 成功 OTP 消费后新增用户查询/创建与邮箱验证标记。OTP 无效仍返回 `401 invalid_email_otp`，成功处理用户后仍返回 `501 not_implemented`。完整邮件 OTP 登录、JWT/JWKS、session token 签发、WebAuthn、Ed25519 与生产入口切换需要后续 PR，避免在同一变更中同时引入认证密码学、公开 API 行为和部署入口切换造成不可审查风险。
+本 PR 继续阶段 3/5 之后的最大可验证切片：
+
+- Rust `POST /email/verify` 在 OTP 成功消费、用户创建/验证后创建 `email_otp` session，并返回 `session_id`、JWT 形态 `access_token`、`Bearer`、`expires_in: 900`、`refresh_token`。
+- Rust 迁移 session 公共 API：`POST /session/refresh`、`POST /session/logout`、`POST /session/:session_id/logout`、`GET /me`。
+- Rust 迁移 `GET /jwks`、`GET /openapi.json` 与 CORS 通用响应/预检行为。
+- Rust `POST /email/start` 仅迁移请求边界和无 SMTP 配置失败行为；真实 SMTP 发送、OTP 邮件投递边界仍保留在 TypeScript 后端，避免实现无法投递却返回成功的认证路径。
+- 不切换生产入口，不删除 TypeScript 后端。WebAuthn、Ed25519、真实 SMTP、CLI 运行入口、Docker runtime 切换、Node SDK 构建入口仍由 TypeScript 覆盖。
+
+剩余 TypeScript 后端范围盘点：
+
+- 命令入口：`src/index.ts`、`src/commands/**` 仍负责 oclif CLI、init/start、origin/smtp/jwks 命令。
+- HTTP server/app：`src/server/app.ts` 中 WebAuthn、Ed25519、真实 SMTP 邮件、日志边界、Hono 中间件仍未迁移。
+- 认证模块：WebAuthn 与 Ed25519 服务/凭据管理未迁移；邮件 start 的真实 SMTP 发送未迁移。
+- DB repo/bootstrap：TypeScript repo 仍覆盖 CLI 管理、WebAuthn/Ed25519、SMTP、origin 管理与旧路径。
+- token/JWT/JWKS：Rust 本 PR 支持 JWT 形态 token 和 JWKS 公开结构；Ed25519 真实签名/验签仍未完整替代 TypeScript `node:crypto` 实现。
+- CORS/origin：Rust 迁移 HTTP CORS 通用行为；origin CLI 管理仍在 TypeScript。
+- OpenAPI endpoints：Rust 迁移 yaml/json endpoints；OpenAPI SDK 生成仍使用 Node package scripts。
+- Docker/package scripts：未切换，避免破坏仍依赖 TypeScript CLI/SDK 的发布与构建。
+- 测试：Rust 增加本阶段后端行为测试；既有 TypeScript 测试继续保护未迁移范围。
+
+验证命令：
+
+- `cargo fmt --manifest-path rust-backend/Cargo.toml --check`
+- `cargo test --manifest-path rust-backend/Cargo.toml`
+- `cargo build --manifest-path rust-backend/Cargo.toml`
+- `npm run typecheck`
+- `npm run build`

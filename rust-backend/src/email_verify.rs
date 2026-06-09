@@ -16,7 +16,7 @@ pub(crate) struct EmailVerifyRequest {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum EmailVerifyOutcome {
     InvalidOtp,
-    OtpConsumed,
+    OtpConsumed { user_id: String },
 }
 
 pub(crate) fn parse_email_verify_request(
@@ -64,16 +64,16 @@ fn consume_email_verify_otp_with_now(
         return Ok(EmailVerifyOutcome::InvalidOtp);
     }
 
-    ensure_email_verify_user(connection, &request.email, now)?;
+    let user_id = ensure_email_verify_user(connection, &request.email, now)?;
 
-    Ok(EmailVerifyOutcome::OtpConsumed)
+    Ok(EmailVerifyOutcome::OtpConsumed { user_id })
 }
 
 fn ensure_email_verify_user(
     connection: &Connection,
     email: &str,
     now: &str,
-) -> rusqlite::Result<()> {
+) -> rusqlite::Result<String> {
     connection.execute(
         "INSERT OR IGNORE INTO users (id, email, email_verified_at)
          VALUES (
@@ -92,7 +92,11 @@ fn ensure_email_verify_user(
         (now, email),
     )?;
 
-    Ok(())
+    connection.query_row(
+        "SELECT id FROM users WHERE email = ?1 LIMIT 1",
+        [email],
+        |row| row.get(0),
+    )
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -187,7 +191,7 @@ mod tests {
             consume_email_verify_otp_with_now(&connection, &request, "2025-01-01T00:00:00.000Z")
                 .expect("otp check succeeds");
 
-        assert_eq!(outcome, EmailVerifyOutcome::OtpConsumed);
+        assert!(matches!(outcome, EmailVerifyOutcome::OtpConsumed { .. }));
         assert_eq!(
             consumed_at(&connection, "user@example.com").as_deref(),
             Some("2025-01-01T00:00:00.000Z")
@@ -212,7 +216,7 @@ mod tests {
             consume_email_verify_otp_with_now(&connection, &request, "2025-01-01T00:00:00.000Z")
                 .expect("email verify database step succeeds");
 
-        assert_eq!(outcome, EmailVerifyOutcome::OtpConsumed);
+        assert!(matches!(outcome, EmailVerifyOutcome::OtpConsumed { .. }));
         assert_eq!(user_count(&connection, "first@example.com"), 1);
         assert_eq!(
             email_verified_at(&connection, "first@example.com").as_deref(),
@@ -250,7 +254,7 @@ mod tests {
             consume_email_verify_otp_with_now(&connection, &request, "2025-01-01T00:00:00.000Z")
                 .expect("email verify database step succeeds");
 
-        assert_eq!(outcome, EmailVerifyOutcome::OtpConsumed);
+        assert!(matches!(outcome, EmailVerifyOutcome::OtpConsumed { .. }));
         assert_eq!(user_count(&connection, "existing@example.com"), 1);
         assert_eq!(
             user_id(&connection, "existing@example.com").as_deref(),
@@ -282,7 +286,7 @@ mod tests {
             consume_email_verify_otp_with_now(&connection, &request, "2025-01-01T00:00:00.000Z")
                 .expect("email verify database step succeeds");
 
-        assert_eq!(outcome, EmailVerifyOutcome::OtpConsumed);
+        assert!(matches!(outcome, EmailVerifyOutcome::OtpConsumed { .. }));
         assert_eq!(
             email_verified_at(&connection, "unverified@example.com").as_deref(),
             Some("2025-01-01T00:00:00.000Z")
