@@ -107,6 +107,26 @@
 
 ## 当前 PR 范围
 
+本轮按用户要求替换 Rust SMTP 发送实现：删除手写裸 SMTP 协议交互，改由 `lettre` 处理 SMTP 会话、认证、信封和邮件发送。
+
+- Rust `POST /email/start` 保持原业务顺序：选 SMTP 配置、生成 OTP、写入 `email_otps`，发送失败时写入 `consumed_at` 失效本次 OTP。
+- Rust SMTP 发送使用 `lettre`，不再维护 `AUTH LOGIN`、`MAIL FROM`、`RCPT TO`、`DATA`、SMTP 状态码读取或 base64 编码 helper。
+- `smtp_configs.secure=0` 映射为 lettre 明文 SMTP transport；`secure=1` 映射为 lettre SMTPS/TLS transport，不再直接以未实现拒绝。
+- 现有 schema 只有 `secure` boolean，无法区分 STARTTLS-required 和 SMTPS；本轮不新增复杂兼容配置，STARTTLS-required 留作后续 schema/配置设计。
+- Rust 测试先迁移为 lettre stub/builder 边界：覆盖发送成功仍创建 OTP、发送失败仍失效 OTP、secure 配置不会假成功并使用 TLS transport。
+- 不切换 TypeScript 生产入口、Docker/package scripts、SMTP CLI 或 TS nodemailer 行为。
+
+验证命令：
+
+- `CARGO_HOME=$PWD/.cargo-home cargo fmt --manifest-path rust-backend/Cargo.toml --check`
+- `CARGO_HOME=$PWD/.cargo-home cargo test --manifest-path rust-backend/Cargo.toml`
+- `CARGO_HOME=$PWD/.cargo-home cargo build --manifest-path rust-backend/Cargo.toml`
+- `npm run typecheck`
+- `npm run build`
+- `npx vitest run tests/unit/smtp-mailer.test.ts tests/unit/shared.test.ts tests/integration/sessions.test.ts tests/integration/smtp-cli.test.ts`
+
+## 上一轮 PR 范围
+
 本轮继续迁移 WebAuthn verify，但不在 Rust 中实现假成功：由于当前 Rust 依赖尚未接入可信 WebAuthn assertion 验证库，本轮选择 `POST /webauthn/authenticate/verify` 的验证前置边界切片。
 
 - Rust `POST /webauthn/authenticate/verify` 保持公开，不要求 bearer access token。
