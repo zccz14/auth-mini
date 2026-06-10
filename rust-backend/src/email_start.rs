@@ -1,9 +1,12 @@
-use std::io::{self, BufRead, BufReader, Write};
-use std::net::TcpStream;
+use std::error::Error;
+use std::io;
 use std::path::Path;
 use std::time::Duration as StdDuration;
 
 use chrono::{Duration, SecondsFormat, Utc};
+use lettre::message::Mailbox;
+use lettre::transport::smtp::authentication::Credentials;
+use lettre::{Message, SmtpTransport, Transport};
 use rusqlite::{params, Connection};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -36,13 +39,7 @@ struct SmtpConfig {
     secure: bool,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-struct MailMessage {
-    from: String,
-    to: String,
-    subject: String,
-    text: String,
-}
+type SmtpSendError = Box<dyn Error + Send + Sync>;
 
 pub(crate) fn parse_email_start_request(
     body: &str,
@@ -71,6 +68,17 @@ fn start_email_auth_with_connection(
     connection: &Connection,
     request: &EmailStartRequest,
 ) -> Result<(), EmailStartError> {
+    start_email_auth_with_mailer(connection, request, send_otp_mail)
+}
+
+fn start_email_auth_with_mailer<F>(
+    connection: &Connection,
+    request: &EmailStartRequest,
+    send_mail: F,
+) -> Result<(), EmailStartError>
+where
+    F: FnOnce(&SmtpConfig, &str, &str) -> Result<(), SmtpSendError>,
+{
     let config = select_smtp_config(connection)?.ok_or(EmailStartError::SmtpNotConfigured)?;
     let code = generate_otp_code(connection)?;
     let expires_at =
@@ -78,7 +86,7 @@ fn start_email_auth_with_connection(
 
     upsert_email_otp(connection, &request.email, &code, &expires_at)?;
 
-    if send_otp_mail(&config, &request.email, &code).is_err() {
+    if send_mail(&config, &request.email, &code).is_err() {
         invalidate_email_otp(connection, &request.email)?;
         return Err(EmailStartError::SmtpTemporarilyUnavailable);
     }
@@ -171,112 +179,58 @@ fn invalidate_email_otp(connection: &Connection, email: &str) -> Result<(), Emai
     Ok(())
 }
 
-fn send_otp_mail(config: &SmtpConfig, email: &str, code: &str) -> io::Result<()> {
-    if config.secure {
-        return Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "secure smtp is not implemented in rust backend yet",
-        ));
-    }
+fn send_otp_mail(config: &SmtpConfig, email: &str, code: &str) -> Result<(), SmtpSendError> {
+    let transport = build_smtp_transport(config)?;
 
-    send_mail_with_plain_smtp(config, &build_otp_message(config, email, code))
+    send_mail_with_transport(&transport, &build_otp_message(config, email, code)?)
 }
 
-fn build_otp_message(config: &SmtpConfig, email: &str, code: &str) -> MailMessage {
+fn build_otp_message(
+    config: &SmtpConfig,
+    email: &str,
+    code: &str,
+) -> Result<Message, SmtpSendError> {
+    let from_address = config.from_email.parse()?;
     let from = if config.from_name.is_empty() {
-        config.from_email.clone()
+        Mailbox::new(None, from_address)
     } else {
-        format!("{} <{}>", config.from_name, config.from_email)
+        Mailbox::new(Some(config.from_name.clone()), from_address)
     };
 
-    MailMessage {
-        from,
-        to: email.to_string(),
-        subject: "Your auth-mini verification code".to_string(),
-        text: format!("Your verification code is {code}. It expires in 10 minutes."),
-    }
+    Message::builder()
+        .from(from)
+        .to(email.parse()?)
+        .subject("Your auth-mini verification code")
+        .body(format!(
+            "Your verification code is {code}. It expires in 10 minutes."
+        ))
+        .map_err(|error| Box::new(error) as SmtpSendError)
 }
 
-fn send_mail_with_plain_smtp(config: &SmtpConfig, message: &MailMessage) -> io::Result<()> {
-    let mut stream = TcpStream::connect((config.host.as_str(), config.port))?;
-    let timeout = Some(StdDuration::from_millis(SMTP_TIMEOUT_MILLIS));
-    stream.set_read_timeout(timeout)?;
-    stream.set_write_timeout(timeout)?;
-    let mut reader = BufReader::new(stream.try_clone()?);
+fn build_smtp_transport(config: &SmtpConfig) -> Result<SmtpTransport, SmtpSendError> {
+    let credentials = Credentials::new(config.username.clone(), config.password.clone());
+    let builder = if config.secure {
+        SmtpTransport::relay(&config.host)?
+    } else {
+        SmtpTransport::builder_dangerous(&config.host)
+    };
 
-    expect_smtp_status(&mut reader, 220)?;
-    smtp_command(&mut stream, &mut reader, "EHLO localhost", 250)?;
-    smtp_command(&mut stream, &mut reader, "AUTH LOGIN", 334)?;
-    smtp_command(
-        &mut stream,
-        &mut reader,
-        &base64_encode(&config.username),
-        334,
-    )?;
-    smtp_command(
-        &mut stream,
-        &mut reader,
-        &base64_encode(&config.password),
-        235,
-    )?;
-    smtp_command(
-        &mut stream,
-        &mut reader,
-        &format!("MAIL FROM:<{}>", config.from_email),
-        250,
-    )?;
-    smtp_command(
-        &mut stream,
-        &mut reader,
-        &format!("RCPT TO:<{}>", message.to),
-        250,
-    )?;
-    smtp_command(&mut stream, &mut reader, "DATA", 354)?;
-    write!(
-        stream,
-        "From: {}\r\nTo: {}\r\nSubject: {}\r\n\r\n{}\r\n.\r\n",
-        message.from, message.to, message.subject, message.text
-    )?;
-    stream.flush()?;
-    expect_smtp_status(&mut reader, 250)?;
-    smtp_command(&mut stream, &mut reader, "QUIT", 221)
+    Ok(builder
+        .port(config.port)
+        .credentials(credentials)
+        .timeout(Some(StdDuration::from_millis(SMTP_TIMEOUT_MILLIS)))
+        .build())
 }
 
-fn smtp_command(
-    stream: &mut TcpStream,
-    reader: &mut BufReader<TcpStream>,
-    command: &str,
-    expected_status: u16,
-) -> io::Result<()> {
-    write!(stream, "{command}\r\n")?;
-    stream.flush()?;
-    expect_smtp_status(reader, expected_status)
-}
-
-fn expect_smtp_status(reader: &mut BufReader<TcpStream>, expected_status: u16) -> io::Result<()> {
-    loop {
-        let mut line = String::new();
-        reader.read_line(&mut line)?;
-        if line.len() < 4 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "invalid smtp response",
-            ));
-        }
-        let status = line[0..3]
-            .parse::<u16>()
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid smtp status"))?;
-
-        if status != expected_status {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "unexpected smtp status",
-            ));
-        }
-        if line.as_bytes().get(3) == Some(&b' ') {
-            return Ok(());
-        }
-    }
+fn send_mail_with_transport<T>(transport: &T, message: &Message) -> Result<(), SmtpSendError>
+where
+    T: Transport,
+    T::Error: Error + Send + Sync + 'static,
+{
+    transport
+        .send(message)
+        .map(|_| ())
+        .map_err(|error| Box::new(error) as SmtpSendError)
 }
 
 fn generate_otp_code(connection: &Connection) -> Result<String, EmailStartError> {
@@ -304,44 +258,10 @@ fn invalid_request_error(message: &str) -> serde_json::Error {
     serde_json::Error::io(io::Error::new(io::ErrorKind::InvalidInput, message))
 }
 
-fn base64_encode(value: &str) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let bytes = value.as_bytes();
-    let mut output = String::new();
-    let mut index = 0;
-
-    while index < bytes.len() {
-        let first = bytes[index];
-        let second = bytes.get(index + 1).copied().unwrap_or(0);
-        let third = bytes.get(index + 2).copied().unwrap_or(0);
-
-        output.push(ALPHABET[(first >> 2) as usize] as char);
-        output.push(ALPHABET[(((first & 0b0000_0011) << 4) | (second >> 4)) as usize] as char);
-        if index + 1 < bytes.len() {
-            output.push(ALPHABET[(((second & 0b0000_1111) << 2) | (third >> 6)) as usize] as char);
-        } else {
-            output.push('=');
-        }
-        if index + 2 < bytes.len() {
-            output.push(ALPHABET[(third & 0b0011_1111) as usize] as char);
-        } else {
-            output.push('=');
-        }
-
-        index += 3;
-    }
-
-    output
-}
-
 #[cfg(test)]
 mod tests {
-    use std::io::{BufRead, BufReader, Write};
-    use std::net::TcpListener;
-    use std::sync::mpsc;
-    use std::thread;
-
     use super::*;
+    use lettre::transport::stub::StubTransport;
 
     #[test]
     fn parses_email_start_request_and_normalizes_email() {
@@ -370,16 +290,19 @@ mod tests {
     }
 
     #[test]
-    fn creates_otp_and_sends_plain_smtp_message() {
-        let (port, received) = start_plain_smtp_server(false);
+    fn creates_otp_and_sends_message_through_lettre_transport() {
+        let transport = StubTransport::new_ok();
         let connection = Connection::open_in_memory().expect("database opens");
         create_email_start_schema(&connection);
-        insert_smtp_config(&connection, port, false);
+        insert_smtp_config(&connection, 2525, false);
         let request = EmailStartRequest {
             email: "user@example.com".to_string(),
         };
 
-        start_email_auth_with_connection(&connection, &request).expect("email start succeeds");
+        start_email_auth_with_mailer(&connection, &request, |config, email, code| {
+            send_mail_with_transport(&transport, &build_otp_message(config, email, code)?)
+        })
+        .expect("email start succeeds");
 
         let row = connection
             .query_row(
@@ -394,30 +317,34 @@ mod tests {
                 },
             )
             .expect("otp row exists");
-        let transcript = received.recv().expect("smtp transcript received");
+        let messages = transport.messages();
 
         assert_eq!(row.0.len(), 64);
         assert!(row.1 > Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true));
         assert!(row.2.is_none());
-        assert!(transcript.contains("AUTH LOGIN"));
-        assert!(transcript.contains("MAIL FROM:<noreply@example.com>"));
-        assert!(transcript.contains("RCPT TO:<user@example.com>"));
-        assert!(transcript.contains("Subject: Your auth-mini verification code"));
-        assert!(transcript.contains("Your verification code is "));
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].0.to().len(), 1);
+        assert_eq!(messages[0].0.to()[0].to_string(), "user@example.com");
+        assert!(messages[0]
+            .1
+            .contains("Subject: Your auth-mini verification code"));
+        assert!(messages[0].1.contains("Your verification code is "));
     }
 
     #[test]
     fn invalidates_pending_otp_when_smtp_send_fails() {
-        let (port, _received) = start_plain_smtp_server(true);
+        let transport = StubTransport::new_error();
         let connection = Connection::open_in_memory().expect("database opens");
         create_email_start_schema(&connection);
-        insert_smtp_config(&connection, port, false);
+        insert_smtp_config(&connection, 2525, false);
         let request = EmailStartRequest {
             email: "user@example.com".to_string(),
         };
 
-        let error = start_email_auth_with_connection(&connection, &request)
-            .expect_err("smtp failure rejects");
+        let error = start_email_auth_with_mailer(&connection, &request, |config, email, code| {
+            send_mail_with_transport(&transport, &build_otp_message(config, email, code)?)
+        })
+        .expect_err("smtp failure rejects");
         let consumed_at = connection
             .query_row(
                 "SELECT consumed_at FROM email_otps WHERE email = ?1",
@@ -431,7 +358,7 @@ mod tests {
     }
 
     #[test]
-    fn secure_smtp_config_does_not_return_fake_success() {
+    fn secure_smtp_config_uses_tls_transport_and_does_not_return_fake_success() {
         let connection = Connection::open_in_memory().expect("database opens");
         create_email_start_schema(&connection);
         insert_smtp_config(&connection, 2525, true);
@@ -443,6 +370,18 @@ mod tests {
             .expect_err("unsupported secure smtp rejects");
 
         assert_eq!(error, EmailStartError::SmtpTemporarilyUnavailable);
+    }
+
+    #[test]
+    fn maps_secure_boolean_to_lettre_transport_modes() {
+        let plain_config = test_smtp_config(2525, false);
+        let secure_config = test_smtp_config(465, true);
+
+        let plain_transport = format!("{:?}", build_smtp_transport(&plain_config).unwrap());
+        let secure_transport = format!("{:?}", build_smtp_transport(&secure_config).unwrap());
+
+        assert!(plain_transport.contains("None"));
+        assert!(secure_transport.contains("Wrapper"));
     }
 
     fn create_email_start_schema(connection: &Connection) {
@@ -482,100 +421,16 @@ mod tests {
             .expect("smtp config inserts");
     }
 
-    fn start_plain_smtp_server(fail_recipient: bool) -> (u16, mpsc::Receiver<String>) {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("smtp test server binds");
-        let port = listener.local_addr().expect("local addr").port();
-        let (sender, receiver) = mpsc::channel();
-
-        thread::spawn(move || {
-            let (mut stream, _) = listener.accept().expect("smtp client connects");
-            let mut reader = BufReader::new(stream.try_clone().expect("stream clones"));
-            let mut transcript = String::new();
-
-            write!(stream, "220 localhost\r\n").expect("greeting writes");
-            respond(
-                &mut reader,
-                &mut stream,
-                &mut transcript,
-                "250-localhost\r\n250 AUTH LOGIN\r\n",
-            );
-            respond(
-                &mut reader,
-                &mut stream,
-                &mut transcript,
-                "334 VXNlcm5hbWU6\r\n",
-            );
-            respond(
-                &mut reader,
-                &mut stream,
-                &mut transcript,
-                "334 UGFzc3dvcmQ6\r\n",
-            );
-            respond(
-                &mut reader,
-                &mut stream,
-                &mut transcript,
-                "235 2.7.0 Authentication successful\r\n",
-            );
-            respond(
-                &mut reader,
-                &mut stream,
-                &mut transcript,
-                "250 2.1.0 Sender OK\r\n",
-            );
-            if fail_recipient {
-                respond(
-                    &mut reader,
-                    &mut stream,
-                    &mut transcript,
-                    "550 5.1.1 Recipient rejected\r\n",
-                );
-                sender.send(transcript).expect("transcript sends");
-                return;
-            }
-            respond(
-                &mut reader,
-                &mut stream,
-                &mut transcript,
-                "250 2.1.5 Recipient OK\r\n",
-            );
-            respond(
-                &mut reader,
-                &mut stream,
-                &mut transcript,
-                "354 Start mail input\r\n",
-            );
-
-            loop {
-                let mut line = String::new();
-                reader.read_line(&mut line).expect("data reads");
-                transcript.push_str(&line);
-                if line == ".\r\n" {
-                    break;
-                }
-            }
-            write!(stream, "250 2.0.0 Queued\r\n").expect("queued writes");
-            respond(
-                &mut reader,
-                &mut stream,
-                &mut transcript,
-                "221 2.0.0 Bye\r\n",
-            );
-            sender.send(transcript).expect("transcript sends");
-        });
-
-        (port, receiver)
-    }
-
-    fn respond(
-        reader: &mut BufReader<TcpStream>,
-        stream: &mut TcpStream,
-        transcript: &mut String,
-        response: &str,
-    ) {
-        let mut line = String::new();
-        reader.read_line(&mut line).expect("command reads");
-        transcript.push_str(&line);
-        write!(stream, "{response}").expect("response writes");
+    fn test_smtp_config(port: u16, secure: bool) -> SmtpConfig {
+        SmtpConfig {
+            id: 1,
+            host: "smtp.example.com".to_string(),
+            port,
+            username: "mailer-user".to_string(),
+            password: "mailer-pass".to_string(),
+            from_email: "noreply@example.com".to_string(),
+            from_name: "Mini Auth".to_string(),
+            secure,
+        }
     }
 }
