@@ -23,7 +23,7 @@ use crate::session::{
 };
 use crate::webauthn::{
     authentication_options as webauthn_authentication_options,
-    authentication_verify_precheck as webauthn_authentication_verify_precheck,
+    authentication_verify as webauthn_authentication_verify,
     delete_credential as delete_webauthn_credential, parse_authentication_verify_request,
     parse_options_request, parse_register_verify_request,
     register_options as webauthn_register_options, register_verify as webauthn_register_verify,
@@ -514,8 +514,20 @@ fn handle_webauthn_authentication_verify(
     let connection = rusqlite::Connection::open(&database.db_path)
         .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
 
-    match webauthn_authentication_verify_precheck(&connection, &parsed, &origin) {
-        Ok(()) => Ok(Response::json_error(501, "not_implemented")),
+    match webauthn_authentication_verify(&connection, &parsed, &origin) {
+        Ok(outcome) => {
+            let pair = mint_session_tokens(
+                &connection,
+                &outcome.user_id,
+                "webauthn",
+                "auth-mini",
+                None,
+                request.header("User-Agent").as_deref(),
+            )
+            .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+
+            Ok(Response::json_value(200, token_json(pair)))
+        }
         Err(AuthenticationVerifyError::InvalidWebauthnAuthentication) => {
             Ok(Response::json_error(400, "invalid_webauthn_authentication"))
         }
@@ -2016,9 +2028,8 @@ mod tests {
     }
 
     #[test]
-    fn webauthn_authentication_verify_precheck_returns_not_implemented_without_consuming_challenge()
-    {
-        let db_path = test_db_path("http-webauthn-authentication-verify-precheck");
+    fn webauthn_authentication_verify_rejects_legacy_state_without_side_effects() {
+        let db_path = test_db_path("http-webauthn-authentication-verify-legacy-state");
         let connection = Connection::open(&db_path).expect("database opens");
         create_auth_schema(&connection);
         connection
@@ -2084,8 +2095,11 @@ mod tests {
             )
             .expect("side effects read");
 
-        assert_eq!(response.status, 501);
-        assert_eq!(response.body, r#"{"error":"not_implemented"}"#);
+        assert_eq!(response.status, 400);
+        assert_eq!(
+            response.body,
+            r#"{"error":"invalid_webauthn_authentication"}"#
+        );
         assert_eq!(stored, (None, None));
     }
 

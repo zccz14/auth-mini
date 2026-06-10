@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use webauthn_rs::prelude::{
-    PasskeyRegistration, RegisterPublicKeyCredential, Url, Uuid, Webauthn, WebauthnBuilder,
+    DiscoverableAuthentication, DiscoverableKey, Passkey, PasskeyRegistration, PublicKeyCredential,
+    RegisterPublicKeyCredential, Url, Uuid, Webauthn, WebauthnBuilder,
 };
 
 const WEBAUTHN_CHALLENGE_SECONDS: i64 = 300;
@@ -72,7 +73,7 @@ struct RegistrationCredentialResponse {
     transports: Option<Vec<String>>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 struct AuthenticationCredential {
     id: String,
@@ -80,10 +81,13 @@ struct AuthenticationCredential {
     raw_id: String,
     #[serde(rename = "type")]
     credential_type: String,
+    #[serde(rename = "clientExtensionResults")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    client_extension_results: Option<Value>,
     response: AuthenticationCredentialResponse,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 struct AuthenticationCredentialResponse {
     #[serde(rename = "clientDataJSON")]
@@ -103,6 +107,11 @@ pub(crate) enum RegisterVerifyError {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum AuthenticationVerifyError {
     InvalidWebauthnAuthentication,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct AuthenticationVerifyOutcome {
+    pub(crate) user_id: String,
 }
 
 struct ResolvedOptionsInput {
@@ -414,11 +423,11 @@ pub(crate) fn register_verify(
     Ok(json!({ "ok": true }))
 }
 
-pub(crate) fn authentication_verify_precheck(
+pub(crate) fn authentication_verify(
     connection: &Connection,
     request: &AuthenticationVerifyRequest,
     origin: &str,
-) -> Result<(), AuthenticationVerifyError> {
+) -> Result<AuthenticationVerifyOutcome, AuthenticationVerifyError> {
     let origin = normalize_allowed_origin(origin)
         .map_err(|_| AuthenticationVerifyError::InvalidWebauthnAuthentication)?;
     let challenge = get_valid_authentication_challenge(connection, &request.request_id)?;
@@ -433,11 +442,71 @@ pub(crate) fn authentication_verify_precheck(
         return Err(AuthenticationVerifyError::InvalidWebauthnAuthentication);
     }
 
-    if !authentication_credential_exists(connection, &request.credential.id, &challenge.rp_id)? {
-        return Err(AuthenticationVerifyError::InvalidWebauthnAuthentication);
-    }
+    let credential_row =
+        get_authentication_credential(connection, &request.credential.id, &challenge.rp_id)?;
+    let state: DiscoverableAuthentication = serde_json::from_str(&challenge.state_json)
+        .map_err(|_| AuthenticationVerifyError::InvalidWebauthnAuthentication)?;
+    let credential: PublicKeyCredential = serde_json::from_value(
+        serde_json::to_value(&request.credential)
+            .map_err(|_| AuthenticationVerifyError::InvalidWebauthnAuthentication)?,
+    )
+    .map_err(|_| AuthenticationVerifyError::InvalidWebauthnAuthentication)?;
+    let webauthn = build_webauthn(&challenge.rp_id, &challenge.origin)
+        .map_err(|_| AuthenticationVerifyError::InvalidWebauthnAuthentication)?;
+    let mut passkey: Passkey = serde_json::from_str(&credential_row.passkey_json)
+        .map_err(|_| AuthenticationVerifyError::InvalidWebauthnAuthentication)?;
+    let result = webauthn
+        .finish_discoverable_authentication(&credential, state, &[DiscoverableKey::from(&passkey)])
+        .map_err(|_| AuthenticationVerifyError::InvalidWebauthnAuthentication)?;
 
-    Ok(())
+    passkey
+        .update_credential(&result)
+        .ok_or(AuthenticationVerifyError::InvalidWebauthnAuthentication)?;
+
+    let passkey_json = serde_json::to_string(&passkey)
+        .map_err(|_| AuthenticationVerifyError::InvalidWebauthnAuthentication)?;
+    let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    let transaction = connection
+        .unchecked_transaction()
+        .map_err(|_| AuthenticationVerifyError::InvalidWebauthnAuthentication)?;
+
+    transaction
+        .execute(
+            "UPDATE webauthn_challenges
+             SET consumed_at = ?1
+             WHERE request_id = ?2 AND type = 'authenticate' AND consumed_at IS NULL",
+            params![now, request.request_id],
+        )
+        .map_err(|_| AuthenticationVerifyError::InvalidWebauthnAuthentication)
+        .and_then(|changes| {
+            if changes == 1 {
+                Ok(())
+            } else {
+                Err(AuthenticationVerifyError::InvalidWebauthnAuthentication)
+            }
+        })?;
+    transaction
+        .execute(
+            "UPDATE webauthn_credentials
+             SET passkey_json = ?1, last_used_at = ?2
+             WHERE credential_id = ?3 AND rp_id = ?4",
+            params![passkey_json, now, request.credential.id, challenge.rp_id],
+        )
+        .map_err(|_| AuthenticationVerifyError::InvalidWebauthnAuthentication)
+        .and_then(|changes| {
+            if changes == 1 {
+                Ok(())
+            } else {
+                Err(AuthenticationVerifyError::InvalidWebauthnAuthentication)
+            }
+        })?;
+    transaction
+        .commit()
+        .map_err(|_| AuthenticationVerifyError::InvalidWebauthnAuthentication)?;
+
+    Ok(AuthenticationVerifyOutcome {
+        user_id: credential_row.user_id,
+    })
 }
 
 pub(crate) fn delete_credential(
@@ -474,9 +543,15 @@ struct RegisterChallengePrecheckRow {
 }
 
 struct AuthenticationChallengePrecheckRow {
+    state_json: String,
     expires_at: String,
     rp_id: String,
     origin: String,
+}
+
+struct AuthenticationCredentialRow {
+    user_id: String,
+    passkey_json: String,
 }
 
 fn get_valid_register_challenge(
@@ -519,16 +594,17 @@ fn get_valid_authentication_challenge(
 ) -> Result<AuthenticationChallengePrecheckRow, AuthenticationVerifyError> {
     let challenge = connection
         .query_row(
-            "SELECT expires_at, rp_id, origin
+            "SELECT state_json, expires_at, rp_id, origin
              FROM webauthn_challenges
              WHERE request_id = ?1 AND type = 'authenticate' AND consumed_at IS NULL
              LIMIT 1",
             [request_id],
             |row| {
                 Ok(AuthenticationChallengePrecheckRow {
-                    expires_at: row.get(0)?,
-                    rp_id: row.get(1)?,
-                    origin: row.get(2)?,
+                    state_json: row.get(0)?,
+                    expires_at: row.get(1)?,
+                    rp_id: row.get(2)?,
+                    origin: row.get(3)?,
                 })
             },
         )
@@ -545,20 +621,25 @@ fn get_valid_authentication_challenge(
     Ok(challenge)
 }
 
-fn authentication_credential_exists(
+fn get_authentication_credential(
     connection: &Connection,
     credential_id: &str,
     rp_id: &str,
-) -> Result<bool, AuthenticationVerifyError> {
+) -> Result<AuthenticationCredentialRow, AuthenticationVerifyError> {
     connection
         .query_row(
-            "SELECT 1 FROM webauthn_credentials WHERE credential_id = ?1 AND rp_id = ?2 LIMIT 1",
+            "SELECT user_id, passkey_json FROM webauthn_credentials WHERE credential_id = ?1 AND rp_id = ?2 LIMIT 1",
             params![credential_id, rp_id],
-            |_| Ok(()),
+            |row| {
+                Ok(AuthenticationCredentialRow {
+                    user_id: row.get(0)?,
+                    passkey_json: row.get(1)?,
+                })
+            },
         )
         .optional()
-        .map(|value| value.is_some())
-        .map_err(|_| AuthenticationVerifyError::InvalidWebauthnAuthentication)
+        .map_err(|_| AuthenticationVerifyError::InvalidWebauthnAuthentication)?
+        .ok_or(AuthenticationVerifyError::InvalidWebauthnAuthentication)
 }
 
 fn list_allowed_origins(connection: &Connection) -> Result<Vec<String>, RegisterOptionsError> {
@@ -1166,8 +1247,7 @@ mod tests {
     }
 
     #[test]
-    fn authentication_verify_precheck_accepts_valid_stored_challenge_and_credential_without_side_effects(
-    ) {
+    fn authentication_verify_rejects_legacy_state_without_consuming_challenge() {
         let connection = Connection::open_in_memory().expect("database opens");
         create_register_options_schema(&connection);
         create_webauthn_credentials_schema(&connection);
@@ -1201,8 +1281,8 @@ mod tests {
             .expect("credential inserts");
         let request = authentication_verify_request();
 
-        authentication_verify_precheck(&connection, &request, "https://app.example.com")
-            .expect("precheck succeeds");
+        let error = authentication_verify(&connection, &request, "https://app.example.com")
+            .expect_err("legacy state is rejected");
         let stored: (Option<String>, Option<String>) = connection
             .query_row(
                 "SELECT c.consumed_at, p.last_used_at
@@ -1213,11 +1293,15 @@ mod tests {
             )
             .expect("side effects read");
 
+        assert_eq!(
+            error,
+            AuthenticationVerifyError::InvalidWebauthnAuthentication
+        );
         assert_eq!(stored, (None, None));
     }
 
     #[test]
-    fn authentication_verify_precheck_rejects_credential_from_other_rp_id() {
+    fn authentication_verify_rejects_credential_from_other_rp_id() {
         let connection = Connection::open_in_memory().expect("database opens");
         create_register_options_schema(&connection);
         create_webauthn_credentials_schema(&connection);
@@ -1251,9 +1335,8 @@ mod tests {
             .expect("credential inserts");
         let request = authentication_verify_request();
 
-        let error =
-            authentication_verify_precheck(&connection, &request, "https://app.example.com")
-                .expect_err("rp scoped credential is required");
+        let error = authentication_verify(&connection, &request, "https://app.example.com")
+            .expect_err("rp scoped credential is required");
 
         assert_eq!(
             error,
