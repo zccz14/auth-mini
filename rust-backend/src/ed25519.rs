@@ -1,7 +1,10 @@
 use chrono::{Duration, SecondsFormat, Utc};
+use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Deserialize;
 use serde_json::{json, Value};
+
+use crate::session::{mint_session_tokens, TokenPair};
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 pub(crate) struct CredentialCreateRequest {
@@ -18,6 +21,34 @@ pub(crate) struct CredentialUpdateRequest {
 #[serde(deny_unknown_fields)]
 pub(crate) struct StartAuthenticationRequest {
     pub(crate) credential_id: String,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct VerifyAuthenticationRequest {
+    pub(crate) request_id: String,
+    pub(crate) signature: String,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum VerifyAuthenticationError {
+    InvalidEd25519Authentication,
+    Database,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct AuthenticationChallenge {
+    credential_id: String,
+    challenge: String,
+    expires_at: String,
+    consumed_at: Option<String>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct AuthenticationCredential {
+    id: String,
+    user_id: String,
+    public_key: String,
 }
 
 pub(crate) fn parse_credential_create_request(
@@ -54,6 +85,18 @@ pub(crate) fn parse_start_authentication_request(
     }
 
     Err(invalid_request_error("invalid ed25519 start request"))
+}
+
+pub(crate) fn parse_verify_authentication_request(
+    body: &str,
+) -> Result<VerifyAuthenticationRequest, serde_json::Error> {
+    let request: VerifyAuthenticationRequest = serde_json::from_str(body)?;
+
+    if is_uuid_like(&request.request_id) && !request.signature.is_empty() {
+        return Ok(request);
+    }
+
+    Err(invalid_request_error("invalid ed25519 verify request"))
 }
 
 pub(crate) fn create_credential(
@@ -153,6 +196,61 @@ pub(crate) fn start_authentication(
     })))
 }
 
+pub(crate) fn verify_authentication(
+    connection: &mut Connection,
+    request: &VerifyAuthenticationRequest,
+    issuer: &str,
+    ip: Option<&str>,
+    user_agent: Option<&str>,
+) -> Result<TokenPair, VerifyAuthenticationError> {
+    let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    let challenge = valid_challenge(connection, &request.request_id, &now)?;
+    let credential = credential_for_authentication(connection, &challenge.credential_id)?;
+
+    verify_challenge_signature(
+        &challenge.challenge,
+        &credential.public_key,
+        &request.signature,
+    )?;
+
+    let transaction = connection
+        .transaction()
+        .map_err(|_| VerifyAuthenticationError::Database)?;
+    let changed = transaction
+        .execute(
+            "UPDATE ed25519_challenges SET consumed_at = ?1
+             WHERE request_id = ?2 AND consumed_at IS NULL AND expires_at > ?3",
+            params![now, request.request_id, now],
+        )
+        .map_err(|_| VerifyAuthenticationError::Database)?;
+
+    if changed == 0 {
+        return Err(VerifyAuthenticationError::InvalidEd25519Authentication);
+    }
+
+    transaction
+        .execute(
+            "UPDATE ed25519_credentials SET last_used_at = ?1 WHERE id = ?2",
+            params![now, credential.id],
+        )
+        .map_err(|_| VerifyAuthenticationError::Database)?;
+    let pair = mint_session_tokens(
+        &transaction,
+        &credential.user_id,
+        "ed25519",
+        issuer,
+        ip,
+        user_agent,
+    )
+    .map_err(|_| VerifyAuthenticationError::Database)?;
+
+    transaction
+        .commit()
+        .map_err(|_| VerifyAuthenticationError::Database)?;
+
+    Ok(pair)
+}
+
 fn credential_response(
     connection: &Connection,
     credential_id: &str,
@@ -189,6 +287,82 @@ fn existing_credential_id(
         .optional()
 }
 
+fn valid_challenge(
+    connection: &Connection,
+    request_id: &str,
+    now: &str,
+) -> Result<AuthenticationChallenge, VerifyAuthenticationError> {
+    let challenge = connection
+        .query_row(
+            "SELECT credential_id, challenge, expires_at, consumed_at
+             FROM ed25519_challenges WHERE request_id = ?1 LIMIT 1",
+            [request_id],
+            |row| {
+                Ok(AuthenticationChallenge {
+                    credential_id: row.get(0)?,
+                    challenge: row.get(1)?,
+                    expires_at: row.get(2)?,
+                    consumed_at: row.get(3)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|_| VerifyAuthenticationError::Database)?;
+    let Some(challenge) = challenge else {
+        return Err(VerifyAuthenticationError::InvalidEd25519Authentication);
+    };
+
+    if challenge.consumed_at.is_some() || challenge.expires_at.as_str() <= now {
+        return Err(VerifyAuthenticationError::InvalidEd25519Authentication);
+    }
+
+    Ok(challenge)
+}
+
+fn credential_for_authentication(
+    connection: &Connection,
+    credential_id: &str,
+) -> Result<AuthenticationCredential, VerifyAuthenticationError> {
+    let credential = connection
+        .query_row(
+            "SELECT id, user_id, public_key FROM ed25519_credentials WHERE id = ?1 LIMIT 1",
+            [credential_id],
+            |row| {
+                Ok(AuthenticationCredential {
+                    id: row.get(0)?,
+                    user_id: row.get(1)?,
+                    public_key: row.get(2)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|_| VerifyAuthenticationError::Database)?;
+
+    credential.ok_or(VerifyAuthenticationError::InvalidEd25519Authentication)
+}
+
+fn verify_challenge_signature(
+    challenge: &str,
+    public_key: &str,
+    signature: &str,
+) -> Result<(), VerifyAuthenticationError> {
+    let public_key = base64url_decode(public_key)?;
+    let signature = base64url_decode(signature)?;
+    let public_key: [u8; 32] = public_key
+        .try_into()
+        .map_err(|_| VerifyAuthenticationError::InvalidEd25519Authentication)?;
+    let signature: [u8; 64] = signature
+        .try_into()
+        .map_err(|_| VerifyAuthenticationError::InvalidEd25519Authentication)?;
+    let verifying_key = VerifyingKey::from_bytes(&public_key)
+        .map_err(|_| VerifyAuthenticationError::InvalidEd25519Authentication)?;
+    let signature = Signature::from_bytes(&signature);
+
+    verifying_key
+        .verify(challenge.as_bytes(), &signature)
+        .map_err(|_| VerifyAuthenticationError::InvalidEd25519Authentication)
+}
+
 fn base64url_decoded_len(value: &str) -> Option<usize> {
     if value.is_empty() || value.len() % 4 == 1 {
         return None;
@@ -210,6 +384,41 @@ fn base64url_decoded_len(value: &str) -> Option<usize> {
     };
 
     Some(full_groups * 3 + remainder_len)
+}
+
+fn base64url_decode(value: &str) -> Result<Vec<u8>, VerifyAuthenticationError> {
+    if value.is_empty() || value.len() % 4 == 1 {
+        return Err(VerifyAuthenticationError::InvalidEd25519Authentication);
+    }
+
+    let mut bits = 0u32;
+    let mut bit_count = 0u8;
+    let mut output = Vec::with_capacity(base64url_decoded_len(value).unwrap_or_default());
+
+    for byte in value.bytes() {
+        let value = match byte {
+            b'A'..=b'Z' => byte - b'A',
+            b'a'..=b'z' => byte - b'a' + 26,
+            b'0'..=b'9' => byte - b'0' + 52,
+            b'-' => 62,
+            b'_' => 63,
+            _ => return Err(VerifyAuthenticationError::InvalidEd25519Authentication),
+        };
+        bits = (bits << 6) | u32::from(value);
+        bit_count += 6;
+
+        if bit_count >= 8 {
+            bit_count -= 8;
+            output.push((bits >> bit_count) as u8);
+            bits &= (1 << bit_count) - 1;
+        }
+    }
+
+    if bit_count > 0 && bits != 0 {
+        return Err(VerifyAuthenticationError::InvalidEd25519Authentication);
+    }
+
+    Ok(output)
 }
 
 fn random_uuid(connection: &Connection) -> rusqlite::Result<String> {
@@ -241,6 +450,7 @@ fn invalid_request_error(message: &str) -> serde_json::Error {
 
 #[cfg(test)]
 mod tests {
+    use ed25519_dalek::{Signer, SigningKey};
     use rusqlite::Connection;
 
     use super::*;
@@ -354,6 +564,29 @@ mod tests {
         );
         parse_start_authentication_request(r#"{"credential_id":"not-a-uuid"}"#)
             .expect_err("malformed credential id rejects");
+    }
+
+    #[test]
+    fn parses_verify_authentication_request_contract() {
+        let request = parse_verify_authentication_request(
+            r#"{"request_id":"00000000-0000-4000-8000-000000000000","signature":"signature"}"#,
+        )
+        .expect("request parses");
+
+        assert_eq!(request.request_id, "00000000-0000-4000-8000-000000000000");
+        assert_eq!(request.signature, "signature");
+        parse_verify_authentication_request(
+            r#"{"request_id":"00000000-0000-4000-8000-000000000000","signature":"signature","extra":true}"#,
+        )
+        .expect_err("unknown fields reject");
+        parse_verify_authentication_request(
+            r#"{"request_id":"not-a-uuid","signature":"signature"}"#,
+        )
+        .expect_err("malformed request id rejects");
+        parse_verify_authentication_request(
+            r#"{"request_id":"00000000-0000-4000-8000-000000000000","signature":""}"#,
+        )
+        .expect_err("empty signature rejects");
     }
 
     #[test]
@@ -648,5 +881,257 @@ mod tests {
         .expect("challenge start attempts");
 
         assert!(challenge.is_none());
+    }
+
+    #[test]
+    fn verifies_authentication_challenge_and_mints_ed25519_session() {
+        let mut connection = Connection::open_in_memory().expect("database opens");
+        create_authentication_schema(&connection);
+        let signing_key = SigningKey::from_bytes(&[7; 32]);
+        let public_key = base64url_encode(&signing_key.verifying_key().to_bytes());
+        let signature = base64url_encode(&signing_key.sign(b"challenge").to_bytes());
+        connection
+            .execute(
+                "INSERT INTO users (id, email) VALUES ('user-1', 'user@example.com')",
+                [],
+            )
+            .expect("user inserts");
+        connection
+            .execute(
+                "INSERT INTO ed25519_credentials
+                 (id, user_id, name, public_key, created_at)
+                 VALUES (?1, 'user-1', 'Laptop', ?2, '2026-01-01T00:00:00.000Z')",
+                ("00000000-0000-4000-8000-000000000001", public_key),
+            )
+            .expect("credential inserts");
+        connection
+            .execute(
+                "INSERT INTO ed25519_challenges
+                 (request_id, credential_id, challenge, expires_at)
+                 VALUES (?1, ?2, 'challenge', '9999-01-01T00:00:00.000Z')",
+                (
+                    "00000000-0000-4000-8000-000000000000",
+                    "00000000-0000-4000-8000-000000000001",
+                ),
+            )
+            .expect("challenge inserts");
+
+        let pair = verify_authentication(
+            &mut connection,
+            &VerifyAuthenticationRequest {
+                request_id: "00000000-0000-4000-8000-000000000000".to_string(),
+                signature,
+            },
+            "auth-mini",
+            None,
+            Some("Agent/1.0"),
+        )
+        .expect("authentication verifies");
+        let stored: (Option<String>, Option<String>, String, Option<String>) = connection
+            .query_row(
+                "SELECT c.consumed_at, p.last_used_at, s.auth_method, s.user_agent
+                 FROM ed25519_challenges c, ed25519_credentials p, sessions s
+                 WHERE c.request_id = ?1 AND p.id = ?2 AND s.id = ?3",
+                [
+                    "00000000-0000-4000-8000-000000000000",
+                    "00000000-0000-4000-8000-000000000001",
+                    &pair.session_id,
+                ],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("side effects read");
+
+        assert!(!pair.access_token.is_empty());
+        assert!(!pair.refresh_token.is_empty());
+        assert!(stored.0.is_some());
+        assert!(stored.1.is_some());
+        assert_eq!(stored.2, "ed25519");
+        assert_eq!(stored.3, Some("Agent/1.0".to_string()));
+    }
+
+    #[test]
+    fn verify_rejects_invalid_signature_without_side_effects() {
+        let mut connection = Connection::open_in_memory().expect("database opens");
+        create_authentication_schema(&connection);
+        let signing_key = SigningKey::from_bytes(&[7; 32]);
+        let other_key = SigningKey::from_bytes(&[8; 32]);
+        let public_key = base64url_encode(&signing_key.verifying_key().to_bytes());
+        let signature = base64url_encode(&other_key.sign(b"challenge").to_bytes());
+        connection
+            .execute(
+                "INSERT INTO users (id, email) VALUES ('user-1', 'user@example.com')",
+                [],
+            )
+            .expect("user inserts");
+        connection
+            .execute(
+                "INSERT INTO ed25519_credentials
+                 (id, user_id, name, public_key, created_at)
+                 VALUES (?1, 'user-1', 'Laptop', ?2, '2026-01-01T00:00:00.000Z')",
+                ("00000000-0000-4000-8000-000000000001", public_key),
+            )
+            .expect("credential inserts");
+        connection
+            .execute(
+                "INSERT INTO ed25519_challenges
+                 (request_id, credential_id, challenge, expires_at)
+                 VALUES (?1, ?2, 'challenge', '9999-01-01T00:00:00.000Z')",
+                (
+                    "00000000-0000-4000-8000-000000000000",
+                    "00000000-0000-4000-8000-000000000001",
+                ),
+            )
+            .expect("challenge inserts");
+
+        let error = verify_authentication(
+            &mut connection,
+            &VerifyAuthenticationRequest {
+                request_id: "00000000-0000-4000-8000-000000000000".to_string(),
+                signature,
+            },
+            "auth-mini",
+            None,
+            None,
+        )
+        .expect_err("authentication rejects");
+        let stored: (Option<String>, Option<String>, i64) = connection
+            .query_row(
+                "SELECT c.consumed_at, p.last_used_at, (SELECT COUNT(*) FROM sessions)
+                 FROM ed25519_challenges c, ed25519_credentials p
+                 WHERE c.request_id = ?1 AND p.id = ?2",
+                [
+                    "00000000-0000-4000-8000-000000000000",
+                    "00000000-0000-4000-8000-000000000001",
+                ],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("side effects read");
+
+        assert_eq!(
+            error,
+            VerifyAuthenticationError::InvalidEd25519Authentication
+        );
+        assert_eq!(stored, (None, None, 0));
+    }
+
+    #[test]
+    fn verify_rejects_reused_challenge() {
+        let mut connection = Connection::open_in_memory().expect("database opens");
+        create_authentication_schema(&connection);
+        let signing_key = SigningKey::from_bytes(&[7; 32]);
+        let public_key = base64url_encode(&signing_key.verifying_key().to_bytes());
+        let signature = base64url_encode(&signing_key.sign(b"challenge").to_bytes());
+        connection
+            .execute(
+                "INSERT INTO users (id, email) VALUES ('user-1', 'user@example.com')",
+                [],
+            )
+            .expect("user inserts");
+        connection
+            .execute(
+                "INSERT INTO ed25519_credentials
+                 (id, user_id, name, public_key, created_at)
+                 VALUES (?1, 'user-1', 'Laptop', ?2, '2026-01-01T00:00:00.000Z')",
+                ("00000000-0000-4000-8000-000000000001", public_key),
+            )
+            .expect("credential inserts");
+        connection
+            .execute(
+                "INSERT INTO ed25519_challenges
+                 (request_id, credential_id, challenge, expires_at, consumed_at)
+                 VALUES (?1, ?2, 'challenge', '9999-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')",
+                (
+                    "00000000-0000-4000-8000-000000000000",
+                    "00000000-0000-4000-8000-000000000001",
+                ),
+            )
+            .expect("challenge inserts");
+
+        let error = verify_authentication(
+            &mut connection,
+            &VerifyAuthenticationRequest {
+                request_id: "00000000-0000-4000-8000-000000000000".to_string(),
+                signature,
+            },
+            "auth-mini",
+            None,
+            None,
+        )
+        .expect_err("authentication rejects");
+
+        assert_eq!(
+            error,
+            VerifyAuthenticationError::InvalidEd25519Authentication
+        );
+    }
+
+    fn create_authentication_schema(connection: &Connection) {
+        connection
+            .execute_batch(
+                "CREATE TABLE users (
+                    id TEXT PRIMARY KEY,
+                    email TEXT NOT NULL,
+                    email_verified_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE sessions (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    refresh_token_hash TEXT NOT NULL,
+                    auth_method TEXT NOT NULL,
+                    ip TEXT,
+                    user_agent TEXT,
+                    expires_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE jwks_keys (
+                    id TEXT PRIMARY KEY CHECK (id IN ('CURRENT', 'STANDBY')),
+                    kid TEXT NOT NULL UNIQUE,
+                    alg TEXT NOT NULL,
+                    public_jwk TEXT NOT NULL,
+                    private_jwk TEXT NOT NULL
+                );
+                CREATE TABLE ed25519_credentials (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    public_key TEXT NOT NULL,
+                    last_used_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE ed25519_challenges (
+                    request_id TEXT PRIMARY KEY,
+                    credential_id TEXT NOT NULL,
+                    challenge TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    consumed_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );",
+            )
+            .expect("schema exists");
+    }
+
+    fn base64url_encode(bytes: &[u8]) -> String {
+        const ALPHABET: &[u8; 64] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+        let mut output = String::with_capacity(bytes.len().div_ceil(3) * 4);
+
+        for chunk in bytes.chunks(3) {
+            let first = chunk[0];
+            let second = chunk.get(1).copied().unwrap_or_default();
+            let third = chunk.get(2).copied().unwrap_or_default();
+            output.push(ALPHABET[(first >> 2) as usize] as char);
+            output.push(ALPHABET[(((first & 0b0000_0011) << 4) | (second >> 4)) as usize] as char);
+            if chunk.len() > 1 {
+                output.push(
+                    ALPHABET[(((second & 0b0000_1111) << 2) | (third >> 6)) as usize] as char,
+                );
+            }
+            if chunk.len() > 2 {
+                output.push(ALPHABET[(third & 0b0011_1111) as usize] as char);
+            }
+        }
+
+        output
     }
 }
