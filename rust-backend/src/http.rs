@@ -1434,15 +1434,12 @@ mod tests {
         connection
             .execute(
                 "INSERT INTO webauthn_credentials
-                 (id, user_id, credential_id, public_key, counter, transports, rp_id, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                 (credential_id, user_id, passkey_json, rp_id, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
                 (
                     "credential-1",
                     "user-1",
-                    "webauthn-credential-id",
-                    "public-key",
-                    0,
-                    "internal",
+                    "{}",
                     "app.example.com",
                     "2026-01-01T00:00:00.000Z",
                 ),
@@ -1474,7 +1471,7 @@ mod tests {
         let connection = Connection::open(db_path).expect("database opens");
         let remaining: i64 = connection
             .query_row(
-                "SELECT COUNT(*) FROM webauthn_credentials WHERE id = ?1",
+                "SELECT COUNT(*) FROM webauthn_credentials WHERE credential_id = ?1",
                 ["credential-1"],
                 |row| row.get(0),
             )
@@ -1501,15 +1498,12 @@ mod tests {
         connection
             .execute(
                 "INSERT INTO webauthn_credentials
-                 (id, user_id, credential_id, public_key, counter, transports, rp_id, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                 (credential_id, user_id, passkey_json, rp_id, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
                 (
                     "credential-1",
                     "user-2",
-                    "webauthn-credential-id",
-                    "public-key",
-                    0,
-                    "internal",
+                    "{}",
                     "app.example.com",
                     "2026-01-01T00:00:00.000Z",
                 ),
@@ -1732,7 +1726,7 @@ mod tests {
         connection
             .execute(
                 "INSERT INTO webauthn_challenges
-                 (request_id, type, challenge, user_id, expires_at, rp_id, origin)
+                 (request_id, type, state_json, user_id, expires_at, rp_id, origin)
                  VALUES (?1, 'register', ?2, ?3, ?4, ?5, ?6)",
                 (
                     "00000000-0000-4000-8000-000000000000",
@@ -2033,7 +2027,7 @@ mod tests {
         connection
             .execute(
                 "INSERT INTO webauthn_challenges
-                 (request_id, type, challenge, user_id, expires_at, rp_id, origin)
+                 (request_id, type, state_json, user_id, expires_at, rp_id, origin)
                  VALUES (?1, 'authenticate', ?2, NULL, ?3, ?4, ?5)",
                 (
                     "00000000-0000-4000-8000-000000000000",
@@ -2047,15 +2041,12 @@ mod tests {
         connection
             .execute(
                 "INSERT INTO webauthn_credentials
-                 (id, user_id, credential_id, public_key, counter, transports, rp_id, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                 (credential_id, user_id, passkey_json, rp_id, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
                 (
-                    "stored-credential",
-                    "user-1",
                     "credential-id",
-                    "public-key",
-                    7,
-                    "internal",
+                    "user-1",
+                    "{}",
                     "example.com",
                     "2026-01-01T00:00:00.000Z",
                 ),
@@ -2080,19 +2071,19 @@ mod tests {
         )
         .expect("webauthn authentication verify response builds");
         let connection = Connection::open(db_path).expect("database opens");
-        let stored: (Option<String>, i64, Option<String>) = connection
+        let stored: (Option<String>, Option<String>) = connection
             .query_row(
-                "SELECT c.consumed_at, p.counter, p.last_used_at
+                "SELECT c.consumed_at, p.last_used_at
                  FROM webauthn_challenges c, webauthn_credentials p
-                 WHERE c.request_id = ?1 AND p.id = ?2",
-                ["00000000-0000-4000-8000-000000000000", "stored-credential"],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                 WHERE c.request_id = ?1 AND p.credential_id = ?2",
+                ["00000000-0000-4000-8000-000000000000", "credential-id"],
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .expect("side effects read");
 
         assert_eq!(response.status, 501);
         assert_eq!(response.body, r#"{"error":"not_implemented"}"#);
-        assert_eq!(stored, (None, 7, None));
+        assert_eq!(stored, (None, None));
     }
 
     #[test]
@@ -2356,12 +2347,9 @@ mod tests {
                     private_jwk TEXT NOT NULL
                 );
                 CREATE TABLE webauthn_credentials (
-                    id TEXT PRIMARY KEY,
+                    credential_id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL,
-                    credential_id TEXT NOT NULL UNIQUE,
-                    public_key TEXT NOT NULL,
-                    counter INTEGER NOT NULL DEFAULT 0,
-                    transports TEXT NOT NULL DEFAULT '',
+                    passkey_json TEXT NOT NULL,
                     rp_id TEXT NOT NULL,
                     last_used_at TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -2369,7 +2357,7 @@ mod tests {
                 CREATE TABLE webauthn_challenges (
                     request_id TEXT PRIMARY KEY,
                     type TEXT NOT NULL CHECK (type IN ('register', 'authenticate')),
-                    challenge TEXT NOT NULL,
+                    state_json TEXT NOT NULL,
                     user_id TEXT,
                     expires_at TEXT NOT NULL,
                     rp_id TEXT NOT NULL,

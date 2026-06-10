@@ -71,12 +71,9 @@ fn assert_required_schema(connection: &Connection) -> rusqlite::Result<()> {
         (
             "webauthn_credentials",
             &[
-                "id",
-                "user_id",
                 "credential_id",
-                "public_key",
-                "counter",
-                "transports",
+                "user_id",
+                "passkey_json",
                 "rp_id",
                 "last_used_at",
                 "created_at",
@@ -87,7 +84,7 @@ fn assert_required_schema(connection: &Connection) -> rusqlite::Result<()> {
             &[
                 "request_id",
                 "type",
-                "challenge",
+                "state_json",
                 "user_id",
                 "expires_at",
                 "rp_id",
