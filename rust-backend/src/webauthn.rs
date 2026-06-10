@@ -4,7 +4,8 @@ use chrono::{DateTime, Duration as ChronoDuration, SecondsFormat, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use webauthn_rs::prelude::{Url, Webauthn, WebauthnBuilder};
+use sha2::{Digest, Sha256};
+use webauthn_rs::prelude::{Url, Uuid, Webauthn, WebauthnBuilder};
 
 const WEBAUTHN_CHALLENGE_SECONDS: i64 = 300;
 
@@ -184,14 +185,38 @@ pub(crate) fn register_options(
     let email = user_email(connection, user_id)?;
     let resolved = resolve_options_input(connection, request, origin)
         .map_err(|_| RegisterOptionsError::InvalidWebauthnRegistration)?;
-
     let request_id = random_uuid(connection).map_err(|_| RegisterOptionsError::InvalidRequest)?;
-    let challenge =
-        random_base64url(connection).map_err(|_| RegisterOptionsError::InvalidRequest)?;
-    let state_json = json!({ "challenge": challenge }).to_string();
+    let webauthn = build_webauthn(&resolved.rp_id, &resolved.origin)
+        .map_err(|_| RegisterOptionsError::InvalidWebauthnRegistration)?;
+    let (options, state) = webauthn
+        .start_passkey_registration(user_webauthn_id(user_id), &email, &email, None)
+        .map_err(|_| RegisterOptionsError::InvalidRequest)?;
+    let state_json =
+        serde_json::to_string(&state).map_err(|_| RegisterOptionsError::InvalidRequest)?;
+    let public_key = serde_json::to_value(options.public_key)
+        .map_err(|_| RegisterOptionsError::InvalidRequest)?;
+    let challenge = public_key
+        .get("challenge")
+        .cloned()
+        .ok_or(RegisterOptionsError::InvalidRequest)?;
+    let rp = public_key
+        .get("rp")
+        .cloned()
+        .ok_or(RegisterOptionsError::InvalidRequest)?;
+    let user = public_key
+        .get("user")
+        .cloned()
+        .ok_or(RegisterOptionsError::InvalidRequest)?;
+    let pub_key_cred_params = public_key
+        .get("pubKeyCredParams")
+        .cloned()
+        .ok_or(RegisterOptionsError::InvalidRequest)?;
+    let authenticator_selection = public_key
+        .get("authenticatorSelection")
+        .cloned()
+        .ok_or(RegisterOptionsError::InvalidRequest)?;
     let expires_at = (Utc::now() + ChronoDuration::seconds(WEBAUTHN_CHALLENGE_SECONDS))
         .to_rfc3339_opts(SecondsFormat::Millis, true);
-    let user_handle = base64url_encode(user_id.as_bytes());
     let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
 
     connection
@@ -222,17 +247,11 @@ pub(crate) fn register_options(
         "request_id": request_id,
         "publicKey": {
             "challenge": challenge,
-            "rp": { "name": "auth-mini", "id": resolved.rp_id },
-            "user": { "id": user_handle, "name": email, "displayName": email },
-            "pubKeyCredParams": [
-                { "type": "public-key", "alg": -7 },
-                { "type": "public-key", "alg": -257 }
-            ],
+            "rp": rp,
+            "user": user,
+            "pubKeyCredParams": pub_key_cred_params,
             "timeout": 300000,
-            "authenticatorSelection": {
-                "residentKey": "required",
-                "userVerification": "preferred"
-            }
+            "authenticatorSelection": authenticator_selection
         }
     }))
 }
@@ -297,6 +316,19 @@ fn build_webauthn(rp_id: &str, origin: &str) -> Result<Webauthn, ()> {
         .timeout(Duration::from_secs(WEBAUTHN_CHALLENGE_SECONDS as u64))
         .build()
         .map_err(|_| ())
+}
+
+fn user_webauthn_id(user_id: &str) -> Uuid {
+    let mut digest = Sha256::new();
+    digest.update(b"auth-mini-webauthn-user-handle\0");
+    digest.update(user_id.as_bytes());
+    let mut bytes = [0u8; 16];
+
+    bytes.copy_from_slice(&digest.finalize()[..16]);
+    bytes[6] = (bytes[6] & 0x0f) | 0x50;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+    Uuid::from_bytes(bytes)
 }
 
 pub(crate) fn register_verify_precheck(
@@ -651,12 +683,7 @@ fn random_uuid(connection: &Connection) -> rusqlite::Result<String> {
     )
 }
 
-fn random_base64url(connection: &Connection) -> rusqlite::Result<String> {
-    let bytes: Vec<u8> = connection.query_row("SELECT randomblob(32)", [], |row| row.get(0))?;
-
-    Ok(base64url_encode(&bytes))
-}
-
+#[cfg(test)]
 fn base64url_encode(bytes: &[u8]) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     let mut output = String::new();
@@ -787,26 +814,37 @@ mod tests {
         let body = register_options(&connection, "user-1", &request, "https://app.example.com")
             .expect("options generate");
         let request_id = body["request_id"].as_str().expect("request id");
-        let stored: (String, String, String, Option<String>) = connection
+        let stored: (String, String, String, String, Option<String>) = connection
             .query_row(
-                "SELECT type, rp_id, origin, consumed_at FROM webauthn_challenges WHERE request_id = ?1",
+                "SELECT type, state_json, rp_id, origin, consumed_at FROM webauthn_challenges WHERE request_id = ?1",
                 [request_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
             )
             .expect("challenge reads");
+        let restored_state: PasskeyRegistration =
+            serde_json::from_str(&stored.1).expect("webauthn-rs state deserializes");
+        let restored_state_json =
+            serde_json::to_string(&restored_state).expect("webauthn-rs state serializes");
 
         assert_eq!(body["publicKey"]["rp"]["id"], "example.com");
-        assert_eq!(body["publicKey"]["user"]["id"], "dXNlci0x");
-        assert_eq!(body["publicKey"]["pubKeyCredParams"][0]["alg"], -7);
         assert_eq!(
-            stored,
-            (
-                "register".to_string(),
-                "example.com".to_string(),
-                "https://app.example.com".to_string(),
-                None
-            )
+            body["publicKey"]["user"]["id"],
+            expected_user_handle("user-1")
         );
+        assert_eq!(body["publicKey"]["pubKeyCredParams"][0]["alg"], -7);
+        assert_ne!(
+            stored.1,
+            json!({ "challenge": body["publicKey"]["challenge"] }).to_string()
+        );
+        assert_eq!(
+            serde_json::from_str::<Value>(&stored.1).expect("state json parses"),
+            serde_json::from_str::<Value>(&restored_state_json)
+                .expect("restored state json parses")
+        );
+        assert_eq!(stored.0, "register");
+        assert_eq!(stored.2, "example.com");
+        assert_eq!(stored.3, "https://app.example.com");
+        assert_eq!(stored.4, None);
     }
 
     #[test]
@@ -1217,5 +1255,9 @@ mod tests {
             r#"{"request_id":"00000000-0000-4000-8000-000000000000","credential":{"id":"credential-id","rawId":"raw-id","type":"public-key","response":{"clientDataJSON":"client-data","authenticatorData":"auth-data","signature":"signature"}}}"#,
         )
         .expect("request parses")
+    }
+
+    fn expected_user_handle(user_id: &str) -> String {
+        base64url_encode(user_webauthn_id(user_id).as_bytes())
     }
 }
