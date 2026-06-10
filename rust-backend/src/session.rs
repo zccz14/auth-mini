@@ -245,24 +245,16 @@ fn list_webauthn_credentials(
     user_id: &str,
 ) -> rusqlite::Result<Vec<Value>> {
     let mut statement = connection.prepare(
-        "SELECT id, credential_id, transports, rp_id, last_used_at, created_at
-         FROM webauthn_credentials WHERE user_id = ?1 ORDER BY created_at ASC, id ASC",
+        "SELECT credential_id, rp_id, last_used_at, created_at
+         FROM webauthn_credentials WHERE user_id = ?1 ORDER BY created_at ASC, credential_id ASC",
     )?;
     let rows = statement.query_map([user_id], |row| {
-        let transports = row
-            .get::<_, String>(2)?
-            .split(',')
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-            .collect::<Vec<_>>();
-
         Ok(json!({
             "id": row.get::<_, String>(0)?,
-            "credential_id": row.get::<_, String>(1)?,
-            "transports": transports,
-            "rp_id": row.get::<_, String>(3)?,
-            "last_used_at": row.get::<_, Option<String>>(4)?,
-            "created_at": row.get::<_, String>(5)?,
+            "credential_id": row.get::<_, String>(0)?,
+            "rp_id": row.get::<_, String>(1)?,
+            "last_used_at": row.get::<_, Option<String>>(2)?,
+            "created_at": row.get::<_, String>(3)?,
         }))
     })?;
 
@@ -413,8 +405,8 @@ mod tests {
         connection
             .execute(
                 "INSERT INTO webauthn_credentials
-                 (id, user_id, credential_id, public_key, transports, rp_id, created_at)
-                 VALUES ('webauthn-1', 'user-1', 'credential-1', 'public-key', 'usb,nfc', 'example.com', '2026-01-01T00:00:00.000Z')",
+                 (credential_id, user_id, passkey_json, rp_id, created_at)
+                 VALUES ('credential-1', 'user-1', '{}', 'example.com', '2026-01-01T00:00:00.000Z')",
                 [],
             )
             .expect("webauthn credential inserts");
@@ -437,9 +429,11 @@ mod tests {
         )
         .expect("current user response builds");
 
-        assert_eq!(response["webauthn_credentials"][0]["id"], "webauthn-1");
-        assert_eq!(response["webauthn_credentials"][0]["transports"][0], "usb");
-        assert_eq!(response["webauthn_credentials"][0]["transports"][1], "nfc");
+        assert_eq!(response["webauthn_credentials"][0]["id"], "credential-1");
+        assert_eq!(
+            response["webauthn_credentials"][0]["credential_id"],
+            "credential-1"
+        );
         assert_eq!(response["ed25519_credentials"][0]["name"], "Laptop");
         assert_eq!(
             response["ed25519_credentials"][0]["public_key"],
@@ -467,12 +461,9 @@ mod tests {
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                  );
                  CREATE TABLE webauthn_credentials (
-                    id TEXT PRIMARY KEY,
+                    credential_id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL,
-                    credential_id TEXT NOT NULL,
-                    public_key TEXT NOT NULL,
-                    counter INTEGER NOT NULL DEFAULT 0,
-                    transports TEXT NOT NULL DEFAULT '',
+                    passkey_json TEXT NOT NULL,
                     rp_id TEXT NOT NULL,
                     last_used_at TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP

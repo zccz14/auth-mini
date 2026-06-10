@@ -518,16 +518,17 @@ describe('workspace bootstrap', () => {
       db.prepare(
         [
           'INSERT INTO webauthn_credentials',
-          '(id, user_id, credential_id, public_key, counter, transports, rp_id)',
-          'VALUES (?, ?, ?, ?, ?, ?, ?)',
+          '(credential_id, user_id, passkey_json, rp_id)',
+          'VALUES (?, ?, ?, ?)',
         ].join(' '),
       ).run(
-        'cred-1',
-        'user-1',
         'shared-credential',
-        'pk-1',
-        0,
-        'internal',
+        'user-1',
+        JSON.stringify({
+          publicKey: 'pk-1',
+          counter: 0,
+          transports: ['internal'],
+        }),
         'example.com',
       );
 
@@ -535,16 +536,17 @@ describe('workspace bootstrap', () => {
         db.prepare(
           [
             'INSERT INTO webauthn_credentials',
-            '(id, user_id, credential_id, public_key, counter, transports, rp_id)',
-            'VALUES (?, ?, ?, ?, ?, ?, ?)',
+            '(credential_id, user_id, passkey_json, rp_id)',
+            'VALUES (?, ?, ?, ?)',
           ].join(' '),
         ).run(
-          'cred-2',
-          'user-2',
           'shared-credential',
-          'pk-2',
-          0,
-          'usb',
+          'user-2',
+          JSON.stringify({
+            publicKey: 'pk-2',
+            counter: 0,
+            transports: ['usb'],
+          }),
           'example.com',
         );
       }).toThrowError(
@@ -576,7 +578,7 @@ describe('workspace bootstrap', () => {
         db.prepare(
           [
             'INSERT INTO webauthn_challenges',
-            '(request_id, type, challenge, user_id, expires_at, rp_id, origin)',
+            '(request_id, type, state_json, user_id, expires_at, rp_id, origin)',
             'VALUES (?, ?, ?, ?, ?, ?, ?)',
           ].join(' '),
         ).run(
@@ -594,7 +596,7 @@ describe('workspace bootstrap', () => {
         db.prepare(
           [
             'INSERT INTO webauthn_challenges',
-            '(request_id, type, challenge, user_id, expires_at, rp_id, origin)',
+            '(request_id, type, state_json, user_id, expires_at, rp_id, origin)',
             'VALUES (?, ?, ?, ?, ?, ?, ?)',
           ].join(' '),
         ).run(
@@ -612,7 +614,7 @@ describe('workspace bootstrap', () => {
         db.prepare(
           [
             'INSERT INTO webauthn_challenges',
-            '(request_id, type, challenge, user_id, expires_at, rp_id, origin)',
+            '(request_id, type, state_json, user_id, expires_at, rp_id, origin)',
             'VALUES (?, ?, ?, ?, ?, ?, ?)',
           ].join(' '),
         ).run(

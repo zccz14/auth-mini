@@ -25,7 +25,7 @@
 - Ed25519 challenge 验证完成登录。
 - WebAuthn 注册、登录和凭据管理。
 - JWKS 轮换 CLI 与生产入口语义。
-- SQLite schema 文件 `sql/schema.sql` 及现有迁移兼容行为。
+- SQLite schema 文件 `sql/schema.sql`；WebAuthn schema 在 Rust-first spike 后允许破坏旧 Node 凭据形态。
 - npm 包导出的 SDK、CLI 命令和现有 Docker 发布链路。
 
 第一阶段 Rust 服务必须保留下列可验证行为：
@@ -119,6 +119,15 @@
 - Rust 必须按 credential id 与 challenge rp_id 查询已有 `webauthn_credentials`；不存在或 rp_id 不匹配时返回 `400 invalid_webauthn_authentication`。
 - 前置校验通过后必须返回 `501 not_implemented`，不得消费 challenge、不得更新 credential counter 或 last_used_at、不得创建 session 或签发 token、不得返回 `200`。真实 assertion 验证仍未迁移前，禁止实现 WebAuthn verify 假成功。
 
+本轮 WebAuthn Rust-first schema spike 必须新增下列可验证行为：
+
+- WebAuthn 持久化方向改为 Rust-first，公开/主键凭据句柄使用 WebAuthn `credential_id`，不再为 WebAuthn 凭据维护独立内部 `id`。
+- `webauthn_credentials` 必须存储 `webauthn-rs` 序列化后的 `Passkey` 为 `passkey_json`，并保留 `user_id`、`rp_id`、`last_used_at`、`created_at`；不再持久化 Node/simplewebauthn 形态的 `public_key`、`counter`、`transports` 拆分列。
+- `webauthn_challenges` 必须使用 `state_json` 存储 `webauthn-rs` 注册或认证状态，保留 `request_id`、`type`、`user_id`、`rp_id`、`origin`、`expires_at`、`consumed_at`、`created_at` 与 register/authenticate 的 `user_id` 约束；不再以独立 `challenge` 列作为持久化事实。
+- 这是破坏性 schema/API 方向：旧 Node WebAuthn 凭据不提供兼容迁移路径，用户可能需要重新注册 passkey；本轮不设计 Node 兼容桥、不保留旧 schema 分支。
+- 本轮仅证明 `webauthn-rs` 挑战状态可通过 serde JSON 持久化，并接入依赖；不迁移真实 registration/authentication verify，不伪造验证成功。
+- `Passkey` 只能由真实注册 ceremony 完成后获得；本轮不构造假的 `Passkey`。`Passkey` 类型本身由 `webauthn-rs` 声明可安全序列化，后续完整 verify 迁移完成真实注册后再增加 `Passkey` 实例 roundtrip 覆盖。
+
 ## API 兼容范围
 
 第一阶段不替换生产 API。兼容范围限定为新增 Rust 切片自身的基础端点，不声明覆盖现有认证 API。
@@ -131,7 +140,7 @@
 - `sql/schema.sql` 仍是 schema 事实来源。
 - 第一阶段 Rust 切片不写入数据库，不执行迁移，不改变 schema。
 - 第二阶段 Rust 切片只执行 `sql/schema.sql` 中的 `CREATE TABLE IF NOT EXISTS`，不新增 schema，不执行 TypeScript 中已有的旧库修复逻辑。
-- 后续 Rust 数据库访问必须复用现有表名、列名、约束和时间/令牌语义；需要迁移兼容逻辑时必须有明确旧版本依赖和删除条件。
+- 后续 Rust 数据库访问必须复用现有表名、约束和时间/令牌语义；WebAuthn 凭据和 challenge 列以本轮 Rust-first schema 为准。需要迁移兼容逻辑时必须有明确旧版本依赖和删除条件。
 - 第三阶段当前切片不写入数据库；第四阶段当前切片只写入 `email_otps.consumed_at`；第五阶段当前切片在 OTP 成功消费后写入 `users`。Rust token 签发与验证必须复用 `jwks_keys` 中的 Ed25519 JWK 语义。Rust `POST /email/start` 必须复用 `smtp_configs` 与 `email_otps` 表；Rust WebAuthn register/options 必须复用 `users`、`allowed_origins` 与 `webauthn_challenges` 表；schema 初始化必须校验这些表的本轮所需列存在。
 
 ## 配置边界
@@ -159,6 +168,7 @@
 - 不在本轮 WebAuthn authenticate/options 切片迁移 WebAuthn register/verify、authenticate/verify 或生产入口切换。
 - 不在本轮 WebAuthn register/verify 前置边界切片迁移真实 attestation 验证、credential 创建、challenge 消费、authenticate/verify 或生产入口切换。
 - 不在本轮 WebAuthn authenticate/verify 前置边界切片迁移真实 assertion 验证、challenge 消费、credential counter 更新、session 创建、token 签发或生产入口切换。
+- 不在本轮 WebAuthn Rust-first schema spike 中提供旧 Node WebAuthn 凭据兼容迁移，不保证旧 `public_key`/`counter`/`transports` 数据可继续登录。
 - 不引入新的数据库、缓存、队列或配置格式。
 - 不改变现有 OpenAPI 合同。
 - 不增加 TypeScript 与 Rust 之间的代理兼容层。
@@ -181,4 +191,5 @@
 - 本轮 WebAuthn authenticate/options Rust 测试覆盖成功生成 options 并持久化匿名 challenge、父域 rp_id 规范化、`allowCredentials` 省略、未 allowlist origin 拒绝，以及 HTTP 层 `invalid_request`/`invalid_webauthn_authentication` 边界。
 - 本轮 WebAuthn register/verify 前置边界 Rust 测试覆盖请求 schema 解析与额外字段拒绝、有效 challenge 前置校验后不消费 challenge、错误用户 challenge 拒绝，以及 HTTP 层缺失 token、invalid_request、缺失 challenge 和前置通过后 `501 not_implemented` 边界。
 - 本轮 WebAuthn authenticate/verify 前置边界 Rust 测试覆盖请求 schema 解析与额外字段拒绝、有效 authenticate challenge 加 credential/rp_id 前置校验后不消费 challenge 且不更新 credential、credential rp_id 不匹配拒绝，以及 HTTP 层 invalid_request、缺失 challenge 和前置通过后 `501 not_implemented` 边界。
+- 本轮 WebAuthn Rust-first schema spike 测试覆盖 `webauthn-rs` 注册状态 serde JSON roundtrip，并使 Rust schema 校验、当前用户凭据响应和 WebAuthn 前置测试使用 `credential_id`/`passkey_json`/`state_json` 新 schema。
 - 代码提交在对应迁移分支并通过 PR 合入流程推进。

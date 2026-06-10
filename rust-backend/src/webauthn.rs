@@ -185,6 +185,7 @@ pub(crate) fn register_options(
     let request_id = random_uuid(connection).map_err(|_| RegisterOptionsError::InvalidRequest)?;
     let challenge =
         random_base64url(connection).map_err(|_| RegisterOptionsError::InvalidRequest)?;
+    let state_json = json!({ "challenge": challenge }).to_string();
     let expires_at = (Utc::now() + Duration::seconds(WEBAUTHN_CHALLENGE_SECONDS))
         .to_rfc3339_opts(SecondsFormat::Millis, true);
     let user_handle = base64url_encode(user_id.as_bytes());
@@ -201,11 +202,11 @@ pub(crate) fn register_options(
     connection
         .execute(
             "INSERT INTO webauthn_challenges
-             (request_id, type, challenge, user_id, expires_at, rp_id, origin)
+             (request_id, type, state_json, user_id, expires_at, rp_id, origin)
              VALUES (?1, 'register', ?2, ?3, ?4, ?5, ?6)",
             params![
                 request_id,
-                challenge,
+                state_json,
                 user_id,
                 expires_at,
                 resolved.rp_id,
@@ -244,17 +245,18 @@ pub(crate) fn authentication_options(
         random_uuid(connection).map_err(|_| AuthenticationOptionsError::InvalidRequest)?;
     let challenge =
         random_base64url(connection).map_err(|_| AuthenticationOptionsError::InvalidRequest)?;
+    let state_json = json!({ "challenge": challenge }).to_string();
     let expires_at = (Utc::now() + Duration::seconds(WEBAUTHN_CHALLENGE_SECONDS))
         .to_rfc3339_opts(SecondsFormat::Millis, true);
 
     connection
         .execute(
             "INSERT INTO webauthn_challenges
-             (request_id, type, challenge, user_id, expires_at, rp_id, origin)
+             (request_id, type, state_json, user_id, expires_at, rp_id, origin)
              VALUES (?1, 'authenticate', ?2, NULL, ?3, ?4, ?5)",
             params![
                 request_id,
-                challenge,
+                state_json,
                 expires_at,
                 resolved.rp_id,
                 resolved.origin
@@ -332,7 +334,7 @@ pub(crate) fn delete_credential(
     user_id: &str,
 ) -> rusqlite::Result<bool> {
     let result = connection.execute(
-        "DELETE FROM webauthn_credentials WHERE id = ?1 AND user_id = ?2",
+        "DELETE FROM webauthn_credentials WHERE credential_id = ?1 AND user_id = ?2",
         params![credential_id, user_id],
     )?;
 
@@ -668,6 +670,7 @@ fn base64url_encode(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use rusqlite::Connection;
+    use webauthn_rs::prelude::{PasskeyRegistration, Url, Uuid, WebauthnBuilder};
 
     use super::*;
 
@@ -677,12 +680,9 @@ mod tests {
         connection
             .execute_batch(
                 "CREATE TABLE webauthn_credentials (
-                    id TEXT PRIMARY KEY,
+                    credential_id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL,
-                    credential_id TEXT NOT NULL UNIQUE,
-                    public_key TEXT NOT NULL,
-                    counter INTEGER NOT NULL DEFAULT 0,
-                    transports TEXT NOT NULL DEFAULT '',
+                    passkey_json TEXT NOT NULL,
                     rp_id TEXT NOT NULL,
                     last_used_at TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -692,15 +692,9 @@ mod tests {
         connection
             .execute(
                 "INSERT INTO webauthn_credentials
-                 (id, user_id, credential_id, public_key, rp_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                (
-                    "credential-1",
-                    "user-1",
-                    "external-credential-id",
-                    "public-key",
-                    "app.example.com",
-                ),
+                 (credential_id, user_id, passkey_json, rp_id)
+                 VALUES (?1, ?2, ?3, ?4)",
+                ("credential-1", "user-1", "{}", "app.example.com"),
             )
             .expect("credential inserts");
 
@@ -711,6 +705,37 @@ mod tests {
 
         assert!(!denied);
         assert!(allowed);
+    }
+
+    #[test]
+    fn webauthn_rs_registration_state_serializes_for_challenge_persistence() {
+        let origin = Url::parse("https://app.example.com").expect("origin parses");
+        let webauthn = WebauthnBuilder::new("example.com", &origin)
+            .expect("webauthn builder accepts rp")
+            .rp_name("auth-mini")
+            .build()
+            .expect("webauthn builds");
+        let user_unique_id =
+            Uuid::parse_str("00000000-0000-4000-8000-000000000000").expect("uuid parses");
+        let (_, state) = webauthn
+            .start_passkey_registration(
+                user_unique_id,
+                "user@example.com",
+                "user@example.com",
+                None,
+            )
+            .expect("registration starts");
+
+        let state_json = serde_json::to_string(&state).expect("registration state serializes");
+        let restored: PasskeyRegistration =
+            serde_json::from_str(&state_json).expect("registration state deserializes");
+        let restored_json =
+            serde_json::to_string(&restored).expect("restored registration state serializes");
+
+        assert_eq!(
+            serde_json::from_str::<Value>(&state_json).expect("json parses"),
+            serde_json::from_str::<Value>(&restored_json).expect("json parses")
+        );
     }
 
     #[test]
@@ -924,7 +949,7 @@ mod tests {
         connection
             .execute(
                 "INSERT INTO webauthn_challenges
-                 (request_id, type, challenge, user_id, expires_at, rp_id, origin)
+                 (request_id, type, state_json, user_id, expires_at, rp_id, origin)
                  VALUES (?1, 'register', ?2, ?3, ?4, ?5, ?6)",
                 (
                     "00000000-0000-4000-8000-000000000000",
@@ -964,7 +989,7 @@ mod tests {
         connection
             .execute(
                 "INSERT INTO webauthn_challenges
-                 (request_id, type, challenge, user_id, expires_at, rp_id, origin)
+                 (request_id, type, state_json, user_id, expires_at, rp_id, origin)
                  VALUES (?1, 'register', ?2, ?3, ?4, ?5, ?6)",
                 (
                     "00000000-0000-4000-8000-000000000000",
@@ -1021,7 +1046,7 @@ mod tests {
         connection
             .execute(
                 "INSERT INTO webauthn_challenges
-                 (request_id, type, challenge, user_id, expires_at, rp_id, origin)
+                 (request_id, type, state_json, user_id, expires_at, rp_id, origin)
                  VALUES (?1, 'authenticate', ?2, NULL, ?3, ?4, ?5)",
                 (
                     "00000000-0000-4000-8000-000000000000",
@@ -1035,34 +1060,26 @@ mod tests {
         connection
             .execute(
                 "INSERT INTO webauthn_credentials
-                 (id, user_id, credential_id, public_key, counter, transports, rp_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                (
-                    "stored-credential",
-                    "user-1",
-                    "credential-id",
-                    "public-key",
-                    7,
-                    "internal",
-                    "example.com",
-                ),
+                 (credential_id, user_id, passkey_json, rp_id)
+                 VALUES (?1, ?2, ?3, ?4)",
+                ("credential-id", "user-1", "{}", "example.com"),
             )
             .expect("credential inserts");
         let request = authentication_verify_request();
 
         authentication_verify_precheck(&connection, &request, "https://app.example.com")
             .expect("precheck succeeds");
-        let stored: (Option<String>, i64, Option<String>) = connection
+        let stored: (Option<String>, Option<String>) = connection
             .query_row(
-                "SELECT c.consumed_at, p.counter, p.last_used_at
+                "SELECT c.consumed_at, p.last_used_at
                  FROM webauthn_challenges c, webauthn_credentials p
-                 WHERE c.request_id = ?1 AND p.id = ?2",
-                ["00000000-0000-4000-8000-000000000000", "stored-credential"],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                 WHERE c.request_id = ?1 AND p.credential_id = ?2",
+                ["00000000-0000-4000-8000-000000000000", "credential-id"],
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .expect("side effects read");
 
-        assert_eq!(stored, (None, 7, None));
+        assert_eq!(stored, (None, None));
     }
 
     #[test]
@@ -1079,7 +1096,7 @@ mod tests {
         connection
             .execute(
                 "INSERT INTO webauthn_challenges
-                 (request_id, type, challenge, user_id, expires_at, rp_id, origin)
+                 (request_id, type, state_json, user_id, expires_at, rp_id, origin)
                  VALUES (?1, 'authenticate', ?2, NULL, ?3, ?4, ?5)",
                 (
                     "00000000-0000-4000-8000-000000000000",
@@ -1093,17 +1110,9 @@ mod tests {
         connection
             .execute(
                 "INSERT INTO webauthn_credentials
-                 (id, user_id, credential_id, public_key, counter, transports, rp_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                (
-                    "stored-credential",
-                    "user-1",
-                    "credential-id",
-                    "public-key",
-                    0,
-                    "internal",
-                    "example.com",
-                ),
+                 (credential_id, user_id, passkey_json, rp_id)
+                 VALUES (?1, ?2, ?3, ?4)",
+                ("credential-id", "user-1", "{}", "example.com"),
             )
             .expect("credential inserts");
         let request = authentication_verify_request();
@@ -1135,7 +1144,7 @@ mod tests {
                 CREATE TABLE webauthn_challenges (
                     request_id TEXT PRIMARY KEY,
                     type TEXT NOT NULL CHECK (type IN ('register', 'authenticate')),
-                    challenge TEXT NOT NULL,
+                    state_json TEXT NOT NULL,
                     user_id TEXT,
                     expires_at TEXT NOT NULL,
                     rp_id TEXT NOT NULL,
@@ -1151,12 +1160,9 @@ mod tests {
         connection
             .execute_batch(
                 "CREATE TABLE webauthn_credentials (
-                    id TEXT PRIMARY KEY,
+                    credential_id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL,
-                    credential_id TEXT NOT NULL UNIQUE,
-                    public_key TEXT NOT NULL,
-                    counter INTEGER NOT NULL DEFAULT 0,
-                    transports TEXT NOT NULL DEFAULT '',
+                    passkey_json TEXT NOT NULL,
                     rp_id TEXT NOT NULL,
                     last_used_at TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP

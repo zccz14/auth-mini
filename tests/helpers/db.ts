@@ -69,12 +69,10 @@ export async function createLegacySchemaDbPath(): Promise<string> {
       );
 
       CREATE TABLE webauthn_credentials (
-        id TEXT PRIMARY KEY,
+        credential_id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
-        credential_id TEXT NOT NULL UNIQUE,
-        public_key TEXT NOT NULL,
-        counter INTEGER NOT NULL DEFAULT 0,
-        transports TEXT NOT NULL DEFAULT '',
+        passkey_json TEXT NOT NULL,
+        rp_id TEXT NOT NULL DEFAULT '',
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
@@ -82,7 +80,7 @@ export async function createLegacySchemaDbPath(): Promise<string> {
       CREATE TABLE webauthn_challenges (
         request_id TEXT PRIMARY KEY,
         type TEXT NOT NULL CHECK (type IN ('register', 'authenticate')),
-        challenge TEXT NOT NULL,
+        state_json TEXT NOT NULL,
         user_id TEXT,
         expires_at TEXT NOT NULL,
         consumed_at TEXT,
@@ -162,12 +160,9 @@ export async function createSessionAuthMethodCompatDbPath(): Promise<string> {
       );
 
       CREATE TABLE webauthn_credentials (
-        id TEXT PRIMARY KEY,
+        credential_id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
-        credential_id TEXT NOT NULL UNIQUE,
-        public_key TEXT NOT NULL,
-        counter INTEGER NOT NULL DEFAULT 0,
-        transports TEXT NOT NULL DEFAULT '',
+        passkey_json TEXT NOT NULL,
         rp_id TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -176,7 +171,7 @@ export async function createSessionAuthMethodCompatDbPath(): Promise<string> {
       CREATE TABLE webauthn_challenges (
         request_id TEXT PRIMARY KEY,
         type TEXT NOT NULL CHECK (type IN ('register', 'authenticate')),
-        challenge TEXT NOT NULL,
+        state_json TEXT NOT NULL,
         user_id TEXT,
         expires_at TEXT NOT NULL,
         rp_id TEXT NOT NULL,
@@ -274,12 +269,9 @@ export async function createLegacySessionAuthMethodConstraintDbPath(): Promise<s
       );
 
       CREATE TABLE webauthn_credentials (
-        id TEXT PRIMARY KEY,
+        credential_id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
-        credential_id TEXT NOT NULL UNIQUE,
-        public_key TEXT NOT NULL,
-        counter INTEGER NOT NULL DEFAULT 0,
-        transports TEXT NOT NULL DEFAULT '',
+        passkey_json TEXT NOT NULL,
         rp_id TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -288,7 +280,7 @@ export async function createLegacySessionAuthMethodConstraintDbPath(): Promise<s
       CREATE TABLE webauthn_challenges (
         request_id TEXT PRIMARY KEY,
         type TEXT NOT NULL CHECK (type IN ('register', 'authenticate')),
-        challenge TEXT NOT NULL,
+        state_json TEXT NOT NULL,
         user_id TEXT,
         expires_at TEXT NOT NULL,
         rp_id TEXT NOT NULL,
@@ -374,12 +366,9 @@ export async function createMalformedJwksSlotDbPath(input: {
       );
 
       CREATE TABLE webauthn_credentials (
-        id TEXT PRIMARY KEY,
+        credential_id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
-        credential_id TEXT NOT NULL UNIQUE,
-        public_key TEXT NOT NULL,
-        counter INTEGER NOT NULL DEFAULT 0,
-        transports TEXT NOT NULL DEFAULT '',
+        passkey_json TEXT NOT NULL,
         rp_id TEXT NOT NULL,
         last_used_at TEXT,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -388,7 +377,7 @@ export async function createMalformedJwksSlotDbPath(input: {
       CREATE TABLE webauthn_challenges (
         request_id TEXT PRIMARY KEY,
         type TEXT NOT NULL CHECK (type IN ('register', 'authenticate')),
-        challenge TEXT NOT NULL,
+        state_json TEXT NOT NULL,
         user_id TEXT,
         expires_at TEXT NOT NULL,
         rp_id TEXT NOT NULL,

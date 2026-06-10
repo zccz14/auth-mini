@@ -107,6 +107,26 @@
 
 ## 当前 PR 范围
 
+本轮按用户“不需要 Node 兼容，允许 public API changes”的决定执行第一个 WebAuthn Rust 迁移 spike：只落 Rust-first schema/docs、依赖和 serde persistence proof，不迁移完整 verify。
+
+- `webauthn_credentials` 改为以 WebAuthn `credential_id` 为公开/主键句柄，存储 `passkey_json` 作为 `webauthn-rs` `Passkey` 状态，保留 `user_id`、`rp_id`、`last_used_at`、`created_at`，删除旧 Node 拆分列 `id`、`public_key`、`counter`、`transports`。
+- `webauthn_challenges` 改为 `state_json` 存储 `webauthn-rs` registration/authentication state，保留 `request_id`、`type`、`user_id`、`rp_id`、`origin`、`expires_at`、`consumed_at`、`created_at` 和 register/authenticate 的 `user_id` check。
+- 这是破坏性 schema/API 方向；旧 Node WebAuthn credential 不提供兼容迁移路径，可能要求用户重新注册 passkey。
+- Rust 依赖接入 `webauthn-rs`，仅启用本轮 serde state proof 所需的 `danger-allow-state-serialisation` feature；不启用 credential internals 或降低 user verification 的危险 feature。
+- Rust 测试用 `WebauthnBuilder::start_passkey_registration` 证明 `PasskeyRegistration` 可 JSON serialize/deserialize；不构造假的 `Passkey`，因为真实 `Passkey` 需要完整注册 ceremony 才能由库产出。
+- 更新 Rust schema 校验和受影响测试/helper 至新 schema；不添加旧 schema 兼容分支。
+- TypeScript WebAuthn repository 与测试 fixture 只改为读写新 schema，保持现有测试入口可运行；这不是旧 Node WebAuthn 数据兼容路径，后续 Rust verify 完成后应移除 TS WebAuthn 持久化写入。
+- 不切换生产入口，不迁移真实 WebAuthn registration/authentication verify，不实现假成功路径。
+
+验证命令：
+
+- `CARGO_HOME=$PWD/.cargo-home cargo fmt --manifest-path rust-backend/Cargo.toml --check`
+- `CARGO_HOME=$PWD/.cargo-home cargo test --manifest-path rust-backend/Cargo.toml`
+- `CARGO_HOME=$PWD/.cargo-home cargo build --manifest-path rust-backend/Cargo.toml`
+- `npm run typecheck`
+
+## 上一轮 PR 范围
+
 本轮按用户要求替换 Rust SMTP 发送实现：删除手写裸 SMTP 协议交互，改由 `lettre` 处理 SMTP 会话、认证、信封和邮件发送。
 
 - Rust `POST /email/start` 保持原业务顺序：选 SMTP 配置、生成 OTP、写入 `email_otps`，发送失败时写入 `consumed_at` 失效本次 OTP。
