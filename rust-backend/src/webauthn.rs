@@ -1,7 +1,10 @@
-use chrono::{DateTime, Duration, SecondsFormat, Utc};
+use std::time::Duration;
+
+use chrono::{DateTime, Duration as ChronoDuration, SecondsFormat, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use webauthn_rs::prelude::{Url, Webauthn, WebauthnBuilder};
 
 const WEBAUTHN_CHALLENGE_SECONDS: i64 = 300;
 
@@ -186,7 +189,7 @@ pub(crate) fn register_options(
     let challenge =
         random_base64url(connection).map_err(|_| RegisterOptionsError::InvalidRequest)?;
     let state_json = json!({ "challenge": challenge }).to_string();
-    let expires_at = (Utc::now() + Duration::seconds(WEBAUTHN_CHALLENGE_SECONDS))
+    let expires_at = (Utc::now() + ChronoDuration::seconds(WEBAUTHN_CHALLENGE_SECONDS))
         .to_rfc3339_opts(SecondsFormat::Millis, true);
     let user_handle = base64url_encode(user_id.as_bytes());
     let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
@@ -243,10 +246,20 @@ pub(crate) fn authentication_options(
         .map_err(|_| AuthenticationOptionsError::InvalidWebauthnAuthentication)?;
     let request_id =
         random_uuid(connection).map_err(|_| AuthenticationOptionsError::InvalidRequest)?;
-    let challenge =
-        random_base64url(connection).map_err(|_| AuthenticationOptionsError::InvalidRequest)?;
-    let state_json = json!({ "challenge": challenge }).to_string();
-    let expires_at = (Utc::now() + Duration::seconds(WEBAUTHN_CHALLENGE_SECONDS))
+    let webauthn = build_webauthn(&resolved.rp_id, &resolved.origin)
+        .map_err(|_| AuthenticationOptionsError::InvalidWebauthnAuthentication)?;
+    let (options, state) = webauthn
+        .start_discoverable_authentication()
+        .map_err(|_| AuthenticationOptionsError::InvalidRequest)?;
+    let state_json =
+        serde_json::to_string(&state).map_err(|_| AuthenticationOptionsError::InvalidRequest)?;
+    let public_key = serde_json::to_value(options.public_key)
+        .map_err(|_| AuthenticationOptionsError::InvalidRequest)?;
+    let challenge = public_key
+        .get("challenge")
+        .cloned()
+        .ok_or(AuthenticationOptionsError::InvalidRequest)?;
+    let expires_at = (Utc::now() + ChronoDuration::seconds(WEBAUTHN_CHALLENGE_SECONDS))
         .to_rfc3339_opts(SecondsFormat::Millis, true);
 
     connection
@@ -273,6 +286,17 @@ pub(crate) fn authentication_options(
             "userVerification": "preferred"
         }
     }))
+}
+
+fn build_webauthn(rp_id: &str, origin: &str) -> Result<Webauthn, ()> {
+    let origin = Url::parse(origin).map_err(|_| ())?;
+
+    WebauthnBuilder::new(rp_id, &origin)
+        .map_err(|_| ())?
+        .rp_name("auth-mini")
+        .timeout(Duration::from_secs(WEBAUTHN_CHALLENGE_SECONDS as u64))
+        .build()
+        .map_err(|_| ())
 }
 
 pub(crate) fn register_verify_precheck(
@@ -670,7 +694,9 @@ fn base64url_encode(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use rusqlite::Connection;
-    use webauthn_rs::prelude::{PasskeyRegistration, Url, Uuid, WebauthnBuilder};
+    use webauthn_rs::prelude::{
+        DiscoverableAuthentication, PasskeyRegistration, Url, Uuid, WebauthnBuilder,
+    };
 
     use super::*;
 
@@ -869,27 +895,35 @@ mod tests {
         let body = authentication_options(&connection, &request, "https://app.example.com")
             .expect("options generate");
         let request_id = body["request_id"].as_str().expect("request id");
-        let stored: (String, Option<String>, String, String) = connection
+        let stored: (String, String, Option<String>, String, String) = connection
             .query_row(
-                "SELECT type, user_id, rp_id, origin FROM webauthn_challenges WHERE request_id = ?1",
+                "SELECT type, state_json, user_id, rp_id, origin FROM webauthn_challenges WHERE request_id = ?1",
                 [request_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
             )
             .expect("challenge reads");
+        let restored_state: DiscoverableAuthentication =
+            serde_json::from_str(&stored.1).expect("webauthn-rs state deserializes");
+        let restored_state_json =
+            serde_json::to_string(&restored_state).expect("webauthn-rs state serializes");
 
         assert_eq!(body["publicKey"]["rpId"], "example.com");
         assert_eq!(body["publicKey"]["timeout"], 300000);
         assert_eq!(body["publicKey"]["userVerification"], "preferred");
         assert!(body["publicKey"].get("allowCredentials").is_none());
-        assert_eq!(
-            stored,
-            (
-                "authenticate".to_string(),
-                None,
-                "example.com".to_string(),
-                "https://app.example.com".to_string()
-            )
+        assert_ne!(
+            stored.1,
+            json!({ "challenge": body["publicKey"]["challenge"] }).to_string()
         );
+        assert_eq!(
+            serde_json::from_str::<Value>(&stored.1).expect("state json parses"),
+            serde_json::from_str::<Value>(&restored_state_json)
+                .expect("restored state json parses")
+        );
+        assert_eq!(stored.0, "authenticate");
+        assert_eq!(stored.2, None);
+        assert_eq!(stored.3, "example.com");
+        assert_eq!(stored.4, "https://app.example.com");
     }
 
     #[test]
