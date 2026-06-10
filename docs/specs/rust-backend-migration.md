@@ -128,6 +128,15 @@
 - 本轮仅证明 `webauthn-rs` 挑战状态可通过 serde JSON 持久化，并接入依赖；不迁移真实 registration/authentication verify，不伪造验证成功。
 - `Passkey` 只能由真实注册 ceremony 完成后获得；本轮不构造假的 `Passkey`。`Passkey` 类型本身由 `webauthn-rs` 声明可安全序列化，后续完整 verify 迁移完成真实注册后再增加 `Passkey` 实例 roundtrip 覆盖。
 
+本轮 Ed25519 verify 切片必须新增下列可验证行为：
+
+- Rust 后端覆盖公开端点 `POST /ed25519/verify`；该端点保持公开，不要求 bearer access token。
+- 请求 body 必须只包含 `request_id` 与 `signature`，`request_id` 必须是 UUID 形状，`signature` 必须是非空字符串；无效 body 返回 `400 invalid_request`。
+- Rust 必须读取 `ed25519_challenges` 中对应 challenge，要求 challenge 存在、`consumed_at` 为空、`expires_at` 晚于当前时间；否则返回 `400 invalid_ed25519_authentication`。
+- Rust 必须按 challenge 绑定的 `credential_id` 读取 `ed25519_credentials`，使用该凭据保存的 32-byte base64url Ed25519 public key 验证请求签名，签名对象为 challenge 原文 UTF-8 字节；凭据不存在、公钥或签名格式错误、签名不匹配均返回 `400 invalid_ed25519_authentication`。
+- 验证成功后必须在同一 SQLite 事务中原子消费 challenge、更新 `ed25519_credentials.last_used_at`、创建 `auth_method = 'ed25519'` 的 session 并签发标准 token 响应；若 session/JWKS 签发失败，不得消费 challenge 或更新凭据。
+- 不改变 `/ed25519/start`、Ed25519 credential management、OpenAPI 合同、TypeScript 生产入口或 SDK 行为，不新增旧数据兼容 fallback。
+
 ## API 兼容范围
 
 第一阶段不替换生产 API。兼容范围限定为新增 Rust 切片自身的基础端点，不声明覆盖现有认证 API。
@@ -141,7 +150,7 @@
 - 第一阶段 Rust 切片不写入数据库，不执行迁移，不改变 schema。
 - 第二阶段 Rust 切片只执行 `sql/schema.sql` 中的 `CREATE TABLE IF NOT EXISTS`，不新增 schema，不执行 TypeScript 中已有的旧库修复逻辑。
 - 后续 Rust 数据库访问必须复用现有表名、约束和时间/令牌语义；WebAuthn 凭据和 challenge 列以本轮 Rust-first schema 为准。需要迁移兼容逻辑时必须有明确旧版本依赖和删除条件。
-- 第三阶段当前切片不写入数据库；第四阶段当前切片只写入 `email_otps.consumed_at`；第五阶段当前切片在 OTP 成功消费后写入 `users`。Rust token 签发与验证必须复用 `jwks_keys` 中的 Ed25519 JWK 语义。Rust `POST /email/start` 必须复用 `smtp_configs` 与 `email_otps` 表；Rust WebAuthn register/options 必须复用 `users`、`allowed_origins` 与 `webauthn_challenges` 表；schema 初始化必须校验这些表的本轮所需列存在。
+- 第三阶段当前切片不写入数据库；第四阶段当前切片只写入 `email_otps.consumed_at`；第五阶段当前切片在 OTP 成功消费后写入 `users`。Rust token 签发与验证必须复用 `jwks_keys` 中的 Ed25519 JWK 语义。Rust `POST /email/start` 必须复用 `smtp_configs` 与 `email_otps` 表；Rust WebAuthn register/options 必须复用 `users`、`allowed_origins` 与 `webauthn_challenges` 表；Rust Ed25519 verify 必须复用 `ed25519_challenges`、`ed25519_credentials`、`sessions` 与 `jwks_keys` 表；schema 初始化必须校验这些表的本轮所需列存在。
 
 ## 配置边界
 
@@ -169,6 +178,7 @@
 - 不在本轮 WebAuthn register/verify 前置边界切片迁移真实 attestation 验证、credential 创建、challenge 消费、authenticate/verify 或生产入口切换。
 - 不在本轮 WebAuthn authenticate/verify 前置边界切片迁移真实 assertion 验证、challenge 消费、credential counter 更新、session 创建、token 签发或生产入口切换。
 - 不在本轮 WebAuthn Rust-first schema spike 中提供旧 Node WebAuthn 凭据兼容迁移，不保证旧 `public_key`/`counter`/`transports` 数据可继续登录。
+- 不在本轮 Ed25519 verify 切片迁移 Ed25519 start、credential management、生产入口、SDK、OpenAPI 或旧数据兼容 fallback。
 - 不引入新的数据库、缓存、队列或配置格式。
 - 不改变现有 OpenAPI 合同。
 - 不增加 TypeScript 与 Rust 之间的代理兼容层。
@@ -192,4 +202,5 @@
 - 本轮 WebAuthn register/verify 前置边界 Rust 测试覆盖请求 schema 解析与额外字段拒绝、有效 challenge 前置校验后不消费 challenge、错误用户 challenge 拒绝，以及 HTTP 层缺失 token、invalid_request、缺失 challenge 和前置通过后 `501 not_implemented` 边界。
 - 本轮 WebAuthn authenticate/verify 前置边界 Rust 测试覆盖请求 schema 解析与额外字段拒绝、有效 authenticate challenge 加 credential/rp_id 前置校验后不消费 challenge 且不更新 credential、credential rp_id 不匹配拒绝，以及 HTTP 层 invalid_request、缺失 challenge 和前置通过后 `501 not_implemented` 边界。
 - 本轮 WebAuthn Rust-first schema spike 测试覆盖 `webauthn-rs` 注册状态 serde JSON roundtrip，并使 Rust schema 校验、当前用户凭据响应和 WebAuthn 前置测试使用 `credential_id`/`passkey_json`/`state_json` 新 schema。
+- 本轮 Ed25519 verify Rust 测试覆盖请求 schema 解析与额外字段拒绝、有效签名消费 challenge/更新 `last_used_at`/签发 `ed25519` session、无效签名无副作用、已消费 challenge 拒绝，以及 HTTP 层 route 注册、`invalid_request` 与无数据库 `not_implemented` 边界。
 - 代码提交在对应迁移分支并通过 PR 合入流程推进。

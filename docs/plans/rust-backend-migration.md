@@ -107,6 +107,26 @@
 
 ## 当前 PR 范围
 
+本轮继续 PR #81 后的 Rust 后端公开路由迁移，确认剩余缺口为 `POST /ed25519/verify`，并迁移该端点的最小完整闭环。
+
+- 对照最近 git 历史、Rust route registration、TS `src/modules/ed25519/service.ts` 和现有迁移文档，确认 Rust 已覆盖 `/ed25519/start` 与 Ed25519 credential management，但未注册 `/ed25519/verify`。
+- 在 Rust 中新增 `/ed25519/verify` route，保持公开端点，不要求 bearer access token。
+- 按 OpenAPI/TS 合同解析 `request_id` 与 `signature`，无效 body 返回 `400 invalid_request`。
+- 从 `ed25519_challenges` 读取未消费、未过期 challenge，并按 challenge 绑定的 `credential_id` 读取 `ed25519_credentials.public_key`。
+- 使用已有 `ed25519-dalek` 依赖验证 Ed25519 签名；challenge 原文 UTF-8 字节为签名对象，public key 与 signature 均按 base64url 解码。
+- 验证成功后在同一 SQLite 事务中消费 challenge、更新 `last_used_at`、创建 `auth_method = 'ed25519'` session 并签发标准 token 响应；签发失败时事务回滚，不消费 challenge。
+- 增加 Rust 单元测试覆盖 request contract、成功签发、无效签名无副作用、已消费 challenge 拒绝，以及 HTTP route 注册/invalid_request 边界。
+- 不修改 `/ed25519/start`、credential management、OpenAPI、SDK、TypeScript 生产入口或旧数据兼容路径。
+
+验证命令：
+
+- `CARGO_HOME=$PWD/.cargo-home cargo fmt --manifest-path rust-backend/Cargo.toml --check`
+- `CARGO_HOME=$PWD/.cargo-home cargo test --manifest-path rust-backend/Cargo.toml`
+- `CARGO_HOME=$PWD/.cargo-home cargo build --manifest-path rust-backend/Cargo.toml`
+- `npm run typecheck`
+
+## 上一轮 PR 范围
+
 本轮按用户“不需要 Node 兼容，允许 public API changes”的决定执行第一个 WebAuthn Rust 迁移 spike：只落 Rust-first schema/docs、依赖和 serde persistence proof，不迁移完整 verify。
 
 - `webauthn_credentials` 改为以 WebAuthn `credential_id` 为公开/主键句柄，存储 `passkey_json` 作为 `webauthn-rs` `Passkey` 状态，保留 `user_id`、`rp_id`、`last_used_at`、`created_at`，删除旧 Node 拆分列 `id`、`public_key`、`counter`、`transports`。
@@ -117,13 +137,6 @@
 - 更新 Rust schema 校验和受影响测试/helper 至新 schema；不添加旧 schema 兼容分支。
 - TypeScript WebAuthn repository 与测试 fixture 只改为读写新 schema，保持现有测试入口可运行；这不是旧 Node WebAuthn 数据兼容路径，后续 Rust verify 完成后应移除 TS WebAuthn 持久化写入。
 - 不切换生产入口，不迁移真实 WebAuthn registration/authentication verify，不实现假成功路径。
-
-验证命令：
-
-- `CARGO_HOME=$PWD/.cargo-home cargo fmt --manifest-path rust-backend/Cargo.toml --check`
-- `CARGO_HOME=$PWD/.cargo-home cargo test --manifest-path rust-backend/Cargo.toml`
-- `CARGO_HOME=$PWD/.cargo-home cargo build --manifest-path rust-backend/Cargo.toml`
-- `npm run typecheck`
 
 ## 上一轮 PR 范围
 

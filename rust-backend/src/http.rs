@@ -7,8 +7,9 @@ use crate::ed25519::{
     create_credential as create_ed25519_credential, delete_credential as delete_ed25519_credential,
     list_credentials as list_ed25519_credentials, parse_credential_create_request,
     parse_credential_update_request, parse_start_authentication_request,
-    start_authentication as start_ed25519_authentication,
+    parse_verify_authentication_request, start_authentication as start_ed25519_authentication,
     update_credential as update_ed25519_credential,
+    verify_authentication as verify_ed25519_authentication, VerifyAuthenticationError,
 };
 use crate::email_start::{parse_email_start_request, start_email_auth, EmailStartError};
 use crate::email_verify::{
@@ -152,6 +153,10 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
 
     if request.method == "POST" && request.path == "/ed25519/start" {
         return handle_ed25519_start(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "POST" && request.path == "/ed25519/verify" {
+        return handle_ed25519_verify(request, config).map(|response| cors(request, response));
     }
 
     if request.method == "POST" && request.path == "/webauthn/register/options" {
@@ -550,6 +555,32 @@ fn handle_ed25519_start(request: &Request, config: &Config) -> io::Result<Respon
     match challenge {
         Some(body) => Ok(Response::json_value(200, body)),
         None => Ok(Response::json_error(400, "invalid_ed25519_authentication")),
+    }
+}
+
+fn handle_ed25519_verify(request: &Request, config: &Config) -> io::Result<Response> {
+    let parsed = match parse_verify_authentication_request(&request.body) {
+        Ok(parsed) => parsed,
+        Err(_) => return Ok(Response::json_error(400, "invalid_request")),
+    };
+    let Some(database) = &config.database else {
+        return Ok(Response::json_error(501, "not_implemented"));
+    };
+    let mut connection = rusqlite::Connection::open(&database.db_path)
+        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+
+    match verify_ed25519_authentication(
+        &mut connection,
+        &parsed,
+        "auth-mini",
+        None,
+        request.header("User-Agent").as_deref(),
+    ) {
+        Ok(pair) => Ok(Response::json_value(200, token_json(pair))),
+        Err(VerifyAuthenticationError::InvalidEd25519Authentication) => {
+            Ok(Response::json_error(400, "invalid_ed25519_authentication"))
+        }
+        Err(VerifyAuthenticationError::Database) => Ok(Response::json_error(500, "internal_error")),
     }
 }
 
@@ -1208,6 +1239,40 @@ mod tests {
             response,
             Response::json_error(400, "invalid_ed25519_authentication")
         );
+    }
+
+    #[test]
+    fn ed25519_verify_route_reaches_not_implemented_without_database() {
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/ed25519/verify".to_string(),
+                headers: Vec::new(),
+                body: r#"{"request_id":"00000000-0000-4000-8000-000000000000","signature":"signature"}"#
+                    .to_string(),
+            },
+            &Config::default(),
+        )
+        .expect("ed25519 verify response builds");
+
+        assert_eq!(response, Response::json_error(501, "not_implemented"));
+    }
+
+    #[test]
+    fn ed25519_verify_rejects_invalid_request_over_http_boundary() {
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/ed25519/verify".to_string(),
+                headers: Vec::new(),
+                body: r#"{"request_id":"00000000-0000-4000-8000-000000000000","signature":"signature","extra":true}"#
+                    .to_string(),
+            },
+            &Config::default(),
+        )
+        .expect("ed25519 verify response builds");
+
+        assert_eq!(response, Response::json_error(400, "invalid_request"));
     }
 
     #[test]
