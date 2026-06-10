@@ -26,9 +26,9 @@ use crate::webauthn::{
     authentication_verify_precheck as webauthn_authentication_verify_precheck,
     delete_credential as delete_webauthn_credential, parse_authentication_verify_request,
     parse_options_request, parse_register_verify_request,
-    register_options as webauthn_register_options,
-    register_verify_precheck as webauthn_register_verify_precheck, AuthenticationOptionsError,
-    AuthenticationVerifyError, RegisterOptionsError, RegisterVerifyError,
+    register_options as webauthn_register_options, register_verify as webauthn_register_verify,
+    AuthenticationOptionsError, AuthenticationVerifyError, RegisterOptionsError,
+    RegisterVerifyError,
 };
 
 pub fn run_server(config: Config) -> Result<(), Box<dyn std::error::Error>> {
@@ -461,8 +461,8 @@ fn handle_webauthn_register_verify(request: &Request, config: &Config) -> io::Re
         return Ok(Response::json_error(400, "invalid_webauthn_registration"));
     };
 
-    match webauthn_register_verify_precheck(&connection, &auth.user_id, &parsed, &origin) {
-        Ok(()) => Ok(Response::json_error(501, "not_implemented")),
+    match webauthn_register_verify(&connection, &auth.user_id, &parsed, &origin) {
+        Ok(body) => Ok(Response::json_value(200, body)),
         Err(RegisterVerifyError::InvalidWebauthnRegistration) => {
             Ok(Response::json_error(400, "invalid_webauthn_registration"))
         }
@@ -1707,8 +1707,8 @@ mod tests {
     }
 
     #[test]
-    fn webauthn_register_verify_precheck_returns_not_implemented_without_consuming_challenge() {
-        let db_path = test_db_path("http-webauthn-register-verify-precheck");
+    fn webauthn_register_verify_rejects_legacy_state_without_consuming_challenge() {
+        let db_path = test_db_path("http-webauthn-register-verify-legacy-state");
         let connection = Connection::open(&db_path).expect("database opens");
         create_auth_schema(&connection);
         connection
@@ -1773,8 +1773,11 @@ mod tests {
             )
             .expect("consumed_at reads");
 
-        assert_eq!(response.status, 501);
-        assert_eq!(response.body, r#"{"error":"not_implemented"}"#);
+        assert_eq!(response.status, 400);
+        assert_eq!(
+            response.body,
+            r#"{"error":"invalid_webauthn_registration"}"#
+        );
         assert!(consumed_at.is_none());
     }
 

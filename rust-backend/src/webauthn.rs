@@ -2,10 +2,12 @@ use std::time::Duration;
 
 use chrono::{DateTime, Duration as ChronoDuration, SecondsFormat, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use webauthn_rs::prelude::{Url, Uuid, Webauthn, WebauthnBuilder};
+use webauthn_rs::prelude::{
+    PasskeyRegistration, RegisterPublicKeyCredential, Url, Uuid, Webauthn, WebauthnBuilder,
+};
 
 const WEBAUTHN_CHALLENGE_SECONDS: i64 = 300;
 
@@ -28,7 +30,7 @@ pub(crate) enum AuthenticationOptionsError {
     InvalidWebauthnAuthentication,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RegisterVerifyRequest {
     request_id: String,
@@ -42,7 +44,7 @@ pub(crate) struct AuthenticationVerifyRequest {
     credential: AuthenticationCredential,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 struct RegistrationCredential {
     id: String,
@@ -51,19 +53,22 @@ struct RegistrationCredential {
     #[serde(rename = "type")]
     credential_type: String,
     #[serde(rename = "authenticatorAttachment")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     authenticator_attachment: Option<String>,
     #[serde(rename = "clientExtensionResults")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     client_extension_results: Option<Value>,
     response: RegistrationCredentialResponse,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 struct RegistrationCredentialResponse {
     #[serde(rename = "clientDataJSON")]
     client_data_json: String,
     #[serde(rename = "attestationObject")]
     attestation_object: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     transports: Option<Vec<String>>,
 }
 
@@ -331,12 +336,12 @@ fn user_webauthn_id(user_id: &str) -> Uuid {
     Uuid::from_bytes(bytes)
 }
 
-pub(crate) fn register_verify_precheck(
+pub(crate) fn register_verify(
     connection: &Connection,
     user_id: &str,
     request: &RegisterVerifyRequest,
     origin: &str,
-) -> Result<(), RegisterVerifyError> {
+) -> Result<Value, RegisterVerifyError> {
     let origin = normalize_allowed_origin(origin)
         .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)?;
     let challenge = get_valid_register_challenge(connection, &request.request_id)?;
@@ -355,7 +360,58 @@ pub(crate) fn register_verify_precheck(
         return Err(RegisterVerifyError::InvalidWebauthnRegistration);
     }
 
-    Ok(())
+    let state: PasskeyRegistration = serde_json::from_str(&challenge.state_json)
+        .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)?;
+    let credential: RegisterPublicKeyCredential = serde_json::from_value(
+        serde_json::to_value(&request.credential)
+            .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)?,
+    )
+    .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)?;
+    let webauthn = build_webauthn(&challenge.rp_id, &challenge.origin)
+        .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)?;
+    let passkey = webauthn
+        .finish_passkey_registration(&credential, &state)
+        .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)?;
+    let credential_id = serde_json::to_value(passkey.cred_id())
+        .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)?
+        .as_str()
+        .ok_or(RegisterVerifyError::InvalidWebauthnRegistration)?
+        .to_string();
+    let passkey_json = serde_json::to_string(&passkey)
+        .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)?;
+    let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    let transaction = connection
+        .unchecked_transaction()
+        .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)?;
+
+    transaction
+        .execute(
+            "UPDATE webauthn_challenges
+             SET consumed_at = ?1
+             WHERE request_id = ?2 AND consumed_at IS NULL",
+            params![now, request.request_id],
+        )
+        .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)
+        .and_then(|changes| {
+            if changes == 1 {
+                Ok(())
+            } else {
+                Err(RegisterVerifyError::InvalidWebauthnRegistration)
+            }
+        })?;
+    transaction
+        .execute(
+            "INSERT INTO webauthn_credentials
+             (credential_id, user_id, passkey_json, rp_id)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![credential_id, user_id, passkey_json, challenge.rp_id],
+        )
+        .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)?;
+    transaction
+        .commit()
+        .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)?;
+
+    Ok(json!({ "ok": true }))
 }
 
 pub(crate) fn authentication_verify_precheck(
@@ -411,7 +467,9 @@ fn user_email(connection: &Connection, user_id: &str) -> Result<String, Register
 
 struct RegisterChallengePrecheckRow {
     user_id: Option<String>,
+    state_json: String,
     expires_at: String,
+    rp_id: String,
     origin: String,
 }
 
@@ -427,7 +485,7 @@ fn get_valid_register_challenge(
 ) -> Result<RegisterChallengePrecheckRow, RegisterVerifyError> {
     let challenge = connection
         .query_row(
-            "SELECT user_id, expires_at, origin
+            "SELECT user_id, state_json, expires_at, rp_id, origin
              FROM webauthn_challenges
              WHERE request_id = ?1 AND type = 'register' AND consumed_at IS NULL
              LIMIT 1",
@@ -435,8 +493,10 @@ fn get_valid_register_challenge(
             |row| {
                 Ok(RegisterChallengePrecheckRow {
                     user_id: row.get(0)?,
-                    expires_at: row.get(1)?,
-                    origin: row.get(2)?,
+                    state_json: row.get(1)?,
+                    expires_at: row.get(2)?,
+                    rp_id: row.get(3)?,
+                    origin: row.get(4)?,
                 })
             },
         )
@@ -1009,49 +1069,10 @@ mod tests {
     }
 
     #[test]
-    fn register_verify_precheck_accepts_valid_stored_challenge_without_consuming_it() {
+    fn register_verify_rejects_wrong_user_challenge() {
         let connection = Connection::open_in_memory().expect("database opens");
         create_register_options_schema(&connection);
-        connection
-            .execute(
-                "INSERT INTO allowed_origins (origin) VALUES (?1)",
-                ["https://app.example.com"],
-            )
-            .expect("origin inserts");
-        connection
-            .execute(
-                "INSERT INTO webauthn_challenges
-                 (request_id, type, state_json, user_id, expires_at, rp_id, origin)
-                 VALUES (?1, 'register', ?2, ?3, ?4, ?5, ?6)",
-                (
-                    "00000000-0000-4000-8000-000000000000",
-                    "challenge",
-                    "user-1",
-                    "9999-01-01T00:00:00.000Z",
-                    "example.com",
-                    "https://app.example.com",
-                ),
-            )
-            .expect("challenge inserts");
-        let request = register_verify_request();
-
-        register_verify_precheck(&connection, "user-1", &request, "https://app.example.com")
-            .expect("precheck succeeds");
-        let consumed_at: Option<String> = connection
-            .query_row(
-                "SELECT consumed_at FROM webauthn_challenges WHERE request_id = ?1",
-                ["00000000-0000-4000-8000-000000000000"],
-                |row| row.get(0),
-            )
-            .expect("consumed_at reads");
-
-        assert!(consumed_at.is_none());
-    }
-
-    #[test]
-    fn register_verify_precheck_rejects_wrong_user_challenge() {
-        let connection = Connection::open_in_memory().expect("database opens");
-        create_register_options_schema(&connection);
+        create_webauthn_credentials_schema(&connection);
         connection
             .execute(
                 "INSERT INTO allowed_origins (origin) VALUES (?1)",
@@ -1073,13 +1094,54 @@ mod tests {
                 ),
             )
             .expect("challenge inserts");
-        let request = register_verify_request();
+        let request = register_verify_base64_request();
 
-        let error =
-            register_verify_precheck(&connection, "user-1", &request, "https://app.example.com")
-                .expect_err("wrong user is rejected");
+        let error = register_verify(&connection, "user-1", &request, "https://app.example.com")
+            .expect_err("wrong user is rejected");
 
         assert_eq!(error, RegisterVerifyError::InvalidWebauthnRegistration);
+    }
+
+    #[test]
+    fn register_verify_rejects_legacy_state_without_consuming_challenge() {
+        let connection = Connection::open_in_memory().expect("database opens");
+        create_register_options_schema(&connection);
+        create_webauthn_credentials_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO allowed_origins (origin) VALUES (?1)",
+                ["https://app.example.com"],
+            )
+            .expect("origin inserts");
+        connection
+            .execute(
+                "INSERT INTO webauthn_challenges
+                 (request_id, type, state_json, user_id, expires_at, rp_id, origin)
+                 VALUES (?1, 'register', ?2, ?3, ?4, ?5, ?6)",
+                (
+                    "00000000-0000-4000-8000-000000000000",
+                    r#"{"challenge":"old"}"#,
+                    "user-1",
+                    "9999-01-01T00:00:00.000Z",
+                    "example.com",
+                    "https://app.example.com",
+                ),
+            )
+            .expect("challenge inserts");
+        let request = register_verify_base64_request();
+
+        let error = register_verify(&connection, "user-1", &request, "https://app.example.com")
+            .expect_err("legacy state is rejected");
+        let consumed_at: Option<String> = connection
+            .query_row(
+                "SELECT consumed_at FROM webauthn_challenges WHERE request_id = ?1",
+                ["00000000-0000-4000-8000-000000000000"],
+                |row| row.get(0),
+            )
+            .expect("consumed_at reads");
+
+        assert_eq!(error, RegisterVerifyError::InvalidWebauthnRegistration);
+        assert!(consumed_at.is_none());
     }
 
     #[test]
@@ -1243,9 +1305,9 @@ mod tests {
             .expect("credential schema exists");
     }
 
-    fn register_verify_request() -> RegisterVerifyRequest {
+    fn register_verify_base64_request() -> RegisterVerifyRequest {
         parse_register_verify_request(
-            r#"{"request_id":"00000000-0000-4000-8000-000000000000","credential":{"id":"credential-id","rawId":"raw-id","type":"public-key","response":{"clientDataJSON":"client-data","attestationObject":"attestation"}}}"#,
+            r#"{"request_id":"00000000-0000-4000-8000-000000000000","credential":{"id":"YQ","rawId":"YQ","type":"public-key","response":{"clientDataJSON":"YQ","attestationObject":"YQ"}}}"#,
         )
         .expect("request parses")
     }

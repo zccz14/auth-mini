@@ -1,12 +1,13 @@
-# Rust WebAuthn options/state 迁移实施计划
+# Rust WebAuthn options/state 与注册验证迁移实施计划
 
 ## 目标
 
-把 Rust `/webauthn/register/options` 的 challenge/state 生成迁移到 `webauthn-rs`，明确注册 user handle 设计，并让 verify 端点继续停留在 precheck/501。
+继 PR #79 的 `/webauthn/register/options` 迁移之后，把 Rust `/webauthn/register/verify` 迁移到 `webauthn-rs`，消费已保存的 `PasskeyRegistration` state，并写入序列化 `Passkey`。
 
 ## 文件
 
 - 修改 `rust-backend/src/webauthn.rs`
+- 修改 `rust-backend/src/http.rs`
 - 修改 `docs/superpowers/specs/2026-06-10-rust-webauthn-options-state-design.md`
 - 修改 `docs/superpowers/plans/2026-06-10-rust-webauthn-options-state.md`
 
@@ -20,6 +21,14 @@
 - [x] 保持 register verify 为 precheck/501，不扩大到完整验证。
 - [x] 增加 Rust 单元测试覆盖 registration state 可反序列化、旧 challenge JSON 不再写入、user handle 不再是旧 `base64url(user_id)`。
 - [x] 运行 Rust fmt/test/build；因 HTTP 响应字段有意变更额外执行 `npm run typecheck`，当前依赖未安装导致 `tsc: command not found`。
+- [x] 检查 PR #77/#78/#79 后最近 git 历史、既有 spec/plan、Rust WebAuthn 代码/测试、schema 与 TS 合同。
+- [x] 更新本 spec/plan，明确本切片迁移 `/webauthn/register/verify`，不迁移 authentication verify。
+- [x] 将 HTTP register verify 从 precheck/501 切到库验证成功返回 `{ "ok": true }`。
+- [x] 从 `webauthn_challenges.state_json` 反序列化 `PasskeyRegistration`，不支持旧 `{ "challenge": ... }` fallback。
+- [x] 使用 `finish_passkey_registration()` 验证 credential，成功后写入 `credential_id` 与序列化 `Passkey` 到 `webauthn_credentials`。
+- [x] 成功后消费 challenge；保留 challenge 类型、过期、消费、用户归属、Origin allowlist 与 Origin 匹配校验。
+- [x] 增加/调整 Rust 单元测试覆盖旧 state 拒绝、challenge 不被错误消费与 HTTP 边界错误响应；成功路径依赖真实 WebAuthn attestation，由库调用与 Rust build/test 覆盖编译路径。
+- [x] 运行 Rust fmt/test/build；未改 TS/schema/contracts，额外尝试 `npm run typecheck`，当前依赖未安装导致 `tsc: command not found`。
 - [ ] 提交、fetch、rebase、push 并创建 PR。
 - [ ] 跟进 PR checks / mergeability；若可合并则合并并清理 worktree。
 
@@ -28,4 +37,5 @@
 - 不添加旧 `{ "challenge": ... }` state fallback。
 - 不添加 Node 兼容路径。
 - 不添加旧 `base64url(user_id)` user handle fallback。
-- 新增错误路径只映射真实失败：WebAuthn 配置无效、库生成失败、序列化失败或库输出缺少必须返回的 publicKey 字段。
+- 不添加旧 `passkey_json` 写入形状兼容路径。
+- 新增错误路径只映射真实失败：challenge 不存在/过期/已消费/用户不匹配、Origin 不匹配或不再允许、state 反序列化失败、WebAuthn 配置无效、库验证失败、Passkey 序列化失败、credential 写入失败、challenge 消费竞争失败。
