@@ -33,6 +33,13 @@ pub(crate) struct RegisterVerifyRequest {
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
+pub(crate) struct AuthenticationVerifyRequest {
+    request_id: String,
+    credential: AuthenticationCredential,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 struct RegistrationCredential {
     id: String,
     #[serde(rename = "rawId")]
@@ -56,9 +63,37 @@ struct RegistrationCredentialResponse {
     transports: Option<Vec<String>>,
 }
 
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct AuthenticationCredential {
+    id: String,
+    #[serde(rename = "rawId")]
+    raw_id: String,
+    #[serde(rename = "type")]
+    credential_type: String,
+    response: AuthenticationCredentialResponse,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct AuthenticationCredentialResponse {
+    #[serde(rename = "clientDataJSON")]
+    client_data_json: String,
+    #[serde(rename = "authenticatorData")]
+    authenticator_data: String,
+    signature: String,
+    #[serde(rename = "userHandle")]
+    user_handle: Option<Option<String>>,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum RegisterVerifyError {
     InvalidWebauthnRegistration,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum AuthenticationVerifyError {
+    InvalidWebauthnAuthentication,
 }
 
 struct ResolvedOptionsInput {
@@ -101,6 +136,36 @@ pub(crate) fn parse_register_verify_request(
         return Err(serde_json::Error::io(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "invalid register verify request",
+        )));
+    }
+
+    Ok(request)
+}
+
+pub(crate) fn parse_authentication_verify_request(
+    body: &str,
+) -> Result<AuthenticationVerifyRequest, serde_json::Error> {
+    let request: AuthenticationVerifyRequest = serde_json::from_str(body)?;
+
+    if !is_uuid(&request.request_id)
+        || request.credential.id.is_empty()
+        || request.credential.raw_id.is_empty()
+        || request.credential.credential_type != "public-key"
+        || request.credential.response.client_data_json.is_empty()
+        || request.credential.response.authenticator_data.is_empty()
+        || request.credential.response.signature.is_empty()
+        || request
+            .credential
+            .response
+            .user_handle
+            .as_ref()
+            .and_then(|value| value.as_ref())
+            .map(|value| value.is_empty())
+            .unwrap_or(false)
+    {
+        return Err(serde_json::Error::io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "invalid authentication verify request",
         )));
     }
 
@@ -235,6 +300,32 @@ pub(crate) fn register_verify_precheck(
     Ok(())
 }
 
+pub(crate) fn authentication_verify_precheck(
+    connection: &Connection,
+    request: &AuthenticationVerifyRequest,
+    origin: &str,
+) -> Result<(), AuthenticationVerifyError> {
+    let origin = normalize_allowed_origin(origin)
+        .map_err(|_| AuthenticationVerifyError::InvalidWebauthnAuthentication)?;
+    let challenge = get_valid_authentication_challenge(connection, &request.request_id)?;
+    let allowed_origins = list_allowed_origins(connection)
+        .map_err(|_| AuthenticationVerifyError::InvalidWebauthnAuthentication)?;
+
+    if challenge.origin != origin {
+        return Err(AuthenticationVerifyError::InvalidWebauthnAuthentication);
+    }
+
+    if !allowed_origins.iter().any(|allowed| allowed == &origin) {
+        return Err(AuthenticationVerifyError::InvalidWebauthnAuthentication);
+    }
+
+    if !authentication_credential_exists(connection, &request.credential.id, &challenge.rp_id)? {
+        return Err(AuthenticationVerifyError::InvalidWebauthnAuthentication);
+    }
+
+    Ok(())
+}
+
 pub(crate) fn delete_credential(
     connection: &Connection,
     credential_id: &str,
@@ -260,16 +351,22 @@ fn user_email(connection: &Connection, user_id: &str) -> Result<String, Register
         .ok_or(RegisterOptionsError::InvalidAccessToken)
 }
 
-struct ChallengePrecheckRow {
+struct RegisterChallengePrecheckRow {
     user_id: Option<String>,
     expires_at: String,
+    origin: String,
+}
+
+struct AuthenticationChallengePrecheckRow {
+    expires_at: String,
+    rp_id: String,
     origin: String,
 }
 
 fn get_valid_register_challenge(
     connection: &Connection,
     request_id: &str,
-) -> Result<ChallengePrecheckRow, RegisterVerifyError> {
+) -> Result<RegisterChallengePrecheckRow, RegisterVerifyError> {
     let challenge = connection
         .query_row(
             "SELECT user_id, expires_at, origin
@@ -278,7 +375,7 @@ fn get_valid_register_challenge(
              LIMIT 1",
             [request_id],
             |row| {
-                Ok(ChallengePrecheckRow {
+                Ok(RegisterChallengePrecheckRow {
                     user_id: row.get(0)?,
                     expires_at: row.get(1)?,
                     origin: row.get(2)?,
@@ -296,6 +393,54 @@ fn get_valid_register_challenge(
     }
 
     Ok(challenge)
+}
+
+fn get_valid_authentication_challenge(
+    connection: &Connection,
+    request_id: &str,
+) -> Result<AuthenticationChallengePrecheckRow, AuthenticationVerifyError> {
+    let challenge = connection
+        .query_row(
+            "SELECT expires_at, rp_id, origin
+             FROM webauthn_challenges
+             WHERE request_id = ?1 AND type = 'authenticate' AND consumed_at IS NULL
+             LIMIT 1",
+            [request_id],
+            |row| {
+                Ok(AuthenticationChallengePrecheckRow {
+                    expires_at: row.get(0)?,
+                    rp_id: row.get(1)?,
+                    origin: row.get(2)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|_| AuthenticationVerifyError::InvalidWebauthnAuthentication)?
+        .ok_or(AuthenticationVerifyError::InvalidWebauthnAuthentication)?;
+    let expires_at = DateTime::parse_from_rfc3339(&challenge.expires_at)
+        .map_err(|_| AuthenticationVerifyError::InvalidWebauthnAuthentication)?;
+
+    if expires_at <= Utc::now() {
+        return Err(AuthenticationVerifyError::InvalidWebauthnAuthentication);
+    }
+
+    Ok(challenge)
+}
+
+fn authentication_credential_exists(
+    connection: &Connection,
+    credential_id: &str,
+    rp_id: &str,
+) -> Result<bool, AuthenticationVerifyError> {
+    connection
+        .query_row(
+            "SELECT 1 FROM webauthn_credentials WHERE credential_id = ?1 AND rp_id = ?2 LIMIT 1",
+            params![credential_id, rp_id],
+            |_| Ok(()),
+        )
+        .optional()
+        .map(|value| value.is_some())
+        .map_err(|_| AuthenticationVerifyError::InvalidWebauthnAuthentication)
 }
 
 fn list_allowed_origins(connection: &Connection) -> Result<Vec<String>, RegisterOptionsError> {
@@ -840,6 +985,139 @@ mod tests {
         assert_eq!(error, RegisterVerifyError::InvalidWebauthnRegistration);
     }
 
+    #[test]
+    fn parses_authentication_verify_request_boundary() {
+        let parsed = parse_authentication_verify_request(
+            r#"{"request_id":"00000000-0000-4000-8000-000000000000","credential":{"id":"credential-id","rawId":"raw-id","type":"public-key","response":{"clientDataJSON":"client-data","authenticatorData":"auth-data","signature":"signature","userHandle":null}}}"#,
+        )
+        .expect("request parses");
+
+        assert_eq!(parsed.request_id, "00000000-0000-4000-8000-000000000000");
+        assert_eq!(parsed.credential.id, "credential-id");
+    }
+
+    #[test]
+    fn rejects_authentication_verify_request_with_extra_fields() {
+        let error = parse_authentication_verify_request(
+            r#"{"request_id":"00000000-0000-4000-8000-000000000000","credential":{"id":"credential-id","rawId":"raw-id","type":"public-key","response":{"clientDataJSON":"client-data","authenticatorData":"auth-data","signature":"signature"}},"extra":true}"#,
+        )
+        .expect_err("extra fields are rejected");
+
+        assert!(error.is_data() || error.is_io());
+    }
+
+    #[test]
+    fn authentication_verify_precheck_accepts_valid_stored_challenge_and_credential_without_side_effects(
+    ) {
+        let connection = Connection::open_in_memory().expect("database opens");
+        create_register_options_schema(&connection);
+        create_webauthn_credentials_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO allowed_origins (origin) VALUES (?1)",
+                ["https://app.example.com"],
+            )
+            .expect("origin inserts");
+        connection
+            .execute(
+                "INSERT INTO webauthn_challenges
+                 (request_id, type, challenge, user_id, expires_at, rp_id, origin)
+                 VALUES (?1, 'authenticate', ?2, NULL, ?3, ?4, ?5)",
+                (
+                    "00000000-0000-4000-8000-000000000000",
+                    "challenge",
+                    "9999-01-01T00:00:00.000Z",
+                    "example.com",
+                    "https://app.example.com",
+                ),
+            )
+            .expect("challenge inserts");
+        connection
+            .execute(
+                "INSERT INTO webauthn_credentials
+                 (id, user_id, credential_id, public_key, counter, transports, rp_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                (
+                    "stored-credential",
+                    "user-1",
+                    "credential-id",
+                    "public-key",
+                    7,
+                    "internal",
+                    "example.com",
+                ),
+            )
+            .expect("credential inserts");
+        let request = authentication_verify_request();
+
+        authentication_verify_precheck(&connection, &request, "https://app.example.com")
+            .expect("precheck succeeds");
+        let stored: (Option<String>, i64, Option<String>) = connection
+            .query_row(
+                "SELECT c.consumed_at, p.counter, p.last_used_at
+                 FROM webauthn_challenges c, webauthn_credentials p
+                 WHERE c.request_id = ?1 AND p.id = ?2",
+                ["00000000-0000-4000-8000-000000000000", "stored-credential"],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("side effects read");
+
+        assert_eq!(stored, (None, 7, None));
+    }
+
+    #[test]
+    fn authentication_verify_precheck_rejects_credential_from_other_rp_id() {
+        let connection = Connection::open_in_memory().expect("database opens");
+        create_register_options_schema(&connection);
+        create_webauthn_credentials_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO allowed_origins (origin) VALUES (?1)",
+                ["https://app.example.com"],
+            )
+            .expect("origin inserts");
+        connection
+            .execute(
+                "INSERT INTO webauthn_challenges
+                 (request_id, type, challenge, user_id, expires_at, rp_id, origin)
+                 VALUES (?1, 'authenticate', ?2, NULL, ?3, ?4, ?5)",
+                (
+                    "00000000-0000-4000-8000-000000000000",
+                    "challenge",
+                    "9999-01-01T00:00:00.000Z",
+                    "app.example.com",
+                    "https://app.example.com",
+                ),
+            )
+            .expect("challenge inserts");
+        connection
+            .execute(
+                "INSERT INTO webauthn_credentials
+                 (id, user_id, credential_id, public_key, counter, transports, rp_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                (
+                    "stored-credential",
+                    "user-1",
+                    "credential-id",
+                    "public-key",
+                    0,
+                    "internal",
+                    "example.com",
+                ),
+            )
+            .expect("credential inserts");
+        let request = authentication_verify_request();
+
+        let error =
+            authentication_verify_precheck(&connection, &request, "https://app.example.com")
+                .expect_err("rp scoped credential is required");
+
+        assert_eq!(
+            error,
+            AuthenticationVerifyError::InvalidWebauthnAuthentication
+        );
+    }
+
     fn create_register_options_schema(connection: &Connection) {
         connection
             .execute_batch(
@@ -869,9 +1147,34 @@ mod tests {
             .expect("schema exists");
     }
 
+    fn create_webauthn_credentials_schema(connection: &Connection) {
+        connection
+            .execute_batch(
+                "CREATE TABLE webauthn_credentials (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    credential_id TEXT NOT NULL UNIQUE,
+                    public_key TEXT NOT NULL,
+                    counter INTEGER NOT NULL DEFAULT 0,
+                    transports TEXT NOT NULL DEFAULT '',
+                    rp_id TEXT NOT NULL,
+                    last_used_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );",
+            )
+            .expect("credential schema exists");
+    }
+
     fn register_verify_request() -> RegisterVerifyRequest {
         parse_register_verify_request(
             r#"{"request_id":"00000000-0000-4000-8000-000000000000","credential":{"id":"credential-id","rawId":"raw-id","type":"public-key","response":{"clientDataJSON":"client-data","attestationObject":"attestation"}}}"#,
+        )
+        .expect("request parses")
+    }
+
+    fn authentication_verify_request() -> AuthenticationVerifyRequest {
+        parse_authentication_verify_request(
+            r#"{"request_id":"00000000-0000-4000-8000-000000000000","credential":{"id":"credential-id","rawId":"raw-id","type":"public-key","response":{"clientDataJSON":"client-data","authenticatorData":"auth-data","signature":"signature"}}}"#,
         )
         .expect("request parses")
     }

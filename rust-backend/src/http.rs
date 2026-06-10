@@ -23,10 +23,12 @@ use crate::session::{
 };
 use crate::webauthn::{
     authentication_options as webauthn_authentication_options,
-    delete_credential as delete_webauthn_credential, parse_options_request,
-    parse_register_verify_request, register_options as webauthn_register_options,
+    authentication_verify_precheck as webauthn_authentication_verify_precheck,
+    delete_credential as delete_webauthn_credential, parse_authentication_verify_request,
+    parse_options_request, parse_register_verify_request,
+    register_options as webauthn_register_options,
     register_verify_precheck as webauthn_register_verify_precheck, AuthenticationOptionsError,
-    RegisterOptionsError, RegisterVerifyError,
+    AuthenticationVerifyError, RegisterOptionsError, RegisterVerifyError,
 };
 
 pub fn run_server(config: Config) -> Result<(), Box<dyn std::error::Error>> {
@@ -164,6 +166,11 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
 
     if request.method == "POST" && request.path == "/webauthn/authenticate/options" {
         return handle_webauthn_authentication_options(request, config)
+            .map(|response| cors(request, response));
+    }
+
+    if request.method == "POST" && request.path == "/webauthn/authenticate/verify" {
+        return handle_webauthn_authentication_verify(request, config)
             .map(|response| cors(request, response));
     }
 
@@ -485,6 +492,31 @@ fn handle_webauthn_authentication_options(
             Ok(Response::json_error(400, "invalid_request"))
         }
         Err(AuthenticationOptionsError::InvalidWebauthnAuthentication) => {
+            Ok(Response::json_error(400, "invalid_webauthn_authentication"))
+        }
+    }
+}
+
+fn handle_webauthn_authentication_verify(
+    request: &Request,
+    config: &Config,
+) -> io::Result<Response> {
+    let parsed = match parse_authentication_verify_request(&request.body) {
+        Ok(parsed) => parsed,
+        Err(_) => return Ok(Response::json_error(400, "invalid_request")),
+    };
+    let Some(database) = &config.database else {
+        return Ok(Response::json_error(501, "not_implemented"));
+    };
+    let Some(origin) = options_request_origin(request) else {
+        return Ok(Response::json_error(400, "invalid_webauthn_authentication"));
+    };
+    let connection = rusqlite::Connection::open(&database.db_path)
+        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+
+    match webauthn_authentication_verify_precheck(&connection, &parsed, &origin) {
+        Ok(()) => Ok(Response::json_error(501, "not_implemented")),
+        Err(AuthenticationVerifyError::InvalidWebauthnAuthentication) => {
             Ok(Response::json_error(400, "invalid_webauthn_authentication"))
         }
     }
@@ -1987,6 +2019,131 @@ mod tests {
     }
 
     #[test]
+    fn webauthn_authentication_verify_precheck_returns_not_implemented_without_consuming_challenge()
+    {
+        let db_path = test_db_path("http-webauthn-authentication-verify-precheck");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO allowed_origins (origin) VALUES (?1)",
+                ["https://app.example.com"],
+            )
+            .expect("origin inserted");
+        connection
+            .execute(
+                "INSERT INTO webauthn_challenges
+                 (request_id, type, challenge, user_id, expires_at, rp_id, origin)
+                 VALUES (?1, 'authenticate', ?2, NULL, ?3, ?4, ?5)",
+                (
+                    "00000000-0000-4000-8000-000000000000",
+                    "challenge",
+                    "9999-01-01T00:00:00.000Z",
+                    "example.com",
+                    "https://app.example.com",
+                ),
+            )
+            .expect("challenge inserted");
+        connection
+            .execute(
+                "INSERT INTO webauthn_credentials
+                 (id, user_id, credential_id, public_key, counter, transports, rp_id, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                (
+                    "stored-credential",
+                    "user-1",
+                    "credential-id",
+                    "public-key",
+                    7,
+                    "internal",
+                    "example.com",
+                    "2026-01-01T00:00:00.000Z",
+                ),
+            )
+            .expect("credential inserted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/webauthn/authenticate/verify".to_string(),
+                headers: vec![("Origin".to_string(), "https://app.example.com".to_string())],
+                body: authentication_verify_body(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path: db_path.clone(),
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("webauthn authentication verify response builds");
+        let connection = Connection::open(db_path).expect("database opens");
+        let stored: (Option<String>, i64, Option<String>) = connection
+            .query_row(
+                "SELECT c.consumed_at, p.counter, p.last_used_at
+                 FROM webauthn_challenges c, webauthn_credentials p
+                 WHERE c.request_id = ?1 AND p.id = ?2",
+                ["00000000-0000-4000-8000-000000000000", "stored-credential"],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("side effects read");
+
+        assert_eq!(response.status, 501);
+        assert_eq!(response.body, r#"{"error":"not_implemented"}"#);
+        assert_eq!(stored, (None, 7, None));
+    }
+
+    #[test]
+    fn webauthn_authentication_verify_rejects_invalid_request_over_http_boundary() {
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/webauthn/authenticate/verify".to_string(),
+                headers: vec![("Origin".to_string(), "https://app.example.com".to_string())],
+                body: r#"{"request_id":"00000000-0000-4000-8000-000000000000","credential":{"id":"credential-id","rawId":"raw-id","type":"public-key","response":{"clientDataJSON":"client-data","authenticatorData":"auth-data","signature":"signature"}},"extra":true}"#.to_string(),
+            },
+            &Config::default(),
+        )
+        .expect("webauthn authentication verify response builds");
+
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body, r#"{"error":"invalid_request"}"#);
+    }
+
+    #[test]
+    fn webauthn_authentication_verify_rejects_missing_challenge_over_http_boundary() {
+        let db_path = test_db_path("http-webauthn-authentication-verify-missing-challenge");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/webauthn/authenticate/verify".to_string(),
+                headers: vec![("Origin".to_string(), "https://app.example.com".to_string())],
+                body: authentication_verify_body(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path,
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("webauthn authentication verify response builds");
+
+        assert_eq!(response.status, 400);
+        assert_eq!(
+            response.body,
+            r#"{"error":"invalid_webauthn_authentication"}"#
+        );
+    }
+
+    #[test]
     fn rejects_ed25519_credentials_without_passkey_management_auth() {
         let db_path = test_db_path("http-ed25519-credentials-rejects-auth-method");
         let connection = Connection::open(&db_path).expect("database opens");
@@ -2247,5 +2404,9 @@ mod tests {
 
     fn register_verify_body() -> String {
         r#"{"request_id":"00000000-0000-4000-8000-000000000000","credential":{"id":"credential-id","rawId":"raw-id","type":"public-key","response":{"clientDataJSON":"client-data","attestationObject":"attestation"}}}"#.to_string()
+    }
+
+    fn authentication_verify_body() -> String {
+        r#"{"request_id":"00000000-0000-4000-8000-000000000000","credential":{"id":"credential-id","rawId":"raw-id","type":"public-key","response":{"clientDataJSON":"client-data","authenticatorData":"auth-data","signature":"signature"}}}"#.to_string()
     }
 }
