@@ -108,6 +108,15 @@
 - Rust 必须校验请求 Origin 与存储 challenge origin 一致，且该 origin 仍存在于 `allowed_origins`；不满足时返回 `400 invalid_webauthn_registration`。
 - 前置校验通过后必须返回 `501 not_implemented`，不得消费 challenge、不得写入 `webauthn_credentials`、不得返回 `200 ok`。真实 attestation 验证仍未迁移前，禁止实现 WebAuthn verify 假成功。
 
+本轮 WebAuthn authenticate/verify 前置边界切片必须新增下列可验证行为：
+
+- Rust 后端覆盖 `POST /webauthn/authenticate/verify` 的请求边界和验证前置失败路径；该端点保持公开，不要求 bearer access token。
+- 请求 body 必须符合 OpenAPI authenticate verify 合同：顶层只接受 `request_id` 与 `credential`，`request_id` 必须是 UUID，credential 必须包含非空 `id`、`rawId`、`type: public-key`、`response.clientDataJSON`、`response.authenticatorData`、`response.signature`，`response.userHandle` 可缺省或为 null；无效 body 返回 `400 invalid_request`。
+- Rust 必须查询 `webauthn_challenges` 中未消费、未过期、类型为 `authenticate` 的 challenge；challenge 不存在、已消费或过期时返回 `400 invalid_webauthn_authentication`。
+- Rust 必须校验请求 Origin 与存储 challenge origin 一致，且该 origin 仍存在于 `allowed_origins`；不满足时返回 `400 invalid_webauthn_authentication`。
+- Rust 必须按 credential id 与 challenge rp_id 查询已有 `webauthn_credentials`；不存在或 rp_id 不匹配时返回 `400 invalid_webauthn_authentication`。
+- 前置校验通过后必须返回 `501 not_implemented`，不得消费 challenge、不得更新 credential counter 或 last_used_at、不得创建 session 或签发 token、不得返回 `200`。真实 assertion 验证仍未迁移前，禁止实现 WebAuthn verify 假成功。
+
 ## API 兼容范围
 
 第一阶段不替换生产 API。兼容范围限定为新增 Rust 切片自身的基础端点，不声明覆盖现有认证 API。
@@ -147,6 +156,7 @@
 - 不在本轮 WebAuthn register/options 切片迁移 WebAuthn register/verify、authenticate/options、authenticate/verify 或生产入口切换。
 - 不在本轮 WebAuthn authenticate/options 切片迁移 WebAuthn register/verify、authenticate/verify 或生产入口切换。
 - 不在本轮 WebAuthn register/verify 前置边界切片迁移真实 attestation 验证、credential 创建、challenge 消费、authenticate/verify 或生产入口切换。
+- 不在本轮 WebAuthn authenticate/verify 前置边界切片迁移真实 assertion 验证、challenge 消费、credential counter 更新、session 创建、token 签发或生产入口切换。
 - 不引入新的数据库、缓存、队列或配置格式。
 - 不改变现有 OpenAPI 合同。
 - 不增加 TypeScript 与 Rust 之间的代理兼容层。
@@ -168,4 +178,5 @@
 - 本轮 WebAuthn register/options Rust 测试覆盖成功生成 options 并持久化 challenge、父域 rp_id 规范化、二次 options 消费旧 challenge、sibling rp_id 拒绝、缺失 access token 拒绝、非 passkey-management 认证方式拒绝。
 - 本轮 WebAuthn authenticate/options Rust 测试覆盖成功生成 options 并持久化匿名 challenge、父域 rp_id 规范化、`allowCredentials` 省略、未 allowlist origin 拒绝，以及 HTTP 层 `invalid_request`/`invalid_webauthn_authentication` 边界。
 - 本轮 WebAuthn register/verify 前置边界 Rust 测试覆盖请求 schema 解析与额外字段拒绝、有效 challenge 前置校验后不消费 challenge、错误用户 challenge 拒绝，以及 HTTP 层缺失 token、invalid_request、缺失 challenge 和前置通过后 `501 not_implemented` 边界。
+- 本轮 WebAuthn authenticate/verify 前置边界 Rust 测试覆盖请求 schema 解析与额外字段拒绝、有效 authenticate challenge 加 credential/rp_id 前置校验后不消费 challenge 且不更新 credential、credential rp_id 不匹配拒绝，以及 HTTP 层 invalid_request、缺失 challenge 和前置通过后 `501 not_implemented` 边界。
 - 代码提交在对应迁移分支并通过 PR 合入流程推进。
