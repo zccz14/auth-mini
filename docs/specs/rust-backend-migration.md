@@ -137,6 +137,13 @@
 - 验证成功后必须在同一 SQLite 事务中原子消费 challenge、更新 `ed25519_credentials.last_used_at`、创建 `auth_method = 'ed25519'` 的 session 并签发标准 token 响应；若 session/JWKS 签发失败，不得消费 challenge 或更新凭据。
 - 不改变 `/ed25519/start`、Ed25519 credential management、OpenAPI 合同、TypeScript 生产入口或 SDK 行为，不新增旧数据兼容 fallback。
 
+本轮 PR #82 后公开路由对齐审计结论：
+
+- `openapi.yaml` 当前公开 HTTP API 共 20 个业务 method/path 对：`POST /email/start`、`POST /email/verify`、`GET /me`、`POST /session/refresh`、`POST /session/logout`、`POST /session/{session_id}/logout`、`POST /ed25519/start`、`POST /ed25519/verify`、`GET|POST /ed25519/credentials`、`PATCH|DELETE /ed25519/credentials/{id}`、`POST /webauthn/register/options`、`POST /webauthn/register/verify`、`POST /webauthn/authenticate/options`、`POST /webauthn/authenticate/verify`、`DELETE /webauthn/credentials/{id}`、`GET /jwks`、`GET /openapi.yaml`、`GET /openapi.json`。
+- TypeScript `src/server/app.ts` 与 Rust `rust-backend/src/http.rs` 已对上述公开路由全部存在等价注册；本轮未发现仍需新增的公开 Rust route gap。
+- `GET /healthz` 是 Rust 后端健康检查端点，不属于当前 OpenAPI 公开业务 API 对齐表；CORS `OPTIONS` 预检为跨路由通用行为，也不作为单独业务 route gap 统计。
+- 后续迁移工作应继续收敛各路由的内部业务语义与生产入口切换，不再以“缺少公开路由注册”为当前阻塞项。
+
 ## API 兼容范围
 
 第一阶段不替换生产 API。兼容范围限定为新增 Rust 切片自身的基础端点，不声明覆盖现有认证 API。
@@ -203,4 +210,5 @@
 - 本轮 WebAuthn authenticate/verify 前置边界 Rust 测试覆盖请求 schema 解析与额外字段拒绝、有效 authenticate challenge 加 credential/rp_id 前置校验后不消费 challenge 且不更新 credential、credential rp_id 不匹配拒绝，以及 HTTP 层 invalid_request、缺失 challenge 和前置通过后 `501 not_implemented` 边界。
 - 本轮 WebAuthn Rust-first schema spike 测试覆盖 `webauthn-rs` 注册状态 serde JSON roundtrip，并使 Rust schema 校验、当前用户凭据响应和 WebAuthn 前置测试使用 `credential_id`/`passkey_json`/`state_json` 新 schema。
 - 本轮 Ed25519 verify Rust 测试覆盖请求 schema 解析与额外字段拒绝、有效签名消费 challenge/更新 `last_used_at`/签发 `ed25519` session、无效签名无副作用、已消费 challenge 拒绝，以及 HTTP 层 route 注册、`invalid_request` 与无数据库 `not_implemented` 边界。
+- 本轮 PR #82 后公开路由对齐审计新增轻量 Rust route parity 测试，覆盖 OpenAPI 公开 method/path 对在 Rust HTTP router 中不会落入 `404 not_found`。
 - 代码提交在对应迁移分支并通过 PR 合入流程推进。

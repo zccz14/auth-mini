@@ -107,16 +107,13 @@
 
 ## 当前 PR 范围
 
-本轮继续 PR #81 后的 Rust 后端公开路由迁移，确认剩余缺口为 `POST /ed25519/verify`，并迁移该端点的最小完整闭环。
+本轮执行 PR #82 后的 TypeScript/OpenAPI server 与 Rust backend 公开路由对齐审计；审计结论为 Rust 已注册当前 OpenAPI 公开路由全集，无需新增业务 route 迁移切片。
 
-- 对照最近 git 历史、Rust route registration、TS `src/modules/ed25519/service.ts` 和现有迁移文档，确认 Rust 已覆盖 `/ed25519/start` 与 Ed25519 credential management，但未注册 `/ed25519/verify`。
-- 在 Rust 中新增 `/ed25519/verify` route，保持公开端点，不要求 bearer access token。
-- 按 OpenAPI/TS 合同解析 `request_id` 与 `signature`，无效 body 返回 `400 invalid_request`。
-- 从 `ed25519_challenges` 读取未消费、未过期 challenge，并按 challenge 绑定的 `credential_id` 读取 `ed25519_credentials.public_key`。
-- 使用已有 `ed25519-dalek` 依赖验证 Ed25519 签名；challenge 原文 UTF-8 字节为签名对象，public key 与 signature 均按 base64url 解码。
-- 验证成功后在同一 SQLite 事务中消费 challenge、更新 `last_used_at`、创建 `auth_method = 'ed25519'` session 并签发标准 token 响应；签发失败时事务回滚，不消费 challenge。
-- 增加 Rust 单元测试覆盖 request contract、成功签发、无效签名无副作用、已消费 challenge 拒绝，以及 HTTP route 注册/invalid_request 边界。
-- 不修改 `/ed25519/start`、credential management、OpenAPI、SDK、TypeScript 生产入口或旧数据兼容路径。
+- 对照最近 git 历史、`openapi.yaml`、TypeScript `src/server/app.ts` route registration、Rust `rust-backend/src/http.rs` route registration 与现有迁移文档。
+- 审计表覆盖 OpenAPI 公开 method/path 对：email、session、Ed25519、WebAuthn、JWKS、OpenAPI 文档端点；Rust 均存在等价 route handling。
+- `GET /healthz` 作为 Rust 后端健康检查端点保留在 Rust router 中，但不属于当前 OpenAPI 公开业务 API parity 表。
+- 本轮仅更新迁移文档并新增轻量 Rust route parity 测试，断言 OpenAPI 公开 method/path 对不会在 Rust router 落入 `404 not_found`。
+- 不修改认证业务方法、不新增兼容 fallback、不改变 OpenAPI、SDK、TypeScript 生产入口或旧数据兼容路径。
 
 验证命令：
 

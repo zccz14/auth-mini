@@ -851,6 +851,91 @@ mod tests {
     }
 
     #[test]
+    fn public_openapi_routes_are_registered() {
+        let config = Config {
+            openapi_path: PathBuf::from("../openapi.yaml"),
+            ..Config::default()
+        };
+        let routes = [
+            ("POST", "/email/start", r#"{"email":"user@example.com"}"#),
+            (
+                "POST",
+                "/email/verify",
+                r#"{"email":"user@example.com","code":"123456"}"#,
+            ),
+            ("GET", "/me", ""),
+            (
+                "POST",
+                "/session/refresh",
+                r#"{"session_id":"session-1","refresh_token":"token-1"}"#,
+            ),
+            ("POST", "/session/logout", ""),
+            ("POST", "/session/session-1/logout", ""),
+            (
+                "POST",
+                "/ed25519/start",
+                r#"{"credential_id":"00000000-0000-4000-8000-000000000000"}"#,
+            ),
+            (
+                "POST",
+                "/ed25519/verify",
+                r#"{"request_id":"00000000-0000-4000-8000-000000000000","signature":"signature"}"#,
+            ),
+            ("GET", "/ed25519/credentials", ""),
+            (
+                "POST",
+                "/ed25519/credentials",
+                r#"{"name":"Laptop","public_key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#,
+            ),
+            (
+                "PATCH",
+                "/ed25519/credentials/credential-1",
+                r#"{"name":"Laptop"}"#,
+            ),
+            ("DELETE", "/ed25519/credentials/credential-1", ""),
+            (
+                "POST",
+                "/webauthn/register/options",
+                r#"{"rp_id":"example.com"}"#,
+            ),
+            (
+                "POST",
+                "/webauthn/register/verify",
+                r#"{"request_id":"00000000-0000-4000-8000-000000000000","credential":{"id":"credential","rawId":"credential","type":"public-key","response":{"clientDataJSON":"client","attestationObject":"attestation"}}}"#,
+            ),
+            (
+                "POST",
+                "/webauthn/authenticate/options",
+                r#"{"rp_id":"example.com"}"#,
+            ),
+            (
+                "POST",
+                "/webauthn/authenticate/verify",
+                r#"{"request_id":"00000000-0000-4000-8000-000000000000","credential":{"id":"credential","rawId":"credential","type":"public-key","response":{"clientDataJSON":"client","authenticatorData":"authenticator","signature":"signature"}}}"#,
+            ),
+            ("DELETE", "/webauthn/credentials/credential-1", ""),
+            ("GET", "/jwks", ""),
+            ("GET", "/openapi.yaml", ""),
+            ("GET", "/openapi.json", ""),
+        ];
+
+        for (method, path, body) in routes {
+            let response = route_request(
+                &Request {
+                    method: method.to_string(),
+                    path: path.to_string(),
+                    headers: Vec::new(),
+                    body: body.to_string(),
+                },
+                &config,
+            )
+            .expect("route response builds");
+
+            assert_ne!(response.status, 404, "{method} {path} must be registered");
+        }
+    }
+
+    #[test]
     fn email_start_returns_smtp_not_configured_for_valid_request_without_mailer() {
         let response = route_request(
             &Request {
