@@ -144,6 +144,15 @@
 - `GET /healthz` 是 Rust 后端健康检查端点，不属于当前 OpenAPI 公开业务 API 对齐表；CORS `OPTIONS` 预检为跨路由通用行为，也不作为单独业务 route gap 统计。
 - 后续迁移工作应继续收敛各路由的内部业务语义与生产入口切换，不再以“缺少公开路由注册”为当前阻塞项。
 
+本轮 PR #83 后认证 / 会话 / 错误响应语义对齐审计结论：
+
+- 会话 cookie/header 形态：TypeScript 与 Rust 当前公开认证端点均通过 JSON body 返回 `access_token`、`refresh_token`，受保护端点均要求 `Authorization: Bearer <access_token>`；未发现需要新增 cookie 兼容路径。
+- session 响应 body 形态：邮件 OTP、Ed25519 与 WebAuthn 完成登录路径均返回 `session_id`、`access_token`、`token_type: "Bearer"`、`expires_in: 900`、`refresh_token`；Rust `token_json` 与 TypeScript `TokenPair` 对齐。
+- `GET /me` auth method 数据形态：Rust 与 TypeScript 均返回 `user_id`、`email`、`webauthn_credentials`、`ed25519_credentials`、`active_sessions`；`active_sessions[].auth_method` 继续来自 session 表，WebAuthn 使用 Rust-first `credential_id` 方向。
+- unauthorized/error 响应：受保护端点缺失或无效 bearer token 返回 `401 invalid_access_token`，passkey-management 授权不足返回 `403 insufficient_authentication_method`，OTP/session/WebAuthn/Ed25519 业务失败码整体对齐。本轮发现并修复 Rust peer logout self-target 错误码，将其从 `session_peer_logout_self_target` 改为 TypeScript 对齐的 `400 invalid_request`。
+- invalid request validation style：两端均拒绝无效 JSON、字段缺失、字段类型错误和额外字段；Rust 以 serde `deny_unknown_fields` 加局部值校验保持当前切片的显式边界。Ed25519/WebAuthn 已知 Rust-first WebAuthn 破坏性方向不回加 Node 兼容。
+- 仍需后续继续细查的非阻塞点：Ed25519 credential create 的无效请求错误码当前 Rust 已按既有迁移切片返回 `invalid_ed25519_credential`，如要收敛到 OpenAPI/TypeScript 的 `invalid_request`，应单独建小切片确认公开 API 决策后处理。
+
 ## API 兼容范围
 
 第一阶段不替换生产 API。兼容范围限定为新增 Rust 切片自身的基础端点，不声明覆盖现有认证 API。
@@ -170,6 +179,7 @@
 
 - 第一阶段新增 Rust 构建与测试命令，不改变现有 `npm run build`、`npm test`、Dockerfile 和发布 workflow 的生产语义。
 - Rust 后端成为可选构建产物；生产入口切换必须等到公开 API、数据库语义和部署 smoke test 覆盖完成。
+- Rust 发布准备不要求 Docker publishing；后续 release readiness 应聚焦 Rust 二进制跨平台 cross-compilation、产物校验和运行 smoke test。Docker runtime/publishing 仅在未来生产入口切换明确需要时另行立项。
 
 ## 非目标
 
@@ -186,6 +196,7 @@
 - 不在本轮 WebAuthn authenticate/verify 前置边界切片迁移真实 assertion 验证、challenge 消费、credential counter 更新、session 创建、token 签发或生产入口切换。
 - 不在本轮 WebAuthn Rust-first schema spike 中提供旧 Node WebAuthn 凭据兼容迁移，不保证旧 `public_key`/`counter`/`transports` 数据可继续登录。
 - 不在本轮 Ed25519 verify 切片迁移 Ed25519 start、credential management、生产入口、SDK、OpenAPI 或旧数据兼容 fallback。
+- 不在 Rust 迁移发布准备中要求 Docker publishing；不把 Docker 镜像发布作为 Rust release readiness 门禁。
 - 不引入新的数据库、缓存、队列或配置格式。
 - 不改变现有 OpenAPI 合同。
 - 不增加 TypeScript 与 Rust 之间的代理兼容层。

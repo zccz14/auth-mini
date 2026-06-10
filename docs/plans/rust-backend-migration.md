@@ -107,13 +107,14 @@
 
 ## 当前 PR 范围
 
-本轮执行 PR #82 后的 TypeScript/OpenAPI server 与 Rust backend 公开路由对齐审计；审计结论为 Rust 已注册当前 OpenAPI 公开路由全集，无需新增业务 route 迁移切片。
+本轮执行 PR #83 后的 Rust vs TypeScript 认证 / 会话 / 错误响应语义对齐审计，优先覆盖 session token 响应、bearer header、`/me` 数据形态、unauthorized/error JSON/status mapping 与 invalid request 校验风格。
 
-- 对照最近 git 历史、`openapi.yaml`、TypeScript `src/server/app.ts` route registration、Rust `rust-backend/src/http.rs` route registration 与现有迁移文档。
-- 审计表覆盖 OpenAPI 公开 method/path 对：email、session、Ed25519、WebAuthn、JWKS、OpenAPI 文档端点；Rust 均存在等价 route handling。
-- `GET /healthz` 作为 Rust 后端健康检查端点保留在 Rust router 中，但不属于当前 OpenAPI 公开业务 API parity 表。
-- 本轮仅更新迁移文档并新增轻量 Rust route parity 测试，断言 OpenAPI 公开 method/path 对不会在 Rust router 落入 `404 not_found`。
-- 不修改认证业务方法、不新增兼容 fallback、不改变 OpenAPI、SDK、TypeScript 生产入口或旧数据兼容路径。
+- 对照最近 git 历史、迁移 spec/plan、TypeScript auth/session/error 代码、Rust auth/session/error 代码与现有测试。
+- 审计结论：邮件 OTP、Ed25519、WebAuthn 完成登录的 session response body 均保持 `session_id`、`access_token`、`token_type: "Bearer"`、`expires_in: 900`、`refresh_token`；受保护端点继续要求 `Authorization: Bearer <access_token>`，不新增 cookie fallback。
+- 审计结论：`GET /me` 两端均返回 user/email、WebAuthn credentials、Ed25519 credentials 与 active sessions；WebAuthn credential shape 继续遵循已决策的 Rust-first `credential_id` 方向，不回加 Node 兼容。
+- 审计结论：unauthorized 与业务错误 JSON 基本对齐为 `{"error":"..."}`；本轮发现并修复最小明确 gap：Rust peer logout self-target 从 `400 session_peer_logout_self_target` 改为 TypeScript 对齐的 `400 invalid_request`，并补 Rust HTTP 边界测试。
+- 审计结论：invalid request 校验继续以拒绝无效 JSON、字段缺失、字段类型错误和额外字段为边界；不新增兼容 fallback，不改变 OpenAPI、SDK、TypeScript 生产入口或旧数据兼容路径。
+- 发布准备记录：Rust 不要求 Docker publishing；未来 Rust release readiness 应面向 cross-compilation、二进制产物校验和运行 smoke test。Docker runtime/publishing 不作为当前 Rust readiness 门禁。
 
 验证命令：
 

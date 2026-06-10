@@ -307,9 +307,7 @@ fn handle_peer_session_logout(request: &Request, config: &Config) -> io::Result<
 
     match logout_peer_session(&connection, &auth, target) {
         Ok(()) => Ok(Response::json_value(200, serde_json::json!({ "ok": true }))),
-        Err(SessionError::PeerLogoutSelfTarget) => {
-            Ok(Response::json_error(400, "session_peer_logout_self_target"))
-        }
+        Err(SessionError::PeerLogoutSelfTarget) => Ok(Response::json_error(400, "invalid_request")),
         Err(_) => Ok(Response::json_error(401, "session_invalidated")),
     }
 }
@@ -1196,6 +1194,44 @@ mod tests {
             response,
             Response::json_error(403, "insufficient_authentication_method")
         );
+    }
+
+    #[test]
+    fn rejects_peer_logout_of_current_session_as_invalid_request() {
+        let db_path = test_db_path("http-peer-logout-self-target");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserted");
+        let pair = mint_session_tokens(&connection, "user-1", "email_otp", "auth-mini", None, None)
+            .expect("session minted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: format!("/session/{}/logout", pair.session_id),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", pair.access_token),
+                )],
+                body: String::new(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path,
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("peer logout response builds");
+
+        assert_eq!(response, Response::json_error(400, "invalid_request"));
     }
 
     #[test]
