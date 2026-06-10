@@ -173,8 +173,8 @@ describe('session routes', () => {
           public_jwk TEXT NOT NULL,
           private_jwk TEXT NOT NULL
         );
-        CREATE TABLE webauthn_challenges (request_id TEXT PRIMARY KEY, user_id TEXT, challenge TEXT NOT NULL, rp_id TEXT NOT NULL, origin TEXT NOT NULL, expires_at TEXT NOT NULL, consumed_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-        CREATE TABLE webauthn_credentials (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, credential_id TEXT NOT NULL UNIQUE, public_key TEXT NOT NULL, counter INTEGER NOT NULL, transports TEXT NOT NULL DEFAULT '', rp_id TEXT NOT NULL, last_used_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE webauthn_challenges (request_id TEXT PRIMARY KEY, user_id TEXT, state_json TEXT NOT NULL, rp_id TEXT NOT NULL, origin TEXT NOT NULL, expires_at TEXT NOT NULL, consumed_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE webauthn_credentials (credential_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, passkey_json TEXT NOT NULL, rp_id TEXT NOT NULL, last_used_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
       `);
       db.prepare(
         'INSERT INTO users (id, email, email_verified_at) VALUES (?, ?, ?)',
@@ -238,8 +238,8 @@ describe('session routes', () => {
           public_jwk TEXT NOT NULL,
           private_jwk TEXT NOT NULL
         );
-        CREATE TABLE webauthn_challenges (request_id TEXT PRIMARY KEY, user_id TEXT, challenge TEXT NOT NULL, rp_id TEXT NOT NULL, origin TEXT NOT NULL, expires_at TEXT NOT NULL, consumed_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-        CREATE TABLE webauthn_credentials (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, credential_id TEXT NOT NULL UNIQUE, public_key TEXT NOT NULL, counter INTEGER NOT NULL, transports TEXT NOT NULL DEFAULT '', rp_id TEXT NOT NULL, last_used_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE webauthn_challenges (request_id TEXT PRIMARY KEY, user_id TEXT, state_json TEXT NOT NULL, rp_id TEXT NOT NULL, origin TEXT NOT NULL, expires_at TEXT NOT NULL, consumed_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE webauthn_credentials (credential_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, passkey_json TEXT NOT NULL, rp_id TEXT NOT NULL, last_used_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
       `);
       db.prepare(
         'INSERT INTO users (id, email, email_verified_at) VALUES (?, ?, ?)',
@@ -1202,17 +1202,18 @@ describe('session routes', () => {
       .prepare(
         [
           'INSERT INTO webauthn_credentials',
-          '(id, user_id, credential_id, public_key, counter, transports, rp_id)',
-          'VALUES (?, ?, ?, ?, ?, ?, ?)',
+          '(credential_id, user_id, passkey_json, rp_id)',
+          'VALUES (?, ?, ?, ?)',
         ].join(' '),
       )
       .run(
-        'webauthn-credential-1',
-        testApp.userId,
         'device-1',
-        'stored-public-key',
-        0,
-        'usb',
+        testApp.userId,
+        JSON.stringify({
+          publicKey: 'stored-public-key',
+          counter: 0,
+          transports: ['usb'],
+        }),
         'app.example.com',
       );
 
@@ -1228,7 +1229,7 @@ describe('session routes', () => {
       email: 'me@example.com',
       webauthn_credentials: [
         {
-          id: 'webauthn-credential-1',
+          id: 'device-1',
           credential_id: 'device-1',
           transports: ['usb'],
           rp_id: 'app.example.com',

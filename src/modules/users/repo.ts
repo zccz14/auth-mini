@@ -9,12 +9,15 @@ type UserRow = {
 };
 
 type WebauthnCredentialRow = {
-  id: string;
   credential_id: string;
-  transports: string;
+  passkey_json: string;
   rp_id: string;
   last_used_at: string | null;
   created_at: string;
+};
+
+type WebauthnCredentialStateJson = {
+  transports: string[];
 };
 
 type SessionRow = {
@@ -119,22 +122,26 @@ export function listUserWebauthnCredentials(
   const rows = db
     .prepare(
       [
-        'SELECT id, credential_id, transports, rp_id, last_used_at, created_at',
+        'SELECT credential_id, passkey_json, rp_id, last_used_at, created_at',
         'FROM webauthn_credentials',
         'WHERE user_id = ?',
-        'ORDER BY created_at ASC, id ASC',
+        'ORDER BY created_at ASC, credential_id ASC',
       ].join(' '),
     )
     .all(userId) as WebauthnCredentialRow[];
 
-  return rows.map((row) => ({
-    id: row.id,
-    credential_id: row.credential_id,
-    transports: row.transports ? row.transports.split(',').filter(Boolean) : [],
-    rp_id: row.rp_id,
-    last_used_at: row.last_used_at,
-    created_at: row.created_at,
-  }));
+  return rows.map((row) => {
+    const passkey = JSON.parse(row.passkey_json) as WebauthnCredentialStateJson;
+
+    return {
+      id: row.credential_id,
+      credential_id: row.credential_id,
+      transports: passkey.transports,
+      rp_id: row.rp_id,
+      last_used_at: row.last_used_at,
+      created_at: row.created_at,
+    };
+  });
 }
 
 export function listActiveUserSessions(

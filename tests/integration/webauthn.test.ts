@@ -211,18 +211,23 @@ describe('webauthn routes', () => {
 
     const storedCredential = testApp.db
       .prepare(
-        'SELECT user_id, credential_id, public_key, transports, counter, rp_id FROM webauthn_credentials WHERE user_id = ?',
+        'SELECT user_id, credential_id, passkey_json, rp_id FROM webauthn_credentials WHERE user_id = ?',
       )
       .get(testApp.userId) as
       | {
           user_id: string;
           credential_id: string;
-          public_key: string;
-          transports: string;
-          counter: number;
+          passkey_json: string;
           rp_id: string;
         }
       | undefined;
+    const storedPasskey = JSON.parse(
+      storedCredential?.passkey_json ?? '{}',
+    ) as {
+      publicKey?: string;
+      transports?: string[];
+      counter?: number;
+    };
     const storedChallenge = testApp.db
       .prepare(
         'SELECT rp_id, origin FROM webauthn_challenges WHERE request_id = ?',
@@ -256,17 +261,20 @@ describe('webauthn routes', () => {
     expect(storedCredential).toEqual({
       user_id: testApp.userId,
       credential_id: passkey.credentialId,
-      public_key: expect.any(String),
-      transports: 'internal',
-      counter: 0,
+      passkey_json: expect.any(String),
       rp_id: 'app.example.com',
+    });
+    expect(storedPasskey).toMatchObject({
+      publicKey: expect.any(String),
+      transports: ['internal'],
+      counter: 0,
     });
     expect(storedChallenge).toEqual({
       rp_id: 'app.example.com',
       origin: 'https://app.example.com',
     });
-    expect(storedCredential?.public_key).not.toMatch(/^\s*\{/);
-    expect(storedCredential?.public_key.length).toBeGreaterThan(0);
+    expect(storedPasskey.publicKey).not.toMatch(/^\s*\{/);
+    expect(storedPasskey.publicKey?.length).toBeGreaterThan(0);
     expectLogEntry(testApp.logs, {
       event: 'webauthn.register.options.created',
       user_id: testApp.userId,
@@ -972,14 +980,16 @@ describe('webauthn routes', () => {
     const passkey = await registerPasskey(testApp, 'signin@example.com');
     const storedCredentialBeforeAuth = testApp.db
       .prepare(
-        'SELECT credential_id, public_key, counter, last_used_at FROM webauthn_credentials WHERE user_id = ?',
+        'SELECT credential_id, passkey_json, last_used_at FROM webauthn_credentials WHERE user_id = ?',
       )
       .get(testApp.userId) as {
       credential_id: string;
-      public_key: string;
-      counter: number;
+      passkey_json: string;
       last_used_at: string | null;
     };
+    const passkeyBeforeAuth = JSON.parse(
+      storedCredentialBeforeAuth.passkey_json,
+    ) as { publicKey: string; counter: number };
 
     const optionsResponse = await testApp.app.request(
       '/webauthn/authenticate/options',
@@ -1005,25 +1015,31 @@ describe('webauthn routes', () => {
     );
     const storedCredential = testApp.db
       .prepare(
-        'SELECT credential_id, public_key, counter, last_used_at FROM webauthn_credentials WHERE user_id = ?',
+        'SELECT credential_id, passkey_json, last_used_at FROM webauthn_credentials WHERE user_id = ?',
       )
       .get(testApp.userId) as {
       credential_id: string;
-      public_key: string;
-      counter: number;
+      passkey_json: string;
       last_used_at: string | null;
+    };
+    const storedPasskey = JSON.parse(storedCredential.passkey_json) as {
+      publicKey: string;
+      counter: number;
     };
     const body = (await verifyResponse.json()) as { access_token: string };
     const payload = await verifyJwt(testApp.db, body.access_token);
 
     expect(storedCredentialBeforeAuth).toEqual({
       credential_id: passkey.credentialId,
-      public_key: expect.any(String),
-      counter: 0,
+      passkey_json: expect.any(String),
       last_used_at: null,
     });
-    expect(storedCredentialBeforeAuth.public_key).not.toMatch(/^\s*\{/);
-    expect(storedCredentialBeforeAuth.public_key.length).toBeGreaterThan(0);
+    expect(passkeyBeforeAuth).toMatchObject({
+      publicKey: expect.any(String),
+      counter: 0,
+    });
+    expect(passkeyBeforeAuth.publicKey).not.toMatch(/^\s*\{/);
+    expect(passkeyBeforeAuth.publicKey.length).toBeGreaterThan(0);
     expect(verifyResponse.status).toBe(200);
     expect(body).toMatchObject({
       access_token: expect.any(String),
@@ -1034,9 +1050,12 @@ describe('webauthn routes', () => {
     expect(payload.amr).toEqual(['webauthn']);
     expect(storedCredential).toEqual({
       credential_id: passkey.credentialId,
-      public_key: storedCredentialBeforeAuth.public_key,
-      counter: 1,
+      passkey_json: expect.any(String),
       last_used_at: expect.any(String),
+    });
+    expect(storedPasskey).toEqual({
+      ...passkeyBeforeAuth,
+      counter: 1,
     });
     expectLogEntry(testApp.logs, {
       event: 'webauthn.authenticate.verify.succeeded',
@@ -1115,11 +1134,14 @@ describe('webauthn routes', () => {
     );
     const storedCredential = testApp.db
       .prepare(
-        'SELECT credential_id, public_key, counter FROM webauthn_credentials WHERE user_id = ?',
+        'SELECT credential_id, passkey_json FROM webauthn_credentials WHERE user_id = ?',
       )
       .get(testApp.userId) as {
       credential_id: string;
-      public_key: string;
+      passkey_json: string;
+    };
+    const storedPasskey = JSON.parse(storedCredential.passkey_json) as {
+      publicKey: string;
       counter: number;
     };
 
@@ -1132,10 +1154,13 @@ describe('webauthn routes', () => {
     });
     expect(storedCredential).toEqual({
       credential_id: passkey.credentialId,
-      public_key: expect.any(String),
+      passkey_json: expect.any(String),
+    });
+    expect(storedPasskey).toMatchObject({
+      publicKey: expect.any(String),
       counter: 1,
     });
-    expect(storedCredential.public_key).not.toMatch(/^\s*\{/);
+    expect(storedPasskey.publicKey).not.toMatch(/^\s*\{/);
     expectLogEntry(testApp.logs, {
       event: 'webauthn.authenticate.verify.succeeded',
       user_id: testApp.userId,
@@ -1424,11 +1449,13 @@ describe('webauthn routes', () => {
 
     await registerPasskey(ownerApp, 'owner@example.com');
     const credential = ownerApp.db
-      .prepare('SELECT id FROM webauthn_credentials WHERE user_id = ?')
-      .get(ownerApp.userId) as { id: string };
+      .prepare(
+        'SELECT credential_id FROM webauthn_credentials WHERE user_id = ?',
+      )
+      .get(ownerApp.userId) as { credential_id: string };
 
     const deniedResponse = await otherApp.app.request(
-      `/webauthn/credentials/${credential.id}`,
+      `/webauthn/credentials/${credential.credential_id}`,
       {
         method: 'DELETE',
         headers: {
@@ -1437,7 +1464,7 @@ describe('webauthn routes', () => {
       },
     );
     const allowedResponse = await ownerApp.app.request(
-      `/webauthn/credentials/${credential.id}`,
+      `/webauthn/credentials/${credential.credential_id}`,
       {
         method: 'DELETE',
         headers: {
@@ -1446,8 +1473,10 @@ describe('webauthn routes', () => {
       },
     );
     const deleted = ownerApp.db
-      .prepare('SELECT id FROM webauthn_credentials WHERE id = ?')
-      .get(credential.id);
+      .prepare(
+        'SELECT credential_id FROM webauthn_credentials WHERE credential_id = ?',
+      )
+      .get(credential.credential_id);
 
     expect(deniedResponse.status).toBe(404);
     expect(allowedResponse.status).toBe(200);
@@ -1461,14 +1490,16 @@ describe('webauthn routes', () => {
 
     await registerPasskey(testApp, 'delete-denied@example.com');
     const credential = testApp.db
-      .prepare('SELECT id FROM webauthn_credentials WHERE user_id = ?')
-      .get(testApp.userId) as { id: string };
+      .prepare(
+        'SELECT credential_id FROM webauthn_credentials WHERE user_id = ?',
+      )
+      .get(testApp.userId) as { credential_id: string };
     const accessToken = await forgeAccessToken(testApp, {
       amr: ['ed25519'],
     });
 
     const response = await testApp.app.request(
-      `/webauthn/credentials/${credential.id}`,
+      `/webauthn/credentials/${credential.credential_id}`,
       {
         method: 'DELETE',
         headers: {
@@ -1533,8 +1564,13 @@ describe('webauthn routes', () => {
     const statuses = [firstResponse.status, secondResponse.status].sort();
     const finalSessionCount = countSessionsForUser(testApp, testApp.userId);
     const storedCredential = testApp.db
-      .prepare('SELECT counter FROM webauthn_credentials WHERE user_id = ?')
-      .get(testApp.userId) as { counter: number };
+      .prepare(
+        'SELECT passkey_json FROM webauthn_credentials WHERE user_id = ?',
+      )
+      .get(testApp.userId) as { passkey_json: string };
+    const storedPasskey = JSON.parse(storedCredential.passkey_json) as {
+      counter: number;
+    };
 
     expect(firstAssertion.response.signature).not.toBe(
       secondAssertion.response.signature,
@@ -1552,7 +1588,7 @@ describe('webauthn routes', () => {
       error: 'invalid_webauthn_authentication',
     });
     expect(finalSessionCount - initialSessionCount).toBe(1);
-    expect(storedCredential.counter).toBe(1);
+    expect(storedPasskey.counter).toBe(1);
   });
 });
 

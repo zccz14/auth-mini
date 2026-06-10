@@ -115,6 +115,7 @@
 - Rust 依赖接入 `webauthn-rs`，仅启用本轮 serde state proof 所需的 `danger-allow-state-serialisation` feature；不启用 credential internals 或降低 user verification 的危险 feature。
 - Rust 测试用 `WebauthnBuilder::start_passkey_registration` 证明 `PasskeyRegistration` 可 JSON serialize/deserialize；不构造假的 `Passkey`，因为真实 `Passkey` 需要完整注册 ceremony 才能由库产出。
 - 更新 Rust schema 校验和受影响测试/helper 至新 schema；不添加旧 schema 兼容分支。
+- TypeScript WebAuthn repository 与测试 fixture 只改为读写新 schema，保持现有测试入口可运行；这不是旧 Node WebAuthn 数据兼容路径，后续 Rust verify 完成后应移除 TS WebAuthn 持久化写入。
 - 不切换生产入口，不迁移真实 WebAuthn registration/authentication verify，不实现假成功路径。
 
 验证命令：
