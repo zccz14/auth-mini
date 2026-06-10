@@ -24,8 +24,9 @@ use crate::session::{
 use crate::webauthn::{
     authentication_options as webauthn_authentication_options,
     delete_credential as delete_webauthn_credential, parse_options_request,
-    register_options as webauthn_register_options, AuthenticationOptionsError,
-    RegisterOptionsError,
+    parse_register_verify_request, register_options as webauthn_register_options,
+    register_verify_precheck as webauthn_register_verify_precheck, AuthenticationOptionsError,
+    RegisterOptionsError, RegisterVerifyError,
 };
 
 pub fn run_server(config: Config) -> Result<(), Box<dyn std::error::Error>> {
@@ -153,6 +154,11 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
 
     if request.method == "POST" && request.path == "/webauthn/register/options" {
         return handle_webauthn_register_options(request, config)
+            .map(|response| cors(request, response));
+    }
+
+    if request.method == "POST" && request.path == "/webauthn/register/verify" {
+        return handle_webauthn_register_verify(request, config)
             .map(|response| cors(request, response));
     }
 
@@ -426,6 +432,32 @@ fn handle_webauthn_register_options(request: &Request, config: &Config) -> io::R
         }
         Err(RegisterOptionsError::InvalidAccessToken) => {
             Ok(Response::json_error(401, "invalid_access_token"))
+        }
+    }
+}
+
+fn handle_webauthn_register_verify(request: &Request, config: &Config) -> io::Result<Response> {
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    if require_passkey_management_auth(&auth).is_err() {
+        return Ok(Response::json_error(
+            403,
+            "insufficient_authentication_method",
+        ));
+    }
+    let parsed = match parse_register_verify_request(&request.body) {
+        Ok(parsed) => parsed,
+        Err(_) => return Ok(Response::json_error(400, "invalid_request")),
+    };
+    let Some(origin) = options_request_origin(request) else {
+        return Ok(Response::json_error(400, "invalid_webauthn_registration"));
+    };
+
+    match webauthn_register_verify_precheck(&connection, &auth.user_id, &parsed, &origin) {
+        Ok(()) => Ok(Response::json_error(501, "not_implemented")),
+        Err(RegisterVerifyError::InvalidWebauthnRegistration) => {
+            Ok(Response::json_error(400, "invalid_webauthn_registration"))
         }
     }
 }
@@ -1649,6 +1681,182 @@ mod tests {
     }
 
     #[test]
+    fn webauthn_register_verify_precheck_returns_not_implemented_without_consuming_challenge() {
+        let db_path = test_db_path("http-webauthn-register-verify-precheck");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserted");
+        connection
+            .execute(
+                "INSERT INTO allowed_origins (origin) VALUES (?1)",
+                ["https://app.example.com"],
+            )
+            .expect("origin inserted");
+        connection
+            .execute(
+                "INSERT INTO webauthn_challenges
+                 (request_id, type, challenge, user_id, expires_at, rp_id, origin)
+                 VALUES (?1, 'register', ?2, ?3, ?4, ?5, ?6)",
+                (
+                    "00000000-0000-4000-8000-000000000000",
+                    "challenge",
+                    "user-1",
+                    "9999-01-01T00:00:00.000Z",
+                    "example.com",
+                    "https://app.example.com",
+                ),
+            )
+            .expect("challenge inserted");
+        let pair = mint_session_tokens(&connection, "user-1", "email_otp", "auth-mini", None, None)
+            .expect("session minted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/webauthn/register/verify".to_string(),
+                headers: vec![
+                    (
+                        "Authorization".to_string(),
+                        format!("Bearer {}", pair.access_token),
+                    ),
+                    ("Origin".to_string(), "https://app.example.com".to_string()),
+                ],
+                body: register_verify_body(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path: db_path.clone(),
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("webauthn register verify response builds");
+        let connection = Connection::open(db_path).expect("database opens");
+        let consumed_at: Option<String> = connection
+            .query_row(
+                "SELECT consumed_at FROM webauthn_challenges WHERE request_id = ?1",
+                ["00000000-0000-4000-8000-000000000000"],
+                |row| row.get(0),
+            )
+            .expect("consumed_at reads");
+
+        assert_eq!(response.status, 501);
+        assert_eq!(response.body, r#"{"error":"not_implemented"}"#);
+        assert!(consumed_at.is_none());
+    }
+
+    #[test]
+    fn webauthn_register_verify_rejects_invalid_request_over_http_boundary() {
+        let db_path = test_db_path("http-webauthn-register-verify-invalid-request");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserted");
+        let pair = mint_session_tokens(&connection, "user-1", "email_otp", "auth-mini", None, None)
+            .expect("session minted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/webauthn/register/verify".to_string(),
+                headers: vec![
+                    (
+                        "Authorization".to_string(),
+                        format!("Bearer {}", pair.access_token),
+                    ),
+                    ("Origin".to_string(), "https://app.example.com".to_string()),
+                ],
+                body: r#"{"request_id":"00000000-0000-4000-8000-000000000000","credential":{"id":"credential-id","rawId":"raw-id","type":"public-key","response":{"clientDataJSON":"client-data","attestationObject":"attestation"}},"extra":true}"#.to_string(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path,
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("webauthn register verify response builds");
+
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body, r#"{"error":"invalid_request"}"#);
+    }
+
+    #[test]
+    fn webauthn_register_verify_rejects_missing_access_token() {
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/webauthn/register/verify".to_string(),
+                headers: vec![("Origin".to_string(), "https://app.example.com".to_string())],
+                body: register_verify_body(),
+            },
+            &Config::default(),
+        )
+        .expect("webauthn register verify response builds");
+
+        assert_eq!(response.status, 401);
+        assert_eq!(response.body, r#"{"error":"invalid_access_token"}"#);
+    }
+
+    #[test]
+    fn webauthn_register_verify_rejects_missing_challenge_over_http_boundary() {
+        let db_path = test_db_path("http-webauthn-register-verify-missing-challenge");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserted");
+        let pair = mint_session_tokens(&connection, "user-1", "email_otp", "auth-mini", None, None)
+            .expect("session minted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/webauthn/register/verify".to_string(),
+                headers: vec![
+                    (
+                        "Authorization".to_string(),
+                        format!("Bearer {}", pair.access_token),
+                    ),
+                    ("Origin".to_string(), "https://app.example.com".to_string()),
+                ],
+                body: register_verify_body(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path,
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("webauthn register verify response builds");
+
+        assert_eq!(response.status, 400);
+        assert_eq!(
+            response.body,
+            r#"{"error":"invalid_webauthn_registration"}"#
+        );
+    }
+
+    #[test]
     fn rejects_invalid_webauthn_register_options_request_over_http_boundary() {
         let db_path = test_db_path("http-webauthn-register-options-invalid-request");
         let connection = Connection::open(&db_path).expect("database opens");
@@ -2035,5 +2243,9 @@ mod tests {
                 );",
             )
             .expect("auth schema exists");
+    }
+
+    fn register_verify_body() -> String {
+        r#"{"request_id":"00000000-0000-4000-8000-000000000000","credential":{"id":"credential-id","rawId":"raw-id","type":"public-key","response":{"clientDataJSON":"client-data","attestationObject":"attestation"}}}"#.to_string()
     }
 }

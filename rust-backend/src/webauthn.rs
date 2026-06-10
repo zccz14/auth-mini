@@ -1,4 +1,4 @@
-use chrono::{Duration, SecondsFormat, Utc};
+use chrono::{DateTime, Duration, SecondsFormat, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -24,6 +24,43 @@ pub(crate) enum AuthenticationOptionsError {
     InvalidWebauthnAuthentication,
 }
 
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RegisterVerifyRequest {
+    request_id: String,
+    credential: RegistrationCredential,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct RegistrationCredential {
+    id: String,
+    #[serde(rename = "rawId")]
+    raw_id: String,
+    #[serde(rename = "type")]
+    credential_type: String,
+    #[serde(rename = "authenticatorAttachment")]
+    authenticator_attachment: Option<String>,
+    #[serde(rename = "clientExtensionResults")]
+    client_extension_results: Option<Value>,
+    response: RegistrationCredentialResponse,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct RegistrationCredentialResponse {
+    #[serde(rename = "clientDataJSON")]
+    client_data_json: String,
+    #[serde(rename = "attestationObject")]
+    attestation_object: String,
+    transports: Option<Vec<String>>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum RegisterVerifyError {
+    InvalidWebauthnRegistration,
+}
+
 struct ResolvedOptionsInput {
     origin: String,
     rp_id: String,
@@ -36,6 +73,34 @@ pub(crate) fn parse_options_request(body: &str) -> Result<OptionsRequest, serde_
         return Err(serde_json::Error::io(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "invalid rp_id",
+        )));
+    }
+
+    Ok(request)
+}
+
+pub(crate) fn parse_register_verify_request(
+    body: &str,
+) -> Result<RegisterVerifyRequest, serde_json::Error> {
+    let request: RegisterVerifyRequest = serde_json::from_str(body)?;
+
+    if !is_uuid(&request.request_id)
+        || request.credential.id.is_empty()
+        || request.credential.raw_id.is_empty()
+        || request.credential.credential_type != "public-key"
+        || request.credential.response.client_data_json.is_empty()
+        || request.credential.response.attestation_object.is_empty()
+        || request
+            .credential
+            .response
+            .transports
+            .as_ref()
+            .map(|transports| transports.iter().any(|transport| transport.is_empty()))
+            .unwrap_or(false)
+    {
+        return Err(serde_json::Error::io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "invalid register verify request",
         )));
     }
 
@@ -143,6 +208,33 @@ pub(crate) fn authentication_options(
     }))
 }
 
+pub(crate) fn register_verify_precheck(
+    connection: &Connection,
+    user_id: &str,
+    request: &RegisterVerifyRequest,
+    origin: &str,
+) -> Result<(), RegisterVerifyError> {
+    let origin = normalize_allowed_origin(origin)
+        .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)?;
+    let challenge = get_valid_register_challenge(connection, &request.request_id)?;
+    let allowed_origins = list_allowed_origins(connection)
+        .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)?;
+
+    if challenge.user_id.as_deref() != Some(user_id) {
+        return Err(RegisterVerifyError::InvalidWebauthnRegistration);
+    }
+
+    if challenge.origin != origin {
+        return Err(RegisterVerifyError::InvalidWebauthnRegistration);
+    }
+
+    if !allowed_origins.iter().any(|allowed| allowed == &origin) {
+        return Err(RegisterVerifyError::InvalidWebauthnRegistration);
+    }
+
+    Ok(())
+}
+
 pub(crate) fn delete_credential(
     connection: &Connection,
     credential_id: &str,
@@ -166,6 +258,44 @@ fn user_email(connection: &Connection, user_id: &str) -> Result<String, Register
         .optional()
         .map_err(|_| RegisterOptionsError::InvalidAccessToken)?
         .ok_or(RegisterOptionsError::InvalidAccessToken)
+}
+
+struct ChallengePrecheckRow {
+    user_id: Option<String>,
+    expires_at: String,
+    origin: String,
+}
+
+fn get_valid_register_challenge(
+    connection: &Connection,
+    request_id: &str,
+) -> Result<ChallengePrecheckRow, RegisterVerifyError> {
+    let challenge = connection
+        .query_row(
+            "SELECT user_id, expires_at, origin
+             FROM webauthn_challenges
+             WHERE request_id = ?1 AND type = 'register' AND consumed_at IS NULL
+             LIMIT 1",
+            [request_id],
+            |row| {
+                Ok(ChallengePrecheckRow {
+                    user_id: row.get(0)?,
+                    expires_at: row.get(1)?,
+                    origin: row.get(2)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)?
+        .ok_or(RegisterVerifyError::InvalidWebauthnRegistration)?;
+    let expires_at = DateTime::parse_from_rfc3339(&challenge.expires_at)
+        .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)?;
+
+    if expires_at <= Utc::now() {
+        return Err(RegisterVerifyError::InvalidWebauthnRegistration);
+    }
+
+    Ok(challenge)
 }
 
 fn list_allowed_origins(connection: &Connection) -> Result<Vec<String>, RegisterOptionsError> {
@@ -316,6 +446,26 @@ fn is_ip_address(value: &str) -> bool {
                 .iter()
                 .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
     }
+}
+
+fn is_uuid(value: &str) -> bool {
+    let bytes = value.as_bytes();
+
+    if bytes.len() != 36 {
+        return false;
+    }
+
+    for (index, byte) in bytes.iter().enumerate() {
+        if matches!(index, 8 | 13 | 18 | 23) {
+            if *byte != b'-' {
+                return false;
+            }
+        } else if !byte.is_ascii_hexdigit() {
+            return false;
+        }
+    }
+
+    true
 }
 
 fn random_uuid(connection: &Connection) -> rusqlite::Result<String> {
@@ -595,6 +745,101 @@ mod tests {
         );
     }
 
+    #[test]
+    fn parses_register_verify_request_boundary() {
+        let parsed = parse_register_verify_request(
+            r#"{"request_id":"00000000-0000-4000-8000-000000000000","credential":{"id":"credential-id","rawId":"raw-id","type":"public-key","response":{"clientDataJSON":"client-data","attestationObject":"attestation"}}}"#,
+        )
+        .expect("request parses");
+
+        assert_eq!(parsed.request_id, "00000000-0000-4000-8000-000000000000");
+        assert_eq!(parsed.credential.id, "credential-id");
+    }
+
+    #[test]
+    fn rejects_register_verify_request_with_extra_fields() {
+        let error = parse_register_verify_request(
+            r#"{"request_id":"00000000-0000-4000-8000-000000000000","credential":{"id":"credential-id","rawId":"raw-id","type":"public-key","response":{"clientDataJSON":"client-data","attestationObject":"attestation"}},"extra":true}"#,
+        )
+        .expect_err("extra fields are rejected");
+
+        assert!(error.is_data() || error.is_io());
+    }
+
+    #[test]
+    fn register_verify_precheck_accepts_valid_stored_challenge_without_consuming_it() {
+        let connection = Connection::open_in_memory().expect("database opens");
+        create_register_options_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO allowed_origins (origin) VALUES (?1)",
+                ["https://app.example.com"],
+            )
+            .expect("origin inserts");
+        connection
+            .execute(
+                "INSERT INTO webauthn_challenges
+                 (request_id, type, challenge, user_id, expires_at, rp_id, origin)
+                 VALUES (?1, 'register', ?2, ?3, ?4, ?5, ?6)",
+                (
+                    "00000000-0000-4000-8000-000000000000",
+                    "challenge",
+                    "user-1",
+                    "9999-01-01T00:00:00.000Z",
+                    "example.com",
+                    "https://app.example.com",
+                ),
+            )
+            .expect("challenge inserts");
+        let request = register_verify_request();
+
+        register_verify_precheck(&connection, "user-1", &request, "https://app.example.com")
+            .expect("precheck succeeds");
+        let consumed_at: Option<String> = connection
+            .query_row(
+                "SELECT consumed_at FROM webauthn_challenges WHERE request_id = ?1",
+                ["00000000-0000-4000-8000-000000000000"],
+                |row| row.get(0),
+            )
+            .expect("consumed_at reads");
+
+        assert!(consumed_at.is_none());
+    }
+
+    #[test]
+    fn register_verify_precheck_rejects_wrong_user_challenge() {
+        let connection = Connection::open_in_memory().expect("database opens");
+        create_register_options_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO allowed_origins (origin) VALUES (?1)",
+                ["https://app.example.com"],
+            )
+            .expect("origin inserts");
+        connection
+            .execute(
+                "INSERT INTO webauthn_challenges
+                 (request_id, type, challenge, user_id, expires_at, rp_id, origin)
+                 VALUES (?1, 'register', ?2, ?3, ?4, ?5, ?6)",
+                (
+                    "00000000-0000-4000-8000-000000000000",
+                    "challenge",
+                    "other-user",
+                    "9999-01-01T00:00:00.000Z",
+                    "example.com",
+                    "https://app.example.com",
+                ),
+            )
+            .expect("challenge inserts");
+        let request = register_verify_request();
+
+        let error =
+            register_verify_precheck(&connection, "user-1", &request, "https://app.example.com")
+                .expect_err("wrong user is rejected");
+
+        assert_eq!(error, RegisterVerifyError::InvalidWebauthnRegistration);
+    }
+
     fn create_register_options_schema(connection: &Connection) {
         connection
             .execute_batch(
@@ -622,5 +867,12 @@ mod tests {
                 );",
             )
             .expect("schema exists");
+    }
+
+    fn register_verify_request() -> RegisterVerifyRequest {
+        parse_register_verify_request(
+            r#"{"request_id":"00000000-0000-4000-8000-000000000000","credential":{"id":"credential-id","rawId":"raw-id","type":"public-key","response":{"clientDataJSON":"client-data","attestationObject":"attestation"}}}"#,
+        )
+        .expect("request parses")
     }
 }

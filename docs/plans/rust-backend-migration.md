@@ -107,6 +107,25 @@
 
 ## 当前 PR 范围
 
+本轮继续迁移 WebAuthn verify，但不在 Rust 中实现假成功：由于当前 Rust 依赖尚未接入可信 WebAuthn attestation/assertion 验证库，本轮选择 `POST /webauthn/register/verify` 的验证前置边界切片。
+
+- Rust `POST /webauthn/register/verify` 要求 bearer access token 与 passkey-management 授权；缺失或无效 token 返回 `401 invalid_access_token`，`ed25519` session 返回 `403 insufficient_authentication_method`。
+- Rust 按 OpenAPI 合同解析 register verify 请求：`request_id` 必须是 UUID，credential 必须包含非空 `id`、`rawId`、`type: public-key`、`response.clientDataJSON`、`response.attestationObject`，额外字段返回 `400 invalid_request`。
+- Rust 查询未消费、未过期、类型为 `register` 的 challenge；challenge 不存在、已消费、过期或不属于当前用户时返回 `400 invalid_webauthn_registration`。
+- Rust 校验请求 Origin 必须与存储 challenge origin 一致，且 origin 仍在 `allowed_origins`；失败返回 `400 invalid_webauthn_registration`。
+- 前置校验通过后返回 `501 not_implemented`，不消费 challenge、不写入 `webauthn_credentials`、不返回 `ok: true`，避免 WebAuthn verify 假成功。
+- 不迁移 `/webauthn/authenticate/verify`，不删除 TypeScript WebAuthn 后端代码；真实 registration verify 仍由 TypeScript 的 `@simplewebauthn/server` 覆盖。
+
+验证命令：
+
+- `cargo fmt --manifest-path rust-backend/Cargo.toml --check`
+- `cargo test --manifest-path rust-backend/Cargo.toml`
+- `cargo build --manifest-path rust-backend/Cargo.toml`
+- `npm run typecheck`
+- `npm run build`
+
+## 上一轮 PR 范围
+
 本轮继续按 WebAuthn 迁移要求，调研后选择 WebAuthn 中下一个最小可测试闭环：迁移 `POST /webauthn/authenticate/options`。该切片只生成 authentication challenge/options 并持久化 challenge，不执行 authentication verify，因此不会在 Rust 未接入可信 WebAuthn 密码学验证库时产生假成功路径。
 
 - Rust `POST /webauthn/authenticate/options` 不要求 bearer access token，按 OpenAPI 合同公开生成登录 challenge。
