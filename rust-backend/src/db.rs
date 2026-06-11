@@ -8,6 +8,14 @@ pub fn initialize_database(
     schema_path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let schema = fs::read_to_string(schema_path)?;
+
+    initialize_database_from_schema(db_path, &schema)
+}
+
+pub fn initialize_database_from_schema(
+    db_path: &Path,
+    schema: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let connection = Connection::open(db_path)?;
 
     connection.pragma_update(None, "foreign_keys", "ON")?;

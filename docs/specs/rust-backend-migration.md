@@ -25,6 +25,7 @@
 - Ed25519 challenge 验证完成登录。
 - WebAuthn 注册、登录和凭据管理。
 - JWKS 轮换 CLI 与生产入口语义。
+- `smtp`、`rotate jwks`、`init`、`start` 的 npm CLI 语义；本轮只新增 Rust `origin` 管理命令能力，不切换 npm 包 CLI。
 - SQLite schema 文件 `sql/schema.sql`；WebAuthn schema 在 Rust-first spike 后允许破坏旧 Node 凭据形态。
 - npm 包导出的 SDK、CLI 命令和现有 Docker 发布链路。
 
@@ -153,6 +154,15 @@
 - invalid request validation style：两端均拒绝无效 JSON、字段缺失、字段类型错误和额外字段；Rust 以 serde `deny_unknown_fields` 加局部值校验保持当前切片的显式边界。Ed25519/WebAuthn 已知 Rust-first WebAuthn 破坏性方向不回加 Node 兼容。
 - 仍需后续继续细查的非阻塞点：Ed25519 credential create 的无效请求错误码当前 Rust 已按既有迁移切片返回 `invalid_ed25519_credential`，如要收敛到 OpenAPI/TypeScript 的 `invalid_request`，应单独建小切片确认公开 API 决策后处理。
 
+本轮 Rust CLI origin 管理切片必须新增下列可验证行为：
+
+- Rust 二进制支持 `origin add <db> --value <origin>`、`origin list <db>`、`origin update <db> --id <id> --value <origin>`、`origin delete <db> --id <id>`。
+- 四个命令必须按现有 schema 初始化 SQLite 数据库，并只读写 `allowed_origins`。
+- add/update 必须复用 TypeScript origin 管理的核心规范化规则：只接受 `http`/`https` origin，拒绝 `null`、路径、查询、hash、用户名密码，规范化 scheme/host 大小写、尾随点与默认端口。
+- add/list/update 输出继续使用 TypeScript CLI 当前的 tab 分隔格式：`id origin created_at`；delete 成功不输出。
+- update/delete 找不到 id 时返回失败，不静默成功。
+- 本切片不切换 npm 包 CLI，不删除 TypeScript origin CLI；npm 包、SDK、Docker 入口保持原状。
+
 ## API 兼容范围
 
 第一阶段不替换生产 API。兼容范围限定为新增 Rust 切片自身的基础端点，不声明覆盖现有认证 API。
@@ -196,6 +206,7 @@
 - 不在本轮 WebAuthn authenticate/verify 前置边界切片迁移真实 assertion 验证、challenge 消费、credential counter 更新、session 创建、token 签发或生产入口切换。
 - 不在本轮 WebAuthn Rust-first schema spike 中提供旧 Node WebAuthn 凭据兼容迁移，不保证旧 `public_key`/`counter`/`transports` 数据可继续登录。
 - 不在本轮 Ed25519 verify 切片迁移 Ed25519 start、credential management、生产入口、SDK、OpenAPI 或旧数据兼容 fallback。
+- 不在本轮 Rust CLI origin 管理切片迁移 SMTP/JWKS/init/start CLI，不切换 npm 包 CLI 或 Docker 入口，不删除 TypeScript CLI。
 - 不在 Rust 迁移发布准备中要求 Docker publishing；不把 Docker 镜像发布作为 Rust release readiness 门禁。
 - 不引入新的数据库、缓存、队列或配置格式。
 - 不改变现有 OpenAPI 合同。

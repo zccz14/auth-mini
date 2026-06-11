@@ -107,6 +107,24 @@
 
 ## 当前 PR 范围
 
+本轮开始迁移 CLI 管理命令，选择最小可闭环的 `origin add/list/update/delete` Rust 切片：
+
+- Rust 二进制新增 `origin` 子命令组，覆盖 `allowed_origins` 的 add/list/update/delete。
+- 迁移 TypeScript origin CLI 的核心数据库行为、origin 规范化、tab 分隔输出和找不到 id 失败路径。
+- 不切换 npm 包 CLI，不删除 TypeScript `src/commands/origin/**` 或 `src/app/commands/origin/**`，避免破坏现有 npm packaging。
+- 不迁移 `smtp`、`rotate jwks`、`init`、`start`，这些仍留在 TypeScript CLI 范围。
+
+验证命令：
+
+- `CARGO_HOME=$PWD/.cargo-home cargo fmt --manifest-path rust-backend/Cargo.toml --check`
+- `CARGO_HOME=$PWD/.cargo-home cargo test --manifest-path rust-backend/Cargo.toml`
+- `CARGO_HOME=$PWD/.cargo-home cargo build --manifest-path rust-backend/Cargo.toml`
+- `npm run typecheck`
+- `npm run build`
+- `mkdir -p .tmp/vitest && TMPDIR=$PWD/.tmp/vitest npx vitest run tests/unit/origin-repo.test.ts tests/integration/origin-cli.test.ts tests/unit/cli.test.ts tests/integration/oclif-cli.test.ts`
+
+## 上一轮 PR 范围
+
 本轮执行 PR #83 后的 Rust vs TypeScript 认证 / 会话 / 错误响应语义对齐审计，优先覆盖 session token 响应、bearer header、`/me` 数据形态、unauthorized/error JSON/status mapping 与 invalid request 校验风格。
 
 - 对照最近 git 历史、迁移 spec/plan、TypeScript auth/session/error 代码、Rust auth/session/error 代码与现有测试。

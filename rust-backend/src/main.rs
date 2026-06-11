@@ -1,6 +1,10 @@
-use auth_mini_rust_backend::{run_server, Config};
+use auth_mini_rust_backend::{parse_app_command, run_origin_command, run_server, AppCommand};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = Config::from_args(std::env::args().skip(1))?;
-    run_server(config)
+    match parse_app_command(std::env::args().skip(1))? {
+        AppCommand::Serve(config) => run_server(config),
+        AppCommand::Origin(command) => {
+            run_origin_command(command, &mut std::io::stdout()).map_err(Into::into)
+        }
+    }
 }
