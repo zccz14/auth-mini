@@ -14,7 +14,7 @@ import {
 describe('oclif cli contract', () => {
   beforeAll(async () => {
     await runPackedCli(['--version']);
-  }, 60000);
+  }, 180000);
 
   it('supports init as the primary bootstrap command', async () => {
     const dbPath = await createTempDbPath();

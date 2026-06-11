@@ -81,6 +81,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sha2",
+ "url",
  "webauthn-rs",
 ]
 
