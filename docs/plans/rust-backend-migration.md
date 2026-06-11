@@ -107,6 +107,23 @@
 
 ## 当前 PR 范围
 
+本轮继续推进 Rust CLI 发布准备，先把现有手写解析层迁移到 `clap`，并把 clippy 纳入最小 Rust 验证路径：
+
+- Rust 二进制使用 `clap` derive API 解析服务启动参数、`origin` 命令组和 `smtp` 命令组。
+- 保留 `AppCommand`、`OriginCommand`、`SmtpCommand` 与现有 run 函数作为业务执行边界，避免重构数据库、SMTP、origin 或认证逻辑。
+- 保留现有命令名、flag 名、必填字段、默认值、tab 分隔输出；帮助输出改为 `clap` 标准 help。
+- 仓库当前没有 `.github/workflows` CI 文件，因此本轮把 clippy 记录到 Rust 迁移计划的最小验证命令中，而不新增不存在的 CI workflow。
+- 不切换 npm 包 CLI，不迁移 `rotate jwks`、`init`、`start`，不删除 TypeScript CLI。
+
+验证命令：
+
+- `cargo fmt --manifest-path rust-backend/Cargo.toml --check`
+- `cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets -- -D warnings`
+- `cargo test --manifest-path rust-backend/Cargo.toml`
+- `cargo build --manifest-path rust-backend/Cargo.toml`
+
+## 上一轮 PR 范围
+
 本轮继续迁移 CLI 管理命令，选择与 `origin` 同类、可完整闭环验证的 `smtp add/list/update/delete` Rust 切片：
 
 - Rust 二进制新增 `smtp` 子命令组，覆盖 `smtp_configs` 的 add/list/update/delete。

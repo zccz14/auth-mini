@@ -20,9 +20,9 @@ pub(crate) struct OptionsRequest {
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum RegisterOptionsError {
-    InvalidRequest,
-    InvalidWebauthnRegistration,
-    InvalidAccessToken,
+    Request,
+    WebauthnRegistration,
+    AccessToken,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -198,37 +198,36 @@ pub(crate) fn register_options(
 ) -> Result<Value, RegisterOptionsError> {
     let email = user_email(connection, user_id)?;
     let resolved = resolve_options_input(connection, request, origin)
-        .map_err(|_| RegisterOptionsError::InvalidWebauthnRegistration)?;
-    let request_id = random_uuid(connection).map_err(|_| RegisterOptionsError::InvalidRequest)?;
+        .map_err(|_| RegisterOptionsError::WebauthnRegistration)?;
+    let request_id = random_uuid(connection).map_err(|_| RegisterOptionsError::Request)?;
     let webauthn = build_webauthn(&resolved.rp_id, &resolved.origin)
-        .map_err(|_| RegisterOptionsError::InvalidWebauthnRegistration)?;
+        .map_err(|_| RegisterOptionsError::WebauthnRegistration)?;
     let (options, state) = webauthn
         .start_passkey_registration(user_webauthn_id(user_id), &email, &email, None)
-        .map_err(|_| RegisterOptionsError::InvalidRequest)?;
-    let state_json =
-        serde_json::to_string(&state).map_err(|_| RegisterOptionsError::InvalidRequest)?;
-    let public_key = serde_json::to_value(options.public_key)
-        .map_err(|_| RegisterOptionsError::InvalidRequest)?;
+        .map_err(|_| RegisterOptionsError::Request)?;
+    let state_json = serde_json::to_string(&state).map_err(|_| RegisterOptionsError::Request)?;
+    let public_key =
+        serde_json::to_value(options.public_key).map_err(|_| RegisterOptionsError::Request)?;
     let challenge = public_key
         .get("challenge")
         .cloned()
-        .ok_or(RegisterOptionsError::InvalidRequest)?;
+        .ok_or(RegisterOptionsError::Request)?;
     let rp = public_key
         .get("rp")
         .cloned()
-        .ok_or(RegisterOptionsError::InvalidRequest)?;
+        .ok_or(RegisterOptionsError::Request)?;
     let user = public_key
         .get("user")
         .cloned()
-        .ok_or(RegisterOptionsError::InvalidRequest)?;
+        .ok_or(RegisterOptionsError::Request)?;
     let pub_key_cred_params = public_key
         .get("pubKeyCredParams")
         .cloned()
-        .ok_or(RegisterOptionsError::InvalidRequest)?;
+        .ok_or(RegisterOptionsError::Request)?;
     let authenticator_selection = public_key
         .get("authenticatorSelection")
         .cloned()
-        .ok_or(RegisterOptionsError::InvalidRequest)?;
+        .ok_or(RegisterOptionsError::Request)?;
     let expires_at = (Utc::now() + ChronoDuration::seconds(WEBAUTHN_CHALLENGE_SECONDS))
         .to_rfc3339_opts(SecondsFormat::Millis, true);
     let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
@@ -240,7 +239,7 @@ pub(crate) fn register_options(
              WHERE type = 'register' AND user_id = ?2 AND consumed_at IS NULL",
             params![now, user_id],
         )
-        .map_err(|_| RegisterOptionsError::InvalidRequest)?;
+        .map_err(|_| RegisterOptionsError::Request)?;
     connection
         .execute(
             "INSERT INTO webauthn_challenges
@@ -255,7 +254,7 @@ pub(crate) fn register_options(
                 resolved.origin
             ],
         )
-        .map_err(|_| RegisterOptionsError::InvalidRequest)?;
+        .map_err(|_| RegisterOptionsError::Request)?;
 
     Ok(json!({
         "request_id": request_id,
@@ -530,8 +529,8 @@ fn user_email(connection: &Connection, user_id: &str) -> Result<String, Register
             |row| row.get(0),
         )
         .optional()
-        .map_err(|_| RegisterOptionsError::InvalidAccessToken)?
-        .ok_or(RegisterOptionsError::InvalidAccessToken)
+        .map_err(|_| RegisterOptionsError::AccessToken)?
+        .ok_or(RegisterOptionsError::AccessToken)
 }
 
 struct RegisterChallengePrecheckRow {
@@ -645,17 +644,17 @@ fn get_authentication_credential(
 fn list_allowed_origins(connection: &Connection) -> Result<Vec<String>, RegisterOptionsError> {
     let mut statement = connection
         .prepare("SELECT origin FROM allowed_origins ORDER BY id ASC")
-        .map_err(|_| RegisterOptionsError::InvalidWebauthnRegistration)?;
+        .map_err(|_| RegisterOptionsError::WebauthnRegistration)?;
     let rows = statement
         .query_map([], |row| row.get::<_, String>(0))
-        .map_err(|_| RegisterOptionsError::InvalidWebauthnRegistration)?;
+        .map_err(|_| RegisterOptionsError::WebauthnRegistration)?;
     let mut origins = Vec::new();
 
     for row in rows {
-        let origin = row.map_err(|_| RegisterOptionsError::InvalidWebauthnRegistration)?;
+        let origin = row.map_err(|_| RegisterOptionsError::WebauthnRegistration)?;
         origins.push(
             normalize_allowed_origin(&origin)
-                .map_err(|_| RegisterOptionsError::InvalidWebauthnRegistration)?,
+                .map_err(|_| RegisterOptionsError::WebauthnRegistration)?,
         );
     }
 
@@ -1054,7 +1053,7 @@ mod tests {
         let error = register_options(&connection, "user-1", &request, "https://app.example.com")
             .expect_err("sibling rp id is rejected");
 
-        assert_eq!(error, RegisterOptionsError::InvalidWebauthnRegistration);
+        assert_eq!(error, RegisterOptionsError::WebauthnRegistration);
     }
 
     #[test]
