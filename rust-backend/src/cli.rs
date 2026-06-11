@@ -1,7 +1,7 @@
-use std::collections::{HashMap, HashSet};
 use std::io::{self, Write};
 use std::path::PathBuf;
 
+use clap::{Args, Parser, Subcommand};
 use rusqlite::{params, Connection, OptionalExtension};
 use url::{Host, Url};
 
@@ -70,6 +70,161 @@ pub enum SmtpCommand {
     },
 }
 
+#[derive(Debug, Parser)]
+#[command(name = "auth-mini-rust-backend", disable_help_subcommand = true)]
+struct CliArgs {
+    #[command(subcommand)]
+    command: Option<CliCommand>,
+
+    #[command(flatten)]
+    serve: ServeArgs,
+}
+
+#[derive(Debug, Subcommand)]
+enum CliCommand {
+    Origin(OriginArgs),
+    Smtp(SmtpArgs),
+}
+
+#[derive(Debug, Args)]
+struct ServeArgs {
+    #[arg(long, default_value = "127.0.0.1")]
+    host: String,
+
+    #[arg(long, default_value_t = 7777)]
+    port: u16,
+
+    #[arg(long = "openapi", default_value = "openapi.yaml")]
+    openapi_path: PathBuf,
+
+    #[arg(long = "db")]
+    db_path: Option<PathBuf>,
+
+    #[arg(long = "schema", requires = "db_path")]
+    schema_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+struct OriginArgs {
+    #[command(subcommand)]
+    command: OriginSubcommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum OriginSubcommand {
+    Add(OriginAddArgs),
+    List(InstanceArgs),
+    Update(OriginUpdateArgs),
+    Delete(DeleteArgs),
+}
+
+#[derive(Debug, Args)]
+struct OriginAddArgs {
+    db_path: PathBuf,
+
+    #[arg(long = "value")]
+    value: String,
+}
+
+#[derive(Debug, Args)]
+struct OriginUpdateArgs {
+    db_path: PathBuf,
+
+    #[arg(long = "id")]
+    id: i64,
+
+    #[arg(long = "value")]
+    value: String,
+}
+
+#[derive(Debug, Args)]
+struct InstanceArgs {
+    db_path: PathBuf,
+}
+
+#[derive(Debug, Args)]
+struct DeleteArgs {
+    db_path: PathBuf,
+
+    #[arg(long = "id")]
+    id: i64,
+}
+
+#[derive(Debug, Args)]
+struct SmtpArgs {
+    #[command(subcommand)]
+    command: SmtpSubcommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum SmtpSubcommand {
+    Add(SmtpAddArgs),
+    List(InstanceArgs),
+    Update(SmtpUpdateArgs),
+    Delete(DeleteArgs),
+}
+
+#[derive(Debug, Args)]
+struct SmtpAddArgs {
+    db_path: PathBuf,
+
+    #[arg(long = "host")]
+    host: String,
+
+    #[arg(long = "port", value_parser = positive_i64_arg)]
+    port: i64,
+
+    #[arg(long = "username")]
+    username: String,
+
+    #[arg(long = "password")]
+    password: String,
+
+    #[arg(long = "from-email")]
+    from_email: String,
+
+    #[arg(long = "from-name", default_value = "")]
+    from_name: String,
+
+    #[arg(long = "secure")]
+    secure: bool,
+
+    #[arg(long = "weight", default_value_t = 1, value_parser = positive_i64_arg)]
+    weight: i64,
+}
+
+#[derive(Debug, Args)]
+struct SmtpUpdateArgs {
+    db_path: PathBuf,
+
+    #[arg(long = "id", value_parser = positive_i64_arg)]
+    id: i64,
+
+    #[arg(long = "host")]
+    host: Option<String>,
+
+    #[arg(long = "port", value_parser = positive_i64_arg)]
+    port: Option<i64>,
+
+    #[arg(long = "username")]
+    username: Option<String>,
+
+    #[arg(long = "password")]
+    password: Option<String>,
+
+    #[arg(long = "from-email")]
+    from_email: Option<String>,
+
+    #[arg(long = "from-name")]
+    from_name: Option<String>,
+
+    #[arg(long = "secure")]
+    secure: Option<bool>,
+
+    #[arg(long = "weight", value_parser = positive_i64_arg)]
+    weight: Option<i64>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct AllowedOrigin {
     id: i64,
@@ -91,24 +246,15 @@ struct SmtpConfig {
     weight: i64,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-struct CliFlags {
-    values: HashMap<String, String>,
-    booleans: HashSet<String>,
+pub fn parse_app_command(args: impl IntoIterator<Item = String>) -> io::Result<AppCommand> {
+    parse_cli(args).map_err(clap_to_io_error)
 }
 
-pub fn parse_app_command(args: impl IntoIterator<Item = String>) -> io::Result<AppCommand> {
-    let args = args.into_iter().collect::<Vec<_>>();
-
-    if args.first().map(|arg| arg.as_str()) == Some("origin") {
-        return parse_origin_command(&args[1..]).map(AppCommand::Origin);
+pub fn parse_app_command_or_exit(args: impl IntoIterator<Item = String>) -> AppCommand {
+    match parse_cli(args) {
+        Ok(command) => command,
+        Err(error) => error.exit(),
     }
-
-    if args.first().map(|arg| arg.as_str()) == Some("smtp") {
-        return parse_smtp_command(&args[1..]).map(AppCommand::Smtp);
-    }
-
-    crate::Config::from_args(args).map(AppCommand::Serve)
 }
 
 pub fn run_origin_command(command: OriginCommand, writer: &mut impl Write) -> io::Result<()> {
@@ -215,235 +361,111 @@ pub fn run_smtp_command(command: SmtpCommand, writer: &mut impl Write) -> io::Re
     Ok(())
 }
 
-fn parse_origin_command(args: &[String]) -> io::Result<OriginCommand> {
-    let subcommand = args
-        .first()
-        .ok_or_else(|| invalid_input("origin requires a subcommand"))?;
+fn parse_cli(args: impl IntoIterator<Item = String>) -> Result<AppCommand, clap::Error> {
+    let raw_args = std::iter::once("auth-mini-rust-backend".to_string()).chain(args);
+    CliArgs::try_parse_from(raw_args).map(CliArgs::into_app_command)
+}
 
-    match subcommand.as_str() {
-        "add" => {
-            let db_path = required_positional(args, 1, "origin add requires an instance")?;
-            let value = required_flag(args, "--value")?;
-            reject_extra_args(args, 4, "origin")?;
-            Ok(OriginCommand::Add { db_path, value })
+impl CliArgs {
+    fn into_app_command(self) -> AppCommand {
+        match self.command {
+            Some(CliCommand::Origin(args)) => AppCommand::Origin(args.into_origin_command()),
+            Some(CliCommand::Smtp(args)) => AppCommand::Smtp(args.into_smtp_command()),
+            None => AppCommand::Serve(self.serve.into_config()),
         }
-        "list" => {
-            let db_path = required_positional(args, 1, "origin list requires an instance")?;
-            reject_extra_args(args, 2, "origin")?;
-            Ok(OriginCommand::List { db_path })
-        }
-        "update" => {
-            let db_path = required_positional(args, 1, "origin update requires an instance")?;
-            let id = parse_id(&required_flag(args, "--id")?)?;
-            let value = required_flag(args, "--value")?;
-            reject_extra_args(args, 6, "origin")?;
-            Ok(OriginCommand::Update { db_path, id, value })
-        }
-        "delete" => {
-            let db_path = required_positional(args, 1, "origin delete requires an instance")?;
-            let id = parse_id(&required_flag(args, "--id")?)?;
-            reject_extra_args(args, 4, "origin")?;
-            Ok(OriginCommand::Delete { db_path, id })
-        }
-        _ => Err(invalid_input(format!(
-            "unknown origin subcommand: {subcommand}"
-        ))),
     }
 }
 
-fn parse_smtp_command(args: &[String]) -> io::Result<SmtpCommand> {
-    let subcommand = args
-        .first()
-        .ok_or_else(|| invalid_input("smtp requires a subcommand"))?;
-
-    match subcommand.as_str() {
-        "add" => {
-            let db_path = required_positional(args, 1, "smtp add requires an instance")?;
-            let flags = parse_flag_args(
-                &args[2..],
-                &[
-                    "--host",
-                    "--port",
-                    "--username",
-                    "--password",
-                    "--from-email",
-                    "--from-name",
-                    "--weight",
-                ],
-                &["--secure"],
-                "smtp",
-            )?;
-
-            Ok(SmtpCommand::Add {
+impl ServeArgs {
+    fn into_config(self) -> crate::Config {
+        crate::Config {
+            host: self.host,
+            port: self.port,
+            openapi_path: self.openapi_path,
+            database: self.db_path.map(|db_path| crate::DatabaseConfig {
                 db_path,
-                host: required_parsed_flag(&flags, "--host")?,
-                port: parse_positive_i64(&required_parsed_flag(&flags, "--port")?, "--port")?,
-                username: required_parsed_flag(&flags, "--username")?,
-                password: required_parsed_flag(&flags, "--password")?,
-                from_email: required_parsed_flag(&flags, "--from-email")?,
-                from_name: flags.values.get("--from-name").cloned().unwrap_or_default(),
-                secure: flags.booleans.contains("--secure"),
-                weight: parse_optional_positive_i64(flags.values.get("--weight"), "--weight")?
-                    .unwrap_or(1),
-            })
-        }
-        "list" => {
-            let db_path = required_positional(args, 1, "smtp list requires an instance")?;
-            reject_extra_args(args, 2, "smtp")?;
-            Ok(SmtpCommand::List { db_path })
-        }
-        "update" => {
-            let db_path = required_positional(args, 1, "smtp update requires an instance")?;
-            let flags = parse_flag_args(
-                &args[2..],
-                &[
-                    "--id",
-                    "--host",
-                    "--port",
-                    "--username",
-                    "--password",
-                    "--from-email",
-                    "--from-name",
-                    "--secure",
-                    "--weight",
-                ],
-                &[],
-                "smtp",
-            )?;
-
-            Ok(SmtpCommand::Update {
-                db_path,
-                id: parse_positive_i64(&required_parsed_flag(&flags, "--id")?, "--id")?,
-                host: flags.values.get("--host").cloned(),
-                port: parse_optional_positive_i64(flags.values.get("--port"), "--port")?,
-                username: flags.values.get("--username").cloned(),
-                password: flags.values.get("--password").cloned(),
-                from_email: flags.values.get("--from-email").cloned(),
-                from_name: flags.values.get("--from-name").cloned(),
-                secure: parse_optional_bool(flags.values.get("--secure"), "--secure")?,
-                weight: parse_optional_positive_i64(flags.values.get("--weight"), "--weight")?,
-            })
-        }
-        "delete" => {
-            let db_path = required_positional(args, 1, "smtp delete requires an instance")?;
-            let id = parse_id(&required_flag(args, "--id")?)?;
-            reject_extra_args(args, 4, "smtp")?;
-            Ok(SmtpCommand::Delete { db_path, id })
-        }
-        _ => Err(invalid_input(format!(
-            "unknown smtp subcommand: {subcommand}"
-        ))),
-    }
-}
-
-fn required_positional(args: &[String], index: usize, message: &str) -> io::Result<PathBuf> {
-    let value = args
-        .get(index)
-        .ok_or_else(|| invalid_input(message.to_string()))?;
-
-    if value.starts_with("--") {
-        return Err(invalid_input(message.to_string()));
-    }
-
-    Ok(PathBuf::from(value))
-}
-
-fn required_flag(args: &[String], name: &str) -> io::Result<String> {
-    let flag_index = args
-        .iter()
-        .position(|arg| arg == name)
-        .ok_or_else(|| invalid_input(format!("{name} requires a value")))?;
-    let value = args
-        .get(flag_index + 1)
-        .ok_or_else(|| invalid_input(format!("{name} requires a value")))?;
-
-    if value.starts_with("--") {
-        return Err(invalid_input(format!("{name} requires a value")));
-    }
-
-    Ok(value.clone())
-}
-
-fn reject_extra_args(args: &[String], allowed_len: usize, topic: &str) -> io::Result<()> {
-    if args.len() == allowed_len {
-        return Ok(());
-    }
-
-    Err(invalid_input(format!("unexpected {topic} arguments")))
-}
-
-fn parse_flag_args(
-    args: &[String],
-    value_flags: &[&str],
-    boolean_flags: &[&str],
-    topic: &str,
-) -> io::Result<CliFlags> {
-    let mut flags = CliFlags::default();
-    let mut index = 0;
-
-    while index < args.len() {
-        let flag = args[index].as_str();
-
-        if value_flags.contains(&flag) {
-            let value = args
-                .get(index + 1)
-                .ok_or_else(|| invalid_input(format!("{flag} requires a value")))?;
-
-            if value.starts_with("--") {
-                return Err(invalid_input(format!("{flag} requires a value")));
-            }
-
-            flags.values.insert(flag.to_string(), value.clone());
-            index += 2;
-        } else if boolean_flags.contains(&flag) {
-            flags.booleans.insert(flag.to_string());
-            index += 1;
-        } else {
-            return Err(invalid_input(format!("unexpected {topic} arguments")));
+                schema_path: self
+                    .schema_path
+                    .unwrap_or_else(|| PathBuf::from("sql/schema.sql")),
+            }),
         }
     }
-
-    Ok(flags)
 }
 
-fn required_parsed_flag(flags: &CliFlags, name: &str) -> io::Result<String> {
-    flags
-        .values
-        .get(name)
-        .cloned()
-        .ok_or_else(|| invalid_input(format!("{name} requires a value")))
+impl OriginArgs {
+    fn into_origin_command(self) -> OriginCommand {
+        match self.command {
+            OriginSubcommand::Add(args) => OriginCommand::Add {
+                db_path: args.db_path,
+                value: args.value,
+            },
+            OriginSubcommand::List(args) => OriginCommand::List {
+                db_path: args.db_path,
+            },
+            OriginSubcommand::Update(args) => OriginCommand::Update {
+                db_path: args.db_path,
+                id: args.id,
+                value: args.value,
+            },
+            OriginSubcommand::Delete(args) => OriginCommand::Delete {
+                db_path: args.db_path,
+                id: args.id,
+            },
+        }
+    }
 }
 
-fn parse_id(value: &str) -> io::Result<i64> {
-    value
-        .parse()
-        .map_err(|_| invalid_input("--id must be an integer"))
+impl SmtpArgs {
+    fn into_smtp_command(self) -> SmtpCommand {
+        match self.command {
+            SmtpSubcommand::Add(args) => SmtpCommand::Add {
+                db_path: args.db_path,
+                host: args.host,
+                port: args.port,
+                username: args.username,
+                password: args.password,
+                from_email: args.from_email,
+                from_name: args.from_name,
+                secure: args.secure,
+                weight: args.weight,
+            },
+            SmtpSubcommand::List(args) => SmtpCommand::List {
+                db_path: args.db_path,
+            },
+            SmtpSubcommand::Update(args) => SmtpCommand::Update {
+                db_path: args.db_path,
+                id: args.id,
+                host: args.host,
+                port: args.port,
+                username: args.username,
+                password: args.password,
+                from_email: args.from_email,
+                from_name: args.from_name,
+                secure: args.secure,
+                weight: args.weight,
+            },
+            SmtpSubcommand::Delete(args) => SmtpCommand::Delete {
+                db_path: args.db_path,
+                id: args.id,
+            },
+        }
+    }
 }
 
-fn parse_positive_i64(value: &str, name: &str) -> io::Result<i64> {
+fn positive_i64_arg(value: &str) -> Result<i64, String> {
     let parsed = value
         .parse::<i64>()
-        .map_err(|_| invalid_input(format!("{name} must be a positive integer")))?;
+        .map_err(|_| "must be a positive integer".to_string())?;
 
     if parsed <= 0 {
-        return Err(invalid_input(format!("{name} must be a positive integer")));
+        return Err("must be a positive integer".to_string());
     }
 
     Ok(parsed)
 }
 
-fn parse_optional_positive_i64(value: Option<&String>, name: &str) -> io::Result<Option<i64>> {
-    value.map(|raw| parse_positive_i64(raw, name)).transpose()
-}
-
-fn parse_optional_bool(value: Option<&String>, name: &str) -> io::Result<Option<bool>> {
-    value
-        .map(|raw| match raw.as_str() {
-            "true" => Ok(true),
-            "false" => Ok(false),
-            _ => Err(invalid_input(format!("{name} must be true or false"))),
-        })
-        .transpose()
+fn clap_to_io_error(error: clap::Error) -> io::Error {
+    invalid_input(error.to_string())
 }
 
 fn open_cli_database(db_path: &PathBuf) -> io::Result<Connection> {
@@ -771,7 +793,7 @@ fn invalid_input(message: impl Into<String>) -> io::Error {
 }
 
 fn io_other(error: impl std::fmt::Display) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, error.to_string())
+    io::Error::other(error.to_string())
 }
 
 #[cfg(test)]
@@ -779,6 +801,53 @@ mod tests {
     use std::fs;
 
     use super::*;
+
+    #[test]
+    fn parses_default_serve_command() {
+        let command = parse_app_command([]).expect("default serve command parses");
+
+        assert_eq!(command, AppCommand::Serve(crate::Config::default()));
+    }
+
+    #[test]
+    fn parses_serve_database_config() {
+        let command = parse_app_command([
+            "--host".to_string(),
+            "0.0.0.0".to_string(),
+            "--port".to_string(),
+            "8080".to_string(),
+            "--openapi".to_string(),
+            "../openapi.yaml".to_string(),
+            "--db".to_string(),
+            "target/test-dbs/app.sqlite".to_string(),
+            "--schema".to_string(),
+            "../sql/schema.sql".to_string(),
+        ])
+        .expect("serve config parses");
+
+        assert_eq!(
+            command,
+            AppCommand::Serve(crate::Config {
+                host: "0.0.0.0".to_string(),
+                port: 8080,
+                openapi_path: PathBuf::from("../openapi.yaml"),
+                database: Some(crate::DatabaseConfig {
+                    db_path: PathBuf::from("target/test-dbs/app.sqlite"),
+                    schema_path: PathBuf::from("../sql/schema.sql"),
+                }),
+            })
+        );
+    }
+
+    #[test]
+    fn returns_clap_help_as_parse_error_for_testable_parser() {
+        let error = parse_app_command(["origin".to_string(), "--help".to_string()])
+            .expect_err("help is surfaced to the binary exit parser");
+
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert!(error.to_string().contains("Usage:"));
+        assert!(error.to_string().contains("Commands:"));
+    }
 
     #[test]
     fn parses_origin_add_command() {

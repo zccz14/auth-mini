@@ -222,10 +222,7 @@ fn handle_email_start(request: &Request, config: &Config) -> io::Result<Response
         Err(EmailStartError::SmtpTemporarilyUnavailable) => {
             Ok(Response::json_error(503, "smtp_temporarily_unavailable"))
         }
-        Err(EmailStartError::Database) => Err(io::Error::new(
-            io::ErrorKind::Other,
-            "email start database error",
-        )),
+        Err(EmailStartError::Database) => Err(io::Error::other("email start database error")),
     }
 }
 
@@ -239,13 +236,11 @@ fn handle_email_verify(request: &Request, config: &Config) -> io::Result<Respons
         return Ok(Response::json_error(501, "not_implemented"));
     };
 
-    match consume_email_verify_otp(&database.db_path, &parsed)
-        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?
-    {
+    match consume_email_verify_otp(&database.db_path, &parsed).map_err(io::Error::other)? {
         EmailVerifyOutcome::InvalidOtp => Ok(Response::json_error(401, "invalid_email_otp")),
         EmailVerifyOutcome::OtpConsumed { user_id } => {
-            let connection = rusqlite::Connection::open(&database.db_path)
-                .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+            let connection =
+                rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
             let pair = mint_session_tokens(
                 &connection,
                 &user_id,
@@ -254,7 +249,7 @@ fn handle_email_verify(request: &Request, config: &Config) -> io::Result<Respons
                 None,
                 request.header("User-Agent").as_deref(),
             )
-            .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+            .map_err(io::Error::other)?;
 
             Ok(Response::json_value(200, token_json(pair)))
         }
@@ -269,8 +264,7 @@ fn handle_session_refresh(request: &Request, config: &Config) -> io::Result<Resp
     let Some(database) = &config.database else {
         return Ok(Response::json_error(501, "not_implemented"));
     };
-    let connection = rusqlite::Connection::open(&database.db_path)
-        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+    let connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
 
     match refresh_session_tokens(&connection, &parsed, "auth-mini") {
         Ok(pair) => Ok(Response::json_value(200, token_json(pair))),
@@ -283,8 +277,7 @@ fn handle_session_logout(request: &Request, config: &Config) -> io::Result<Respo
     let Some((connection, auth)) = authenticated_connection(request, config)? else {
         return Ok(Response::json_error(401, "invalid_access_token"));
     };
-    logout_session(&connection, &auth.session_id)
-        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+    logout_session(&connection, &auth.session_id).map_err(io::Error::other)?;
 
     Ok(Response::json_value(200, serde_json::json!({ "ok": true })))
 }
@@ -322,8 +315,7 @@ fn handle_ed25519_credentials(request: &Request, config: &Config) -> io::Result<
             "insufficient_authentication_method",
         ));
     }
-    let body = list_ed25519_credentials(&connection, &auth.user_id)
-        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+    let body = list_ed25519_credentials(&connection, &auth.user_id).map_err(io::Error::other)?;
 
     Ok(Response::json_value(200, body))
 }
@@ -342,8 +334,8 @@ fn handle_ed25519_credential_create(request: &Request, config: &Config) -> io::R
             "insufficient_authentication_method",
         ));
     }
-    let body = create_ed25519_credential(&connection, &auth.user_id, &parsed)
-        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+    let body =
+        create_ed25519_credential(&connection, &auth.user_id, &parsed).map_err(io::Error::other)?;
 
     Ok(Response::json_value(200, body))
 }
@@ -364,7 +356,7 @@ fn handle_ed25519_credential_update(request: &Request, config: &Config) -> io::R
     }
     let credential_id = ed25519_credential_id(request).expect("route ensures credential id");
     let credential = update_ed25519_credential(&connection, credential_id, &auth.user_id, &parsed)
-        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+        .map_err(io::Error::other)?;
 
     match credential {
         Some(body) => Ok(Response::json_value(200, body)),
@@ -384,7 +376,7 @@ fn handle_ed25519_credential_delete(request: &Request, config: &Config) -> io::R
     }
     let credential_id = ed25519_credential_id(request).expect("route ensures credential id");
     let deleted = delete_ed25519_credential(&connection, credential_id, &auth.user_id)
-        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+        .map_err(io::Error::other)?;
 
     if deleted {
         return Ok(Response::json_value(200, serde_json::json!({ "ok": true })));
@@ -405,7 +397,7 @@ fn handle_webauthn_credential_delete(request: &Request, config: &Config) -> io::
     }
     let credential_id = webauthn_credential_id(request).expect("route ensures credential id");
     let deleted = delete_webauthn_credential(&connection, credential_id, &auth.user_id)
-        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+        .map_err(io::Error::other)?;
 
     if deleted {
         return Ok(Response::json_value(200, serde_json::json!({ "ok": true })));
@@ -434,13 +426,11 @@ fn handle_webauthn_register_options(request: &Request, config: &Config) -> io::R
 
     match webauthn_register_options(&connection, &auth.user_id, &parsed, &origin) {
         Ok(body) => Ok(Response::json_value(200, body)),
-        Err(RegisterOptionsError::InvalidRequest) => {
-            Ok(Response::json_error(400, "invalid_request"))
-        }
-        Err(RegisterOptionsError::InvalidWebauthnRegistration) => {
+        Err(RegisterOptionsError::Request) => Ok(Response::json_error(400, "invalid_request")),
+        Err(RegisterOptionsError::WebauthnRegistration) => {
             Ok(Response::json_error(400, "invalid_webauthn_registration"))
         }
-        Err(RegisterOptionsError::InvalidAccessToken) => {
+        Err(RegisterOptionsError::AccessToken) => {
             Ok(Response::json_error(401, "invalid_access_token"))
         }
     }
@@ -486,8 +476,7 @@ fn handle_webauthn_authentication_options(
     let Some(origin) = options_request_origin(request) else {
         return Ok(Response::json_error(400, "invalid_webauthn_authentication"));
     };
-    let connection = rusqlite::Connection::open(&database.db_path)
-        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+    let connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
 
     match webauthn_authentication_options(&connection, &parsed, &origin) {
         Ok(body) => Ok(Response::json_value(200, body)),
@@ -514,8 +503,7 @@ fn handle_webauthn_authentication_verify(
     let Some(origin) = options_request_origin(request) else {
         return Ok(Response::json_error(400, "invalid_webauthn_authentication"));
     };
-    let connection = rusqlite::Connection::open(&database.db_path)
-        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+    let connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
 
     match webauthn_authentication_verify(&connection, &parsed, &origin) {
         Ok(outcome) => {
@@ -527,7 +515,7 @@ fn handle_webauthn_authentication_verify(
                 None,
                 request.header("User-Agent").as_deref(),
             )
-            .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+            .map_err(io::Error::other)?;
 
             Ok(Response::json_value(200, token_json(pair)))
         }
@@ -545,10 +533,8 @@ fn handle_ed25519_start(request: &Request, config: &Config) -> io::Result<Respon
     let Some(database) = &config.database else {
         return Ok(Response::json_error(501, "not_implemented"));
     };
-    let connection = rusqlite::Connection::open(&database.db_path)
-        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
-    let challenge = start_ed25519_authentication(&connection, &parsed)
-        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+    let connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
+    let challenge = start_ed25519_authentication(&connection, &parsed).map_err(io::Error::other)?;
 
     match challenge {
         Some(body) => Ok(Response::json_value(200, body)),
@@ -564,8 +550,7 @@ fn handle_ed25519_verify(request: &Request, config: &Config) -> io::Result<Respo
     let Some(database) = &config.database else {
         return Ok(Response::json_error(501, "not_implemented"));
     };
-    let mut connection = rusqlite::Connection::open(&database.db_path)
-        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+    let mut connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
 
     match verify_ed25519_authentication(
         &mut connection,
@@ -597,10 +582,8 @@ fn handle_jwks(config: &Config) -> io::Result<Response> {
     let Some(database) = &config.database else {
         return Ok(Response::json_error(501, "not_implemented"));
     };
-    let connection = rusqlite::Connection::open(&database.db_path)
-        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
-    let body = list_public_keys(&connection)
-        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+    let connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
+    let body = list_public_keys(&connection).map_err(io::Error::other)?;
 
     Ok(Response::json_value(200, body))
 }
@@ -615,8 +598,7 @@ fn authenticated_connection(
     let Some(token) = bearer_token(request) else {
         return Ok(None);
     };
-    let connection = rusqlite::Connection::open(&database.db_path)
-        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+    let connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
     let auth = match authenticate_access_token(&connection, &token) {
         Ok(auth) => auth,
         Err(_) => return Ok(None),

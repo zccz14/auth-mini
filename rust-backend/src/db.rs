@@ -20,7 +20,7 @@ pub fn initialize_database_from_schema(
 
     connection.pragma_update(None, "foreign_keys", "ON")?;
     connection.pragma_update(None, "journal_mode", "WAL")?;
-    connection.execute_batch(&schema)?;
+    connection.execute_batch(schema)?;
     assert_required_schema(&connection)?;
 
     Ok(())

@@ -173,6 +173,13 @@
 - update/delete 找不到 id 时返回失败，不静默成功。
 - 本切片不切换 npm 包 CLI，不删除 TypeScript SMTP CLI；npm 包、SDK、Docker 入口保持原状。
 
+本轮 Rust CLI 解析与 lint 准备切片必须新增下列可验证行为：
+
+- Rust 二进制命令行解析改用 `clap` derive API 承载 `origin`、`smtp` 与服务启动参数，业务执行枚举和数据库读写逻辑保持不变。
+- Rust CLI 必须保留现有命令名、flag 名、必填字段、默认值、tab 分隔输出和核心错误失败语义；`--help` 由 `clap` 提供标准帮助输出。
+- Rust 验证路径新增 `cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets -- -D warnings`，把 clippy 作为 Rust 迁移发布准备的最小 lint 门禁。
+- 本切片不切换 npm 包 CLI，不迁移 JWKS/init/start CLI，不重构数据库或认证业务代码。
+
 ## API 兼容范围
 
 第一阶段不替换生产 API。兼容范围限定为新增 Rust 切片自身的基础端点，不声明覆盖现有认证 API。
@@ -228,6 +235,7 @@
 - `docs/specs/rust-backend-migration.md` 明确迁移范围和非目标。
 - `docs/plans/rust-backend-migration.md` 明确阶段和验证命令。
 - `cargo test --manifest-path rust-backend/Cargo.toml` 通过。
+- `cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets -- -D warnings` 通过。
 - `cargo build --manifest-path rust-backend/Cargo.toml` 通过。
 - `npm run typecheck` 通过，证明现有 TypeScript 入口未被破坏。
 - 第二阶段 Rust 测试覆盖数据库配置解析、schema 初始化和缺失 schema 拒绝。
