@@ -107,6 +107,25 @@
 
 ## 当前 PR 范围
 
+本轮继续迁移 CLI 管理命令，选择与 `origin` 同类、可完整闭环验证的 `smtp add/list/update/delete` Rust 切片：
+
+- Rust 二进制新增 `smtp` 子命令组，覆盖 `smtp_configs` 的 add/list/update/delete。
+- 迁移 TypeScript SMTP CLI 的核心数据库行为、必填字段、默认值、partial update、tab 分隔输出和找不到 id 失败路径。
+- Rust 输出格式不包含 `password`，避免管理命令泄露 SMTP secret；密码只写入/读取数据库供邮件发送配置使用。
+- 不切换 npm 包 CLI，不删除 TypeScript `src/commands/smtp/**` 或 `src/app/commands/smtp/**`，避免破坏现有 npm packaging。
+- 不迁移 `rotate jwks`、`init`、`start`，这些仍留在 TypeScript CLI 范围。
+
+验证命令：
+
+- `CARGO_HOME=$PWD/.cargo-home cargo fmt --manifest-path rust-backend/Cargo.toml --check`
+- `CARGO_HOME=$PWD/.cargo-home cargo test --manifest-path rust-backend/Cargo.toml`
+- `CARGO_HOME=$PWD/.cargo-home cargo build --manifest-path rust-backend/Cargo.toml`
+- `npm run typecheck`
+- `npm run build`
+- `mkdir -p .tmp/vitest && TMPDIR=$PWD/.tmp/vitest npx vitest run tests/integration/smtp-cli.test.ts tests/unit/smtp-mailer.test.ts tests/unit/cli.test.ts`
+
+## 上一轮 PR 范围
+
 本轮开始迁移 CLI 管理命令，选择最小可闭环的 `origin add/list/update/delete` Rust 切片：
 
 - Rust 二进制新增 `origin` 子命令组，覆盖 `allowed_origins` 的 add/list/update/delete。
