@@ -107,12 +107,13 @@
 
 ## 当前 PR 范围
 
-本轮继续推进 Rust CLI 发布准备，先把现有手写解析层迁移到 `clap`，并把 clippy 纳入最小 Rust 验证路径：
+本轮继续推进 Rust release readiness，新增 tag 触发的 GitHub Release 二进制发布 workflow：
 
-- Rust 二进制使用 `clap` derive API 解析服务启动参数、`origin` 命令组和 `smtp` 命令组。
-- 保留 `AppCommand`、`OriginCommand`、`SmtpCommand` 与现有 run 函数作为业务执行边界，避免重构数据库、SMTP、origin 或认证逻辑。
-- 保留现有命令名、flag 名、必填字段、默认值、tab 分隔输出；帮助输出改为 `clap` 标准 help。
-- 仓库当前没有 `.github/workflows` CI 文件，因此本轮把 clippy 记录到 Rust 迁移计划的最小验证命令中，而不新增不存在的 CI workflow。
+- 新增 `.github/workflows/release.yml`，仅在 `v*` tag push 时运行，并使用 `permissions: contents: write` 上传 GitHub Release assets。
+- 采用 GitHub-hosted runner matrix 直接构建 `auth-mini-rust-backend` release binary：Linux x86_64、macOS x86_64、macOS aarch64、Windows x86_64。
+- 每个目标产出平台命名 archive：Unix 使用 `.tar.gz`，Windows 使用 `.zip`；每个 archive 同时产出 `.sha256` checksum。
+- 首轮不加入 Linux aarch64 或 musl，避免在未验证 linker/system dependency 前引入脆弱 cross toolchain。
+- Rust release readiness 不包含 Docker publishing；不发布 Docker image、不推送 GHCR、不改动现有 Docker image release workflow。
 - 不切换 npm 包 CLI，不迁移 `rotate jwks`、`init`、`start`，不删除 TypeScript CLI。
 
 验证命令：
@@ -121,6 +122,7 @@
 - `cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets -- -D warnings`
 - `cargo test --manifest-path rust-backend/Cargo.toml`
 - `cargo build --manifest-path rust-backend/Cargo.toml`
+- `ruby -e "require 'yaml'; YAML.load_file('.github/workflows/release.yml')"`
 
 ## 上一轮 PR 范围
 

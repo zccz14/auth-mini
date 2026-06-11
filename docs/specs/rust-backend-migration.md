@@ -207,6 +207,9 @@
 - 第一阶段新增 Rust 构建与测试命令，不改变现有 `npm run build`、`npm test`、Dockerfile 和发布 workflow 的生产语义。
 - Rust 后端成为可选构建产物；生产入口切换必须等到公开 API、数据库语义和部署 smoke test 覆盖完成。
 - Rust 发布准备不要求 Docker publishing；后续 release readiness 应聚焦 Rust 二进制跨平台 cross-compilation、产物校验和运行 smoke test。Docker runtime/publishing 仅在未来生产入口切换明确需要时另行立项。
+- Rust 二进制发布 workflow 必须在 `v*` tag 上构建 `auth-mini-rust-backend` release binary，并直接上传平台命名 archive 与 SHA-256 checksum 到 GitHub Release。
+- 初始 Rust release 目标限定为 GitHub-hosted runner 可直接验证的 `x86_64-unknown-linux-gnu`、`x86_64-apple-darwin`、`aarch64-apple-darwin`、`x86_64-pc-windows-msvc`；Linux aarch64 与 musl 目标暂不纳入首轮，后续需有稳定 linker/system dependency 验证后再加入。
+- Rust release readiness 明确不包含 Docker publishing；现有 Docker image 发布链路保持独立，不作为 Rust 二进制发布门禁。
 
 ## 非目标
 
@@ -226,6 +229,7 @@
 - 不在本轮 Rust CLI origin 管理切片迁移 SMTP/JWKS/init/start CLI，不切换 npm 包 CLI 或 Docker 入口，不删除 TypeScript CLI。
 - 不在本轮 Rust CLI SMTP 管理切片迁移 JWKS/init/start CLI，不切换 npm 包 CLI 或 Docker 入口，不删除 TypeScript CLI。
 - 不在 Rust 迁移发布准备中要求 Docker publishing；不把 Docker 镜像发布作为 Rust release readiness 门禁。
+- 不在 Rust 二进制 release workflow 中发布 Docker image、推送 GHCR 或复用 Docker buildx 发布链路。
 - 不引入新的数据库、缓存、队列或配置格式。
 - 不改变现有 OpenAPI 合同。
 - 不增加 TypeScript 与 Rust 之间的代理兼容层。
@@ -237,6 +241,7 @@
 - `cargo test --manifest-path rust-backend/Cargo.toml` 通过。
 - `cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets -- -D warnings` 通过。
 - `cargo build --manifest-path rust-backend/Cargo.toml` 通过。
+- Rust release workflow YAML 可被本地 YAML 解析校验，并保持 tag 触发、`contents: write`、平台 archive、checksum 与 GitHub Release upload 行为。
 - `npm run typecheck` 通过，证明现有 TypeScript 入口未被破坏。
 - 第二阶段 Rust 测试覆盖数据库配置解析、schema 初始化和缺失 schema 拒绝。
 - 第三阶段当前切片 Rust 测试覆盖 `POST /email/verify` 的有效请求、无效字段值和额外字段拒绝。
