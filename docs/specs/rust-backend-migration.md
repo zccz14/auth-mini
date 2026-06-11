@@ -25,7 +25,7 @@
 - Ed25519 challenge 验证完成登录。
 - WebAuthn 注册、登录和凭据管理。
 - JWKS 轮换 CLI 与生产入口语义。
-- `smtp`、`rotate jwks`、`init`、`start` 的 npm CLI 语义；本轮只新增 Rust `origin` 管理命令能力，不切换 npm 包 CLI。
+- `rotate jwks`、`init`、`start` 的 npm CLI 语义；Rust 已开始覆盖 `origin` 与 `smtp` 管理命令能力，但本轮不切换 npm 包 CLI。
 - SQLite schema 文件 `sql/schema.sql`；WebAuthn schema 在 Rust-first spike 后允许破坏旧 Node 凭据形态。
 - npm 包导出的 SDK、CLI 命令和现有 Docker 发布链路。
 
@@ -163,6 +163,16 @@
 - update/delete 找不到 id 时返回失败，不静默成功。
 - 本切片不切换 npm 包 CLI，不删除 TypeScript origin CLI；npm 包、SDK、Docker 入口保持原状。
 
+本轮 Rust CLI SMTP 管理切片必须新增下列可验证行为：
+
+- Rust 二进制支持 `smtp add <db> --host <host> --port <port> --username <username> --password <password> --from-email <email> [--from-name <name>] [--secure] [--weight <weight>]`、`smtp list <db>`、`smtp update <db> --id <id> [字段 flags]`、`smtp delete <db> --id <id>`。
+- 四个命令必须按现有 schema 初始化 SQLite 数据库，并只读写 `smtp_configs`。
+- add 必须复用 TypeScript SMTP CLI 的必填字段和默认值：`from_name` 默认为空字符串，`secure` 默认为 false，`weight` 默认为 1，新增配置默认 active。
+- update 必须支持 partial update，未传字段保留原值；`--secure` 只接受 `true` 或 `false`。
+- add/list/update 输出继续使用 tab 分隔格式：`id host port username from_email from_name secure is_active weight`；出于安全边界，本轮 Rust SMTP CLI 输出不得包含 `password`。
+- update/delete 找不到 id 时返回失败，不静默成功。
+- 本切片不切换 npm 包 CLI，不删除 TypeScript SMTP CLI；npm 包、SDK、Docker 入口保持原状。
+
 ## API 兼容范围
 
 第一阶段不替换生产 API。兼容范围限定为新增 Rust 切片自身的基础端点，不声明覆盖现有认证 API。
@@ -207,6 +217,7 @@
 - 不在本轮 WebAuthn Rust-first schema spike 中提供旧 Node WebAuthn 凭据兼容迁移，不保证旧 `public_key`/`counter`/`transports` 数据可继续登录。
 - 不在本轮 Ed25519 verify 切片迁移 Ed25519 start、credential management、生产入口、SDK、OpenAPI 或旧数据兼容 fallback。
 - 不在本轮 Rust CLI origin 管理切片迁移 SMTP/JWKS/init/start CLI，不切换 npm 包 CLI 或 Docker 入口，不删除 TypeScript CLI。
+- 不在本轮 Rust CLI SMTP 管理切片迁移 JWKS/init/start CLI，不切换 npm 包 CLI 或 Docker 入口，不删除 TypeScript CLI。
 - 不在 Rust 迁移发布准备中要求 Docker publishing；不把 Docker 镜像发布作为 Rust release readiness 门禁。
 - 不引入新的数据库、缓存、队列或配置格式。
 - 不改变现有 OpenAPI 合同。
@@ -224,6 +235,7 @@
 - 第四阶段当前切片 Rust 测试覆盖有效 OTP 消费、过期/已消费/缺失/错误 code 拒绝，以及 HTTP 层 `401 invalid_email_otp` 与成功消费后 `501 not_implemented`。
 - 第五阶段当前切片 Rust 测试覆盖首次 email 创建用户、复用已有用户不重复创建、已有未验证用户写入 `email_verified_at`，以及 HTTP 层成功处理用户后仍返回 `501 not_implemented`。
 - 本轮 Rust 测试覆盖 access token 可由 JWKS 公钥完成 Ed25519 验签，并覆盖篡改 token 被拒绝。
+- 本轮 Rust CLI SMTP 测试覆盖 add/list/update/delete 参数解析、DB 写读、默认值、partial update、not found 错误路径，以及输出不包含 SMTP password。
 - 本轮 SMTP Rust 测试覆盖 email start 请求边界、无 active SMTP 配置、lettre transport 成功时 OTP 创建和邮件内容、SMTP 失败时 OTP 失效、secure SMTP 使用 TLS transport 且不返回假成功，以及 HTTP 层 invalid_request/smtp_not_configured 边界。
 - 本轮 WebAuthn 凭据删除切片必须新增下列可验证行为：Rust 后端覆盖 `DELETE /webauthn/credentials/{id}`，要求有效 access token 且认证方式为 `email_otp` 或 `webauthn`；只允许删除当前用户自己的 WebAuthn 凭据，成功返回 `200 {"ok":true}`，其他用户或不存在的凭据返回 `404 credential_not_found`，不满足管理凭据认证方式返回 `403 insufficient_authentication_method`。本切片不迁移 WebAuthn 注册/登录 options 或 verify，不实现任何 WebAuthn 假验证成功路径。
 - 本轮 WebAuthn register/options Rust 测试覆盖成功生成 options 并持久化 challenge、父域 rp_id 规范化、二次 options 消费旧 challenge、sibling rp_id 拒绝、缺失 access token 拒绝、非 passkey-management 认证方式拒绝。

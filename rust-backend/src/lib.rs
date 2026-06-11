@@ -10,7 +10,9 @@ mod openapi;
 mod session;
 mod webauthn;
 
-pub use cli::{parse_app_command, run_origin_command, AppCommand, OriginCommand};
+pub use cli::{
+    parse_app_command, run_origin_command, run_smtp_command, AppCommand, OriginCommand, SmtpCommand,
+};
 pub use config::{Config, DatabaseConfig};
 pub use db::{initialize_database, initialize_database_from_schema};
 pub use http::run_server;
