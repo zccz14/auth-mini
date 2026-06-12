@@ -2,7 +2,7 @@ use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 
 use crate::config::Config;
-use crate::db::initialize_database;
+use crate::db::initialize_runtime_database;
 use crate::ed25519::{
     create_credential as create_ed25519_credential, delete_credential as delete_ed25519_credential,
     list_credentials as list_ed25519_credentials, parse_credential_create_request,
@@ -34,7 +34,7 @@ use crate::webauthn::{
 
 pub fn run_server(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(database) = &config.database {
-        initialize_database(&database.db_path, &database.schema_path)?;
+        initialize_runtime_database(&database.db_path)?;
     }
 
     let listener = TcpListener::bind((config.host.as_str(), config.port))?;

@@ -12,7 +12,7 @@ npx auth-mini init ./auth-mini.sqlite
 
 `<instance>` currently means the path to your auth-mini SQLite database file.
 
-For the Rust binary, the instance path is optional on `init`, `start`, `origin`, `smtp`, and `rotate jwks`. When omitted, it uses `~/.auth-mini/default.sqlite3` and creates `~/.auth-mini` before initializing/opening the database:
+For the Rust binary, the instance path is optional on `init`, `start`, `origin`, `smtp`, and `rotate jwks`. When omitted, it uses `~/.auth-mini/default.sqlite3`. Commands that use a database initialize the SQLite file automatically when it is missing, including parent directory creation, schema creation, and JWKS key bootstrap:
 
 ```bash
 auth-mini-rust-backend init
@@ -20,7 +20,9 @@ auth-mini-rust-backend start --issuer https://auth.your-domain.com
 auth-mini-rust-backend origin add --value https://app.example.com
 ```
 
-Explicit paths remain supported, for example `auth-mini-rust-backend init ./auth-mini.sqlite`. The Rust binary still resolves default `openapi.yaml` and `sql/schema.sql` from the current working directory; pass `--openapi` and `--schema` when running outside the repository layout.
+Explicit paths remain supported, for example `auth-mini-rust-backend init ./auth-mini.sqlite`. Explicit `init` remains available and is idempotent. The Rust binary embeds the database schema for release-binary use; existing `--schema` arguments are accepted for compatibility but runtime initialization uses the embedded schema. Only `openapi.yaml` still defaults to the current working directory, so pass `--openapi` when running outside the repository layout.
+
+The Rust binary prints one `auth-mini SQLite database: <path>` line to stderr for database-using commands. Management command stdout remains tab-separated rows for scripts.
 
 `create` remains available as a compatibility alias during the transition.
 

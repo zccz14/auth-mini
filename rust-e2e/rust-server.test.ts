@@ -46,8 +46,15 @@ describe('rust external server e2e smoke', () => {
 
     await mkdir(tempRoot, { recursive: true });
     const dbPath = resolve(tempRoot, 'auth-mini-rust-e2e.sqlite');
-    await runCli(['init', dbPath]);
-    await runCli(['origin', 'add', dbPath, '--value', webauthnOrigin]);
+    const originAdd = await runCli([
+      'origin',
+      'add',
+      dbPath,
+      '--value',
+      webauthnOrigin,
+    ]);
+    expect(originAdd.stderr).toContain(`auth-mini SQLite database: ${dbPath}`);
+    expect(originAdd.stdout).not.toContain('auth-mini SQLite database:');
     seedOtp(dbPath, 'rust-user@example.com', '123456');
 
     const port = await getFreePort();
@@ -261,23 +268,29 @@ type WebauthnOptionsResponse = {
 };
 
 async function runCli(args: string[], env: NodeJS.ProcessEnv = {}) {
-  const { status, stderr } = await new Promise<{
+  const result = await new Promise<{
     status: number | null;
+    stdout: string;
     stderr: string;
   }>((resolveProcess) => {
     const child = spawn(binaryPath, args, {
       cwd: repoRoot,
       env: { ...process.env, ...env },
     });
+    let stdout = '';
     let stderr = '';
 
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString('utf8');
+    });
     child.stderr.on('data', (chunk: Buffer) => {
       stderr += chunk.toString('utf8');
     });
-    child.on('close', (status) => resolveProcess({ status, stderr }));
+    child.on('close', (status) => resolveProcess({ status, stdout, stderr }));
   });
 
-  expect(status, stderr).toBe(0);
+  expect(result.status, result.stderr).toBe(0);
+  return result;
 }
 
 function seedOtp(dbPath: string, email: string, code: string) {
@@ -344,8 +357,6 @@ function startServer(dbPath: string, port: number, issuer: string) {
       String(port),
       '--openapi',
       'openapi.yaml',
-      '--schema',
-      'sql/schema.sql',
     ],
     { cwd: repoRoot },
   );
