@@ -2,6 +2,7 @@ FROM rust:1.91-bookworm AS builder
 
 WORKDIR /src
 COPY openapi.yaml ./openapi.yaml
+COPY sql ./sql
 COPY rust-backend ./rust-backend
 
 RUN cargo build --manifest-path rust-backend/Cargo.toml --release
