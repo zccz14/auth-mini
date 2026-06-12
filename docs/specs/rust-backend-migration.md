@@ -226,6 +226,7 @@
 - Rust 发布准备不要求 Docker publishing；后续 release readiness 应聚焦 Rust 二进制跨平台 cross-compilation、产物校验和运行 smoke test。Docker runtime/publishing 仅在未来生产入口切换明确需要时另行立项。
 - Rust 二进制发布 workflow 必须在 `v*` tag 上构建 `auth-mini-rust-backend` release binary，并直接上传平台命名 archive 与 SHA-256 checksum 到 GitHub Release。
 - 初始 Rust release 目标限定为 GitHub-hosted runner 可直接验证的 `x86_64-unknown-linux-gnu`、`x86_64-apple-darwin`、`aarch64-apple-darwin`、`x86_64-pc-windows-msvc`；Linux aarch64 与 musl 目标暂不纳入首轮，后续需有稳定 linker/system dependency 验证后再加入。
+- Rust 二进制发布 workflow 不得为所有平台强制使用 Git Bash；Windows 构建必须使用 runner 默认 shell，避免 vendored OpenSSL 构建时选中缺少 `Locale::Maketext::Simple` 的 Git/MSYS Perl。
 - Rust release readiness 明确不包含 Docker publishing；现有 Docker image 发布链路保持独立，不作为 Rust 二进制发布门禁。
 
 ## 非目标
@@ -258,7 +259,7 @@
 - `cargo test --manifest-path rust-backend/Cargo.toml` 通过。
 - `cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets -- -D warnings` 通过。
 - `cargo build --manifest-path rust-backend/Cargo.toml` 通过。
-- Rust release workflow YAML 可被本地 YAML 解析校验，并保持 tag 触发、`contents: write`、平台 archive、checksum 与 GitHub Release upload 行为。
+- Rust release workflow YAML 可被本地 YAML 解析校验，并保持 tag 触发、`contents: write`、平台 archive、checksum、GitHub Release upload 行为，以及 Windows 不强制 Git Bash 的 OpenSSL/Perl 构建路径。
 - Rust E2E workflow YAML 可被本地 YAML 解析校验，并保持 PR-to-`main` 触发、`contents: read`、PR concurrency、Node/Rust setup、Cargo cache、显式 Rust build 与 `npm run test:rust-e2e` 行为；该 workflow 独立于现有 `pr-checks` job。
 - `npm run typecheck` 通过，证明现有 TypeScript 入口未被破坏。
 - 第二阶段 Rust 测试覆盖数据库配置解析、schema 初始化和缺失 schema 拒绝。
