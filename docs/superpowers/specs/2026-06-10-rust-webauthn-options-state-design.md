@@ -7,7 +7,8 @@
 - 注册 options 之前被跳过，因为旧合同返回 `publicKey.user.id = base64url(user_id)`，但 `webauthn-rs` 的 passkey registration 需要 UUID 用户唯一标识。
 - PR #79 已按本设计完成 `/webauthn/register/options` 迁移，并使用确定性 UUID user handle 保存 `PasskeyRegistration` state。
 - PR #80 已迁移 `/webauthn/register/verify`：注册验证消费 `PasskeyRegistration` state，成功后写入序列化 `Passkey`。
-- `/webauthn/authenticate/verify` 仍处于 Rust precheck 后返回 501 的阶段；本切片迁移该端点到 `webauthn-rs`。
+- PR #91 已新增 `npm run test:rust-e2e`，通过外部 Rust binary 覆盖 health、未授权 `/me`、CORS、Email OTP 与 Ed25519 冒烟路径。
+- `/webauthn/authenticate/verify` 已迁移到 `webauthn-rs`；后续 E2E 切片需要补上外部 Rust binary 的完整 WebAuthn register + authenticate ceremony。
 
 ## 目标
 
@@ -21,6 +22,7 @@
 - 不重新实现已完成的 register options 或 register verify。
 - 不增加旧 Node 数据兼容路径、dual-read、dual-write 或 credential id 旧语义。
 - 不改变公开路由路径、错误码或 SDK 请求形状。
+- 不引入真实浏览器自动化；Rust-target E2E 只使用既有测试凭据生成 helper 构造协议 payload。
 
 ## 决策
 
@@ -55,6 +57,14 @@ PR #80 已完成 `/webauthn/register/verify`。
 - credential id 与 RP ID 一起解析用户归属，避免只凭 userHandle 或客户端输入决定用户。
 - challenge 消费和 credential 更新放在同一事务，避免验证成功后只完成部分持久化副作用。
 
+Rust E2E 验证决策：`rust-e2e/rust-server.test.ts` 复用 `tests/helpers/webauthn.ts` 的 ES256 packed attestation/assertion 生成逻辑，不新增第二套 authenticator，也不引入浏览器自动化。测试先用 Rust CLI 写入 `https://app.example.com` allowlist，然后在 HTTP 请求中显式发送该 `Origin` 与 `rp_id = app.example.com`，完成 register options、register verify、authenticate options、authenticate verify，并通过数据库与 `/me` 验证凭据和 `webauthn` session。
+
+原因：
+
+- 既有 helper 已被 TypeScript 集成测试用于真实 WebAuthn 加密验证，复用它是最小且可靠的确定性 test authenticator seam。
+- 外部 Rust binary E2E 关注跨进程 HTTP、SQLite 持久化、Origin/RP ID allowlist 与 session 可见性，不需要真实浏览器参与。
+- 只保留 ES256 一个策略，避免为 RS256、浏览器或多 authenticator 模式增加额外路径。
+
 ## 行为要求
 
 - 请求校验、access token/passkey management 权限、origin/RP ID 归一化和 allowlist 规则沿用现有 Rust 逻辑。
@@ -84,6 +94,7 @@ PR #80 已完成 `/webauthn/register/verify`。
 - 派生 UUID 依赖 `users.id` 稳定；该字段是用户主键，本切片不新增持久化 handle 字段。
 - 不为旧 challenge JSON 或旧 `base64url(user_id)` user handle 添加 fallback；旧未使用 challenge 可自然失效。
 - 不为旧 `passkey_json` 形状添加读取或写入兼容路径；旧 Node 形状凭据不是本迁移目标。
+- Rust-target E2E 不增加生产 WebAuthn 行为分支；测试 seam 限定在既有 TypeScript helper 与 E2E harness。
 
 ## 验收标准
 
@@ -92,6 +103,7 @@ PR #80 已完成 `/webauthn/register/verify`。
 - Rust 单元测试证明 authentication options 持久化可反序列化的 `DiscoverableAuthentication` state。
 - Rust 单元测试证明 authentication verify 不接受旧 challenge JSON 或旧 passkey JSON，失败不消费 challenge、不更新 credential。
 - Rust build/test 覆盖 authentication verify 调用 `finish_discoverable_authentication()`、`Passkey::update_credential()`、事务消费 challenge 与 session 签发路径。
+- `npm run test:rust-e2e` 覆盖外部 Rust binary 的 WebAuthn 注册和认证完整 ceremony：Email OTP session 发起注册、注册后凭据入库、认证后返回 session tokens、`/me` 暴露 `webauthn` session 与 WebAuthn credential。
 - `cargo fmt --manifest-path rust-backend/Cargo.toml --check` 通过。
 - `cargo test --manifest-path rust-backend/Cargo.toml` 通过。
 - `cargo build --manifest-path rust-backend/Cargo.toml` 通过。

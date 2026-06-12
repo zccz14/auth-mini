@@ -8,6 +8,7 @@
 
 - 修改 `rust-backend/src/webauthn.rs`
 - 修改 `rust-backend/src/http.rs`
+- 修改 `rust-e2e/rust-server.test.ts`
 - 修改 `docs/superpowers/specs/2026-06-10-rust-webauthn-options-state-design.md`
 - 修改 `docs/superpowers/plans/2026-06-10-rust-webauthn-options-state.md`
 
@@ -36,6 +37,10 @@
 - [x] 使用 `finish_discoverable_authentication()` 验证 credential，成功后调用 `Passkey::update_credential()`。
 - [x] 成功后在同一事务中消费 authentication challenge、更新 `passkey_json` 与 `last_used_at`；保留 challenge 类型、过期、消费、Origin allowlist、Origin 匹配与 RP ID scoped credential 校验。
 - [x] 调整 Rust 单元测试覆盖旧 state/旧 passkey 失败不产生副作用，以及 HTTP 边界返回 `invalid_webauthn_authentication`。
+- [x] 检查 PR #91 后的 `npm run test:rust-e2e` harness、既有 TS WebAuthn helper、Rust WebAuthn 实现与 migration spec/plan。
+- [x] 选择单一测试 authenticator 策略：复用 `tests/helpers/webauthn.ts` 的 ES256 packed attestation/assertion 生成逻辑，不引入浏览器自动化或第二套 helper。
+- [x] 在 Rust E2E harness 中通过 Rust CLI 写入 allowed origin，并从 Email OTP session 完成 `/webauthn/register/options`、`/webauthn/register/verify`、`/webauthn/authenticate/options`、`/webauthn/authenticate/verify`。
+- [x] 断言注册后凭据入库、认证后 `last_used_at` 更新、WebAuthn session tokens 返回，并通过 `/me` 看到 `webauthn` active session 与 WebAuthn credential。
 - [ ] 提交、fetch、rebase、push 并创建 PR。
 - [ ] 跟进 PR checks / mergeability；若可合并则合并并清理 worktree。
 
@@ -46,4 +51,5 @@
 - 不添加旧 `base64url(user_id)` user handle fallback。
 - 不添加旧 `passkey_json` 写入形状兼容路径。
 - 不添加旧 `passkey_json` 读取兼容路径。
+- 不添加第二套 WebAuthn test authenticator、不添加浏览器自动化、不添加生产 WebAuthn 行为分支。
 - 新增错误路径只映射真实失败：challenge 不存在/过期/已消费、Origin 不匹配或不再允许、RP ID scoped credential 不存在、state/passkey 反序列化失败、WebAuthn 配置无效、库验证失败、Passkey 更新 credential id 不匹配、Passkey 序列化失败、credential 更新失败、challenge 消费竞争失败、session 签发失败。
