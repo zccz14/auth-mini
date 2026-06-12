@@ -107,6 +107,27 @@
 
 ## 当前 PR 范围
 
+本轮新增独立 Rust 目标 E2E PR workflow，让 PR 对 `npm run test:rust-e2e` 有单独可见的 CI 信号，但暂不并入现有 `pr-checks` 主门禁：
+
+- 新增 `.github/workflows/rust-e2e.yml`，仅在面向 `main` 的 pull request 触发。
+- workflow 使用 `permissions: contents: read`、PR 维度 concurrency cancel-in-progress、`ubuntu-latest` runner。
+- workflow 复用现有 Node 24/npm cache 与 `dtolnay/rust-toolchain@stable` 约定，并缓存 Cargo registry/git 与 `rust-backend/target`。
+- workflow 线性执行 checkout、Node/Rust setup、`npm ci`、`cargo build --manifest-path rust-backend/Cargo.toml`、`npm run test:rust-e2e`；显式 Rust build 用于更早暴露编译失败，测试脚本仍保持自构建能力。
+- 本轮不修改 `.github/workflows/pr-checks.yml`，Rust E2E 尚未折入主 PR checks gate；是否提升为主门禁后续按耗时、稳定性和仓库保护策略单独决策。
+
+验证命令：
+
+- `ruby -e "require 'yaml'; YAML.load_file('.github/workflows/rust-e2e.yml')"`
+- `npm ci`
+- `npm run test:rust-e2e`
+- `cargo fmt --manifest-path rust-backend/Cargo.toml --check`
+- `cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets -- -D warnings`
+- `cargo test --manifest-path rust-backend/Cargo.toml`
+- `cargo build --manifest-path rust-backend/Cargo.toml`
+- `npm run typecheck`
+
+## 上一轮 PR 范围
+
 本轮新增最小 Rust 目标 E2E harness，让 HTTP smoke 合同可对外部 Rust binary 执行，而不只覆盖 TypeScript in-process app：
 
 - 新增 `npm run test:rust-e2e`，命令先构建 `rust-backend/target/debug/auth-mini-rust-backend`，再运行默认 `npm test` 不扫描的 `rust-e2e`。

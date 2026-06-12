@@ -188,6 +188,13 @@
 - harness 必须在随机可用端口启动 Rust server，并覆盖 `GET /healthz`、未认证 `GET /me`、公开 auth endpoint CORS preflight、seeded email OTP verify happy path、认证后 `GET /me`、Ed25519 credential/start/verify happy path。
 - 本切片不迁移生产入口，不把 release binary 构建加入默认 PR 检查，不新增 WebAuthn ceremony 测试；WebAuthn 需等待确定性测试 authenticator 后另行切片。
 
+本轮 Rust E2E PR workflow 切片必须新增下列可验证行为：
+
+- 新增独立 `.github/workflows/rust-e2e.yml`，仅在面向 `main` 的 pull request 触发，不修改现有 `.github/workflows/pr-checks.yml`。
+- workflow 权限必须最小化为 `contents: read`，并按 PR 维度设置 concurrency 与 `cancel-in-progress: true`。
+- workflow 必须在 `ubuntu-latest` 上线性执行 checkout、Node 24/npm cache、Rust stable setup、Cargo cache、`npm ci`、`cargo build --manifest-path rust-backend/Cargo.toml` 与 `npm run test:rust-e2e`。
+- Rust E2E 暂时只作为独立 PR workflow 信号，不折入主 `PR checks` job；是否成为仓库保护主门禁需后续按稳定性和耗时单独决策。
+
 ## API 兼容范围
 
 第一阶段不替换生产 API。兼容范围限定为新增 Rust 切片自身的基础端点，不声明覆盖现有认证 API。
@@ -215,6 +222,7 @@
 - 第一阶段新增 Rust 构建与测试命令，不改变现有 `npm run build`、`npm test`、Dockerfile 和发布 workflow 的生产语义。
 - Rust 后端成为可选构建产物；生产入口切换必须等到公开 API、数据库语义和部署 smoke test 覆盖完成。
 - Rust 目标 E2E harness 先使用 debug binary 作为最小外部进程 smoke；是否在 CI 默认运行或改用 release binary 后续按耗时与发布策略单独决策。
+- Rust 目标 E2E 已新增独立 PR workflow，但不并入现有 `pr-checks` 主 job；该 workflow 提供单独 CI 信号，不改变生产入口、发布 workflow 或默认 `npm test` 语义。
 - Rust 发布准备不要求 Docker publishing；后续 release readiness 应聚焦 Rust 二进制跨平台 cross-compilation、产物校验和运行 smoke test。Docker runtime/publishing 仅在未来生产入口切换明确需要时另行立项。
 - Rust 二进制发布 workflow 必须在 `v*` tag 上构建 `auth-mini-rust-backend` release binary，并直接上传平台命名 archive 与 SHA-256 checksum 到 GitHub Release。
 - 初始 Rust release 目标限定为 GitHub-hosted runner 可直接验证的 `x86_64-unknown-linux-gnu`、`x86_64-apple-darwin`、`aarch64-apple-darwin`、`x86_64-pc-windows-msvc`；Linux aarch64 与 musl 目标暂不纳入首轮，后续需有稳定 linker/system dependency 验证后再加入。
@@ -251,6 +259,7 @@
 - `cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets -- -D warnings` 通过。
 - `cargo build --manifest-path rust-backend/Cargo.toml` 通过。
 - Rust release workflow YAML 可被本地 YAML 解析校验，并保持 tag 触发、`contents: write`、平台 archive、checksum 与 GitHub Release upload 行为。
+- Rust E2E workflow YAML 可被本地 YAML 解析校验，并保持 PR-to-`main` 触发、`contents: read`、PR concurrency、Node/Rust setup、Cargo cache、显式 Rust build 与 `npm run test:rust-e2e` 行为；该 workflow 独立于现有 `pr-checks` job。
 - `npm run typecheck` 通过，证明现有 TypeScript 入口未被破坏。
 - 第二阶段 Rust 测试覆盖数据库配置解析、schema 初始化和缺失 schema 拒绝。
 - 第三阶段当前切片 Rust 测试覆盖 `POST /email/verify` 的有效请求、无效字段值和额外字段拒绝。
