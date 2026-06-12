@@ -112,7 +112,7 @@
 - 保留 npm SDK 构建链路：`src/sdk/**`、`src/generated/**`、`openapi.yaml`、`openapi-ts.config.ts`、SDK browser/device/api exports。
 - 保留 Rust E2E 依赖的测试 helper：WebAuthn test helper、Ed25519 helper、`shared/crypto`。
 - 默认 Node 测试范围收敛为 SDK、generated、OpenAPI 构建/合同和 demo 相关单元测试；Node 后端/CLI integration tests 删除，核心运行时由 `npm run test:rust-e2e`、cargo test/clippy/build 覆盖。
-- 本切片不切换 Docker runtime；删除仍依赖 Node `dist/index.js` 的 Docker PR check 与 image release workflow。Docker runtime 若要继续发布，后续单独 PR 切换到 Rust binary。
+- 本切片不切换 Docker runtime；删除仍依赖 Node `dist/index.js` 的 Docker PR check、image release workflow 与对应 PR invariant check。Docker runtime 若要继续发布，后续单独 PR 切换到 Rust binary。
 
 验证命令：
 

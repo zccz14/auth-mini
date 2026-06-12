@@ -247,7 +247,7 @@
 - 初始 Rust release 目标限定为 GitHub-hosted runner 可直接验证的 `x86_64-unknown-linux-gnu`、`x86_64-apple-darwin`、`aarch64-apple-darwin`、`x86_64-pc-windows-msvc`；Linux aarch64 与 musl 目标暂不纳入首轮，后续需有稳定 linker/system dependency 验证后再加入。
 - Rust 二进制发布 workflow 不得为所有平台强制使用 Git Bash；Windows 构建必须使用 runner 默认 shell，避免 vendored OpenSSL 构建时选中缺少 `Locale::Maketext::Simple` 的 Git/MSYS Perl。
 - Rust release readiness 明确不包含 Docker publishing；现有 Docker image 发布链路保持独立，不作为 Rust 二进制发布门禁。
-- Node 后端/oclif 删除不在本轮切换 Docker runtime；已删除仍假设 Node `dist/index.js` 的 Docker PR check 与 image release workflow，Docker runtime 若要继续发布应作为后续独立 PR 切换到 Rust binary。
+- Node 后端/oclif 删除不在本轮切换 Docker runtime；已删除仍假设 Node `dist/index.js` 的 Docker PR check、image release workflow 与对应 PR invariant check，Docker runtime 若要继续发布应作为后续独立 PR 切换到 Rust binary。
 
 ## 非目标
 
