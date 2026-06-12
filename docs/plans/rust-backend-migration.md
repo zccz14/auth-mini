@@ -6,9 +6,9 @@
 
 - 新增 `rust-backend` crate。
 - 实现标准库 HTTP 服务。
-- 支持 `--host`、`--port`、`--openapi` 参数。
-- 实现 `GET /healthz`、`GET /openapi.yaml`、`GET /openapi.json`、未知路径响应。
-- 增加 Rust 单元测试，覆盖参数解析、响应状态、OpenAPI YAML 读取路径。
+- 支持 `--host`、`--port` 参数。
+- 实现 `GET /healthz`、`GET /openapi.yaml`、`GET /openapi.json`、未知路径响应；OpenAPI 文档由 Rust binary 内置。
+- 增加 Rust 单元测试，覆盖参数解析、响应状态、内置 OpenAPI YAML 响应。
 
 验证命令：
 
@@ -141,7 +141,7 @@
 - 未传 DB 路径时统一解析为 `~/.auth-mini/default.sqlite3`；解析失败时提示用户传显式 DB 路径。
 - 数据库初始化/open 前创建父目录，确保默认 `~/.auth-mini` 首次使用可成功。
 - 显式 DB 路径继续按用户输入执行；不新增多位置 fallback，不切换 npm/TypeScript CLI 入口。
-- 文档说明 Rust binary 的 `openapi.yaml` 与 `sql/schema.sql` 默认仍依赖当前工作目录，下载到仓库外运行时应显式传 `--openapi`/`--schema`。
+- 文档说明 Rust binary 的 `openapi.yaml` 与 `sql/schema.sql` 均内置到 binary；下载到仓库外运行时不需要外部 OpenAPI 文件，且 Rust CLI 不提供 `--openapi` 参数。既有 `--schema` 参数仅作为兼容参数继续接受。
 
 验证命令：
 

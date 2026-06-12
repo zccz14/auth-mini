@@ -100,9 +100,6 @@ struct ServeArgs {
     #[arg(long, default_value_t = 7777)]
     port: u16,
 
-    #[arg(long = "openapi", default_value = "openapi.yaml")]
-    openapi_path: PathBuf,
-
     #[arg(long = "db")]
     db_path: Option<PathBuf>,
 
@@ -130,9 +127,6 @@ struct StartArgs {
 
     #[arg(long = "issuer", value_parser = issuer_arg)]
     issuer: String,
-
-    #[arg(long = "openapi", default_value = "openapi.yaml")]
-    openapi_path: PathBuf,
 
     #[arg(
         long = "schema",
@@ -491,7 +485,6 @@ impl ServeArgs {
             host: self.host,
             port: self.port,
             issuer: crate::Config::default().issuer,
-            openapi_path: self.openapi_path,
             database: self.db_path.map(|db_path| crate::DatabaseConfig {
                 db_path,
                 schema_path: self
@@ -508,7 +501,6 @@ impl StartArgs {
             host: self.host,
             port: self.port,
             issuer: self.issuer,
-            openapi_path: self.openapi_path,
             database: Some(crate::DatabaseConfig {
                 db_path: db_path_or_default(self.db_path)?,
                 schema_path: self.schema_path,
@@ -1040,8 +1032,6 @@ mod tests {
             "0.0.0.0".to_string(),
             "--port".to_string(),
             "8080".to_string(),
-            "--openapi".to_string(),
-            "../openapi.yaml".to_string(),
             "--db".to_string(),
             "target/test-dbs/app.sqlite".to_string(),
             "--schema".to_string(),
@@ -1055,13 +1045,20 @@ mod tests {
                 host: "0.0.0.0".to_string(),
                 port: 8080,
                 issuer: "auth-mini".to_string(),
-                openapi_path: PathBuf::from("../openapi.yaml"),
                 database: Some(crate::DatabaseConfig {
                     db_path: PathBuf::from("target/test-dbs/app.sqlite"),
                     schema_path: PathBuf::from("../sql/schema.sql"),
                 }),
             })
         );
+    }
+
+    #[test]
+    fn rejects_serve_openapi_path_override() {
+        let error = parse_app_command(["--openapi".to_string(), "../openapi.yaml".to_string()])
+            .expect_err("openapi override is rejected");
+
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
     }
 
     #[test]
@@ -1353,7 +1350,6 @@ mod tests {
                 host: "0.0.0.0".to_string(),
                 port: 8080,
                 issuer: "https://issuer.example".to_string(),
-                openapi_path: PathBuf::from("openapi.yaml"),
                 database: Some(crate::DatabaseConfig {
                     db_path: PathBuf::from("target/test-dbs/app.sqlite"),
                     schema_path: PathBuf::from("sql/schema.sql"),
@@ -1386,7 +1382,6 @@ mod tests {
                 host: "127.0.0.1".to_string(),
                 port: 7777,
                 issuer: "https://issuer.example".to_string(),
-                openapi_path: PathBuf::from("openapi.yaml"),
                 database: Some(crate::DatabaseConfig {
                     db_path: expected_db_path.clone(),
                     schema_path: PathBuf::from("sql/schema.sql"),
@@ -1426,6 +1421,21 @@ mod tests {
                 db_path: expected_db_path,
             }
         );
+    }
+
+    #[test]
+    fn rejects_start_openapi_path_override() {
+        let error = parse_app_command([
+            "start".to_string(),
+            "target/test-dbs/app.sqlite".to_string(),
+            "--issuer".to_string(),
+            "https://issuer.example".to_string(),
+            "--openapi".to_string(),
+            "../openapi.yaml".to_string(),
+        ])
+        .expect_err("start openapi override is rejected");
+
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
     }
 
     #[test]

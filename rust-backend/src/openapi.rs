@@ -1,13 +1,13 @@
-use std::fs;
 use std::io;
-use std::path::Path;
 
-pub(crate) fn read_openapi_yaml(openapi_path: &Path) -> io::Result<String> {
-    fs::read_to_string(openapi_path)
+const OPENAPI_YAML: &str = include_str!("../../openapi.yaml");
+
+pub(crate) fn read_openapi_yaml() -> String {
+    OPENAPI_YAML.to_string()
 }
 
-pub(crate) fn read_openapi_json(openapi_path: &Path) -> io::Result<serde_json::Value> {
-    parse_openapi_json(&read_openapi_yaml(openapi_path)?)
+pub(crate) fn read_openapi_json() -> io::Result<serde_json::Value> {
+    parse_openapi_json(OPENAPI_YAML)
 }
 
 fn parse_openapi_json(yaml_text: &str) -> io::Result<serde_json::Value> {
@@ -41,5 +41,14 @@ mod tests {
         let error = parse_openapi_json("true\n").expect_err("scalar yaml is rejected");
 
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn embedded_yaml_and_json_use_the_same_document() {
+        let yaml = read_openapi_yaml();
+        let json = read_openapi_json().expect("embedded openapi yaml parses");
+
+        assert!(yaml.contains("title: auth-mini HTTP API"));
+        assert_eq!(json["openapi"], "3.1.0");
     }
 }
