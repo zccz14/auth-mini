@@ -35,7 +35,7 @@ checks: list[tuple[str, bool]] = [
     ('explicit deployment issuer', 'pass an explicit `start ... --issuer <public-origin>` command' in guide),
     ('embedded runtime assets', 'does not need `schema.sql` or `openapi.yaml` files at runtime' in guide),
     ('post start tasks', 'origin add' in guide and 'SMTP' in guide),
-    ('publishing boundary note', 'GHCR publishing' in guide and 'separate follow-up work' in guide),
+    ('ghcr publishing status', 'publishes `ghcr.io/zccz14/auth-mini` from `v*` release tags' in guide and 'Multi-architecture images and Cloudflared packaging are separate follow-up work' in guide),
 ]
 
 missing = [name for name, ok in checks if not ok]

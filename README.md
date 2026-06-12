@@ -173,18 +173,19 @@ Start the server:
 auth-mini start --port 7777 --issuer 'https://auth.your-domain.com'
 ```
 
-Docker runtime:
+Docker runtime from GHCR:
 
 ```bash
-docker build -f build/Dockerfile -t auth-mini:local .
 docker run --rm \
   -p 7777:7777 \
   -v auth-mini-data:/var/lib/auth-mini \
-  auth-mini:local \
+  ghcr.io/zccz14/auth-mini:latest \
   start /var/lib/auth-mini/auth-mini.sqlite --host 0.0.0.0 --port 7777 --issuer 'https://auth.your-domain.com'
 ```
 
-The image runs the Rust `auth-mini` binary directly as a non-root user. Its default command starts the service on port `7777` with SQLite at `/var/lib/auth-mini/auth-mini.sqlite`, so `docker run -p 7777:7777 -v auth-mini-data:/var/lib/auth-mini auth-mini:local` is enough for a local smoke run. Override the command as shown above for a production issuer.
+Use `ghcr.io/zccz14/auth-mini:v0.3.0` for a pinned release version, or `ghcr.io/zccz14/auth-mini:latest` for the latest release image. The image runs the Rust `auth-mini` binary directly as a non-root user. Its default command starts the service on port `7777` with SQLite at `/var/lib/auth-mini/auth-mini.sqlite`, so `docker run -p 7777:7777 -v auth-mini-data:/var/lib/auth-mini ghcr.io/zccz14/auth-mini:latest` is enough for a local smoke run. Override the command as shown above for a production issuer.
+
+To build the same runtime image locally from this repository, run `docker build -f build/Dockerfile -t auth-mini:local .`.
 
 When the Rust binary DB path is omitted, it uses `~/.auth-mini/default.sqlite3`. Commands that use a database create the SQLite file, parent directory, schema, and JWKS keys automatically when missing. Explicit DB paths and explicit `init` remain supported. The Rust binary prints the SQLite database path it uses to stderr so tab-separated command stdout stays machine-readable. The Rust binary embeds the database schema and `openapi.yaml`; existing `--schema` arguments are accepted for compatibility but runtime initialization uses the embedded schema. The Rust CLI has no `--openapi` parameter, and `/openapi.yaml` plus `/openapi.json` do not depend on the current working directory.
 
@@ -253,7 +254,7 @@ From there, typical integration looks like this:
 - CLI and operations: [docs/reference/cli-and-operations.md](docs/reference/cli-and-operations.md)
 - Docker deployment: [docs/deploy/docker-cloudflared.md](docs/deploy/docker-cloudflared.md)
 
-For the container runtime path, see [docs/deploy/docker-cloudflared.md](docs/deploy/docker-cloudflared.md). GHCR publishing and Cloudflared packaging are not part of the current Docker runtime.
+For the container runtime path, see [docs/deploy/docker-cloudflared.md](docs/deploy/docker-cloudflared.md). GHCR release images cover `linux/amd64`; Cloudflared packaging and multi-architecture images are not part of the current Docker runtime.
 
 ## Philosophy
 
