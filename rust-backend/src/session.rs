@@ -252,6 +252,7 @@ fn list_webauthn_credentials(
         Ok(json!({
             "id": row.get::<_, String>(0)?,
             "credential_id": row.get::<_, String>(0)?,
+            "transports": [],
             "rp_id": row.get::<_, String>(1)?,
             "last_used_at": row.get::<_, Option<String>>(2)?,
             "created_at": row.get::<_, String>(3)?,
@@ -434,6 +435,7 @@ mod tests {
             response["webauthn_credentials"][0]["credential_id"],
             "credential-1"
         );
+        assert_eq!(response["webauthn_credentials"][0]["transports"], json!([]));
         assert_eq!(response["ed25519_credentials"][0]["name"], "Laptop");
         assert_eq!(
             response["ed25519_credentials"][0]["public_key"],
