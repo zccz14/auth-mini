@@ -1,4 +1,4 @@
-use auth_mini_rust_backend::{
+use auth_mini::{
     parse_app_command_or_exit, run_init_command, run_origin_command, run_rotate_jwks_command,
     run_server, run_smtp_command, write_app_command_db_log, AppCommand,
 };

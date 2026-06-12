@@ -199,7 +199,7 @@ describe('oclif cli contract', () => {
     );
 
     expect(pkg.engines?.node).toBe('>=20.10.0');
-    expect(cliDoc).toContain('Node.js 20.10+');
+    expect(cliDoc).toContain('The npm/TypeScript CLI requires Node.js 20.10+');
   });
 
   it('prints help to stdout only', async () => {
@@ -216,8 +216,8 @@ describe('oclif cli contract', () => {
       'utf8',
     );
 
-    expect(cliDoc).toContain('npx auth-mini rotate jwks ./auth-mini.sqlite');
-    expect(cliDoc).toContain('npx auth-mini init ./auth-mini.sqlite');
+    expect(cliDoc).toContain('auth-mini rotate jwks');
+    expect(cliDoc).toContain('auth-mini init');
     expect(cliDoc).toContain(
       '`create` remains available as a compatibility alias',
     );
@@ -260,30 +260,30 @@ describe('oclif cli contract', () => {
       'utf8',
     );
 
-    expect(cliDoc).toContain('npx auth-mini init ./auth-mini.sqlite');
-    expect(cliDoc).toContain('npx auth-mini start ./auth-mini.sqlite \\');
+    expect(cliDoc).toContain('auth-mini init');
+    expect(cliDoc).toContain('auth-mini start \\');
     expect(cliDoc).toContain('--host 127.0.0.1');
     expect(cliDoc).toContain('--port 7777');
     expect(cliDoc).toContain('--issuer https://auth.zccz14.com');
     expect(cliDoc).toContain(
-      'npx auth-mini origin add ./auth-mini.sqlite --value https://app.example.com',
+      'auth-mini origin add --value https://app.example.com',
     );
-    expect(cliDoc).toContain('npx auth-mini origin list ./auth-mini.sqlite');
+    expect(cliDoc).toContain('auth-mini origin list');
     expect(cliDoc).toContain(
-      'npx auth-mini origin update ./auth-mini.sqlite --id 1 --value https://admin.example.com',
-    );
-    expect(cliDoc).toContain(
-      'npx auth-mini origin delete ./auth-mini.sqlite --id 1',
+      'auth-mini origin update --id 1 --value https://admin.example.com',
     );
     expect(cliDoc).toContain(
-      'npx auth-mini smtp add ./auth-mini.sqlite --host smtp.example.com --port 587',
-    );
-    expect(cliDoc).toContain('npx auth-mini smtp list ./auth-mini.sqlite');
-    expect(cliDoc).toContain(
-      'npx auth-mini smtp update ./auth-mini.sqlite --id 1 --secure true',
+      'auth-mini origin delete --id 1',
     );
     expect(cliDoc).toContain(
-      'npx auth-mini smtp delete ./auth-mini.sqlite --id 1',
+      'auth-mini smtp add --host smtp.example.com --port 587',
+    );
+    expect(cliDoc).toContain('auth-mini smtp list');
+    expect(cliDoc).toContain(
+      'auth-mini smtp update --id 1 --secure true',
+    );
+    expect(cliDoc).toContain(
+      'auth-mini smtp delete --id 1',
     );
     expect(cliDoc).not.toContain('https://auth.example.com');
     expect(cliDoc).not.toContain('--smtp-config');

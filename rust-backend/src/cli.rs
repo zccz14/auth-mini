@@ -74,7 +74,7 @@ pub enum SmtpCommand {
 }
 
 #[derive(Debug, Parser)]
-#[command(name = "auth-mini-rust-backend", disable_help_subcommand = true)]
+#[command(name = "auth-mini", disable_help_subcommand = true)]
 struct CliArgs {
     #[command(subcommand)]
     command: Option<CliCommand>,
@@ -450,7 +450,7 @@ pub fn write_app_command_db_log(command: &AppCommand, writer: &mut impl Write) -
 }
 
 fn parse_cli(args: impl IntoIterator<Item = String>) -> Result<AppCommand, CliParseError> {
-    let raw_args = std::iter::once("auth-mini-rust-backend".to_string()).chain(args);
+    let raw_args = std::iter::once("auth-mini".to_string()).chain(args);
     CliArgs::try_parse_from(raw_args)
         .map_err(CliParseError::Clap)?
         .into_app_command()

@@ -156,7 +156,7 @@
 
 本轮新增最小 Rust 目标 E2E harness，让 HTTP smoke 合同可对外部 Rust binary 执行，而不只覆盖 TypeScript in-process app：
 
-- 新增 `npm run test:rust-e2e`，命令先构建 `rust-backend/target/debug/auth-mini-rust-backend`，再运行默认 `npm test` 不扫描的 `rust-e2e`。
+- 新增 `npm run test:rust-e2e`，命令先构建 `rust-backend/target/debug/auth-mini`，再运行默认 `npm test` 不扫描的 `rust-e2e`。
 - harness 在 `.tmp/rust-e2e` 下创建临时 SQLite DB，通过 Rust CLI `init` 初始化 schema/JWKS，直接写入固定 OTP 作为登录前置状态。
 - harness 在随机可用端口启动 Rust server，覆盖 `GET /healthz`、未认证 `GET /me`、`/email/start` CORS preflight、`POST /email/verify` happy path、认证后 `/me`、Ed25519 credential/start/verify happy path 和 Ed25519 token `/me`。
 - 本轮不改造现有 TypeScript integration tests，不把 Rust E2E 加入默认 `npm test`，不要求 release binary 构建，不实现 WebAuthn ceremony E2E。
@@ -175,7 +175,7 @@
 本轮继续推进 Rust release readiness，新增 tag 触发的 GitHub Release 二进制发布 workflow：
 
 - 新增 `.github/workflows/release.yml`，仅在 `v*` tag push 时运行，并使用 `permissions: contents: write` 上传 GitHub Release assets。
-- 采用 GitHub-hosted runner matrix 直接构建 `auth-mini-rust-backend` release binary：Linux x86_64、macOS x86_64、macOS aarch64、Windows x86_64。
+- 采用 GitHub-hosted runner matrix 直接构建 `auth-mini` release binary：Linux x86_64、macOS x86_64、macOS aarch64、Windows x86_64。
 - 每个目标产出平台命名 archive：Unix 使用 `.tar.gz`，Windows 使用 `.zip`；每个 archive 同时产出 `.sha256` checksum。
 - workflow 使用各 runner 默认 shell 执行构建；打包逻辑移入 `scripts/package-rust-release.py`，避免 Windows 在 Git Bash 下构建 vendored OpenSSL 时选中缺少 `Locale::Maketext::Simple` 的 Git/MSYS Perl。
 - 首轮不加入 Linux aarch64 或 musl，避免在未验证 linker/system dependency 前引入脆弱 cross toolchain。

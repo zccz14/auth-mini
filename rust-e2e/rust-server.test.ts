@@ -13,7 +13,7 @@ import { hashValue } from '../src/shared/crypto.js';
 const repoRoot = resolve(import.meta.dirname, '..');
 const binaryPath = resolve(
   repoRoot,
-  'rust-backend/target/debug/auth-mini-rust-backend',
+  'rust-backend/target/debug/auth-mini',
 );
 const tempRoot = resolve(repoRoot, '.tmp/rust-e2e');
 const webauthnOrigin = 'https://app.example.com';

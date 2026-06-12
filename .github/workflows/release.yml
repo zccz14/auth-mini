@@ -23,20 +23,20 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            binary: auth-mini-rust-backend
-            archive: auth-mini-rust-backend-x86_64-unknown-linux-gnu.tar.gz
+            binary: auth-mini
+            archive: auth-mini-x86_64-unknown-linux-gnu.tar.gz
           - os: macos-latest
             target: x86_64-apple-darwin
-            binary: auth-mini-rust-backend
-            archive: auth-mini-rust-backend-x86_64-apple-darwin.tar.gz
+            binary: auth-mini
+            archive: auth-mini-x86_64-apple-darwin.tar.gz
           - os: macos-latest
             target: aarch64-apple-darwin
-            binary: auth-mini-rust-backend
-            archive: auth-mini-rust-backend-aarch64-apple-darwin.tar.gz
+            binary: auth-mini
+            archive: auth-mini-aarch64-apple-darwin.tar.gz
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            binary: auth-mini-rust-backend.exe
-            archive: auth-mini-rust-backend-x86_64-pc-windows-msvc.zip
+            binary: auth-mini.exe
+            archive: auth-mini-x86_64-pc-windows-msvc.zip
 
     steps:
       - name: Checkout repository

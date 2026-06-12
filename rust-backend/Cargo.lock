@@ -119,7 +119,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "auth-mini-rust-backend"
+name = "auth-mini"
 version = "0.1.0"
 dependencies = [
  "chrono",
