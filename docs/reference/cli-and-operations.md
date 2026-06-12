@@ -16,7 +16,7 @@ For the Rust binary, the instance path is optional on `init`, `start`, `origin`,
 
 ```bash
 auth-mini-rust-backend init
-auth-mini-rust-backend start --issuer https://auth.example.com
+auth-mini-rust-backend start --issuer https://auth.your-domain.com
 auth-mini-rust-backend origin add --value https://app.example.com
 ```
 
