@@ -45,6 +45,14 @@
 - schema 校验覆盖 `users`、`sessions`、`jwks_keys`、`allowed_origins`、`webauthn_credentials`、`ed25519_credentials` 的后续迁移所需列。
 - schema 缺失时启动失败；不得静默降级为无数据库模式。
 
+当前 Rust 发布二进制的数据库易用性必须满足：
+
+- `init` 仍保留为幂等显式命令，但不再是首次运行前置步骤。
+- `start`、裸 serve `--db`、`origin`、`smtp`、`rotate jwks` 在打开数据库前必须使用同一个 Rust 内置 schema 初始化路径；当 SQLite 文件不存在时创建父目录、创建 schema，并补齐 `CURRENT` 与 `STANDBY` JWKS key。
+- 省略数据库路径时使用 `~/.auth-mini/default.sqlite3`；显式路径仍按用户传入路径使用。
+- 使用数据库的 Rust CLI/运行时路径必须向 stderr 打印一行 `auth-mini SQLite database: <path>`；`origin list`、`smtp list` 等管理命令 stdout 仍只输出机器可读的制表符分隔行。
+- 发布二进制不得依赖工作目录中的 `sql/schema.sql` 才能完成数据库初始化；schema 来源为 Rust 内置内容。既有 `--schema` 参数仅作为兼容参数继续接受，不参与运行时初始化。`openapi.yaml` 的默认路径行为不在本轮改变。
+
 第三阶段当前切片必须新增下列可验证行为：
 
 - Rust 后端开始覆盖公开认证端点 `POST /email/verify` 的请求边界。

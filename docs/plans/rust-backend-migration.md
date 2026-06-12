@@ -27,6 +27,13 @@
 - 增加 Rust 测试，覆盖数据库参数解析、schema 初始化、缺失 schema 拒绝。
 - 不迁移 TypeScript 的旧数据库兼容修复路径；该兼容逻辑后续如需迁移，必须明确旧版本依赖和删除条件。
 
+当前 Rust 发布二进制易用性补充：
+
+- 将 Rust CLI 和服务启动的数据库打开路径收敛到一个内置 schema 初始化函数。
+- `start`、裸 serve `--db`、`origin`、`smtp`、`rotate jwks` 在数据库文件缺失时自动创建父目录、schema 和 JWKS `CURRENT`/`STANDBY` key；显式 `init` 保持幂等可用。
+- 使用数据库的 Rust 二进制命令在 stderr 输出一行当前 SQLite 路径，不写入管理命令 stdout。
+- Rust E2E 不再依赖显式 `init` 准备主流程数据库，仍使用仓库内临时目录保证确定性。
+
 验证命令：
 
 - `cargo fmt --manifest-path rust-backend/Cargo.toml --check`

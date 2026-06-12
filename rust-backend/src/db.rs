@@ -3,6 +3,10 @@ use std::path::Path;
 
 use rusqlite::Connection;
 
+use crate::jwks::bootstrap_keys;
+
+const SCHEMA_SQL: &str = include_str!("../../sql/schema.sql");
+
 pub fn initialize_database(
     db_path: &Path,
     schema_path: &Path,
@@ -10,6 +14,14 @@ pub fn initialize_database(
     let schema = fs::read_to_string(schema_path)?;
 
     initialize_database_from_schema(db_path, &schema)
+}
+
+pub fn initialize_runtime_database(db_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    initialize_database_from_schema(db_path, SCHEMA_SQL)?;
+    let connection = Connection::open(db_path)?;
+    bootstrap_keys(&connection)?;
+
+    Ok(())
 }
 
 pub fn initialize_database_from_schema(
@@ -196,6 +208,39 @@ mod tests {
 
         let connection = Connection::open(db_path).expect("database opens");
         assert_required_schema(&connection).expect("required schema is present");
+    }
+
+    #[test]
+    fn runtime_database_initializes_embedded_schema_and_jwks_idempotently() {
+        let db_path = test_db_path("runtime-implicit");
+
+        initialize_runtime_database(&db_path).expect("runtime database initializes");
+        let first_connection = Connection::open(&db_path).expect("database opens");
+        let first_current_kid: String = first_connection
+            .query_row(
+                "SELECT kid FROM jwks_keys WHERE id = 'CURRENT'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("current key reads");
+        drop(first_connection);
+
+        initialize_runtime_database(&db_path).expect("existing runtime database still initializes");
+
+        let connection = Connection::open(db_path).expect("database opens");
+        assert_required_schema(&connection).expect("required schema is present");
+        let keys: i64 = connection
+            .query_row("SELECT COUNT(*) FROM jwks_keys", [], |row| row.get(0))
+            .expect("jwks count reads");
+        assert_eq!(keys, 2);
+        let current_kid: String = connection
+            .query_row(
+                "SELECT kid FROM jwks_keys WHERE id = 'CURRENT'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("current key reads");
+        assert_eq!(current_kid, first_current_kid);
     }
 
     #[test]

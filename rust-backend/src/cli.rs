@@ -5,10 +5,9 @@ use clap::{Args, Parser, Subcommand};
 use rusqlite::{params, Connection, OptionalExtension};
 use url::{Host, Url};
 
-use crate::db::initialize_database_from_schema;
-use crate::jwks::{bootstrap_keys, rotate_keys};
+use crate::db::initialize_runtime_database;
+use crate::jwks::rotate_keys;
 
-const SCHEMA_SQL: &str = include_str!("../../sql/schema.sql");
 const DEFAULT_DB_PATH_DISPLAY: &str = "~/.auth-mini/default.sqlite3";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -107,7 +106,11 @@ struct ServeArgs {
     #[arg(long = "db")]
     db_path: Option<PathBuf>,
 
-    #[arg(long = "schema", requires = "db_path")]
+    #[arg(
+        long = "schema",
+        requires = "db_path",
+        help = "Accepted for compatibility; runtime DB initialization uses the embedded schema"
+    )]
     schema_path: Option<PathBuf>,
 }
 
@@ -131,7 +134,11 @@ struct StartArgs {
     #[arg(long = "openapi", default_value = "openapi.yaml")]
     openapi_path: PathBuf,
 
-    #[arg(long = "schema", default_value = "sql/schema.sql")]
+    #[arg(
+        long = "schema",
+        default_value = "sql/schema.sql",
+        help = "Accepted for compatibility; runtime DB initialization uses the embedded schema"
+    )]
     schema_path: PathBuf,
 }
 
@@ -432,13 +439,20 @@ pub fn run_smtp_command(command: SmtpCommand, writer: &mut impl Write) -> io::Re
 }
 
 pub fn run_init_command(db_path: PathBuf, _writer: &mut impl Write) -> io::Result<()> {
-    let connection = open_cli_database(&db_path)?;
-    bootstrap_keys(&connection).map_err(io_other)
+    initialize_runtime_database(&db_path).map_err(io_other)
 }
 
 pub fn run_rotate_jwks_command(db_path: PathBuf, _writer: &mut impl Write) -> io::Result<()> {
     let mut connection = open_cli_database(&db_path)?;
     rotate_keys(&mut connection).map_err(|error| invalid_input(error.to_string()))
+}
+
+pub fn write_app_command_db_log(command: &AppCommand, writer: &mut impl Write) -> io::Result<()> {
+    if let Some(db_path) = app_command_db_path(command) {
+        writeln!(writer, "auth-mini SQLite database: {}", db_path.display())?;
+    }
+
+    Ok(())
 }
 
 fn parse_cli(args: impl IntoIterator<Item = String>) -> Result<AppCommand, CliParseError> {
@@ -598,8 +612,38 @@ fn issuer_arg(value: &str) -> Result<String, String> {
 }
 
 fn open_cli_database(db_path: &PathBuf) -> io::Result<Connection> {
-    initialize_database_from_schema(db_path, SCHEMA_SQL).map_err(io_other)?;
+    initialize_runtime_database(db_path).map_err(io_other)?;
     Connection::open(db_path).map_err(io_other)
+}
+
+fn app_command_db_path(command: &AppCommand) -> Option<&Path> {
+    match command {
+        AppCommand::Serve(config) => config
+            .database
+            .as_ref()
+            .map(|database| database.db_path.as_path()),
+        AppCommand::Init { db_path } | AppCommand::RotateJwks { db_path } => Some(db_path),
+        AppCommand::Origin(command) => Some(origin_command_db_path(command)),
+        AppCommand::Smtp(command) => Some(smtp_command_db_path(command)),
+    }
+}
+
+fn origin_command_db_path(command: &OriginCommand) -> &Path {
+    match command {
+        OriginCommand::Add { db_path, .. }
+        | OriginCommand::List { db_path }
+        | OriginCommand::Update { db_path, .. }
+        | OriginCommand::Delete { db_path, .. } => db_path,
+    }
+}
+
+fn smtp_command_db_path(command: &SmtpCommand) -> &Path {
+    match command {
+        SmtpCommand::Add { db_path, .. }
+        | SmtpCommand::List { db_path }
+        | SmtpCommand::Update { db_path, .. }
+        | SmtpCommand::Delete { db_path, .. } => db_path,
+    }
 }
 
 fn cli_parse_error_to_io_error(error: CliParseError) -> io::Error {
@@ -1151,6 +1195,43 @@ mod tests {
     }
 
     #[test]
+    fn origin_list_implicitly_initializes_missing_database_without_stdout_log() {
+        let db_path = test_db_path("origin-implicit-init");
+        let mut output = Vec::new();
+
+        run_origin_command(
+            OriginCommand::List {
+                db_path: db_path.clone(),
+            },
+            &mut output,
+        )
+        .expect("origin list initializes missing database");
+
+        assert!(output.is_empty());
+        assert!(db_path.exists());
+        let connection = Connection::open(db_path).expect("database opens");
+        let rows = read_jwks_rows(&connection);
+        assert_eq!(rows.len(), 2);
+    }
+
+    #[test]
+    fn db_path_log_uses_separate_writer() {
+        let db_path = PathBuf::from("target/test-dbs/log.sqlite");
+        let command = AppCommand::Origin(OriginCommand::List {
+            db_path: db_path.clone(),
+        });
+        let mut stderr = Vec::new();
+
+        write_app_command_db_log(&command, &mut stderr).expect("db path log writes");
+
+        let text = String::from_utf8(stderr).expect("log is utf-8");
+        assert_eq!(
+            text,
+            format!("auth-mini SQLite database: {}\n", db_path.display())
+        );
+    }
+
+    #[test]
     fn rejects_invalid_origin_and_missing_delete_target() {
         let db_path = test_db_path("origin-errors");
         let mut output = Vec::new();
@@ -1396,7 +1477,7 @@ mod tests {
     }
 
     #[test]
-    fn rotate_jwks_promotes_standby_and_requires_existing_slots() {
+    fn rotate_jwks_promotes_standby_and_implicitly_initializes_missing_slots() {
         let db_path = test_db_path("rotate-jwks-command");
         let mut output = Vec::new();
 
@@ -1419,9 +1500,10 @@ mod tests {
         assert_ne!(after[1].1, before[1].1);
 
         let empty_db_path = test_db_path("rotate-empty");
-        let missing_slots = run_rotate_jwks_command(empty_db_path, &mut output)
-            .expect_err("missing slots are rejected");
-        assert_eq!(missing_slots.kind(), io::ErrorKind::InvalidInput);
+        run_rotate_jwks_command(empty_db_path.clone(), &mut output)
+            .expect("rotate initializes missing slots");
+        let connection = Connection::open(empty_db_path).expect("database opens");
+        assert_eq!(read_jwks_rows(&connection).len(), 2);
     }
 
     #[test]

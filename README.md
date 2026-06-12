@@ -163,13 +163,12 @@ npx auth-mini start ./auth-mini.sqlite --port 7777 --issuer 'https://auth.your-d
 Rust release binary convenience:
 
 ```bash
-auth-mini-rust-backend init
 auth-mini-rust-backend smtp add --from-email 'sample@your-domain.com' --from-name 'sample-name' --host 'smtp.sample.com' --port 465 --secure --username 'sample@your-domain.com' --password '<smtp-password>'
 auth-mini-rust-backend origin add --value 'https://frontend.your-domain.com'
 auth-mini-rust-backend start --port 7777 --issuer 'https://auth.your-domain.com'
 ```
 
-When the Rust binary DB path is omitted, it uses `~/.auth-mini/default.sqlite3`. Explicit DB paths are still supported. The Rust binary still reads default `openapi.yaml` and `sql/schema.sql` relative to the current working directory; run from the repo or pass `--openapi`/`--schema` when using a downloaded binary elsewhere.
+When the Rust binary DB path is omitted, it uses `~/.auth-mini/default.sqlite3`. Commands that use a database create the SQLite file, parent directory, schema, and JWKS keys automatically when missing. Explicit DB paths and explicit `init` remain supported. The Rust binary prints the SQLite database path it uses to stderr so tab-separated command stdout stays machine-readable. The Rust binary embeds the database schema; existing `--schema` arguments are accepted for compatibility but runtime initialization uses the embedded schema. Only `openapi.yaml` still defaults to the current working directory, so pass `--openapi` when using a downloaded binary elsewhere.
 
 Then deploy it with Cloudflare Tunnel or your preferred hosting method.
 
