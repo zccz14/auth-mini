@@ -32,7 +32,7 @@
 第一阶段 Rust 服务必须保留下列可验证行为：
 
 - 默认监听 `127.0.0.1:7777`。
-- 支持通过 `--host`、`--port`、`--openapi` 指定监听地址和 OpenAPI 文件路径。
+- 支持通过 `--host`、`--port` 指定监听地址；OpenAPI 文档由 Rust binary 内置，不提供路径覆盖参数。
 - `GET /healthz` 返回 `200` 和 `ok`。
 - `GET /openapi.yaml` 返回仓库 OpenAPI YAML 原文。
 - `GET /openapi.json` 返回由同一 `openapi.yaml` 转换得到的 JSON 文档。
@@ -51,7 +51,7 @@
 - `start`、裸 serve `--db`、`origin`、`smtp`、`rotate jwks` 在打开数据库前必须使用同一个 Rust 内置 schema 初始化路径；当 SQLite 文件不存在时创建父目录、创建 schema，并补齐 `CURRENT` 与 `STANDBY` JWKS key。
 - 省略数据库路径时使用 `~/.auth-mini/default.sqlite3`；显式路径仍按用户传入路径使用。
 - 使用数据库的 Rust CLI/运行时路径必须向 stderr 打印一行 `auth-mini SQLite database: <path>`；`origin list`、`smtp list` 等管理命令 stdout 仍只输出机器可读的制表符分隔行。
-- 发布二进制不得依赖工作目录中的 `sql/schema.sql` 才能完成数据库初始化；schema 来源为 Rust 内置内容。既有 `--schema` 参数仅作为兼容参数继续接受，不参与运行时初始化。`openapi.yaml` 的默认路径行为不在本轮改变。
+- 发布二进制不得依赖工作目录中的 `sql/schema.sql` 才能完成数据库初始化；schema 来源为 Rust 内置内容。既有 `--schema` 参数仅作为兼容参数继续接受，不参与运行时初始化。Rust `/openapi.yaml` 与 `/openapi.json` 使用编译进 binary 的仓库 `openapi.yaml`，不依赖工作目录或外部 OpenAPI 文件。
 
 第三阶段当前切片必须新增下列可验证行为：
 

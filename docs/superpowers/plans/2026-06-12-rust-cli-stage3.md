@@ -10,7 +10,7 @@
 - [x] 先写 Rust CLI 单元测试，覆盖解析、DB 变更、错误路径和 start 配置边界。
 - [x] 实现 `init`：初始化 schema 并播种 `CURRENT` / `STANDBY`。
 - [x] 实现 `rotate jwks`：事务性写入新 `STANDBY` 后晋升旧 `STANDBY` 到 `CURRENT`。
-- [x] 实现 `start`：解析 `INSTANCE`、`--issuer`、`--host`、`--port`、`--openapi`、`--schema` 并传入 Rust server。
+- [x] 实现 `start`：解析 `INSTANCE`、`--issuer`、`--host`、`--port`、`--schema` 并传入 Rust server；Rust binary 内置 `openapi.yaml`，不提供 `--openapi` 覆盖参数。
 - [x] 将 Rust HTTP token issuer 从硬编码 `auth-mini` 改为 `Config.issuer`。
 - [x] 跑 Rust fmt、clippy、test、build。
 - [x] 跑最小 npm typecheck/build/CLI 测试，确认未破坏 TS CLI/package/Docker 当前入口。

@@ -107,7 +107,7 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
     }
 
     if request.method == "GET" && request.path == "/openapi.yaml" {
-        let body = read_openapi_yaml(&config.openapi_path)?;
+        let body = read_openapi_yaml();
         return Ok(cors(
             request,
             Response::new(200, "application/yaml; charset=utf-8", body),
@@ -115,7 +115,7 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
     }
 
     if request.method == "GET" && request.path == "/openapi.json" {
-        let body = read_openapi_json(&config.openapi_path)?;
+        let body = read_openapi_json()?;
         return Ok(cors(request, Response::json_value(200, body)));
     }
 
@@ -784,11 +784,7 @@ mod tests {
     }
 
     #[test]
-    fn serves_openapi_yaml_from_configured_path() {
-        let config = Config {
-            openapi_path: PathBuf::from("../openapi.yaml"),
-            ..Config::default()
-        };
+    fn serves_embedded_openapi_yaml() {
         let response = route_request(
             &Request {
                 method: "GET".to_string(),
@@ -796,9 +792,9 @@ mod tests {
                 headers: Vec::new(),
                 body: String::new(),
             },
-            &config,
+            &Config::default(),
         )
-        .expect("openapi yaml is read");
+        .expect("openapi yaml response builds");
 
         assert_eq!(response.status, 200);
         assert_eq!(response.content_type, "application/yaml; charset=utf-8");
@@ -807,10 +803,6 @@ mod tests {
 
     #[test]
     fn serves_openapi_json_contract() {
-        let config = Config {
-            openapi_path: PathBuf::from("../openapi.yaml"),
-            ..Config::default()
-        };
         let response = route_request(
             &Request {
                 method: "GET".to_string(),
@@ -818,7 +810,7 @@ mod tests {
                 headers: Vec::new(),
                 body: String::new(),
             },
-            &config,
+            &Config::default(),
         )
         .expect("json response builds");
         let document: serde_json::Value =
@@ -832,10 +824,6 @@ mod tests {
 
     #[test]
     fn public_openapi_routes_are_registered() {
-        let config = Config {
-            openapi_path: PathBuf::from("../openapi.yaml"),
-            ..Config::default()
-        };
         let routes = [
             ("POST", "/email/start", r#"{"email":"user@example.com"}"#),
             (
@@ -907,7 +895,7 @@ mod tests {
                     headers: Vec::new(),
                     body: body.to_string(),
                 },
-                &config,
+                &Config::default(),
             )
             .expect("route response builds");
 

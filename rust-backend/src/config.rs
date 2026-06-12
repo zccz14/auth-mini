@@ -6,7 +6,6 @@ pub struct Config {
     pub host: String,
     pub port: u16,
     pub issuer: String,
-    pub openapi_path: PathBuf,
     pub database: Option<DatabaseConfig>,
 }
 
@@ -31,9 +30,6 @@ impl Config {
                     config.port = port.parse().map_err(|_| {
                         io::Error::new(io::ErrorKind::InvalidInput, "--port must be a u16")
                     })?;
-                }
-                "--openapi" => {
-                    config.openapi_path = PathBuf::from(next_arg(&mut args, "--openapi")?)
                 }
                 "--db" => db_path = Some(PathBuf::from(next_arg(&mut args, "--db")?)),
                 "--schema" => schema_path = Some(PathBuf::from(next_arg(&mut args, "--schema")?)),
@@ -68,7 +64,6 @@ impl Default for Config {
             host: "127.0.0.1".to_string(),
             port: 7777,
             issuer: "auth-mini".to_string(),
-            openapi_path: PathBuf::from("openapi.yaml"),
             database: None,
         }
     }
@@ -94,7 +89,6 @@ mod tests {
         assert_eq!(config.host, "127.0.0.1");
         assert_eq!(config.port, 7777);
         assert_eq!(config.issuer, "auth-mini");
-        assert_eq!(config.openapi_path, PathBuf::from("openapi.yaml"));
         assert_eq!(config.database, None);
     }
 
@@ -105,14 +99,19 @@ mod tests {
             "0.0.0.0".to_string(),
             "--port".to_string(),
             "8080".to_string(),
-            "--openapi".to_string(),
-            "../openapi.yaml".to_string(),
         ])
         .expect("explicit config parses");
 
         assert_eq!(config.host, "0.0.0.0");
         assert_eq!(config.port, 8080);
-        assert_eq!(config.openapi_path, PathBuf::from("../openapi.yaml"));
+    }
+
+    #[test]
+    fn rejects_openapi_path_override() {
+        let error = Config::from_args(["--openapi".to_string(), "../openapi.yaml".to_string()])
+            .expect_err("openapi override is rejected");
+
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
     }
 
     #[test]

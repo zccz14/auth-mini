@@ -355,8 +355,6 @@ function startServer(dbPath: string, port: number, issuer: string) {
       '127.0.0.1',
       '--port',
       String(port),
-      '--openapi',
-      'openapi.yaml',
     ],
     { cwd: repoRoot },
   );

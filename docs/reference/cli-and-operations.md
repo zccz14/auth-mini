@@ -20,7 +20,7 @@ auth-mini-rust-backend start --issuer https://auth.your-domain.com
 auth-mini-rust-backend origin add --value https://app.example.com
 ```
 
-Explicit paths remain supported, for example `auth-mini-rust-backend init ./auth-mini.sqlite`. Explicit `init` remains available and is idempotent. The Rust binary embeds the database schema for release-binary use; existing `--schema` arguments are accepted for compatibility but runtime initialization uses the embedded schema. Only `openapi.yaml` still defaults to the current working directory, so pass `--openapi` when running outside the repository layout.
+Explicit paths remain supported, for example `auth-mini-rust-backend init ./auth-mini.sqlite`. Explicit `init` remains available and is idempotent. The Rust binary embeds the database schema and `openapi.yaml` for release-binary use; existing `--schema` arguments are accepted for compatibility but runtime initialization uses the embedded schema. Rust `/openapi.yaml` and `/openapi.json` do not depend on the current working directory, and the Rust CLI has no `--openapi` override parameter.
 
 The Rust binary prints one `auth-mini SQLite database: <path>` line to stderr for database-using commands. Management command stdout remains tab-separated rows for scripts.
 
