@@ -235,7 +235,7 @@
 - Rust 目标 E2E harness 先使用 debug binary 作为最小外部进程 smoke；是否在 CI 默认运行或改用 release binary 后续按耗时与发布策略单独决策。
 - Rust 目标 E2E 已新增独立 PR workflow，但不并入现有 `pr-checks` 主 job；该 workflow 提供单独 CI 信号，不改变生产入口、发布 workflow 或默认 `npm test` 语义。
 - Rust 发布准备不要求 Docker publishing；后续 release readiness 应聚焦 Rust 二进制跨平台 cross-compilation、产物校验和运行 smoke test。Docker runtime/publishing 仅在未来生产入口切换明确需要时另行立项。
-- Rust 二进制发布 workflow 必须在 `v*` tag 上构建 `auth-mini-rust-backend` release binary，并直接上传平台命名 archive 与 SHA-256 checksum 到 GitHub Release。
+- Rust 二进制发布 workflow 必须在 `v*` tag 上构建 `auth-mini` release binary，并直接上传平台命名 archive 与 SHA-256 checksum 到 GitHub Release。
 - 初始 Rust release 目标限定为 GitHub-hosted runner 可直接验证的 `x86_64-unknown-linux-gnu`、`x86_64-apple-darwin`、`aarch64-apple-darwin`、`x86_64-pc-windows-msvc`；Linux aarch64 与 musl 目标暂不纳入首轮，后续需有稳定 linker/system dependency 验证后再加入。
 - Rust 二进制发布 workflow 不得为所有平台强制使用 Git Bash；Windows 构建必须使用 runner 默认 shell，避免 vendored OpenSSL 构建时选中缺少 `Locale::Maketext::Simple` 的 Git/MSYS Perl。
 - Rust release readiness 明确不包含 Docker publishing；现有 Docker image 发布链路保持独立，不作为 Rust 二进制发布门禁。

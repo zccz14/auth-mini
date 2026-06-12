@@ -1,26 +1,38 @@
 # CLI and operations
 
-Requires Node.js 20.10+ (the published CLI uses modern ESM, JSON import attributes, and top-level `await`).
+Install the Rust release binary for your platform from GitHub Releases, verify its `.sha256` checksum, extract it, and put `auth-mini` on `PATH`:
+
+```bash
+curl -LO https://github.com/zccz14/auth-mini/releases/download/v0.3.0/auth-mini-x86_64-unknown-linux-gnu.tar.gz
+curl -LO https://github.com/zccz14/auth-mini/releases/download/v0.3.0/auth-mini-x86_64-unknown-linux-gnu.tar.gz.sha256
+shasum -a 256 -c auth-mini-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf auth-mini-x86_64-unknown-linux-gnu.tar.gz
+chmod +x auth-mini
+sudo mv auth-mini /usr/local/bin/auth-mini
+auth-mini --help
+```
+
+Use the matching archive for your platform from the GitHub Release assets. The npm/TypeScript CLI requires Node.js 20.10+ and remains available only as a legacy transition path.
 
 ## Instance setup
 
 Initialize an auth-mini instance (currently a SQLite database path):
 
 ```bash
-npx auth-mini init ./auth-mini.sqlite
+auth-mini init
 ```
 
 `<instance>` currently means the path to your auth-mini SQLite database file.
 
-For the Rust binary, the instance path is optional on `init`, `start`, `origin`, `smtp`, and `rotate jwks`. When omitted, it uses `~/.auth-mini/default.sqlite3`. Commands that use a database initialize the SQLite file automatically when it is missing, including parent directory creation, schema creation, and JWKS key bootstrap:
+The instance path is optional on `init`, `start`, `origin`, `smtp`, and `rotate jwks`. When omitted, it uses `~/.auth-mini/default.sqlite3`. Commands that use a database initialize the SQLite file automatically when it is missing, including parent directory creation, schema creation, and JWKS key bootstrap:
 
 ```bash
-auth-mini-rust-backend init
-auth-mini-rust-backend start --issuer https://auth.your-domain.com
-auth-mini-rust-backend origin add --value https://app.example.com
+auth-mini init
+auth-mini start --issuer https://auth.your-domain.com
+auth-mini origin add --value https://app.example.com
 ```
 
-Explicit paths remain supported, for example `auth-mini-rust-backend init ./auth-mini.sqlite`. Explicit `init` remains available and is idempotent. The Rust binary embeds the database schema and `openapi.yaml` for release-binary use; existing `--schema` arguments are accepted for compatibility but runtime initialization uses the embedded schema. Rust `/openapi.yaml` and `/openapi.json` do not depend on the current working directory, and the Rust CLI has no `--openapi` override parameter.
+Explicit paths remain supported, for example `auth-mini init ./auth-mini.sqlite`. Explicit `init` remains available and is idempotent. The Rust binary embeds the database schema and `openapi.yaml` for release-binary use; existing `--schema` arguments are accepted for compatibility but runtime initialization uses the embedded schema. Rust `/openapi.yaml` and `/openapi.json` do not depend on the current working directory, and the Rust CLI has no `--openapi` override parameter.
 
 The Rust binary prints one `auth-mini SQLite database: <path>` line to stderr for database-using commands. Management command stdout remains tab-separated rows for scripts.
 
@@ -31,10 +43,10 @@ The Rust binary prints one `auth-mini SQLite database: <path>` line to stderr fo
 Manage browser page origins for WebAuthn and related origin checks with the `origin` topic. This does not control HTTP CORS; auth-mini serves `Access-Control-Allow-Origin: *` on CORS responses.
 
 ```bash
-npx auth-mini origin add ./auth-mini.sqlite --value https://app.example.com
-npx auth-mini origin list ./auth-mini.sqlite
-npx auth-mini origin update ./auth-mini.sqlite --id 1 --value https://admin.example.com
-npx auth-mini origin delete ./auth-mini.sqlite --id 1
+auth-mini origin add --value https://app.example.com
+auth-mini origin list
+auth-mini origin update --id 1 --value https://admin.example.com
+auth-mini origin delete --id 1
 ```
 
 ## SMTP configuration
@@ -42,10 +54,10 @@ npx auth-mini origin delete ./auth-mini.sqlite --id 1
 Manage SMTP configs with the `smtp` topic:
 
 ```bash
-npx auth-mini smtp add ./auth-mini.sqlite --host smtp.example.com --port 587 --username mailer --password secret --from-email noreply@example.com
-npx auth-mini smtp list ./auth-mini.sqlite
-npx auth-mini smtp update ./auth-mini.sqlite --id 1 --secure true
-npx auth-mini smtp delete ./auth-mini.sqlite --id 1
+auth-mini smtp add --host smtp.example.com --port 587 --username mailer --password secret --from-email noreply@example.com
+auth-mini smtp list
+auth-mini smtp update --id 1 --secure true
+auth-mini smtp delete --id 1
 ```
 
 ## Starting the server
@@ -53,7 +65,7 @@ npx auth-mini smtp delete ./auth-mini.sqlite --id 1
 `--issuer` is the externally visible auth origin that clients, JWT verifiers, and WebAuthn flows should use. It is not the local bind address from `--host`/`--port`.
 
 ```bash
-npx auth-mini start ./auth-mini.sqlite \
+auth-mini start \
   --host 127.0.0.1 \
   --port 7777 \
   --issuer https://auth.zccz14.com
@@ -62,7 +74,7 @@ npx auth-mini start ./auth-mini.sqlite \
 ## JWKS rotation
 
 ```bash
-npx auth-mini rotate jwks ./auth-mini.sqlite
+auth-mini rotate jwks
 ```
 
 `/jwks` always publishes the `CURRENT` and `STANDBY` keys.
@@ -82,7 +94,7 @@ By default, CLI errors stay concise; use `--verbose` for detailed diagnostics.
 auth-mini writes structured JSON logs by default. The logs are suitable for redirection to a file:
 
 ```bash
-npx auth-mini start ./auth-mini.sqlite --issuer https://auth.zccz14.com >> auth-mini.log
+auth-mini start --issuer https://auth.zccz14.com >> auth-mini.log
 ```
 
 In the current version, logs may contain plaintext email addresses and client IPs. Logs intentionally exclude OTP values, tokens, and SMTP passwords.

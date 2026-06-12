@@ -131,25 +131,38 @@ sequenceDiagram
 
 Pre-requisites:
 
-- Node.js 20.10.0+
 - SMTP service credentials for email OTP. (Most email providers have SMTP options, or you can use transactional email services like SendGrid, Mailgun, etc.)
+
+Install the release binary for your platform, verify its checksum, and put `auth-mini` on `PATH`:
+
+```bash
+curl -LO https://github.com/zccz14/auth-mini/releases/download/v0.3.0/auth-mini-x86_64-unknown-linux-gnu.tar.gz
+curl -LO https://github.com/zccz14/auth-mini/releases/download/v0.3.0/auth-mini-x86_64-unknown-linux-gnu.tar.gz.sha256
+shasum -a 256 -c auth-mini-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf auth-mini-x86_64-unknown-linux-gnu.tar.gz
+chmod +x auth-mini
+sudo mv auth-mini /usr/local/bin/auth-mini
+auth-mini --help
+```
+
+Use the matching archive for your platform from the GitHub Release assets. The npm/TypeScript CLI remains available only as a legacy transition path; the released Rust CLI is installed as `auth-mini`.
 
 Minimal CLI setup:
 
 ```bash
-npx auth-mini init ./auth-mini.sqlite
+auth-mini init
 ```
 
 Setup SMTP config:
 
 ```bash
-npx auth-mini smtp add ./auth-mini.sqlite  --from-email 'sample@your-domain.com' --from-name 'sample-name' --host 'smtp.sample.com' --port 465 --secure --username 'sample@your-domain.com' --password '<smtp-password>'
+auth-mini smtp add --from-email 'sample@your-domain.com' --from-name 'sample-name' --host 'smtp.sample.com' --port 465 --secure --username 'sample@your-domain.com' --password '<smtp-password>'
 ```
 
 Setup browser origin policy:
 
 ```bash
-npx auth-mini origin add ./auth-mini.sqlite --value 'https://frontend.your-domain.com'
+auth-mini origin add --value 'https://frontend.your-domain.com'
 ```
 
 Store browser page origins here for WebAuthn and related origin checks. HTTP CORS is served with `Access-Control-Allow-Origin: *`, so downstream apps need to manage that exposure carefully. No need to add backend API origins.
@@ -157,15 +170,7 @@ Store browser page origins here for WebAuthn and related origin checks. HTTP COR
 Start the server:
 
 ```bash
-npx auth-mini start ./auth-mini.sqlite --port 7777 --issuer 'https://auth.your-domain.com'
-```
-
-Rust release binary convenience:
-
-```bash
-auth-mini-rust-backend smtp add --from-email 'sample@your-domain.com' --from-name 'sample-name' --host 'smtp.sample.com' --port 465 --secure --username 'sample@your-domain.com' --password '<smtp-password>'
-auth-mini-rust-backend origin add --value 'https://frontend.your-domain.com'
-auth-mini-rust-backend start --port 7777 --issuer 'https://auth.your-domain.com'
+auth-mini start --port 7777 --issuer 'https://auth.your-domain.com'
 ```
 
 When the Rust binary DB path is omitted, it uses `~/.auth-mini/default.sqlite3`. Commands that use a database create the SQLite file, parent directory, schema, and JWKS keys automatically when missing. Explicit DB paths and explicit `init` remain supported. The Rust binary prints the SQLite database path it uses to stderr so tab-separated command stdout stays machine-readable. The Rust binary embeds the database schema and `openapi.yaml`; existing `--schema` arguments are accepted for compatibility but runtime initialization uses the embedded schema. The Rust CLI has no `--openapi` parameter, and `/openapi.yaml` plus `/openapi.json` do not depend on the current working directory.
