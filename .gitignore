@@ -49,6 +49,8 @@ web_modules/
 
 # Optional npm cache directory
 .npm
+.cargo-home/
+.tmp/
 
 # Optional eslint cache
 .eslintcache

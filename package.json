@@ -56,6 +56,7 @@
     "demo:dev": "node scripts/dev-examples-demo.mjs",
     "demo:typecheck": "npm --prefix examples/demo run typecheck",
     "test:integration": "npm run build && vitest run tests/integration",
+    "test:rust-e2e": "CARGO_HOME=$PWD/.cargo-home cargo build --manifest-path rust-backend/Cargo.toml && vitest run tests/rust-e2e",
     "gco:main": "git fetch && git checkout origin/main",
     "lint": "eslint .",
     "format": "prettier --write .",
