@@ -35,7 +35,7 @@
 - 支持通过 `--host`、`--port`、`--openapi` 指定监听地址和 OpenAPI 文件路径。
 - `GET /healthz` 返回 `200` 和 `ok`。
 - `GET /openapi.yaml` 返回仓库 OpenAPI YAML 原文。
-- `GET /openapi.json` 返回 `501 not_implemented`，表示 JSON 转换尚未迁移完成。
+- `GET /openapi.json` 返回由同一 `openapi.yaml` 转换得到的 JSON 文档。
 - 未知路径返回 `404 not_found`。
 
 第二阶段 Rust 服务必须新增下列可验证行为：
@@ -180,6 +180,14 @@
 - Rust 验证路径新增 `cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets -- -D warnings`，把 clippy 作为 Rust 迁移发布准备的最小 lint 门禁。
 - 本切片不切换 npm 包 CLI，不迁移 JWKS/init/start CLI，不重构数据库或认证业务代码。
 
+本轮 Rust 目标 E2E harness 切片必须新增下列可验证行为：
+
+- 新增专用 `npm run test:rust-e2e`，先构建当前 Rust debug binary，再由 Vitest 启动外部 Rust 服务；该 harness 位于默认 `npm test` 不扫描的 `rust-e2e` 目录，命令不并入默认检查。
+- E2E harness 必须只在仓库内 `.tmp/rust-e2e` 创建临时 SQLite 文件，并在测试结束后停止服务、删除临时目录。
+- harness 必须通过 Rust CLI `init` 初始化数据库和 JWKS，直接写入测试 OTP 行来避免真实 SMTP 依赖。
+- harness 必须在随机可用端口启动 Rust server，并覆盖 `GET /healthz`、未认证 `GET /me`、公开 auth endpoint CORS preflight、seeded email OTP verify happy path、认证后 `GET /me`、Ed25519 credential/start/verify happy path。
+- 本切片不迁移生产入口，不把 release binary 构建加入默认 PR 检查，不新增 WebAuthn ceremony 测试；WebAuthn 需等待确定性测试 authenticator 后另行切片。
+
 ## API 兼容范围
 
 第一阶段不替换生产 API。兼容范围限定为新增 Rust 切片自身的基础端点，不声明覆盖现有认证 API。
@@ -206,6 +214,7 @@
 
 - 第一阶段新增 Rust 构建与测试命令，不改变现有 `npm run build`、`npm test`、Dockerfile 和发布 workflow 的生产语义。
 - Rust 后端成为可选构建产物；生产入口切换必须等到公开 API、数据库语义和部署 smoke test 覆盖完成。
+- Rust 目标 E2E harness 先使用 debug binary 作为最小外部进程 smoke；是否在 CI 默认运行或改用 release binary 后续按耗时与发布策略单独决策。
 - Rust 发布准备不要求 Docker publishing；后续 release readiness 应聚焦 Rust 二进制跨平台 cross-compilation、产物校验和运行 smoke test。Docker runtime/publishing 仅在未来生产入口切换明确需要时另行立项。
 - Rust 二进制发布 workflow 必须在 `v*` tag 上构建 `auth-mini-rust-backend` release binary，并直接上传平台命名 archive 与 SHA-256 checksum 到 GitHub Release。
 - 初始 Rust release 目标限定为 GitHub-hosted runner 可直接验证的 `x86_64-unknown-linux-gnu`、`x86_64-apple-darwin`、`aarch64-apple-darwin`、`x86_64-pc-windows-msvc`；Linux aarch64 与 musl 目标暂不纳入首轮，后续需有稳定 linker/system dependency 验证后再加入。
@@ -249,6 +258,7 @@
 - 第五阶段当前切片 Rust 测试覆盖首次 email 创建用户、复用已有用户不重复创建、已有未验证用户写入 `email_verified_at`，以及 HTTP 层成功处理用户后仍返回 `501 not_implemented`。
 - 本轮 Rust 测试覆盖 access token 可由 JWKS 公钥完成 Ed25519 验签，并覆盖篡改 token 被拒绝。
 - 本轮 Rust CLI SMTP 测试覆盖 add/list/update/delete 参数解析、DB 写读、默认值、partial update、not found 错误路径，以及输出不包含 SMTP password。
+- 本轮 Rust 目标 E2E harness 测试覆盖外部 Rust binary 的健康检查、未认证 `/me`、CORS preflight、seeded email OTP 登录后 `/me`、Ed25519 登录后 `/me`，且临时 DB 位于 `.tmp/rust-e2e` 并被清理。
 - 本轮 SMTP Rust 测试覆盖 email start 请求边界、无 active SMTP 配置、lettre transport 成功时 OTP 创建和邮件内容、SMTP 失败时 OTP 失效、secure SMTP 使用 TLS transport 且不返回假成功，以及 HTTP 层 invalid_request/smtp_not_configured 边界。
 - 本轮 WebAuthn 凭据删除切片必须新增下列可验证行为：Rust 后端覆盖 `DELETE /webauthn/credentials/{id}`，要求有效 access token 且认证方式为 `email_otp` 或 `webauthn`；只允许删除当前用户自己的 WebAuthn 凭据，成功返回 `200 {"ok":true}`，其他用户或不存在的凭据返回 `404 credential_not_found`，不满足管理凭据认证方式返回 `403 insufficient_authentication_method`。本切片不迁移 WebAuthn 注册/登录 options 或 verify，不实现任何 WebAuthn 假验证成功路径。
 - 本轮 WebAuthn register/options Rust 测试覆盖成功生成 options 并持久化 challenge、父域 rp_id 规范化、二次 options 消费旧 challenge、sibling rp_id 拒绝、缺失 access token 拒绝、非 passkey-management 认证方式拒绝。
