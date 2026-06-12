@@ -1,10 +1,17 @@
 use auth_mini_rust_backend::{
-    parse_app_command_or_exit, run_origin_command, run_server, run_smtp_command, AppCommand,
+    parse_app_command_or_exit, run_init_command, run_origin_command, run_rotate_jwks_command,
+    run_server, run_smtp_command, AppCommand,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     match parse_app_command_or_exit(std::env::args().skip(1)) {
         AppCommand::Serve(config) => run_server(config),
+        AppCommand::Init { db_path } => {
+            run_init_command(db_path, &mut std::io::stdout()).map_err(Into::into)
+        }
+        AppCommand::RotateJwks { db_path } => {
+            run_rotate_jwks_command(db_path, &mut std::io::stdout()).map_err(Into::into)
+        }
         AppCommand::Origin(command) => {
             run_origin_command(command, &mut std::io::stdout()).map_err(Into::into)
         }

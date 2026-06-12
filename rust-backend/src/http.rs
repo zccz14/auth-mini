@@ -245,7 +245,7 @@ fn handle_email_verify(request: &Request, config: &Config) -> io::Result<Respons
                 &connection,
                 &user_id,
                 "email_otp",
-                "auth-mini",
+                &config.issuer,
                 None,
                 request.header("User-Agent").as_deref(),
             )
@@ -266,7 +266,7 @@ fn handle_session_refresh(request: &Request, config: &Config) -> io::Result<Resp
     };
     let connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
 
-    match refresh_session_tokens(&connection, &parsed, "auth-mini") {
+    match refresh_session_tokens(&connection, &parsed, &config.issuer) {
         Ok(pair) => Ok(Response::json_value(200, token_json(pair))),
         Err(SessionError::SessionSuperseded) => Ok(Response::json_error(401, "session_superseded")),
         Err(_) => Ok(Response::json_error(401, "session_invalidated")),
@@ -511,7 +511,7 @@ fn handle_webauthn_authentication_verify(
                 &connection,
                 &outcome.user_id,
                 "webauthn",
-                "auth-mini",
+                &config.issuer,
                 None,
                 request.header("User-Agent").as_deref(),
             )
@@ -555,7 +555,7 @@ fn handle_ed25519_verify(request: &Request, config: &Config) -> io::Result<Respo
     match verify_ed25519_authentication(
         &mut connection,
         &parsed,
-        "auth-mini",
+        &config.issuer,
         None,
         request.header("User-Agent").as_deref(),
     ) {
