@@ -7,6 +7,7 @@ import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createTestEd25519Keypair } from '../tests/helpers/ed25519.js';
+import { createTestPasskey } from '../tests/helpers/webauthn.js';
 import { hashValue } from '../src/shared/crypto.js';
 
 const repoRoot = resolve(import.meta.dirname, '..');
@@ -15,6 +16,8 @@ const binaryPath = resolve(
   'rust-backend/target/debug/auth-mini-rust-backend',
 );
 const tempRoot = resolve(repoRoot, '.tmp/rust-e2e');
+const webauthnOrigin = 'https://app.example.com';
+const webauthnRpId = 'app.example.com';
 
 let server: ChildProcessWithoutNullStreams | null = null;
 
@@ -30,6 +33,7 @@ describe('rust external server e2e smoke', () => {
     await mkdir(tempRoot, { recursive: true });
     const dbPath = resolve(tempRoot, 'auth-mini-rust-e2e.sqlite');
     await runCli(['init', dbPath]);
+    await runCli(['origin', 'add', dbPath, '--value', webauthnOrigin]);
     seedOtp(dbPath, 'rust-user@example.com', '123456');
 
     const port = await getFreePort();
@@ -124,6 +128,105 @@ describe('rust external server e2e smoke', () => {
         expect.objectContaining({ auth_method: 'ed25519' }),
       ]),
     });
+
+    const passkey = createTestPasskey('rust-e2e-webauthn');
+    const registerOptionsResponse = await postJson(
+      `${baseUrl}/webauthn/register/options`,
+      { rp_id: webauthnRpId },
+      emailTokens.access_token,
+      webauthnOrigin,
+    );
+    expect(registerOptionsResponse.status).toBe(200);
+    const registerOptions =
+      (await registerOptionsResponse.json()) as WebauthnOptionsResponse;
+    expect(registerOptions.publicKey).toMatchObject({
+      challenge: expect.any(String),
+      rp: { id: webauthnRpId, name: 'auth-mini' },
+    });
+
+    const registerVerifyResponse = await postJson(
+      `${baseUrl}/webauthn/register/verify`,
+      {
+        request_id: registerOptions.request_id,
+        credential: passkey.createRegistrationCredential(
+          registerOptions.publicKey,
+          webauthnOrigin,
+        ),
+      },
+      emailTokens.access_token,
+      webauthnOrigin,
+    );
+    expect(registerVerifyResponse.status).toBe(200);
+    expect(await registerVerifyResponse.json()).toEqual({ ok: true });
+
+    const registeredCredential = getWebauthnCredential(
+      dbPath,
+      passkey.credentialId,
+    );
+    expect(registeredCredential).toEqual({
+      credential_id: passkey.credentialId,
+      rp_id: webauthnRpId,
+      last_used_at: null,
+    });
+
+    const authOptionsResponse = await postJson(
+      `${baseUrl}/webauthn/authenticate/options`,
+      { rp_id: webauthnRpId },
+      undefined,
+      webauthnOrigin,
+    );
+    expect(authOptionsResponse.status).toBe(200);
+    const authOptions =
+      (await authOptionsResponse.json()) as WebauthnOptionsResponse;
+    expect(authOptions.publicKey).toMatchObject({
+      challenge: expect.any(String),
+      rpId: webauthnRpId,
+    });
+
+    const authVerifyResponse = await postJson(
+      `${baseUrl}/webauthn/authenticate/verify`,
+      {
+        request_id: authOptions.request_id,
+        credential: passkey.createAuthenticationCredential(
+          authOptions.publicKey,
+          webauthnOrigin,
+        ),
+      },
+      undefined,
+      webauthnOrigin,
+    );
+    expect(authVerifyResponse.status).toBe(200);
+    const webauthnTokens = (await authVerifyResponse.json()) as TokenResponse;
+    expect(webauthnTokens).toMatchObject({
+      access_token: expect.any(String),
+      token_type: 'Bearer',
+      expires_in: 900,
+      refresh_token: expect.any(String),
+    });
+
+    expect(getWebauthnCredential(dbPath, passkey.credentialId)).toEqual({
+      credential_id: passkey.credentialId,
+      rp_id: webauthnRpId,
+      last_used_at: expect.any(String),
+    });
+
+    const webauthnMe = await fetch(`${baseUrl}/me`, {
+      headers: bearerHeaders(webauthnTokens.access_token),
+    });
+    expect(webauthnMe.status).toBe(200);
+    expect(await webauthnMe.json()).toMatchObject({
+      email: 'rust-user@example.com',
+      active_sessions: expect.arrayContaining([
+        expect.objectContaining({ auth_method: 'webauthn' }),
+      ]),
+      webauthn_credentials: [
+        expect.objectContaining({
+          id: passkey.credentialId,
+          rp_id: webauthnRpId,
+          last_used_at: expect.any(String),
+        }),
+      ],
+    });
   });
 });
 
@@ -132,6 +235,15 @@ type TokenResponse = {
   token_type: 'Bearer';
   expires_in: number;
   refresh_token: string;
+};
+
+type WebauthnOptionsResponse = {
+  request_id: string;
+  publicKey: {
+    challenge: string;
+    rp?: { id: string; name: string };
+    rpId?: string;
+  };
 };
 
 async function runCli(args: string[]) {
@@ -158,6 +270,26 @@ function seedOtp(dbPath: string, email: string, code: string) {
     db.prepare(
       'INSERT INTO email_otps (email, code_hash, expires_at) VALUES (?, ?, ?)',
     ).run(email, hashValue(code), '9999-01-01T00:00:00.000Z');
+  } finally {
+    db.close();
+  }
+}
+
+function getWebauthnCredential(dbPath: string, credentialId: string) {
+  const db = new Database(dbPath);
+
+  try {
+    return db
+      .prepare(
+        'SELECT credential_id, rp_id, last_used_at FROM webauthn_credentials WHERE credential_id = ?',
+      )
+      .get(credentialId) as
+      | {
+          credential_id: string;
+          rp_id: string;
+          last_used_at: string | null;
+        }
+      | undefined;
   } finally {
     db.close();
   }
@@ -223,12 +355,18 @@ async function waitForHealthz(baseUrl: string) {
   throw new Error('Rust server did not become healthy within 5 seconds');
 }
 
-async function postJson(url: string, body: unknown, accessToken?: string) {
+async function postJson(
+  url: string,
+  body: unknown,
+  accessToken?: string,
+  origin?: string,
+) {
   return fetch(url, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       ...(accessToken ? bearerHeaders(accessToken) : {}),
+      ...(origin ? { origin } : {}),
     },
     body: JSON.stringify(body),
   });
