@@ -1,30 +1,27 @@
-ARG NODE_IMAGE=node:24.14.1-trixie-slim
+FROM rust:1.91-bookworm AS builder
 
-FROM ${NODE_IMAGE} AS runtime
-
-# https://github.com/nodejs/docker-node/blob/main/docs/BestPractices.md#handling-kernel-signals
-RUN apt-get update \
-	&& apt-get install -y --no-install-recommends tini \
-	&& rm -rf /var/lib/apt/lists/* \
-	&& ln -sf /usr/bin/tini /tini
-ENTRYPOINT ["/tini", "--"]
-
-WORKDIR /app
-
-COPY package.json package-lock.json ./
-COPY node_modules ./node_modules
-COPY dist ./dist
+WORKDIR /src
+COPY openapi.yaml ./openapi.yaml
 COPY sql ./sql
+COPY rust-backend ./rust-backend
 
-RUN chmod 0755 /app/dist/index.js \
-	&& chmod 0644 /app/package.json /app/package-lock.json \
-	&& chmod 0755 /app/sql \
-	&& chmod 0644 /app/sql/schema.sql \
-	&& ln -sf /app/dist/index.js /usr/local/bin/auth-mini \
-	&& mkdir -p /data \
-	&& chown -R node:node /data
+RUN cargo build --manifest-path rust-backend/Cargo.toml --release
 
-USER node
+FROM debian:bookworm-slim AS runtime
 
-VOLUME ["/data"]
-CMD ["auth-mini", "start", "/data/auth.sqlite", "--port", "7777"]
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends ca-certificates \
+	&& rm -rf /var/lib/apt/lists/* \
+	&& useradd --system --uid 10001 --home-dir /var/lib/auth-mini --create-home --shell /usr/sbin/nologin auth-mini \
+	&& mkdir -p /var/lib/auth-mini \
+	&& chown -R auth-mini:auth-mini /var/lib/auth-mini
+
+COPY --from=builder /src/rust-backend/target/release/auth-mini /usr/local/bin/auth-mini
+
+USER 10001
+WORKDIR /var/lib/auth-mini
+VOLUME ["/var/lib/auth-mini"]
+EXPOSE 7777
+
+ENTRYPOINT ["auth-mini"]
+CMD ["start", "/var/lib/auth-mini/auth-mini.sqlite", "--host", "0.0.0.0", "--port", "7777", "--issuer", "http://localhost:7777"]

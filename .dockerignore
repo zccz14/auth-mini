@@ -1,6 +1,9 @@
 .git
 node_modules
 dist
+.cargo-home
+.npm-cache
+.tmp
 .legion
 test.sqlite
 server.log
