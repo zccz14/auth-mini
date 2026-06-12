@@ -1,13 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
-import {
-  cp,
-  mkdir,
-  readFile,
-  rm,
-  rmdir,
-  symlink,
-  writeFile,
-} from 'node:fs/promises';
+import { cp, mkdir, readFile, rm, rmdir, symlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -91,12 +83,20 @@ describe('openapi build artifact', () => {
       'package/package.json',
     ]);
     const packedManifest = JSON.parse(packageJsonResult.stdout) as {
+      bin?: unknown;
       dependencies?: Record<string, string>;
+      exports?: Record<string, unknown>;
+      oclif?: unknown;
     };
 
-    expect(packedManifest.dependencies).toMatchObject({
-      yaml: expect.any(String),
-    });
+    expect(packedManifest.bin).toBeUndefined();
+    expect(packedManifest.oclif).toBeUndefined();
+    expect(packedManifest.dependencies).toEqual({});
+    expect(Object.keys(packedManifest.exports ?? {}).sort()).toEqual([
+      './sdk/api',
+      './sdk/browser',
+      './sdk/device',
+    ]);
   }, 15000);
 
   it('copies the repo spec into dist when running in watch mode', async () => {
@@ -138,52 +138,6 @@ describe('openapi build artifact', () => {
     } finally {
       stopProcessGroup(child);
     }
-  }, 15000);
-
-  it('loads the packaged dist spec from built runtime even when repo source differs', async () => {
-    const workspaceRoot = await createStagedWorkspace();
-    const repoOpenApiPath = resolve(workspaceRoot, 'openapi.yaml');
-    const distOpenApiPath = resolve(workspaceRoot, 'dist/openapi.yaml');
-
-    await execFileAsync(resolveShellCommand('npm'), ['run', 'build'], {
-      cwd: workspaceRoot,
-    });
-
-    await Promise.all([
-      writeFile(
-        repoOpenApiPath,
-        'openapi: 3.1.0\ninfo:\n  title: repo\n',
-        'utf8',
-      ),
-      writeFile(
-        distOpenApiPath,
-        'openapi: 3.1.0\ninfo:\n  title: dist\n',
-        'utf8',
-      ),
-    ]);
-
-    const script = [
-      "import { pathToFileURL } from 'node:url';",
-      `const moduleUrl = pathToFileURL(${JSON.stringify(resolve(workspaceRoot, 'dist/shared/openapi.js'))}).href;`,
-      'const { loadOpenApiDocument } = await import(moduleUrl);',
-      'const document = await loadOpenApiDocument();',
-      'process.stdout.write(JSON.stringify(document));',
-    ].join(' ');
-
-    const result = await execFileAsync(
-      process.execPath,
-      ['--input-type=module', '--eval', script],
-      {
-        cwd: workspaceRoot,
-      },
-    );
-    const document = JSON.parse(result.stdout) as {
-      yamlText: string;
-      jsonDocument: { info?: { title?: string } };
-    };
-
-    expect(document.yamlText).toBe('openapi: 3.1.0\ninfo:\n  title: dist\n');
-    expect(document.jsonDocument.info?.title).toBe('dist');
   }, 15000);
 });
 

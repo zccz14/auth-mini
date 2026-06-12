@@ -145,7 +145,7 @@ sudo mv auth-mini /usr/local/bin/auth-mini
 auth-mini --help
 ```
 
-Use the matching archive for your platform from the GitHub Release assets. The npm/TypeScript CLI remains available only as a legacy transition path; the released Rust CLI is installed as `auth-mini`.
+Use the matching archive for your platform from the GitHub Release assets. The npm package no longer provides a CLI; it only ships SDK exports. The released Rust binary is the official `auth-mini` CLI and server runtime.
 
 Minimal CLI setup:
 
