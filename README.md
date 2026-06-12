@@ -29,6 +29,14 @@ Minimal, opinionated authentication server for apps that just need a solid authe
 - User profiles like names, avatars, bios, etc.
 - User management features like admin dashboards, user search etc.
 
+## OIDC positioning
+
+Auth Mini Core is not an OIDC Provider. Its core goal is brand-owned identity across apps under the same brand, while keeping the authentication model simple.
+
+OIDC has ecosystem value, especially for existing applications that only integrate through OIDC. But it also brings significant protocol and concept complexity, so it should not define or pollute Auth Mini Core. Apps built with Auth Mini in mind should use the native HTTP API or SDKs instead of OIDC.
+
+If OIDC compatibility is needed, the intended direction is an optional bridge or adapter layer that translates OIDC flows to Auth Mini Core. Auth Mini Core should not need to understand OIDC or OAuth concepts such as `client_id`, `scope`, `authorization_code`, `id_token`, or `grant_type`.
+
 ## Main user journeys
 
 ### Email OTP sign-in
