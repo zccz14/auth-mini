@@ -1,37 +1,6 @@
 import { readFile } from 'node:fs/promises';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
-
-import type { OtpMailSeam } from '../helpers/mock-smtp.js';
-
-const otpSeam = vi.hoisted(() => ({ current: null as OtpMailSeam | null }));
-
-vi.mock('../../src/infra/smtp/mailer.js', async () => {
-  const actual = await vi.importActual<
-    typeof import('../../src/infra/smtp/mailer.js')
-  >('../../src/infra/smtp/mailer.js');
-
-  return {
-    ...actual,
-    async sendOtpMail(config: unknown, email: string, code: string) {
-      const seam = otpSeam.current;
-
-      if (!seam) {
-        throw new Error('OTP seam not installed for openapi contract tests');
-      }
-
-      return seam.sendOtpMail(
-        config as { fromEmail: string; fromName?: string },
-        email,
-        code,
-      );
-    },
-  };
-});
-
-import { createTestApp } from '../helpers/app.js';
-
-const openApps: Array<{ close(): void }> = [];
 
 const contractOperations = [
   { path: '/openapi.yaml', methods: ['get'] },
@@ -53,14 +22,6 @@ const contractOperations = [
   { path: '/webauthn/credentials/{id}', methods: ['delete'] },
   { path: '/jwks', methods: ['get'] },
 ] as const;
-
-afterEach(() => {
-  otpSeam.current = null;
-
-  while (openApps.length > 0) {
-    openApps.pop()?.close();
-  }
-});
 
 describe('openapi contract', () => {
   it('documents the current public http route set', async () => {
@@ -155,79 +116,6 @@ describe('openapi contract', () => {
     ).toMatchObject({
       type: 'string',
     });
-  });
-
-  it('matches live auth-boundary baseline behavior for key routes', async () => {
-    const testApp = await createTestApp();
-    openApps.push(testApp);
-
-    const startResponse = await testApp.app.request('/email/start', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: '{}',
-    });
-    const refreshResponse = await testApp.app.request('/session/refresh', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: '{}',
-    });
-    const meResponse = await testApp.app.request('/me');
-    const jwksResponse = await testApp.app.request('/jwks');
-
-    expect(startResponse.status).toBe(400);
-    expect(await startResponse.json()).toEqual({ error: 'invalid_request' });
-
-    expect(refreshResponse.status).toBe(400);
-    expect(await refreshResponse.json()).toEqual({ error: 'invalid_request' });
-
-    expect(meResponse.status).toBe(401);
-    expect(await meResponse.json()).toEqual({ error: 'invalid_access_token' });
-
-    expect(jwksResponse.status).toBe(200);
-    expect(await jwksResponse.json()).toEqual({
-      keys: [
-        {
-          kid: expect.any(String),
-          alg: 'EdDSA',
-          kty: 'OKP',
-          crv: 'Ed25519',
-          use: 'sig',
-          x: expect.any(String),
-        },
-        {
-          kid: expect.any(String),
-          alg: 'EdDSA',
-          kty: 'OKP',
-          crv: 'Ed25519',
-          use: 'sig',
-          x: expect.any(String),
-        },
-      ],
-    });
-  });
-
-  it('serves the cached openapi yaml and derived json from the same source file', async () => {
-    const testApp = await createTestApp();
-    openApps.push(testApp);
-
-    const expectedYaml = await readFile(
-      new URL('../../openapi.yaml', import.meta.url),
-      'utf8',
-    );
-    const expectedJson = parse(expectedYaml);
-
-    const yamlResponse = await testApp.app.request('/openapi.yaml');
-    const yamlText = await yamlResponse.text();
-    const jsonResponse = await testApp.app.request('/openapi.json');
-
-    expect(yamlResponse.status).toBe(200);
-    expect(yamlResponse.headers.get('content-type')).toContain(
-      'application/yaml',
-    );
-    expect(yamlText).toBe(expectedYaml);
-
-    expect(jsonResponse.status).toBe(200);
-    expect(await jsonResponse.json()).toEqual(expectedJson);
   });
 
   it('documents the expanded SessionSummary schema', async () => {

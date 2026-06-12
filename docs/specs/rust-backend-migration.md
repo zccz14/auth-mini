@@ -2,13 +2,13 @@
 
 ## 迁移目标
 
-将 auth-mini 的后端运行时从 TypeScript/Node 逐步迁移到 Rust，并保持现有公开 HTTP API、SQLite 数据模型、OpenAPI 文档、部署入口和 SDK 消费方式可验证。
+将 auth-mini 的后端运行时从 TypeScript/Node 迁移到 Rust，并保持现有公开 HTTP API、SQLite 数据模型、OpenAPI 文档、部署入口和 SDK 消费方式可验证。当前清理后，TypeScript/Node 不再承载后端运行时或 oclif CLI；npm 包只保留 SDK 构建与发布能力。
 
 第一阶段只交付可提交、可构建、可测试的 Rust 后端切片：
 
 - 提供 Rust 后端 crate，作为后续完整迁移的承载位置。
 - 提供可运行 HTTP 服务，验证 Rust 运行时、配置读取、OpenAPI 文件读取和基础请求处理链路。
-- 保留现有 TypeScript 后端作为生产 CLI 和 Docker 入口，直到 Rust 后端覆盖现有公开 API 与数据库语义。
+- 历史第一阶段曾保留 TypeScript 后端作为生产 CLI 和 Docker 入口；当前 Rust 后端、Rust CLI 和 release binary 已基本可用，Node 后端/oclif 路径已移除。
 
 第二阶段继续交付最小数据库切片：
 
@@ -27,7 +27,15 @@
 - JWKS 轮换 CLI 与生产入口语义。
 - `rotate jwks`、`init`、`start` 的 npm CLI 语义；Rust 已开始覆盖 `origin` 与 `smtp` 管理命令能力，但本轮不切换 npm 包 CLI。
 - SQLite schema 文件 `sql/schema.sql`；WebAuthn schema 在 Rust-first spike 后允许破坏旧 Node 凭据形态。
-- npm 包导出的 SDK、CLI 命令和现有 Docker 发布链路。
+- npm 包导出的 SDK；npm 包不再导出 CLI 命令。现有 Docker 发布链路如仍引用 Node 后端，应在独立 Docker/runtime PR 中切换或删除。
+
+## Node 后端清理边界
+
+- 删除 TypeScript HTTP server/app、Node auth/session/webauthn/ed25519/email/jwks/users repos/services、Node SQLite/SMTP/origin infra、oclif command wrappers 与 `src/index.ts`。
+- 不新增 Node 到 Rust wrapper、`npx` 兼容入口、旧运行时 fallback 或双后端选择开关。
+- 保留 `src/sdk/**`、`src/generated/**`、OpenAPI SDK 生成脚本、SDK 类型/浏览器 runtime/device/api exports。
+- 保留 SDK 和 Rust E2E 仍使用的测试 helper，例如 WebAuthn CBOR helper、Ed25519 helper 与 `shared/crypto`。
+- Node 后端/CLI 专用 Vitest 覆盖删除；核心运行时覆盖以 Rust E2E 和 Rust cargo 测试为准。
 
 第一阶段 Rust 服务必须保留下列可验证行为：
 
@@ -231,7 +239,7 @@
 ## 构建与部署边界
 
 - 第一阶段新增 Rust 构建与测试命令，不改变现有 `npm run build`、`npm test`、Dockerfile 和发布 workflow 的生产语义。
-- Rust 后端成为可选构建产物；生产入口切换必须等到公开 API、数据库语义和部署 smoke test 覆盖完成。
+- Rust 后端与 release binary 是当前正式运行时；TypeScript 构建只覆盖 npm SDK 产物。
 - Rust 目标 E2E harness 先使用 debug binary 作为最小外部进程 smoke；是否在 CI 默认运行或改用 release binary 后续按耗时与发布策略单独决策。
 - Rust 目标 E2E 已新增独立 PR workflow，但不并入现有 `pr-checks` 主 job；该 workflow 提供单独 CI 信号，不改变生产入口、发布 workflow 或默认 `npm test` 语义。
 - Rust 发布准备不要求 Docker publishing；后续 release readiness 应聚焦 Rust 二进制跨平台 cross-compilation、产物校验和运行 smoke test。Docker runtime/publishing 仅在未来生产入口切换明确需要时另行立项。
@@ -239,6 +247,7 @@
 - 初始 Rust release 目标限定为 GitHub-hosted runner 可直接验证的 `x86_64-unknown-linux-gnu`、`x86_64-apple-darwin`、`aarch64-apple-darwin`、`x86_64-pc-windows-msvc`；Linux aarch64 与 musl 目标暂不纳入首轮，后续需有稳定 linker/system dependency 验证后再加入。
 - Rust 二进制发布 workflow 不得为所有平台强制使用 Git Bash；Windows 构建必须使用 runner 默认 shell，避免 vendored OpenSSL 构建时选中缺少 `Locale::Maketext::Simple` 的 Git/MSYS Perl。
 - Rust release readiness 明确不包含 Docker publishing；现有 Docker image 发布链路保持独立，不作为 Rust 二进制发布门禁。
+- Node 后端/oclif 删除不在本轮切换 Docker runtime；若 Dockerfile 或发布 workflow 仍假设 Node 后端，应作为后续独立 PR 处理。
 
 ## 非目标
 

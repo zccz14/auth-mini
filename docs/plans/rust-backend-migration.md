@@ -105,12 +105,24 @@
 - 更新 Docker smoke test 和发布 workflow。
 - 删除已被 Rust 覆盖且不再被 SDK/CLI 使用的 TypeScript 后端代码。
 
+当前清理切片：
+
+- 删除 TypeScript HTTP server/app、Node 认证模块、Node DB/SMTP/origin infra、oclif runtime 与 npm bin 配置。
+- 不增加 Node->Rust wrapper、`npx` 兼容入口、双后端开关或旧运行时 fallback。
+- 保留 npm SDK 构建链路：`src/sdk/**`、`src/generated/**`、`openapi.yaml`、`openapi-ts.config.ts`、SDK browser/device/api exports。
+- 保留 Rust E2E 依赖的测试 helper：WebAuthn test helper、Ed25519 helper、`shared/crypto`。
+- 默认 Node 测试范围收敛为 SDK、generated、OpenAPI 构建/合同和 demo 相关单元测试；Node 后端/CLI integration tests 删除，核心运行时由 `npm run test:rust-e2e`、cargo test/clippy/build 覆盖。
+- 本切片不切换 Docker runtime；若 Docker 仍依赖 Node 后端，后续单独 PR 处理。
+
 验证命令：
 
 - `npm run build`
 - `npm test`
-- Docker image smoke test
-- Rust build/test 全量命令
+- `npm run test:rust-e2e`
+- `cargo fmt --manifest-path rust-backend/Cargo.toml --check`
+- `cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets -- -D warnings`
+- `cargo test --manifest-path rust-backend/Cargo.toml`
+- `cargo build --manifest-path rust-backend/Cargo.toml`
 
 ## 当前 PR 范围
 

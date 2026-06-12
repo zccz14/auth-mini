@@ -1,62 +1,15 @@
 import { spawn } from 'node:child_process';
-import { cp, mkdtemp, rm, stat, unlink } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { cp, mkdir, mkdtemp, rm, stat, unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { runCreateCommand } from '../../src/app/commands/create.js';
-import { runRotateJwksCommand } from '../../src/app/commands/rotate-jwks.js';
-import { createMemoryLogCollector, type LogEntry } from './logging.js';
 
 let packedInstallPromise: Promise<string> | null = null;
 
 const npmCommand = resolveShellCommand('npm');
-const npxCommand = resolveShellCommand('npx');
-
-export async function runSourceCli(
-  args: string[],
-): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  const cliEntrypoint = resolve(process.cwd(), 'src/index.ts');
-
-  return runCommand(npxCommand, ['vite-node', cliEntrypoint, ...args]);
-}
-
-export async function runBuiltCli(
-  args: string[],
-): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  await assertBuiltCliArtifacts();
-  const cliEntrypoint = resolve(process.cwd(), 'dist/index.js');
-
-  return runCommand(process.execPath, [cliEntrypoint, ...args]);
-}
-
-export async function runPackedCli(
-  args: string[],
-): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  const installDir = await ensurePackedCliInstall();
-  const binPath = resolve(
-    installDir,
-    'node_modules',
-    '.bin',
-    process.platform === 'win32' ? 'auth-mini.cmd' : 'auth-mini',
-  );
-
-  const result = await runCommand(binPath, args, {
-    cwd: installDir,
-    env: { NODE_ENV: 'production' },
-  });
-
-  if (result.exitCode !== 0) {
-    throw new Error(
-      result.stderr || result.stdout || 'packed CLI execution failed',
-    );
-  }
-
-  return result;
-}
 
 export async function importPackedModule(
   specifier: string,
 ): Promise<Record<string, unknown>> {
-  const installDir = await ensurePackedCliInstall();
+  const installDir = await ensurePackedSdkInstall();
   const script = `import * as mod from ${JSON.stringify(specifier)}; console.log(JSON.stringify(Object.fromEntries(Object.entries(mod).map(([key, value]) => [key, typeof value]))));`;
   const result = await runCommand(
     process.execPath,
@@ -74,19 +27,22 @@ export async function importPackedModule(
   return JSON.parse(result.stdout.trim()) as Record<string, unknown>;
 }
 
-async function ensurePackedCliInstall(): Promise<string> {
+async function ensurePackedSdkInstall(): Promise<string> {
   if (!packedInstallPromise) {
-    packedInstallPromise = preparePackedCliInstall();
+    packedInstallPromise = preparePackedSdkInstall();
   }
 
   return packedInstallPromise;
 }
 
-async function preparePackedCliInstall(): Promise<string> {
+async function preparePackedSdkInstall(): Promise<string> {
   await ensurePackedArtifactSource();
 
-  const stageDir = await mkdtemp(join(tmpdir(), 'auth-mini-stage-'));
-  const installDir = await mkdtemp(join(tmpdir(), 'auth-mini-pack-'));
+  const testTempRoot = resolve(process.cwd(), '.tmp/vitest');
+  await mkdir(testTempRoot, { recursive: true });
+
+  const stageDir = await mkdtemp(join(testTempRoot, 'auth-mini-stage-'));
+  const installDir = await mkdtemp(join(testTempRoot, 'auth-mini-pack-'));
 
   try {
     await preparePackedWorkspace(stageDir);
@@ -124,91 +80,6 @@ async function preparePackedCliInstall(): Promise<string> {
     packedInstallPromise = null;
     await rm(stageDir, { force: true, recursive: true });
     await rm(installDir, { force: true, recursive: true });
-    throw error;
-  }
-}
-
-export async function runCli(
-  args: string[],
-): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  return runBuiltCli(args);
-}
-
-export async function runLoggedCli(args: string[]): Promise<{
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-  logs: LogEntry[];
-}> {
-  const result = await runCli(args);
-
-  return {
-    ...result,
-    logs: result.stdout
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .map((line) => JSON.parse(line) as LogEntry),
-  };
-}
-
-export async function runLoggedCreateCommand(input: {
-  dbPath: string;
-  smtpConfig?: string;
-}): Promise<{ logs: LogEntry[] }> {
-  const logCollector = createMemoryLogCollector();
-
-  await runCreateCommand({
-    ...input,
-    loggerSink: logCollector.sink,
-  });
-
-  return {
-    logs: logCollector.entries,
-  };
-}
-
-export async function runLoggedRotateJwksCommand(input: {
-  dbPath: string;
-}): Promise<{ logs: LogEntry[] }> {
-  const logCollector = createMemoryLogCollector();
-
-  await runRotateJwksCommand({
-    ...input,
-    loggerSink: logCollector.sink,
-  });
-
-  return {
-    logs: logCollector.entries,
-  };
-}
-
-async function hasBuiltCliArtifacts(): Promise<boolean> {
-  return (
-    (await exists(resolve(process.cwd(), 'dist/index.js'))) &&
-    (await exists(resolve(process.cwd(), 'dist/commands')))
-  );
-}
-
-async function assertBuiltCliArtifacts(): Promise<void> {
-  if (await hasBuiltCliArtifacts()) {
-    return;
-  }
-
-  throw new Error(
-    'Built CLI artifacts are missing. Run `npm run build` before invoking built CLI tests.',
-  );
-}
-
-async function exists(filePath: string): Promise<boolean> {
-  try {
-    await stat(filePath);
-    return true;
-  } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
-      return false;
-    }
-
     throw error;
   }
 }
@@ -286,26 +157,41 @@ async function preparePackedWorkspace(stageDir: string): Promise<void> {
 }
 
 async function ensurePackedArtifactSource(): Promise<void> {
-  if (await hasBuiltCliArtifacts()) {
+  if (await exists(resolve(process.cwd(), 'dist/sdk/browser.js'))) {
     return;
   }
 
   const buildResult = await runCommand(npmCommand, ['run', 'build']);
 
   if (buildResult.exitCode !== 0) {
-    throw new Error(
-      buildResult.stderr || buildResult.stdout || 'CLI build failed',
-    );
+    throw new Error(resultMessage(buildResult, 'SDK build failed'));
   }
 }
 
-export function getPackedInstallArgs(
-  installDir: string,
-  tarball: string,
-): string[] {
+async function exists(filePath: string): Promise<boolean> {
+  try {
+    await stat(filePath);
+    return true;
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      return false;
+    }
+
+    throw error;
+  }
+}
+
+function getPackedInstallArgs(installDir: string, tarball: string): string[] {
   return ['install', '--no-package-lock', '--prefix', installDir, tarball];
 }
 
-function resolveShellCommand(command: 'npm' | 'npx'): string {
+function resultMessage(
+  result: { stdout: string; stderr: string },
+  fallback: string,
+): string {
+  return result.stderr || result.stdout || fallback;
+}
+
+function resolveShellCommand(command: 'npm'): string {
   return process.platform === 'win32' ? `${command}.cmd` : command;
 }

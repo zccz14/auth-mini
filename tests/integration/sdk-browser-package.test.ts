@@ -13,4 +13,10 @@ describe('browser sdk package export', () => {
 
     expect(mod.createDeviceSdk).toBe('function');
   }, 60000);
+
+  it('imports createApiSdk from the packed api subpath', async () => {
+    const mod = await importPackedModule('auth-mini/sdk/api');
+
+    expect(mod.createApiSdk).toBe('function');
+  }, 60000);
 });

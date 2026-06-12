@@ -29,17 +29,6 @@
       "import": "./dist/sdk/api.js"
     }
   },
-  "bin": {
-    "auth-mini": "dist/index.js"
-  },
-  "oclif": {
-    "bin": "auth-mini",
-    "commands": "./dist/commands",
-    "helpOptions": {
-      "hideAliasesFromRoot": true
-    },
-    "topicSeparator": " "
-  },
   "publishConfig": {
     "access": "public"
   },
@@ -63,24 +52,14 @@
     "typecheck": "tsc --noEmit",
     "prepare": "husky"
   },
-  "dependencies": {
-    "@oclif/core": "^4.8.0",
-    "@simplewebauthn/server": "^13.0.0",
-    "better-sqlite3": "^12.4.1",
-    "cbor-x": "^1.6.4",
-    "hono": "^4.10.2",
-    "nodemailer": "^8.0.4",
-    "oclif": "^4.22.0",
-    "pino": "^10.3.1",
-    "yaml": "2.8.3",
-    "zod": "^4.1.11"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@hey-api/openapi-ts": "0.96.0",
     "@eslint/js": "^9.38.0",
+    "better-sqlite3": "^12.4.1",
+    "cbor-x": "^1.6.4",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.6.1",
-    "@types/nodemailer": "^7.0.11",
     "eslint": "^9.38.0",
     "globals": "^16.4.0",
     "husky": "^9.1.7",
@@ -89,6 +68,7 @@
     "prettier": "^3.6.2",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.46.0",
-    "vitest": "^4.0.0"
+    "vitest": "^4.0.0",
+    "yaml": "2.8.3"
   }
 }

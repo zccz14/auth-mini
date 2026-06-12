@@ -12,7 +12,7 @@ sudo mv auth-mini /usr/local/bin/auth-mini
 auth-mini --help
 ```
 
-Use the matching archive for your platform from the GitHub Release assets. The npm/TypeScript CLI requires Node.js 20.10+ and remains available only as a legacy transition path.
+Use the matching archive for your platform from the GitHub Release assets. The npm package no longer provides a CLI; it only ships SDK exports. The released Rust binary is the official `auth-mini` CLI and server runtime.
 
 ## Instance setup
 
@@ -36,7 +36,7 @@ Explicit paths remain supported, for example `auth-mini init ./auth-mini.sqlite`
 
 The Rust binary prints one `auth-mini SQLite database: <path>` line to stderr for database-using commands. Management command stdout remains tab-separated rows for scripts.
 
-`create` remains available as a compatibility alias during the transition.
+The old npm/oclif `create` command has been removed with the Node backend cleanup. Use `auth-mini init`, `auth-mini origin`, `auth-mini smtp`, `auth-mini rotate jwks`, and `auth-mini start` from the Rust release binary.
 
 ## Stored browser origins
 
@@ -85,7 +85,7 @@ After rotation, the previous `CURRENT` key is no longer retained.
 
 Because the previous `CURRENT` key is not retained after rotation, consumers that refresh JWKS after rotation may be unable to verify still-valid access tokens signed before rotation. Plan rotation timing and token lifetimes accordingly.
 
-`rotate-jwks` remains available only as a transition/compatibility alias during the migration release.
+Use `auth-mini rotate jwks` from the Rust release binary for key rotation. The old npm/oclif `rotate-jwks` alias has been removed.
 
 ## Logging and diagnostics
 
