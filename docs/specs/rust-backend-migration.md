@@ -157,6 +157,7 @@
 本轮 Rust CLI origin 管理切片必须新增下列可验证行为：
 
 - Rust 二进制支持 `origin add <db> --value <origin>`、`origin list <db>`、`origin update <db> --id <id> --value <origin>`、`origin delete <db> --id <id>`。
+- `<db>` 对 Rust 二进制管理命令可省略；省略时统一使用 `~/.auth-mini/default.sqlite3`，并在初始化/打开数据库前创建 `~/.auth-mini`。
 - 四个命令必须按现有 schema 初始化 SQLite 数据库，并只读写 `allowed_origins`。
 - add/update 必须复用 TypeScript origin 管理的核心规范化规则：只接受 `http`/`https` origin，拒绝 `null`、路径、查询、hash、用户名密码，规范化 scheme/host 大小写、尾随点与默认端口。
 - add/list/update 输出继续使用 TypeScript CLI 当前的 tab 分隔格式：`id origin created_at`；delete 成功不输出。
@@ -166,6 +167,7 @@
 本轮 Rust CLI SMTP 管理切片必须新增下列可验证行为：
 
 - Rust 二进制支持 `smtp add <db> --host <host> --port <port> --username <username> --password <password> --from-email <email> [--from-name <name>] [--secure] [--weight <weight>]`、`smtp list <db>`、`smtp update <db> --id <id> [字段 flags]`、`smtp delete <db> --id <id>`。
+- `<db>` 对 Rust 二进制 SMTP 命令可省略；省略时复用同一个默认实例 `~/.auth-mini/default.sqlite3`。
 - 四个命令必须按现有 schema 初始化 SQLite 数据库，并只读写 `smtp_configs`。
 - add 必须复用 TypeScript SMTP CLI 的必填字段和默认值：`from_name` 默认为空字符串，`secure` 默认为 false，`weight` 默认为 1，新增配置默认 active。
 - update 必须支持 partial update，未传字段保留原值；`--secure` 只接受 `true` 或 `false`。
@@ -177,6 +179,7 @@
 
 - Rust 二进制命令行解析改用 `clap` derive API 承载 `origin`、`smtp` 与服务启动参数，业务执行枚举和数据库读写逻辑保持不变。
 - Rust CLI 必须保留现有命令名、flag 名、必填字段、默认值、tab 分隔输出和核心错误失败语义；`--help` 由 `clap` 提供标准帮助输出。
+- Rust CLI `init`、`start`、`origin`、`smtp`、`rotate jwks` 的实例路径可省略，默认实例路径为 `~/.auth-mini/default.sqlite3`；显式路径仍按用户输入使用。
 - Rust 验证路径新增 `cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets -- -D warnings`，把 clippy 作为 Rust 迁移发布准备的最小 lint 门禁。
 - 本切片不切换 npm 包 CLI，不迁移 JWKS/init/start CLI，不重构数据库或认证业务代码。
 

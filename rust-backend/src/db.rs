@@ -16,6 +16,10 @@ pub fn initialize_database_from_schema(
     db_path: &Path,
     schema: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(parent) = db_path.parent().filter(|path| !path.as_os_str().is_empty()) {
+        fs::create_dir_all(parent)?;
+    }
+
     let connection = Connection::open(db_path)?;
 
     connection.pragma_update(None, "foreign_keys", "ON")?;

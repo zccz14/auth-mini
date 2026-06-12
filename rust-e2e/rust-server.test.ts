@@ -27,6 +27,20 @@ afterEach(async () => {
 });
 
 describe('rust external server e2e smoke', () => {
+  it('initializes the default DB path under the process home', async () => {
+    expect(existsSync(binaryPath)).toBe(true);
+
+    const homePath = resolve(tempRoot, 'home');
+    const defaultDbPath = resolve(homePath, '.auth-mini/default.sqlite3');
+
+    await runCli(['init'], {
+      HOME: homePath,
+      USERPROFILE: homePath,
+    });
+
+    expect(existsSync(defaultDbPath)).toBe(true);
+  });
+
   it('serves core auth smoke flows from the Rust binary', async () => {
     expect(existsSync(binaryPath)).toBe(true);
 
@@ -246,12 +260,15 @@ type WebauthnOptionsResponse = {
   };
 };
 
-async function runCli(args: string[]) {
+async function runCli(args: string[], env: NodeJS.ProcessEnv = {}) {
   const { status, stderr } = await new Promise<{
     status: number | null;
     stderr: string;
   }>((resolveProcess) => {
-    const child = spawn(binaryPath, args, { cwd: repoRoot });
+    const child = spawn(binaryPath, args, {
+      cwd: repoRoot,
+      env: { ...process.env, ...env },
+    });
     let stderr = '';
 
     child.stderr.on('data', (chunk: Buffer) => {

@@ -128,6 +128,25 @@
 
 ## 上一轮 PR 范围
 
+本轮改善 Rust release binary 的默认实例体验，减少下载后试用时必须反复输入 DB 路径的问题：
+
+- `init`、`start`、`origin`、`smtp`、`rotate jwks` 的 DB/instance positional 参数改为可选。
+- 未传 DB 路径时统一解析为 `~/.auth-mini/default.sqlite3`；解析失败时提示用户传显式 DB 路径。
+- 数据库初始化/open 前创建父目录，确保默认 `~/.auth-mini` 首次使用可成功。
+- 显式 DB 路径继续按用户输入执行；不新增多位置 fallback，不切换 npm/TypeScript CLI 入口。
+- 文档说明 Rust binary 的 `openapi.yaml` 与 `sql/schema.sql` 默认仍依赖当前工作目录，下载到仓库外运行时应显式传 `--openapi`/`--schema`。
+
+验证命令：
+
+- `cargo fmt --manifest-path rust-backend/Cargo.toml --check`
+- `cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets -- -D warnings`
+- `cargo test --manifest-path rust-backend/Cargo.toml`
+- `cargo build --manifest-path rust-backend/Cargo.toml`
+- `npm run typecheck`
+- `npm run test:rust-e2e`
+
+## 上一轮 PR 范围
+
 本轮新增最小 Rust 目标 E2E harness，让 HTTP smoke 合同可对外部 Rust binary 执行，而不只覆盖 TypeScript in-process app：
 
 - 新增 `npm run test:rust-e2e`，命令先构建 `rust-backend/target/debug/auth-mini-rust-backend`，再运行默认 `npm test` 不扫描的 `rust-e2e`。

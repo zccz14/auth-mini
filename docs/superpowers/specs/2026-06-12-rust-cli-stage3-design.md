@@ -8,9 +8,9 @@
 
 ## 范围
 
-- 新增 Rust `init <INSTANCE>`，初始化 SQLite schema 并播种 `CURRENT` / `STANDBY` JWKS 槽位。
-- 新增 Rust `rotate jwks <INSTANCE>`，保持双槽位语义：`STANDBY` 晋升为 `CURRENT`，再生成新的 `STANDBY`。
-- 新增 Rust `start <INSTANCE> --issuer <URL>`，启动 Rust server，并保留 `--host`、`--port`、`--openapi`、`--schema` 参数。
+- 新增 Rust `init [INSTANCE]`，初始化 SQLite schema 并播种 `CURRENT` / `STANDBY` JWKS 槽位。
+- 新增 Rust `rotate jwks [INSTANCE]`，保持双槽位语义：`STANDBY` 晋升为 `CURRENT`，再生成新的 `STANDBY`。
+- 新增 Rust `start [INSTANCE] --issuer <URL>`，启动 Rust server，并保留 `--host`、`--port`、`--openapi`、`--schema` 参数。
 - 保留既有无子命令 serve 路径，供当前 Rust backend 直接开发运行使用。
 
 ## 非范围
@@ -22,6 +22,7 @@
 ## 行为约束
 
 - `start` 必须显式提供 `--issuer`，对齐 TS runtime config 中 issuer 必填的业务契约。
+- `INSTANCE` 省略时使用 `~/.auth-mini/default.sqlite3`；显式传入时按用户输入路径使用。
 - `rotate jwks` 必须要求数据库已存在完整 `CURRENT` / `STANDBY` 槽位；空库只建 schema 不自动播种后轮转。
 - `init` 可重复执行，并通过现有 schema 初始化与 JWKS bootstrap 保持幂等。
 - JWT 签发使用 `Config.issuer`，不再在 HTTP 路径中写死 `auth-mini`。
