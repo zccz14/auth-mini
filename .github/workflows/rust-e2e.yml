@@ -1,0 +1,53 @@
+name: Rust E2E
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  CARGO_HOME: ${{ github.workspace }}/.cargo-home
+
+jobs:
+  rust-e2e:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cargo-home/registry
+            .cargo-home/git
+            rust-backend/target
+          key: ${{ runner.os }}-cargo-rust-e2e-${{ hashFiles('rust-backend/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-rust-e2e-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Rust binary
+        run: cargo build --manifest-path rust-backend/Cargo.toml
+
+      - name: Run Rust E2E tests
+        run: npm run test:rust-e2e
