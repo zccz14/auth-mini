@@ -173,6 +173,19 @@ Start the server:
 auth-mini start --port 7777 --issuer 'https://auth.your-domain.com'
 ```
 
+Docker runtime:
+
+```bash
+docker build -f build/Dockerfile -t auth-mini:local .
+docker run --rm \
+  -p 7777:7777 \
+  -v auth-mini-data:/var/lib/auth-mini \
+  auth-mini:local \
+  start /var/lib/auth-mini/auth-mini.sqlite --host 0.0.0.0 --port 7777 --issuer 'https://auth.your-domain.com'
+```
+
+The image runs the Rust `auth-mini` binary directly as a non-root user. Its default command starts the service on port `7777` with SQLite at `/var/lib/auth-mini/auth-mini.sqlite`, so `docker run -p 7777:7777 -v auth-mini-data:/var/lib/auth-mini auth-mini:local` is enough for a local smoke run. Override the command as shown above for a production issuer.
+
 When the Rust binary DB path is omitted, it uses `~/.auth-mini/default.sqlite3`. Commands that use a database create the SQLite file, parent directory, schema, and JWKS keys automatically when missing. Explicit DB paths and explicit `init` remain supported. The Rust binary prints the SQLite database path it uses to stderr so tab-separated command stdout stays machine-readable. The Rust binary embeds the database schema and `openapi.yaml`; existing `--schema` arguments are accepted for compatibility but runtime initialization uses the embedded schema. The Rust CLI has no `--openapi` parameter, and `/openapi.yaml` plus `/openapi.json` do not depend on the current working directory.
 
 Then deploy it with Cloudflare Tunnel or your preferred hosting method.
@@ -238,9 +251,9 @@ From there, typical integration looks like this:
 - Backend JWT verification: [docs/integration/backend-jwt-verification.md](docs/integration/backend-jwt-verification.md)
 - HTTP API reference: [docs/reference/http-api.md](docs/reference/http-api.md)
 - CLI and operations: [docs/reference/cli-and-operations.md](docs/reference/cli-and-operations.md)
-- Docker + Cloudflared deployment: [docs/deploy/docker-cloudflared.md](docs/deploy/docker-cloudflared.md)
+- Docker deployment: [docs/deploy/docker-cloudflared.md](docs/deploy/docker-cloudflared.md)
 
-For the one-container Cloudflare Tunnel path, see [docs/deploy/docker-cloudflared.md](docs/deploy/docker-cloudflared.md). Deployment details live there.
+For the container runtime path, see [docs/deploy/docker-cloudflared.md](docs/deploy/docker-cloudflared.md). GHCR publishing and Cloudflared packaging are not part of the current Docker runtime.
 
 ## Philosophy
 
