@@ -1,5 +1,5 @@
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::{Args, Parser, Subcommand};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -9,6 +9,7 @@ use crate::db::initialize_database_from_schema;
 use crate::jwks::{bootstrap_keys, rotate_keys};
 
 const SCHEMA_SQL: &str = include_str!("../../sql/schema.sql");
+const DEFAULT_DB_PATH_DISPLAY: &str = "~/.auth-mini/default.sqlite3";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppCommand {
@@ -112,7 +113,11 @@ struct ServeArgs {
 
 #[derive(Debug, Args)]
 struct StartArgs {
-    db_path: PathBuf,
+    #[arg(
+        value_name = "DB",
+        help = "SQLite DB path (default: ~/.auth-mini/default.sqlite3)"
+    )]
+    db_path: Option<PathBuf>,
 
     #[arg(long, default_value = "127.0.0.1")]
     host: String,
@@ -157,7 +162,11 @@ enum OriginSubcommand {
 
 #[derive(Debug, Args)]
 struct OriginAddArgs {
-    db_path: PathBuf,
+    #[arg(
+        value_name = "DB",
+        help = "SQLite DB path (default: ~/.auth-mini/default.sqlite3)"
+    )]
+    db_path: Option<PathBuf>,
 
     #[arg(long = "value")]
     value: String,
@@ -165,7 +174,11 @@ struct OriginAddArgs {
 
 #[derive(Debug, Args)]
 struct OriginUpdateArgs {
-    db_path: PathBuf,
+    #[arg(
+        value_name = "DB",
+        help = "SQLite DB path (default: ~/.auth-mini/default.sqlite3)"
+    )]
+    db_path: Option<PathBuf>,
 
     #[arg(long = "id")]
     id: i64,
@@ -176,12 +189,20 @@ struct OriginUpdateArgs {
 
 #[derive(Debug, Args)]
 struct InstanceArgs {
-    db_path: PathBuf,
+    #[arg(
+        value_name = "DB",
+        help = "SQLite DB path (default: ~/.auth-mini/default.sqlite3)"
+    )]
+    db_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
 struct DeleteArgs {
-    db_path: PathBuf,
+    #[arg(
+        value_name = "DB",
+        help = "SQLite DB path (default: ~/.auth-mini/default.sqlite3)"
+    )]
+    db_path: Option<PathBuf>,
 
     #[arg(long = "id")]
     id: i64,
@@ -203,7 +224,11 @@ enum SmtpSubcommand {
 
 #[derive(Debug, Args)]
 struct SmtpAddArgs {
-    db_path: PathBuf,
+    #[arg(
+        value_name = "DB",
+        help = "SQLite DB path (default: ~/.auth-mini/default.sqlite3)"
+    )]
+    db_path: Option<PathBuf>,
 
     #[arg(long = "host")]
     host: String,
@@ -232,7 +257,11 @@ struct SmtpAddArgs {
 
 #[derive(Debug, Args)]
 struct SmtpUpdateArgs {
-    db_path: PathBuf,
+    #[arg(
+        value_name = "DB",
+        help = "SQLite DB path (default: ~/.auth-mini/default.sqlite3)"
+    )]
+    db_path: Option<PathBuf>,
 
     #[arg(long = "id", value_parser = positive_i64_arg)]
     id: i64,
@@ -284,13 +313,17 @@ struct SmtpConfig {
 }
 
 pub fn parse_app_command(args: impl IntoIterator<Item = String>) -> io::Result<AppCommand> {
-    parse_cli(args).map_err(clap_to_io_error)
+    parse_cli(args).map_err(cli_parse_error_to_io_error)
 }
 
 pub fn parse_app_command_or_exit(args: impl IntoIterator<Item = String>) -> AppCommand {
     match parse_cli(args) {
         Ok(command) => command,
-        Err(error) => error.exit(),
+        Err(CliParseError::Clap(error)) => error.exit(),
+        Err(CliParseError::Io(error)) => {
+            eprintln!("{error}");
+            std::process::exit(2);
+        }
     }
 }
 
@@ -408,23 +441,33 @@ pub fn run_rotate_jwks_command(db_path: PathBuf, _writer: &mut impl Write) -> io
     rotate_keys(&mut connection).map_err(|error| invalid_input(error.to_string()))
 }
 
-fn parse_cli(args: impl IntoIterator<Item = String>) -> Result<AppCommand, clap::Error> {
+fn parse_cli(args: impl IntoIterator<Item = String>) -> Result<AppCommand, CliParseError> {
     let raw_args = std::iter::once("auth-mini-rust-backend".to_string()).chain(args);
-    CliArgs::try_parse_from(raw_args).map(CliArgs::into_app_command)
+    CliArgs::try_parse_from(raw_args)
+        .map_err(CliParseError::Clap)?
+        .into_app_command()
+        .map_err(CliParseError::Io)
+}
+
+enum CliParseError {
+    Clap(clap::Error),
+    Io(io::Error),
 }
 
 impl CliArgs {
-    fn into_app_command(self) -> AppCommand {
-        match self.command {
+    fn into_app_command(self) -> io::Result<AppCommand> {
+        let command = match self.command {
             Some(CliCommand::Init(args)) => AppCommand::Init {
-                db_path: args.db_path,
+                db_path: db_path_or_default(args.db_path)?,
             },
-            Some(CliCommand::Start(args)) => AppCommand::Serve(args.into_config()),
-            Some(CliCommand::Rotate(args)) => args.into_app_command(),
-            Some(CliCommand::Origin(args)) => AppCommand::Origin(args.into_origin_command()),
-            Some(CliCommand::Smtp(args)) => AppCommand::Smtp(args.into_smtp_command()),
+            Some(CliCommand::Start(args)) => AppCommand::Serve(args.into_config()?),
+            Some(CliCommand::Rotate(args)) => args.into_app_command()?,
+            Some(CliCommand::Origin(args)) => AppCommand::Origin(args.into_origin_command()?),
+            Some(CliCommand::Smtp(args)) => AppCommand::Smtp(args.into_smtp_command()?),
             None => AppCommand::Serve(self.serve.into_config()),
-        }
+        };
+
+        Ok(command)
     }
 }
 
@@ -446,58 +489,62 @@ impl ServeArgs {
 }
 
 impl StartArgs {
-    fn into_config(self) -> crate::Config {
-        crate::Config {
+    fn into_config(self) -> io::Result<crate::Config> {
+        Ok(crate::Config {
             host: self.host,
             port: self.port,
             issuer: self.issuer,
             openapi_path: self.openapi_path,
             database: Some(crate::DatabaseConfig {
-                db_path: self.db_path,
+                db_path: db_path_or_default(self.db_path)?,
                 schema_path: self.schema_path,
             }),
-        }
+        })
     }
 }
 
 impl RotateArgs {
-    fn into_app_command(self) -> AppCommand {
-        match self.command {
+    fn into_app_command(self) -> io::Result<AppCommand> {
+        let command = match self.command {
             RotateSubcommand::Jwks(args) => AppCommand::RotateJwks {
-                db_path: args.db_path,
+                db_path: db_path_or_default(args.db_path)?,
             },
-        }
+        };
+
+        Ok(command)
     }
 }
 
 impl OriginArgs {
-    fn into_origin_command(self) -> OriginCommand {
-        match self.command {
+    fn into_origin_command(self) -> io::Result<OriginCommand> {
+        let command = match self.command {
             OriginSubcommand::Add(args) => OriginCommand::Add {
-                db_path: args.db_path,
+                db_path: db_path_or_default(args.db_path)?,
                 value: args.value,
             },
             OriginSubcommand::List(args) => OriginCommand::List {
-                db_path: args.db_path,
+                db_path: db_path_or_default(args.db_path)?,
             },
             OriginSubcommand::Update(args) => OriginCommand::Update {
-                db_path: args.db_path,
+                db_path: db_path_or_default(args.db_path)?,
                 id: args.id,
                 value: args.value,
             },
             OriginSubcommand::Delete(args) => OriginCommand::Delete {
-                db_path: args.db_path,
+                db_path: db_path_or_default(args.db_path)?,
                 id: args.id,
             },
-        }
+        };
+
+        Ok(command)
     }
 }
 
 impl SmtpArgs {
-    fn into_smtp_command(self) -> SmtpCommand {
-        match self.command {
+    fn into_smtp_command(self) -> io::Result<SmtpCommand> {
+        let command = match self.command {
             SmtpSubcommand::Add(args) => SmtpCommand::Add {
-                db_path: args.db_path,
+                db_path: db_path_or_default(args.db_path)?,
                 host: args.host,
                 port: args.port,
                 username: args.username,
@@ -508,10 +555,10 @@ impl SmtpArgs {
                 weight: args.weight,
             },
             SmtpSubcommand::List(args) => SmtpCommand::List {
-                db_path: args.db_path,
+                db_path: db_path_or_default(args.db_path)?,
             },
             SmtpSubcommand::Update(args) => SmtpCommand::Update {
-                db_path: args.db_path,
+                db_path: db_path_or_default(args.db_path)?,
                 id: args.id,
                 host: args.host,
                 port: args.port,
@@ -523,10 +570,12 @@ impl SmtpArgs {
                 weight: args.weight,
             },
             SmtpSubcommand::Delete(args) => SmtpCommand::Delete {
-                db_path: args.db_path,
+                db_path: db_path_or_default(args.db_path)?,
                 id: args.id,
             },
-        }
+        };
+
+        Ok(command)
     }
 }
 
@@ -548,13 +597,60 @@ fn issuer_arg(value: &str) -> Result<String, String> {
         .map_err(|_| "must be a URL".to_string())
 }
 
-fn clap_to_io_error(error: clap::Error) -> io::Error {
-    invalid_input(error.to_string())
-}
-
 fn open_cli_database(db_path: &PathBuf) -> io::Result<Connection> {
     initialize_database_from_schema(db_path, SCHEMA_SQL).map_err(io_other)?;
     Connection::open(db_path).map_err(io_other)
+}
+
+fn cli_parse_error_to_io_error(error: CliParseError) -> io::Error {
+    match error {
+        CliParseError::Clap(error) => invalid_input(error.to_string()),
+        CliParseError::Io(error) => error,
+    }
+}
+
+fn db_path_or_default(db_path: Option<PathBuf>) -> io::Result<PathBuf> {
+    match db_path {
+        Some(db_path) => Ok(db_path),
+        None => default_db_path(),
+    }
+}
+
+fn default_db_path() -> io::Result<PathBuf> {
+    default_home_dir().map(|home| default_db_path_for_home(&home))
+}
+
+fn default_db_path_for_home(home: &Path) -> PathBuf {
+    home.join(".auth-mini").join("default.sqlite3")
+}
+
+#[cfg(not(windows))]
+fn default_home_dir() -> io::Result<PathBuf> {
+    env_path("HOME").ok_or_else(missing_home_error)
+}
+
+#[cfg(windows)]
+fn default_home_dir() -> io::Result<PathBuf> {
+    if let Some(home) = env_path("USERPROFILE") {
+        return Ok(home);
+    }
+
+    match (env_path("HOMEDRIVE"), std::env::var_os("HOMEPATH")) {
+        (Some(drive), Some(path)) if !path.is_empty() => Ok(drive.join(path)),
+        _ => Err(missing_home_error()),
+    }
+}
+
+fn env_path(name: &str) -> Option<PathBuf> {
+    std::env::var_os(name)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+}
+
+fn missing_home_error() -> io::Error {
+    invalid_input(format!(
+        "cannot determine home directory for default DB path {DEFAULT_DB_PATH_DISPLAY}; pass an explicit DB path"
+    ))
 }
 
 fn list_allowed_origins(connection: &Connection) -> io::Result<Vec<AllowedOrigin>> {
@@ -926,12 +1022,27 @@ mod tests {
 
     #[test]
     fn returns_clap_help_as_parse_error_for_testable_parser() {
-        let error = parse_app_command(["origin".to_string(), "--help".to_string()])
-            .expect_err("help is surfaced to the binary exit parser");
+        let error = parse_app_command([
+            "origin".to_string(),
+            "add".to_string(),
+            "--help".to_string(),
+        ])
+        .expect_err("help is surfaced to the binary exit parser");
 
         assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
         assert!(error.to_string().contains("Usage:"));
-        assert!(error.to_string().contains("Commands:"));
+        assert!(error.to_string().contains("Options:"));
+        assert!(error.to_string().contains(DEFAULT_DB_PATH_DISPLAY));
+    }
+
+    #[test]
+    fn builds_default_db_path_from_home() {
+        let home = PathBuf::from("target/test-home");
+
+        assert_eq!(
+            default_db_path_for_home(&home),
+            PathBuf::from("target/test-home/.auth-mini/default.sqlite3")
+        );
     }
 
     #[test]
@@ -1171,6 +1282,72 @@ mod tests {
     }
 
     #[test]
+    fn parses_default_db_path_for_instance_commands() {
+        let expected_db_path = default_db_path().expect("default db path resolves");
+
+        let init = parse_app_command(["init".to_string()]).expect("init parses");
+        assert_eq!(
+            init,
+            AppCommand::Init {
+                db_path: expected_db_path.clone(),
+            }
+        );
+
+        let start = parse_app_command([
+            "start".to_string(),
+            "--issuer".to_string(),
+            "https://issuer.example".to_string(),
+        ])
+        .expect("start parses");
+        assert_eq!(
+            start,
+            AppCommand::Serve(crate::Config {
+                host: "127.0.0.1".to_string(),
+                port: 7777,
+                issuer: "https://issuer.example".to_string(),
+                openapi_path: PathBuf::from("openapi.yaml"),
+                database: Some(crate::DatabaseConfig {
+                    db_path: expected_db_path.clone(),
+                    schema_path: PathBuf::from("sql/schema.sql"),
+                }),
+            })
+        );
+
+        let origin = parse_app_command([
+            "origin".to_string(),
+            "add".to_string(),
+            "--value".to_string(),
+            "https://example.com".to_string(),
+        ])
+        .expect("origin add parses");
+        assert_eq!(
+            origin,
+            AppCommand::Origin(OriginCommand::Add {
+                db_path: expected_db_path.clone(),
+                value: "https://example.com".to_string(),
+            })
+        );
+
+        let smtp =
+            parse_app_command(["smtp".to_string(), "list".to_string()]).expect("smtp list parses");
+        assert_eq!(
+            smtp,
+            AppCommand::Smtp(SmtpCommand::List {
+                db_path: expected_db_path.clone(),
+            })
+        );
+
+        let rotate = parse_app_command(["rotate".to_string(), "jwks".to_string()])
+            .expect("rotate jwks parses");
+        assert_eq!(
+            rotate,
+            AppCommand::RotateJwks {
+                db_path: expected_db_path,
+            }
+        );
+    }
+
+    #[test]
     fn rejects_start_without_issuer() {
         let error = parse_app_command([
             "start".to_string(),
@@ -1198,6 +1375,24 @@ mod tests {
         assert_eq!(rows[0].2, "EdDSA");
         assert_eq!(rows[1].2, "EdDSA");
         assert_ne!(rows[0].1, rows[1].1);
+    }
+
+    #[test]
+    fn init_creates_database_parent_directory() {
+        let db_path = PathBuf::from(format!(
+            "target/test-dbs/default-parent-{}/.auth-mini/default.sqlite3",
+            std::process::id()
+        ));
+        let mut output = Vec::new();
+
+        if let Some(parent) = db_path.parent() {
+            let _ = fs::remove_dir_all(parent);
+        }
+
+        run_init_command(db_path.clone(), &mut output).expect("init creates parent and db");
+
+        assert!(output.is_empty());
+        assert!(db_path.exists());
     }
 
     #[test]

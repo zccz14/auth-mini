@@ -12,6 +12,16 @@ npx auth-mini init ./auth-mini.sqlite
 
 `<instance>` currently means the path to your auth-mini SQLite database file.
 
+For the Rust binary, the instance path is optional on `init`, `start`, `origin`, `smtp`, and `rotate jwks`. When omitted, it uses `~/.auth-mini/default.sqlite3` and creates `~/.auth-mini` before initializing/opening the database:
+
+```bash
+auth-mini-rust-backend init
+auth-mini-rust-backend start --issuer https://auth.example.com
+auth-mini-rust-backend origin add --value https://app.example.com
+```
+
+Explicit paths remain supported, for example `auth-mini-rust-backend init ./auth-mini.sqlite`. The Rust binary still resolves default `openapi.yaml` and `sql/schema.sql` from the current working directory; pass `--openapi` and `--schema` when running outside the repository layout.
+
 `create` remains available as a compatibility alias during the transition.
 
 ## Stored browser origins

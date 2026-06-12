@@ -160,6 +160,17 @@ Start the server:
 npx auth-mini start ./auth-mini.sqlite --port 7777 --issuer 'https://auth.your-domain.com'
 ```
 
+Rust release binary convenience:
+
+```bash
+auth-mini-rust-backend init
+auth-mini-rust-backend smtp add --from-email 'sample@your-domain.com' --from-name 'sample-name' --host 'smtp.sample.com' --port 465 --secure --username 'sample@your-domain.com' --password '<smtp-password>'
+auth-mini-rust-backend origin add --value 'https://frontend.your-domain.com'
+auth-mini-rust-backend start --port 7777 --issuer 'https://auth.your-domain.com'
+```
+
+When the Rust binary DB path is omitted, it uses `~/.auth-mini/default.sqlite3`. Explicit DB paths are still supported. The Rust binary still reads default `openapi.yaml` and `sql/schema.sql` relative to the current working directory; run from the repo or pass `--openapi`/`--schema` when using a downloaded binary elsewhere.
+
 Then deploy it with Cloudflare Tunnel or your preferred hosting method.
 
 Minimal browser SDK usage:
