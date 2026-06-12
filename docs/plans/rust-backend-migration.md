@@ -109,7 +109,7 @@
 
 本轮新增最小 Rust 目标 E2E harness，让 HTTP smoke 合同可对外部 Rust binary 执行，而不只覆盖 TypeScript in-process app：
 
-- 新增 `npm run test:rust-e2e`，命令先构建 `rust-backend/target/debug/auth-mini-rust-backend`，再运行 `tests/rust-e2e`。
+- 新增 `npm run test:rust-e2e`，命令先构建 `rust-backend/target/debug/auth-mini-rust-backend`，再运行默认 `npm test` 不扫描的 `rust-e2e`。
 - harness 在 `.tmp/rust-e2e` 下创建临时 SQLite DB，通过 Rust CLI `init` 初始化 schema/JWKS，直接写入固定 OTP 作为登录前置状态。
 - harness 在随机可用端口启动 Rust server，覆盖 `GET /healthz`、未认证 `GET /me`、`/email/start` CORS preflight、`POST /email/verify` happy path、认证后 `/me`、Ed25519 credential/start/verify happy path 和 Ed25519 token `/me`。
 - 本轮不改造现有 TypeScript integration tests，不把 Rust E2E 加入默认 `npm test`，不要求 release binary 构建，不实现 WebAuthn ceremony E2E。

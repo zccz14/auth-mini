@@ -6,10 +6,10 @@ import { resolve } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { createTestEd25519Keypair } from '../helpers/ed25519.js';
-import { hashValue } from '../../src/shared/crypto.js';
+import { createTestEd25519Keypair } from '../tests/helpers/ed25519.js';
+import { hashValue } from '../src/shared/crypto.js';
 
-const repoRoot = resolve(import.meta.dirname, '../..');
+const repoRoot = resolve(import.meta.dirname, '..');
 const binaryPath = resolve(
   repoRoot,
   'rust-backend/target/debug/auth-mini-rust-backend',

@@ -182,7 +182,7 @@
 
 本轮 Rust 目标 E2E harness 切片必须新增下列可验证行为：
 
-- 新增专用 `npm run test:rust-e2e`，先构建当前 Rust debug binary，再由 Vitest 启动外部 Rust 服务；该命令不并入默认 `npm test`。
+- 新增专用 `npm run test:rust-e2e`，先构建当前 Rust debug binary，再由 Vitest 启动外部 Rust 服务；该 harness 位于默认 `npm test` 不扫描的 `rust-e2e` 目录，命令不并入默认检查。
 - E2E harness 必须只在仓库内 `.tmp/rust-e2e` 创建临时 SQLite 文件，并在测试结束后停止服务、删除临时目录。
 - harness 必须通过 Rust CLI `init` 初始化数据库和 JWKS，直接写入测试 OTP 行来避免真实 SMTP 依赖。
 - harness 必须在随机可用端口启动 Rust server，并覆盖 `GET /healthz`、未认证 `GET /me`、公开 auth endpoint CORS preflight、seeded email OTP verify happy path、认证后 `GET /me`、Ed25519 credential/start/verify happy path。
