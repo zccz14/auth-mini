@@ -243,6 +243,8 @@ describe('rust external server e2e smoke', () => {
       webauthn_credentials: [
         expect.objectContaining({
           id: passkey.credentialId,
+          credential_id: passkey.credentialId,
+          transports: [],
           rp_id: webauthnRpId,
           last_used_at: expect.any(String),
         }),
