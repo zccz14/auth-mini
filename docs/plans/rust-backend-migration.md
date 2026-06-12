@@ -151,6 +151,7 @@
 - 新增 `.github/workflows/release.yml`，仅在 `v*` tag push 时运行，并使用 `permissions: contents: write` 上传 GitHub Release assets。
 - 采用 GitHub-hosted runner matrix 直接构建 `auth-mini-rust-backend` release binary：Linux x86_64、macOS x86_64、macOS aarch64、Windows x86_64。
 - 每个目标产出平台命名 archive：Unix 使用 `.tar.gz`，Windows 使用 `.zip`；每个 archive 同时产出 `.sha256` checksum。
+- workflow 使用各 runner 默认 shell 执行构建；打包逻辑移入 `scripts/package-rust-release.py`，避免 Windows 在 Git Bash 下构建 vendored OpenSSL 时选中缺少 `Locale::Maketext::Simple` 的 Git/MSYS Perl。
 - 首轮不加入 Linux aarch64 或 musl，避免在未验证 linker/system dependency 前引入脆弱 cross toolchain。
 - Rust release readiness 不包含 Docker publishing；不发布 Docker image、不推送 GHCR、不改动现有 Docker image release workflow。
 - 不切换 npm 包 CLI，不迁移 `rotate jwks`、`init`、`start`，不删除 TypeScript CLI。
