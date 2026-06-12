@@ -4,6 +4,17 @@ The current Docker runtime is a minimal container for the Rust `auth-mini` binar
 
 ## Build the image
 
+Release images are published to GHCR for `linux/amd64`:
+
+```bash
+docker pull ghcr.io/zccz14/auth-mini:latest
+docker pull ghcr.io/zccz14/auth-mini:v0.3.0
+```
+
+Use `latest` for the latest release image, or a `vX.Y.Z` tag for a pinned version.
+
+To build the same runtime image locally from this repository:
+
 ```bash
 docker build -f build/Dockerfile -t auth-mini:local .
 ```
@@ -15,7 +26,7 @@ docker run --name auth-mini \
   --restart unless-stopped \
   -p 7777:7777 \
   -v auth-mini-data:/var/lib/auth-mini \
-  auth-mini:local \
+  ghcr.io/zccz14/auth-mini:latest \
   start /var/lib/auth-mini/auth-mini.sqlite --host 0.0.0.0 --port 7777 --issuer https://auth.zccz14.com
 ```
 
@@ -39,7 +50,7 @@ After the container is healthy, complete normal instance setup inside the persis
 ```bash
 docker run --rm \
   -v auth-mini-data:/var/lib/auth-mini \
-  auth-mini:local \
+  ghcr.io/zccz14/auth-mini:latest \
   origin add /var/lib/auth-mini/auth-mini.sqlite --value https://app.example.com
 ```
 
@@ -47,4 +58,4 @@ Add SMTP config with `auth-mini smtp add ...` in the same way.
 
 ## Publishing status
 
-This repository currently builds and smokes the Docker image in PR CI only. GHCR publishing, release tags, Cloudflared packaging, and multi-architecture images are separate follow-up work.
+This repository publishes `ghcr.io/zccz14/auth-mini` from `v*` release tags after the Docker smoke test passes. Published tags include the full release tag, the `X.Y` minor tag, and `latest`. Multi-architecture images and Cloudflared packaging are separate follow-up work.

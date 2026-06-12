@@ -73,11 +73,13 @@ auth-mini start \
 
 ## Docker runtime
 
-Build the local image from this repository:
+Pull the release image from GHCR:
 
 ```bash
-docker build -f build/Dockerfile -t auth-mini:local .
+docker pull ghcr.io/zccz14/auth-mini:latest
 ```
+
+Use `ghcr.io/zccz14/auth-mini:v0.3.0` for a pinned release version, or `ghcr.io/zccz14/auth-mini:latest` for the latest release image.
 
 Run the Rust binary container with persistent SQLite storage:
 
@@ -85,11 +87,13 @@ Run the Rust binary container with persistent SQLite storage:
 docker run --rm \
   -p 7777:7777 \
   -v auth-mini-data:/var/lib/auth-mini \
-  auth-mini:local \
+  ghcr.io/zccz14/auth-mini:latest \
   start /var/lib/auth-mini/auth-mini.sqlite --host 0.0.0.0 --port 7777 --issuer https://auth.zccz14.com
 ```
 
 The image entrypoint is `auth-mini`. The default command is `start /var/lib/auth-mini/auth-mini.sqlite --host 0.0.0.0 --port 7777 --issuer http://localhost:7777`, which is intended for local smoke testing. For deployment, pass an explicit `start ... --issuer <public-origin>` command. The image exposes `7777`, runs as non-root uid `10001`, and stores the default database at `/var/lib/auth-mini/auth-mini.sqlite`. The Rust binary embeds the schema and OpenAPI document, so the image does not need external `schema.sql` or `openapi.yaml` files at runtime.
+
+To build the same runtime image locally from this repository, run `docker build -f build/Dockerfile -t auth-mini:local .`.
 
 ## JWKS rotation
 
