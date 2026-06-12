@@ -6,12 +6,15 @@ use rusqlite::{params, Connection, OptionalExtension};
 use url::{Host, Url};
 
 use crate::db::initialize_database_from_schema;
+use crate::jwks::{bootstrap_keys, rotate_keys};
 
 const SCHEMA_SQL: &str = include_str!("../../sql/schema.sql");
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppCommand {
     Serve(crate::Config),
+    Init { db_path: PathBuf },
+    RotateJwks { db_path: PathBuf },
     Origin(OriginCommand),
     Smtp(SmtpCommand),
 }
@@ -82,6 +85,9 @@ struct CliArgs {
 
 #[derive(Debug, Subcommand)]
 enum CliCommand {
+    Init(InstanceArgs),
+    Start(StartArgs),
+    Rotate(RotateArgs),
     Origin(OriginArgs),
     Smtp(SmtpArgs),
 }
@@ -102,6 +108,37 @@ struct ServeArgs {
 
     #[arg(long = "schema", requires = "db_path")]
     schema_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+struct StartArgs {
+    db_path: PathBuf,
+
+    #[arg(long, default_value = "127.0.0.1")]
+    host: String,
+
+    #[arg(long, default_value_t = 7777)]
+    port: u16,
+
+    #[arg(long = "issuer", value_parser = issuer_arg)]
+    issuer: String,
+
+    #[arg(long = "openapi", default_value = "openapi.yaml")]
+    openapi_path: PathBuf,
+
+    #[arg(long = "schema", default_value = "sql/schema.sql")]
+    schema_path: PathBuf,
+}
+
+#[derive(Debug, Args)]
+struct RotateArgs {
+    #[command(subcommand)]
+    command: RotateSubcommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum RotateSubcommand {
+    Jwks(InstanceArgs),
 }
 
 #[derive(Debug, Args)]
@@ -361,6 +398,16 @@ pub fn run_smtp_command(command: SmtpCommand, writer: &mut impl Write) -> io::Re
     Ok(())
 }
 
+pub fn run_init_command(db_path: PathBuf, _writer: &mut impl Write) -> io::Result<()> {
+    let connection = open_cli_database(&db_path)?;
+    bootstrap_keys(&connection).map_err(io_other)
+}
+
+pub fn run_rotate_jwks_command(db_path: PathBuf, _writer: &mut impl Write) -> io::Result<()> {
+    let mut connection = open_cli_database(&db_path)?;
+    rotate_keys(&mut connection).map_err(|error| invalid_input(error.to_string()))
+}
+
 fn parse_cli(args: impl IntoIterator<Item = String>) -> Result<AppCommand, clap::Error> {
     let raw_args = std::iter::once("auth-mini-rust-backend".to_string()).chain(args);
     CliArgs::try_parse_from(raw_args).map(CliArgs::into_app_command)
@@ -369,6 +416,11 @@ fn parse_cli(args: impl IntoIterator<Item = String>) -> Result<AppCommand, clap:
 impl CliArgs {
     fn into_app_command(self) -> AppCommand {
         match self.command {
+            Some(CliCommand::Init(args)) => AppCommand::Init {
+                db_path: args.db_path,
+            },
+            Some(CliCommand::Start(args)) => AppCommand::Serve(args.into_config()),
+            Some(CliCommand::Rotate(args)) => args.into_app_command(),
             Some(CliCommand::Origin(args)) => AppCommand::Origin(args.into_origin_command()),
             Some(CliCommand::Smtp(args)) => AppCommand::Smtp(args.into_smtp_command()),
             None => AppCommand::Serve(self.serve.into_config()),
@@ -381,6 +433,7 @@ impl ServeArgs {
         crate::Config {
             host: self.host,
             port: self.port,
+            issuer: crate::Config::default().issuer,
             openapi_path: self.openapi_path,
             database: self.db_path.map(|db_path| crate::DatabaseConfig {
                 db_path,
@@ -388,6 +441,31 @@ impl ServeArgs {
                     .schema_path
                     .unwrap_or_else(|| PathBuf::from("sql/schema.sql")),
             }),
+        }
+    }
+}
+
+impl StartArgs {
+    fn into_config(self) -> crate::Config {
+        crate::Config {
+            host: self.host,
+            port: self.port,
+            issuer: self.issuer,
+            openapi_path: self.openapi_path,
+            database: Some(crate::DatabaseConfig {
+                db_path: self.db_path,
+                schema_path: self.schema_path,
+            }),
+        }
+    }
+}
+
+impl RotateArgs {
+    fn into_app_command(self) -> AppCommand {
+        match self.command {
+            RotateSubcommand::Jwks(args) => AppCommand::RotateJwks {
+                db_path: args.db_path,
+            },
         }
     }
 }
@@ -462,6 +540,12 @@ fn positive_i64_arg(value: &str) -> Result<i64, String> {
     }
 
     Ok(parsed)
+}
+
+fn issuer_arg(value: &str) -> Result<String, String> {
+    Url::parse(value)
+        .map(|_| value.to_string())
+        .map_err(|_| "must be a URL".to_string())
 }
 
 fn clap_to_io_error(error: clap::Error) -> io::Error {
@@ -830,6 +914,7 @@ mod tests {
             AppCommand::Serve(crate::Config {
                 host: "0.0.0.0".to_string(),
                 port: 8080,
+                issuer: "auth-mini".to_string(),
                 openapi_path: PathBuf::from("../openapi.yaml"),
                 database: Some(crate::DatabaseConfig {
                     db_path: PathBuf::from("target/test-dbs/app.sqlite"),
@@ -1029,6 +1114,119 @@ mod tests {
                 weight: 5,
             })
         );
+    }
+
+    #[test]
+    fn parses_init_rotate_jwks_and_start_commands() {
+        let init = parse_app_command([
+            "init".to_string(),
+            "target/test-dbs/init.sqlite".to_string(),
+        ])
+        .expect("init parses");
+        assert_eq!(
+            init,
+            AppCommand::Init {
+                db_path: PathBuf::from("target/test-dbs/init.sqlite"),
+            }
+        );
+
+        let rotate = parse_app_command([
+            "rotate".to_string(),
+            "jwks".to_string(),
+            "target/test-dbs/init.sqlite".to_string(),
+        ])
+        .expect("rotate jwks parses");
+        assert_eq!(
+            rotate,
+            AppCommand::RotateJwks {
+                db_path: PathBuf::from("target/test-dbs/init.sqlite"),
+            }
+        );
+
+        let start = parse_app_command([
+            "start".to_string(),
+            "target/test-dbs/app.sqlite".to_string(),
+            "--issuer".to_string(),
+            "https://issuer.example".to_string(),
+            "--host".to_string(),
+            "0.0.0.0".to_string(),
+            "--port".to_string(),
+            "8080".to_string(),
+        ])
+        .expect("start parses");
+
+        assert_eq!(
+            start,
+            AppCommand::Serve(crate::Config {
+                host: "0.0.0.0".to_string(),
+                port: 8080,
+                issuer: "https://issuer.example".to_string(),
+                openapi_path: PathBuf::from("openapi.yaml"),
+                database: Some(crate::DatabaseConfig {
+                    db_path: PathBuf::from("target/test-dbs/app.sqlite"),
+                    schema_path: PathBuf::from("sql/schema.sql"),
+                }),
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_start_without_issuer() {
+        let error = parse_app_command([
+            "start".to_string(),
+            "target/test-dbs/app.sqlite".to_string(),
+        ])
+        .expect_err("start requires issuer");
+
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn init_seeds_schema_and_jwks_slots() {
+        let db_path = test_db_path("init-command");
+        let mut output = Vec::new();
+
+        run_init_command(db_path.clone(), &mut output).expect("init succeeds");
+
+        assert!(output.is_empty());
+        let connection = Connection::open(db_path).expect("database opens");
+        let rows = read_jwks_rows(&connection);
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].0, "CURRENT");
+        assert_eq!(rows[1].0, "STANDBY");
+        assert_eq!(rows[0].2, "EdDSA");
+        assert_eq!(rows[1].2, "EdDSA");
+        assert_ne!(rows[0].1, rows[1].1);
+    }
+
+    #[test]
+    fn rotate_jwks_promotes_standby_and_requires_existing_slots() {
+        let db_path = test_db_path("rotate-jwks-command");
+        let mut output = Vec::new();
+
+        run_init_command(db_path.clone(), &mut output).expect("init succeeds");
+        let connection = Connection::open(&db_path).expect("database opens");
+        let before = read_jwks_rows(&connection);
+        drop(connection);
+
+        run_rotate_jwks_command(db_path.clone(), &mut output).expect("rotate succeeds");
+
+        assert!(output.is_empty());
+        let connection = Connection::open(db_path).expect("database opens");
+        let after = read_jwks_rows(&connection);
+
+        assert_eq!(after.len(), 2);
+        assert_eq!(after[0].0, "CURRENT");
+        assert_eq!(after[1].0, "STANDBY");
+        assert_eq!(after[0].1, before[1].1);
+        assert_ne!(after[1].1, before[0].1);
+        assert_ne!(after[1].1, before[1].1);
+
+        let empty_db_path = test_db_path("rotate-empty");
+        let missing_slots = run_rotate_jwks_command(empty_db_path, &mut output)
+            .expect_err("missing slots are rejected");
+        assert_eq!(missing_slots.kind(), io::ErrorKind::InvalidInput);
     }
 
     #[test]
@@ -1279,6 +1477,17 @@ mod tests {
                 },
             )
             .expect("smtp row reads")
+    }
+
+    fn read_jwks_rows(connection: &Connection) -> Vec<(String, String, String)> {
+        let mut statement = connection
+            .prepare("SELECT id, kid, alg FROM jwks_keys ORDER BY id ASC")
+            .expect("jwks query prepares");
+        statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .expect("jwks query runs")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("jwks rows read")
     }
 
     fn test_db_path(name: &str) -> PathBuf {

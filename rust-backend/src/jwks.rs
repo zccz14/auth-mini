@@ -71,9 +71,21 @@ pub(crate) fn verify_access_token(connection: &Connection, token: &str) -> rusql
     Ok(payload)
 }
 
-fn bootstrap_keys(connection: &Connection) -> rusqlite::Result<()> {
+pub(crate) fn bootstrap_keys(connection: &Connection) -> rusqlite::Result<()> {
     insert_key_if_missing(connection, "CURRENT")?;
     insert_key_if_missing(connection, "STANDBY")?;
+
+    Ok(())
+}
+
+pub(crate) fn rotate_keys(connection: &mut Connection) -> rusqlite::Result<()> {
+    let standby = slot_key(connection, "STANDBY")?;
+    let next_standby = random_key_record(connection)?;
+    let transaction = connection.transaction()?;
+
+    update_slot(&transaction, "STANDBY", &next_standby)?;
+    update_slot(&transaction, "CURRENT", &standby)?;
+    transaction.commit()?;
 
     Ok(())
 }
@@ -115,6 +127,63 @@ struct StoredSigningKey {
     kid: String,
     public_jwk: String,
     private_jwk: String,
+}
+
+fn slot_key(connection: &Connection, slot: &str) -> rusqlite::Result<StoredSigningKey> {
+    connection.query_row(
+        "SELECT kid, public_jwk, private_jwk FROM jwks_keys WHERE id = ?1 LIMIT 1",
+        [slot],
+        |row| {
+            Ok(StoredSigningKey {
+                kid: row.get(0)?,
+                public_jwk: row.get(1)?,
+                private_jwk: row.get(2)?,
+            })
+        },
+    )
+}
+
+fn random_key_record(connection: &Connection) -> rusqlite::Result<StoredSigningKey> {
+    let kid = random_uuid(connection)?;
+    let secret = random_secret(connection)?;
+    let signing_key = signing_key_from_secret(&secret)?;
+    let public_x = encode_segment(&signing_key.verifying_key().to_bytes());
+    let public_jwk = json!({
+        "alg": "EdDSA",
+        "crv": "Ed25519",
+        "kid": kid,
+        "kty": "OKP",
+        "use": "sig",
+        "x": public_x,
+    });
+    let private_jwk = json!({
+        "alg": "EdDSA",
+        "crv": "Ed25519",
+        "kid": kid,
+        "kty": "OKP",
+        "use": "sig",
+        "x": public_x,
+        "d": secret,
+    });
+
+    Ok(StoredSigningKey {
+        kid,
+        public_jwk: public_jwk.to_string(),
+        private_jwk: private_jwk.to_string(),
+    })
+}
+
+fn update_slot(
+    connection: &Connection,
+    slot: &str,
+    key: &StoredSigningKey,
+) -> rusqlite::Result<()> {
+    connection.execute(
+        "UPDATE jwks_keys SET kid = ?1, alg = 'EdDSA', public_jwk = ?2, private_jwk = ?3 WHERE id = ?4",
+        params![key.kid, key.public_jwk, key.private_jwk, slot],
+    )?;
+
+    Ok(())
 }
 
 fn current_key(connection: &Connection) -> rusqlite::Result<StoredSigningKey> {

@@ -5,6 +5,7 @@ use std::path::PathBuf;
 pub struct Config {
     pub host: String,
     pub port: u16,
+    pub issuer: String,
     pub openapi_path: PathBuf,
     pub database: Option<DatabaseConfig>,
 }
@@ -66,6 +67,7 @@ impl Default for Config {
         Self {
             host: "127.0.0.1".to_string(),
             port: 7777,
+            issuer: "auth-mini".to_string(),
             openapi_path: PathBuf::from("openapi.yaml"),
             database: None,
         }
@@ -91,6 +93,7 @@ mod tests {
 
         assert_eq!(config.host, "127.0.0.1");
         assert_eq!(config.port, 7777);
+        assert_eq!(config.issuer, "auth-mini");
         assert_eq!(config.openapi_path, PathBuf::from("openapi.yaml"));
         assert_eq!(config.database, None);
     }
