@@ -39,6 +39,7 @@
     "build": "node scripts/build-sdk.mjs",
     "generate:api": "openapi-ts",
     "check:generated:api": "node scripts/check-generated-api-sdk.mjs",
+    "check:release-version": "node scripts/check-release-version.mjs",
     "test": "npm run typecheck && npm run test:unit && npm run test:integration",
     "test:unit": "node scripts/run-tests.js",
     "demo:build": "npm run build && npm --prefix examples/demo run build",
