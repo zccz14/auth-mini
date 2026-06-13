@@ -47,6 +47,9 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Check release version consistency
+        run: npm run check:release-version -- ${{ github.ref_name }}
+
       - name: Build release binary
         run: cargo build --manifest-path rust-backend/Cargo.toml --release --target ${{ matrix.target }} --target-dir rust-backend/target
 

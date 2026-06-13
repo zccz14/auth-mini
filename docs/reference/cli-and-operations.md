@@ -95,6 +95,16 @@ The image entrypoint is `auth-mini`. The default command is `start /var/lib/auth
 
 To build the same runtime image locally from this repository, run `docker build -f build/Dockerfile -t auth-mini:local .`.
 
+## Release version rule
+
+For binary and GHCR releases, Git tag `vX.Y.Z` is the release version single source of truth. Before pushing the tag, manually align these manifest versions to `X.Y.Z`:
+
+- `package.json` `version`
+- `rust-backend/Cargo.toml` `[package] version`
+- `rust-backend/Cargo.lock` `auth-mini` package `version`
+
+Run `npm run check:release-version -- vX.Y.Z` before pushing the tag. The release workflows run the same check before binary builds and before Docker smoke/push; a mismatch fails fast. The release check does not bump manifests, infer another version, or create a release tag.
+
 ## JWKS rotation
 
 ```bash

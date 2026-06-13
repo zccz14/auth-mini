@@ -278,6 +278,12 @@ Access tokens stay short-lived and verifiable by APIs through `/jwks`; refresh t
 
 Run `npm run format`, `npm run lint`, `npm run typecheck`, and `npm test`.
 
+## Release version rule
+
+Git tag `vX.Y.Z` is the single source of truth for a release version. Before pushing a release tag, manually set `package.json`, `rust-backend/Cargo.toml`, and the `auth-mini` package entry in `rust-backend/Cargo.lock` to `X.Y.Z`, then run `npm run check:release-version -- vX.Y.Z`.
+
+The release workflows fail before building binaries or publishing images when the tag or any manifest version does not match. The check never bumps versions or creates release tags.
+
 ## License
 
 MIT License
