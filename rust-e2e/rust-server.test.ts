@@ -58,6 +58,27 @@ describe('rust external server e2e smoke', () => {
     await waitForHealthz(baseUrl);
     const adminKey = createTestEd25519Keypair('admin');
 
+    const webRoot = await fetch(`${baseUrl}/web`, { redirect: 'manual' });
+    expect(webRoot.status).toBe(308);
+    expect(webRoot.headers.get('location')).toBe('/web/');
+
+    const webIndex = await fetch(`${baseUrl}/web/`);
+    expect(webIndex.status).toBe(200);
+    expect(webIndex.headers.get('content-type')).toContain('text/html');
+    expect(webIndex.headers.get('cache-control')).toBe('no-cache');
+    const webIndexHtml = await webIndex.text();
+    const webAssetPath = webIndexHtml.match(
+      /src="(\/web\/assets\/[^"]+\.js)"/,
+    )?.[1];
+    expect(webAssetPath).toEqual(expect.stringMatching(/^\/web\/assets\//));
+
+    const webAsset = await fetch(`${baseUrl}${webAssetPath}`);
+    expect(webAsset.status).toBe(200);
+    expect(webAsset.headers.get('content-type')).toContain('text/javascript');
+    expect(webAsset.headers.get('cache-control')).toBe(
+      'public, max-age=31536000, immutable',
+    );
+
     const setup = await putJson(`${baseUrl}/admin/setup`, {
       issuer: baseUrl,
       origin: webauthnOrigin,

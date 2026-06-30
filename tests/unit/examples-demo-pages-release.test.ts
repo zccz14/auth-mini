@@ -15,6 +15,36 @@ describe('examples demo Pages release contract', () => {
     expect(packageJson.scripts?.['demo:build']).toBe(
       'npm run build && npm --prefix examples/demo run build',
     );
+    expect(packageJson.scripts?.['demo:build:web']).toBe(
+      'npm run build && npm --prefix examples/demo run build:web',
+    );
+  });
+
+  it('builds embedded web assets before Rust release binaries', () => {
+    const workflow = readRepoFile('.github/workflows/release.yml');
+    const buildJobStart = workflow.indexOf('  build-rust-binary:');
+
+    expect(buildJobStart).toBeGreaterThanOrEqual(0);
+
+    const buildJob = workflow.slice(buildJobStart);
+    const expectedSequence = [
+      'uses: actions/setup-node@v4',
+      'run: npm ci',
+      'run: npm --prefix examples/demo ci',
+      'run: npm run demo:build:web',
+      'cargo build --manifest-path rust-backend/Cargo.toml --release',
+    ];
+    const sequenceIndexes = expectedSequence.map((snippet) =>
+      buildJob.indexOf(snippet),
+    );
+
+    sequenceIndexes.forEach((index) => {
+      expect(index).toBeGreaterThanOrEqual(0);
+    });
+
+    for (let i = 1; i < sequenceIndexes.length; i += 1) {
+      expect(sequenceIndexes[i - 1]).toBeLessThan(sequenceIndexes[i]);
+    }
   });
 
   it('builds Pages from the root entrypoint and uploads examples/demo/dist', () => {

@@ -9,6 +9,7 @@ export default tseslint.config(
       '**/dist/**',
       'node_modules',
       '**/node_modules/**',
+      'rust-backend/web/**',
       'src/generated/api/**',
     ],
   },

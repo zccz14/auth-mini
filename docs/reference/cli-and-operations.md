@@ -30,7 +30,7 @@ For deployment, the CLI only accepts the bind host, bind port, and database path
 auth-mini --host 127.0.0.1 --port 7777 --db ./auth-mini.sqlite
 ```
 
-The Rust binary embeds the database schema and `openapi.yaml` for release-binary use. Runtime initialization uses the embedded schema. Rust `/openapi.yaml` and `/openapi.json` do not depend on the current working directory, and the Rust runtime has no `--openapi` override parameter.
+The Rust binary embeds the database schema, `openapi.yaml`, and the GUI demo static assets for release-binary use. Runtime initialization uses the embedded schema. Rust `/openapi.yaml` and `/openapi.json` do not depend on the current working directory, `/web/` serves the embedded GUI without a separate frontend deployment, and the Rust runtime has no `--openapi` override parameter.
 
 The Rust binary prints one `auth-mini SQLite database: <path>` line to stderr when a database is configured.
 
