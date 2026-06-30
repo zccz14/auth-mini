@@ -200,7 +200,6 @@ README should not keep:
 - complete endpoint tables
 - complete operational walkthroughs
 - WebAuthn payload JSON blocks
-- Docker troubleshooting body text
 
 - [ ] **Step 4: Add the docs map near the end of README**
 
@@ -211,7 +210,6 @@ Include links to:
 - `docs/integration/backend-jwt-verification.md`
 - `docs/reference/http-api.md`
 - `docs/reference/cli-and-operations.md`
-- `docs/deploy/docker-cloudflared.md`
 - `demo/`
 
 - [ ] **Step 5: Keep `Development` and `License` intact or minimally adjusted**
@@ -247,7 +245,6 @@ Check explicitly that README now has:
 - no detailed Browser SDK state model prose
 - no complete HTTP API endpoint tables
 - no WebAuthn payload JSON blocks
-- no Docker troubleshooting body text
 
 Expected: README satisfies the spec boundaries rather than only "feeling shorter".
 
@@ -277,7 +274,7 @@ Expected: no confusion about the primary place to look for static documentation.
 Suggested commands:
 
 ```bash
-bash docker/check-docs.sh post
+
 ```
 
 If unavailable or inapplicable, record that validation fell back to manual link/structure review.

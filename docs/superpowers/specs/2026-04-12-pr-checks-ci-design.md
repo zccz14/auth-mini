@@ -4,7 +4,6 @@
 
 - 当前仓库已有面向发布与文档校验的自动化能力，但缺少一个只服务于 Pull Request 合并前检查的独立 CI 工作流。
 - 本轮已批准的范围仅是在 `.github/workflows/` 下新增一个 PR 专用工作流文件，用统一、可取消的检查流程覆盖主线合并前的基础质量门槛。
-- 该工作流必须与现有 publish / release 职责解耦，避免把发布责任、Docker 冒烟验证或额外触发策略混入 PR 检查范围。
 
 ## 目标
 
@@ -15,13 +14,10 @@
 
 ## 非目标
 
-- 不在 PR CI 中新增 Docker smoke tests。
 - 不为该工作流新增 path filters、paths-ignore 或其他按文件路径裁剪触发范围的规则。
 - 不修改现有 publish / release 工作流的职责分配，也不把发布逻辑迁移到本工作流。
 
 ## 决策
-
-采用独立的 `pr-checks.yml` 工作流：当 PR 指向 `main` 时，在 `ubuntu-latest` 上以只读仓库权限运行一个单 job，先完成 checkout 与 Node 24 环境准备，再依次执行 `npm ci`、lint、typecheck、test、build、`bash docker/check-release-workflow.sh` 与 `bash docker/check-docs.sh post`；并为同一 PR 使用基于 workflow 名称与 PR 编号的 concurrency key，使新提交自动取消旧运行。
 
 ## 工作流结构
 
@@ -72,8 +68,6 @@ permissions:
 3. `npm run typecheck`
 4. `npm test`
 5. `npm run build`
-6. `bash docker/check-release-workflow.sh`
-7. `bash docker/check-docs.sh post`
 
 ### 失败语义
 
@@ -83,8 +77,6 @@ permissions:
 ## 与现有自动化边界
 
 - `pr-checks.yml` 只负责 PR 合并前质量检查，不承担发布、制品上传、镜像验证或版本发布责任。
-- `bash docker/check-release-workflow.sh` 在本工作流中的作用仅是校验 release workflow 相关约束仍然成立，不意味着把 release 执行迁入 PR CI。
-- `bash docker/check-docs.sh post` 在本工作流中的作用仅是执行已批准的 docs 校验命令，不扩展为额外文档生成或发布动作。
 
 ## 验收标准
 
@@ -96,7 +88,6 @@ permissions:
 - 工作流使用 `actions/checkout@v4` 与启用 npm cache 的 `actions/setup-node@v4`，Node 版本为 24。
 - 工作流按批准顺序执行 `npm ci`、lint、typecheck、test、build、release workflow 检查与 docs 检查。
 - 任一步骤失败都会让整个工作流失败。
-- 工作流不新增 Docker smoke tests、不新增 path filters、也不改变 publish / release 工作流职责。
 
 ## 风险与控制
 
@@ -104,5 +95,4 @@ permissions:
   - 控制：spec 明确限定 `pr-checks.yml` 仅做 PR 质量检查，不承载 publish / release 责任。
 - 风险：同一 PR 连续提交时保留多条过期运行，浪费 CI 资源并增加结果噪音。
   - 控制：使用基于 workflow 名称与 PR 编号的 concurrency 分组，并开启自动取消旧运行。
-- 风险：为了追求覆盖面而额外引入 Docker smoke tests 或 path filters，造成 scope drift。
   - 控制：将两者都列为显式非目标，禁止在本轮扩展。

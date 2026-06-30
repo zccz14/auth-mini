@@ -2,7 +2,6 @@
 
 ## 背景/目标
 
-- GitHub binary release 与 GHCR image release 都由 `v*` tag 触发。
 - 发布版本必须只有一个来源：Git tag `vX.Y.Z`。
 - 发布前必须确认 npm manifest 与 Rust manifest/lockfile 都已经手动对齐到 `X.Y.Z`。
 
@@ -12,14 +11,12 @@
 - tag 只接受 `vX.Y.Z`。
 - 校验 `package.json`、`rust-backend/Cargo.toml`、`rust-backend/Cargo.lock` 中的版本都等于 `X.Y.Z`。
 - 在 Rust binary release workflow 构建前运行校验。
-- 在 GHCR image release workflow Docker smoke 与 push 前运行校验。
 - 更新发布文档，说明 tag 是 single truth，manifest 必须先手动改到同一版本。
 
 ## 非目标
 
 - 不创建 release tag。
 - 不自动 bump 或修改 manifest 版本。
-- 不发布 npm、GHCR image 或 binary。
 - 不引入宽松 tag 猜测、多版本来源选择或 fallback。
 
 ## 失败语义

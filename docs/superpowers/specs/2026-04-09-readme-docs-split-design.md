@@ -9,12 +9,10 @@
 ## 非目标
 
 - 不改动产品行为、CLI、HTTP API 或 SDK。
-- 不重写已有 `docs/deploy/docker-cloudflared.md` 的技术内容，只调整 README 对它的引用方式。
 - 不为所有现有 README 段落都创建独立文档；优先做最小、清晰的专题拆分。
 
 ## 当前问题
 
-- 当前 `README.md` 同时承担项目定位、哲学说明、CLI 手册、HTTP API 参考、Browser SDK 手册、WebAuthn 细节与 Docker 部署入口，首页信息层级不清。
 - 首次读者需要滚过大量实现细节后，才能建立“这是什么、适不适合我、为什么这样设计”的判断。
 - 已经存在 `docs/` 目录与部署文档，但 README 仍承载过多应当下沉的参考信息。
 
@@ -77,7 +75,6 @@ README 的可执行边界如下：
   - Browser SDK 状态模型与跨域细节
   - 完整 HTTP API endpoint 列表
   - WebAuthn payload JSON 示例
-  - Docker 部署步骤与排障正文
 
 ### 从 README 下沉到 docs 的内容
 
@@ -103,7 +100,6 @@ README 的可执行边界如下：
   - logging 行为与注意事项
 - Backend token verification：
   - 使用 `/jwks` 验证 access token 的说明
-- Docker 部署仍链接到现有 `docs/deploy/docker-cloudflared.md`。
 
 ## 新增/修改文件
 
@@ -139,9 +135,6 @@ README 的可执行边界如下：
   - `docs/reference/cli-and-operations.md`：承接详细 topic、rotation、logging。
 - `Logging`
   - 移至 `docs/reference/cli-and-operations.md`。
-- `Docker deployment`
-  - README：只保留一句说明与部署文档入口，不保留 `docker run` snippet。
-  - `docs/deploy/docker-cloudflared.md`：保留详细正文与排障。
 - `HTTP API`
   - 移至 `docs/reference/http-api.md`。
 - `Browser SDK`
@@ -172,7 +165,6 @@ README 的可执行边界如下：
 - 首屏或前几个 section 能清楚回答：这是什么、适合谁、为什么这样设计。
 - README 仍保留最小接入预览，不变成纯营销页。
 - 新增文档能独立承接被移出的细节内容，且 README 链接有效。
-- 现有 `docs/deploy/docker-cloudflared.md` 保持可达并在 README 中有明确入口。
 - `demo/` 的角色在 README 或相关 docs 中得到明确说明，不与 `docs/` 形成相互竞争的主入口。
 - 按“现有 README 章节迁移对照”检查后，不存在失联主题。
 

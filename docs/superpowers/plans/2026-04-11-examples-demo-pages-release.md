@@ -199,7 +199,6 @@ Replace the current paragraph at `README.md:169-180` with text that keeps `docs/
 - Backend JWT verification: [docs/integration/backend-jwt-verification.md](docs/integration/backend-jwt-verification.md)
 - HTTP API reference: [docs/reference/http-api.md](docs/reference/http-api.md)
 - CLI and operations: [docs/reference/cli-and-operations.md](docs/reference/cli-and-operations.md)
-- Docker + Cloudflared deployment: [docs/deploy/docker-cloudflared.md](docs/deploy/docker-cloudflared.md)
 ```
 
 - [ ] **Step 2: Re-run the release-contract test after the README edit**

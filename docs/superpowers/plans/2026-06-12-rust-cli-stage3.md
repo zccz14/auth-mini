@@ -13,8 +13,4 @@
 - [x] 实现 `start`：解析 `INSTANCE`、`--issuer`、`--host`、`--port`、`--schema` 并传入 Rust server；Rust binary 内置 `openapi.yaml`，不提供 `--openapi` 覆盖参数。
 - [x] 将 Rust HTTP token issuer 从硬编码 `auth-mini` 改为 `Config.issuer`。
 - [x] 跑 Rust fmt、clippy、test、build。
-- [x] 跑最小 npm typecheck/build/CLI 测试，确认未破坏 TS CLI/package/Docker 当前入口。
-- [x] 将 Docker runtime 切换为直接构建并运行 Rust release binary，删除旧 Node runtime artifact 准备路径和 entrypoint wrapper 测试。
-- [x] 增加 PR Docker smoke workflow，只构建本地镜像并运行 smoke，不做 GHCR 发布。
-- [x] 更新 README、CLI ops 和 Docker 部署文档，说明入口、端口、非 root 用户、数据库路径与 GHCR 后续处理。
 - [ ] commit、fetch、rebase、push、创建 PR，并跟进 checks/mergeability。

@@ -40,7 +40,6 @@
 ### 明确排除
 
 - 不修改与 demo 构建无关的根包业务逻辑。
-- 不改造 `publish.yml`、`release-image.yml` 的职责。
 - 不把 demo 构建修复扩展成 SDK 发布策略、镜像流程或其他 CI 统一化改造。
 
 ## CI 范围

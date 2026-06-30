@@ -3,10 +3,10 @@
 Install the Rust release binary for your platform from GitHub Releases, verify its `.sha256` checksum, extract it, and put `auth-mini` on `PATH`:
 
 ```bash
-curl -LO https://github.com/zccz14/auth-mini/releases/download/v0.3.0/auth-mini-x86_64-unknown-linux-gnu.tar.gz
-curl -LO https://github.com/zccz14/auth-mini/releases/download/v0.3.0/auth-mini-x86_64-unknown-linux-gnu.tar.gz.sha256
-shasum -a 256 -c auth-mini-x86_64-unknown-linux-gnu.tar.gz.sha256
-tar -xzf auth-mini-x86_64-unknown-linux-gnu.tar.gz
+curl -LO https://github.com/zccz14/auth-mini/releases/download/latest/auth-mini-linux-x86_64.tar.gz
+curl -LO https://github.com/zccz14/auth-mini/releases/download/latest/auth-mini-linux-x86_64.tar.gz.sha256
+shasum -a 256 -c auth-mini-linux-x86_64.tar.gz.sha256
+tar -xzf auth-mini-linux-x86_64.tar.gz
 chmod +x auth-mini
 sudo mv auth-mini /usr/local/bin/auth-mini
 auth-mini
@@ -64,39 +64,15 @@ auth-mini \
   --issuer https://auth.zccz14.com
 ```
 
-## Docker runtime
-
-Pull the release image from GHCR:
-
-```bash
-docker pull ghcr.io/zccz14/auth-mini:latest
-```
-
-Use `ghcr.io/zccz14/auth-mini:v0.3.0` for a pinned release version, or `ghcr.io/zccz14/auth-mini:latest` for the latest release image.
-
-Run the Rust binary container with persistent SQLite storage:
-
-```bash
-docker run --rm \
-  -p 7777:7777 \
-  -v auth-mini-data:/var/lib/auth-mini \
-  ghcr.io/zccz14/auth-mini:latest \
-  --db /var/lib/auth-mini/auth-mini.sqlite --host 0.0.0.0 --port 7777 --issuer https://auth.zccz14.com
-```
-
-The image entrypoint is `auth-mini`. The default command is `--db /var/lib/auth-mini/auth-mini.sqlite --host 0.0.0.0 --port 7777 --issuer http://localhost:7777`, which is intended for local smoke testing. For deployment, pass an explicit `--issuer <public-origin>` command. The image exposes `7777`, runs as non-root uid `10001`, and stores the default database at `/var/lib/auth-mini/auth-mini.sqlite`. The Rust binary embeds the schema and OpenAPI document, so the image does not need external `schema.sql` or `openapi.yaml` files at runtime.
-
-To build the same runtime image locally from this repository, run `docker build -f build/Dockerfile -t auth-mini:local .`.
-
 ## Release version rule
 
-For binary and GHCR releases, Git tag `vX.Y.Z` is the release version single source of truth. Before pushing the tag, manually align these manifest versions to `X.Y.Z`:
+For versioned binary releases, Git tag `vX.Y.Z` is the release version single source of truth. Before pushing the tag, manually align these manifest versions to `X.Y.Z`:
 
 - `package.json` `version`
 - `rust-backend/Cargo.toml` `[package] version`
 - `rust-backend/Cargo.lock` `auth-mini` package `version`
 
-Run `npm run check:release-version -- vX.Y.Z` before pushing the tag. The release workflows run the same check before binary builds and before Docker smoke/push; a mismatch fails fast. The release check does not bump manifests, infer another version, or create a release tag.
+Run `npm run check:release-version -- vX.Y.Z` before pushing the tag. The release check does not bump manifests, infer another version, or create a release tag.
 
 ## Logging and diagnostics
 

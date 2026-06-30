@@ -54,7 +54,6 @@
 ### 重点检查对象
 
 - `README.md`
-- `docs/deploy/docker-cloudflared.md`
 - demo/docs 页面与其生成的接入命令/示例
 - `src/sdk/singleton-entry.ts` 中默认 `baseUrl`
 - 与 README / SDK 合同相关的测试，例如：
@@ -114,38 +113,34 @@
    - 现状：`init`、`start`、`rotate jwks` 使用 `npx`，但 `origin`/`smtp` 以及部分示例仍使用裸 `auth-mini`
    - 计划：统一为 `npx auth-mini ...`
 
-2. `docs/deploy/docker-cloudflared.md` 中 CLI 示例仍使用裸 `auth-mini`
-   - 位置：`docs/deploy/docker-cloudflared.md:78`
    - 现状：post-start 配置仍写 `auth-mini origin add ...`
    - 计划：统一为 `npx auth-mini ...`
 
-3. `README.md` 中 Auth Server 示例值仍是 `https://auth.example.com`
+2. `README.md` 中 Auth Server 示例值仍是 `https://auth.example.com`
    - 位置：`README.md:138`, `README.md:156`, `README.md:169`, `README.md:216`, `README.md:255-267`, `README.md:282`
    - 现状：多个 README 代码块和示例 URL 使用 `auth.example.com`
    - 计划：统一改为 `https://auth.zccz14.com`
 
-4. `docs/deploy/docker-cloudflared.md` 中 Auth Server 示例值仍是 `https://auth.example.com`
-   - 位置：`docs/deploy/docker-cloudflared.md:18-19`, `29`, `55`, `90`
    - 现状：部署文档继续用 `auth.example.com`
    - 计划：统一改为 `https://auth.zccz14.com`
 
-5. `demo/index.html` 的输入 placeholder 仍是 `https://auth.example.com`
+3. `demo/index.html` 的输入 placeholder 仍是 `https://auth.example.com`
    - 位置：`demo/index.html:47`
    - 计划：改为 `https://auth.zccz14.com`
 
-6. `README.md` 的 WebAuthn flow 仍写 authenticate/options 可用空 body
+4. `README.md` 的 WebAuthn flow 仍写 authenticate/options 可用空 body
    - 位置：`README.md:309`
    - 现状：写着 “call `POST /webauthn/authenticate/options` with an empty body”
    - 与实现关系：当前 `src/shared/http-schemas.ts` 要求 `rp_id` 必填，`tests/integration/webauthn.test.ts` 也覆盖了缺失 `rp_id` 的拒绝行为
    - 计划：修正文档为显式携带 `rp_id`；同时补 register/options 的请求说明，避免两边都省略 body
 
-7. `demo/content.js` 的 WebAuthn API Reference 缺少 options 请求体示例
+5. `demo/content.js` 的 WebAuthn API Reference 缺少 options 请求体示例
    - 位置：`demo/content.js:95-123`
    - 现状：`/webauthn/register/options` 和 `/webauthn/authenticate/options` 只有响应示例，没有 `body: { rp_id: ... }`
    - 与实现关系：当前服务端两个 options 接口都要求 `rp_id`
    - 计划：为两个接口补上请求体示例，说明 SDK 可在浏览器侧自动补 `rp_id`
 
-8. 相关测试仍锁定旧文案 / 旧命令
+6. 相关测试仍锁定旧文案 / 旧命令
    - 位置：`tests/integration/oclif-cli.test.ts`, `tests/unit/demo-content.test.ts`, `tests/unit/demo-setup.test.ts`, `tests/unit/demo-render.test.ts`, `tests/unit/demo-bootstrap.test.ts`
    - 现状：这些测试目前显式断言 `auth-mini ... --origin ...`、`auth.example.com`、以及裸 `auth-mini` 子命令示例
    - 计划：随文档/demo 一起更新，作为防漂移回归测试
@@ -184,7 +179,6 @@
 ## 文件与职责
 
 - `README.md`：修正 CLI 示例、Auth Server 默认值、WebAuthn 请求说明、Operational limits 文案。
-- `docs/deploy/docker-cloudflared.md`：修正对外命令示例与 issuer 示例值。
 - `demo/index.html`、`demo/setup.js`、`demo/content.js`：按用户确认结果修正文案、生成命令、API reference 与 caveats。
 - `src/sdk/singleton-entry.ts`：按用户确认结果，移除 fallback 到具体域名的默认 `baseUrl` 行为。
 - `tests/integration/oclif-cli.test.ts`：锁定 README 中 `npx auth-mini`、移除旧 `--origin` / `--rp-id` 示例、统一默认 issuer 示例值。
@@ -197,7 +191,6 @@
 - 优先补或更新测试，再改实现/文档。
 - 文件级检查范围固定为：
   - `README.md`
-  - `docs/deploy/docker-cloudflared.md`
   - `demo/index.html`
   - `demo/setup.js`
   - `demo/content.js`

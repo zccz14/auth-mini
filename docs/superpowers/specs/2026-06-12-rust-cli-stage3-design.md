@@ -16,9 +16,7 @@
 ## 非范围
 
 - 不切换 npm package 的 `bin` 或 oclif 命令实现。
-- 不删除 TS CLI 文件；删除前必须完整验证 npm build、pack、Docker 与发布链路。
 - 不增加旧 JWKS schema 兼容或历史 key 保留路径。
-- 不恢复 Node Docker runtime、npm/npx 容器入口、Node 到 Rust wrapper、Cloudflared 单容器封装或 GHCR 发布；Docker runtime 切换为直接运行 Rust `auth-mini` binary，镜像发布另行处理。
 
 ## 行为约束
 
@@ -28,11 +26,9 @@
 - `init` 可重复执行，并通过现有 schema 初始化与 JWKS bootstrap 保持幂等。
 - JWT 签发使用 `Config.issuer`，不再在 HTTP 路径中写死 `auth-mini`。
 - Rust `/openapi.yaml` 始终返回编译进 binary 的仓库 `openapi.yaml` 内容，`/openapi.json` 始终从同一内置 YAML 转换生成 JSON，不依赖进程工作目录或外部文件。
-- Docker 镜像必须以 Rust release binary 作为唯一运行时路径，默认数据库为 `/var/lib/auth-mini/auth-mini.sqlite`，暴露 `7777`，以非 root 用户运行，并且运行时不依赖外部 `schema.sql` 或 `openapi.yaml`。
 
 ## 验证要求
 
 - Rust 测试覆盖新增命令解析、`init` DB 变更、`rotate jwks` DB 变更与错误路径、`start` 配置解析。
 - `start` 测试不启动长跑 server，只验证可测试配置边界。
 - 本轮 npm/TS CLI 只做最小验证，确认未切换入口且未破坏现有构建/类型检查。
-- Docker smoke 必须构建镜像、用 repo 内临时目录挂载 `/var/lib/auth-mini`、启动容器、验证 `/healthz`、验证未认证 `/me` 返回 `invalid_access_token`，并清理容器与临时产物。

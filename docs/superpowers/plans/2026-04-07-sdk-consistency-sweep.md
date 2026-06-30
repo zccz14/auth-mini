@@ -13,7 +13,6 @@
 ## File Map
 
 - Modify: `README.md` - unify `npx auth-mini` examples, switch default auth origin examples to `https://auth.zccz14.com`, and fix WebAuthn options request guidance.
-- Modify: `docs/deploy/docker-cloudflared.md` - unify user-facing CLI examples and default issuer examples.
 - Modify: `tests/integration/oclif-cli.test.ts` - lock README command examples, removed flags, and updated default issuer examples.
 - Modify: `demo/index.html` - remove old `--origin` startup guidance from static shell copy.
 - Modify: `demo/setup.js` - replace single old startup command generation with current CLI-contract guidance.
@@ -35,7 +34,6 @@
 
 - Modify: `tests/integration/oclif-cli.test.ts`
 - Modify: `README.md`
-- Modify: `docs/deploy/docker-cloudflared.md`
 
 - [ ] **Step 1: Write the failing README/deploy assertions**
 
@@ -53,8 +51,6 @@ expect(readme).toContain('--issuer https://auth.zccz14.com');
 expect(readme).not.toContain('https://auth.example.com');
 expect(readme).not.toContain('authenticate/options` with an empty body');
 ```
-
-Also add a small deploy-doc assertion in the same test file by reading `docs/deploy/docker-cloudflared.md` and checking it contains:
 
 ```ts
 expect(deployDoc).toContain(
@@ -100,8 +96,6 @@ Later, call `POST /webauthn/authenticate/options` with `{ "rp_id": "example.com"
 
 - add the same explicit `rp_id` guidance to the registration-options step.
 
-In `docs/deploy/docker-cloudflared.md`:
-
 - change the default public hostname / issuer examples to `https://auth.zccz14.com`
 - change post-start origin setup to `npx auth-mini origin add ...`
 
@@ -113,7 +107,6 @@ Expected: PASS.
 - [ ] **Step 5: Commit static docs alignment**
 
 ```bash
-git add tests/integration/oclif-cli.test.ts README.md docs/deploy/docker-cloudflared.md
 git commit -m "docs: align sdk and cli examples"
 ```
 
@@ -330,7 +323,6 @@ Expected: every modified path is in this approved allowlist and no other path ap
 
 ```text
 README.md
-docs/deploy/docker-cloudflared.md
 demo/index.html
 demo/setup.js
 demo/content.js

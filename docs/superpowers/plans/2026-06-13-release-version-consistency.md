@@ -9,7 +9,6 @@
 - 新增 `scripts/check-release-version.mjs`：解析 tag、校验 manifest 版本、向 `GITHUB_OUTPUT` 输出 `tag`、`version`、`minor`。
 - 更新 `package.json`：新增 `check:release-version` 脚本。
 - 更新 `.github/workflows/release.yml`：Rust binary 构建前运行版本校验。
-- 更新 `.github/workflows/release-image.yml`：Docker smoke/push 前运行版本校验，并复用脚本输出生成 image tags。
 - 新增 `tests/unit/release-version-check.test.ts`：覆盖正例、bad tag 与 manifest mismatch。
 - 更新 README 与 CLI operations 文档：说明 release 版本 single truth 与手动对齐步骤。
 
@@ -17,7 +16,6 @@
 
 - [x] 调研现有 npm、Cargo、release workflow 和 release 文档。
 - [x] 实现单一 release version 校验脚本。
-- [x] 接入 Rust binary 与 GHCR image release workflows。
 - [x] 增加最小可靠测试覆盖。
 - [x] 更新发布文档、spec 与 plan。
 - [ ] 运行验证、提交、rebase、push、创建 PR，并跟进 checks/mergeability。
@@ -26,4 +24,3 @@
 
 - 只新增必要失败路径：tag 缺失、tag 格式错误、manifest 缺失/不一致。
 - 不新增自动 bump、fallback、旧 tag 兼容、多版本来源选择或 release tag 创建路径。
-- GHCR minor tag 继续由 `vX.Y.Z` 派生，避免 workflow 内保留另一套 semver 解析规则。
