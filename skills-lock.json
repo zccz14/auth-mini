@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "skills": {
+    "clean-agent": {
+      "source": "zccz14/clean-agent",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "0c03dc20bdc3022b04450c1814b5fc8a30a3b5b0063b128e9eef574fa25b99b9"
+    },
+    "clean-code": {
+      "source": "zccz14/clean-code",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "cfe1a5e59c2031cb0156289e879824b1d068bc765d17927554b919d7e0ae0f0f"
+    },
+    "clean-doc": {
+      "source": "zccz14/clean-doc",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "6ccb49aef3bba90a2394bdda70271d9cb3617287908a6fc931de0d7be140d225"
+    },
+    "faster-code": {
+      "source": "zccz14/faster-code",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "47d5f33752c4fff80d5508ee3b8fa20d70a248a011829b22bf2f0694b242aad8"
+    },
+    "recursive-residual-reasoning": {
+      "source": "zccz14/R3",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "060900fa105054918434abc503201e2a75455fed408f173eb21f0c93fe55007d"
+    },
+    "reliable-model": {
+      "source": "zccz14/reliable-model",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "15fd75cc1703c5bafdb2c82d478e093b93ed6667dc611212eb0c79440bced8b8"
+    }
+  }
+}
