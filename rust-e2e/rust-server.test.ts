@@ -17,6 +17,7 @@ const webauthnOrigin = 'https://app.example.com';
 const webauthnRpId = 'app.example.com';
 
 let server: ChildProcessWithoutNullStreams | null = null;
+let serverStderr = '';
 
 afterEach(async () => {
   await stopServer();
@@ -39,6 +40,7 @@ describe('rust external server e2e smoke', () => {
         env: { ...process.env, HOME: homePath, USERPROFILE: homePath },
       },
     );
+    captureServerStderr(launched);
     server = launched;
     await waitForHealthz(`http://127.0.0.1:${port}`);
 
@@ -52,25 +54,29 @@ describe('rust external server e2e smoke', () => {
     const dbPath = resolve(tempRoot, 'auth-mini-rust-e2e.sqlite');
     const port = await getFreePort();
     const baseUrl = `http://127.0.0.1:${port}`;
-    server = startServer(dbPath, port, baseUrl);
+    server = startServer(dbPath, port);
     await waitForHealthz(baseUrl);
+    const adminKey = createTestEd25519Keypair('admin');
 
     const setup = await putJson(`${baseUrl}/admin/setup`, {
+      issuer: baseUrl,
       origin: webauthnOrigin,
-      smtp: {
-        host: 'smtp.example.com',
-        port: 587,
-        username: 'mailer',
-        password: 'secret',
-        from_email: 'noreply@example.com',
-        secure: false,
-        weight: 1,
+      admin_ed25519: {
+        name: 'Rust E2E admin',
+        public_key: adminKey.publicKey,
       },
     });
     expect(setup.status).toBe(200);
-    expect(await setup.json()).toMatchObject({
+    const setupState = await setup.json();
+    expect(setupState).toMatchObject({
+      issuer: baseUrl,
+      admin_user_id: expect.any(String),
+      admin_ed25519: expect.objectContaining({
+        name: 'Rust E2E admin',
+        public_key: adminKey.publicKey,
+      }),
       origins: [expect.objectContaining({ origin: webauthnOrigin })],
-      smtp: expect.objectContaining({ host: 'smtp.example.com' }),
+      smtp: null,
     });
     seedOtp(dbPath, 'rust-user@example.com', '123456');
 
@@ -82,6 +88,32 @@ describe('rust external server e2e smoke', () => {
     expect(unauthorizedMe.status).toBe(401);
     expect(await unauthorizedMe.json()).toEqual({
       error: 'invalid_access_token',
+    });
+
+    const adminStartResponse = await postJson(`${baseUrl}/ed25519/start`, {
+      credential_id: setupState.admin_ed25519.id,
+    });
+    expect(adminStartResponse.status).toBe(200);
+    const adminChallenge = (await adminStartResponse.json()) as {
+      request_id: string;
+      challenge: string;
+    };
+    const adminVerifyResponse = await postJson(`${baseUrl}/ed25519/verify`, {
+      request_id: adminChallenge.request_id,
+      signature: adminKey.signChallenge(adminChallenge.challenge),
+    });
+    expect(adminVerifyResponse.status).toBe(200);
+    const adminTokens = (await adminVerifyResponse.json()) as TokenResponse;
+    const adminMe = await fetch(`${baseUrl}/me`, {
+      headers: bearerHeaders(adminTokens.access_token),
+    });
+    expect(adminMe.status).toBe(200);
+    expect(await adminMe.json()).toMatchObject({
+      user_id: setupState.admin_user_id,
+      email: null,
+      active_sessions: expect.arrayContaining([
+        expect.objectContaining({ auth_method: 'ed25519' }),
+      ]),
     });
 
     const preflight = await fetch(`${baseUrl}/email/start`, {
@@ -335,27 +367,29 @@ async function getFreePort() {
   return address.port;
 }
 
-function startServer(dbPath: string, port: number, issuer: string) {
-  return spawn(
+function startServer(dbPath: string, port: number) {
+  const launched = spawn(
     binaryPath,
-    [
-      '--db',
-      dbPath,
-      '--issuer',
-      issuer,
-      '--host',
-      '127.0.0.1',
-      '--port',
-      String(port),
-    ],
+    ['--db', dbPath, '--host', '127.0.0.1', '--port', String(port)],
     { cwd: repoRoot },
   );
+  captureServerStderr(launched);
+  return launched;
+}
+
+function captureServerStderr(launched: ChildProcessWithoutNullStreams) {
+  serverStderr = '';
+  launched.stderr.on('data', (chunk) => {
+    serverStderr += String(chunk);
+  });
 }
 
 async function waitForHealthz(baseUrl: string) {
   for (let attempt = 0; attempt < 50; attempt += 1) {
     if (server?.exitCode !== null) {
-      throw new Error('Rust server exited before health check succeeded');
+      throw new Error(
+        `Rust server exited before health check succeeded: ${serverStderr}`,
+      );
     }
 
     try {

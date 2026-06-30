@@ -131,7 +131,7 @@ sequenceDiagram
 
 Pre-requisites:
 
-- SMTP service credentials for email OTP. (Most email providers have SMTP options, or you can use transactional email services like SendGrid, Mailgun, etc.)
+- Optional SMTP service credentials for email OTP. Admin Ed25519 bootstrap does not require SMTP. Most email providers have SMTP options, or you can use transactional email services like SendGrid, Mailgun, etc.
 
 Install the release binary for your platform, verify its checksum, and put `auth-mini` on `PATH`:
 
@@ -147,29 +147,29 @@ auth-mini
 
 Use the matching archive for your platform from the GitHub Release assets. The npm package no longer provides a CLI; it only ships SDK exports. The released Rust binary is the `auth-mini` server runtime.
 
-Start the server. With no arguments, auth-mini listens on `127.0.0.1:7777`, uses `http://localhost:7777` as the issuer, and stores SQLite data at `~/.auth-mini/default.sqlite3`:
+Start the server. With no arguments, auth-mini listens on `127.0.0.1:7777` and stores SQLite data at `~/.auth-mini/default.sqlite3`:
 
 ```bash
 auth-mini
 ```
 
-For deployment, pass the externally visible issuer and, if needed, an explicit database path:
+For deployment, the CLI only accepts the bind host, bind port, and database path:
 
 ```bash
-auth-mini --db ./auth-mini.sqlite --port 7777 --issuer 'https://auth.your-domain.com'
+auth-mini --host 127.0.0.1 --port 7777 --db ./auth-mini.sqlite
 ```
 
-Configure SMTP and the browser page origin from the demo setup screen, or call the local admin setup API from the machine running auth-mini:
+Configure the externally visible issuer, browser page origin, optional admin Ed25519 bootstrap key, and optional SMTP settings from the demo setup screen, or call the loopback-only admin setup API from the machine running auth-mini:
 
 ```bash
-curl -X PUT http://localhost:7777/admin/setup \
+curl -X PUT http://127.0.0.1:7777/admin/setup \
   -H 'content-type: application/json' \
-  -d '{"origin":"https://frontend.your-domain.com","smtp":{"host":"smtp.sample.com","port":465,"username":"sample@your-domain.com","password":"<smtp-password>","from_email":"sample@your-domain.com","from_name":"sample-name","secure":true,"weight":1}}'
+  -d '{"issuer":"https://auth.your-domain.com","origin":"https://frontend.your-domain.com","admin_ed25519":{"name":"ops laptop","public_key":"<base64url-ed25519-public-key>"},"smtp":{"host":"smtp.sample.com","port":465,"username":"sample@your-domain.com","password":"<smtp-password>","from_email":"sample@your-domain.com","from_name":"sample-name","secure":true,"weight":1}}'
 ```
 
-Store browser page origins here for WebAuthn and related origin checks. HTTP CORS is served with `Access-Control-Allow-Origin: *`, so downstream apps need to manage that exposure carefully. No need to add backend API origins. The admin setup API is only accepted from loopback clients and never returns the SMTP password.
+The setup API writes `app_meta`, including the issuer stored at `app_meta.issuer`. It also configures WebAuthn/browser origins, optional SMTP for email OTP, and optional admin Ed25519 bootstrap. SMTP is not required for bootstrap, the SMTP password is never returned, and `admin_ed25519` can create an admin user without an email address for later Ed25519 login. HTTP CORS is served with `Access-Control-Allow-Origin: *`, so downstream apps need to manage that exposure carefully. No need to add backend API origins.
 
-When the Rust binary DB path is omitted, it uses `~/.auth-mini/default.sqlite3`. Server startup creates the SQLite file, parent directory, schema, and JWKS keys automatically when missing. The Rust binary prints the SQLite database path it uses to stderr. The Rust binary embeds the database schema and `openapi.yaml`; runtime initialization uses the embedded schema. The Rust runtime has no `--openapi` parameter, and `/openapi.yaml` plus `/openapi.json` do not depend on the current working directory.
+When the Rust binary DB path is omitted, it uses `~/.auth-mini/default.sqlite3`. Server startup creates the SQLite file, parent directory, `app_meta`, JWKS keys, and schema automatically when missing. The Rust binary prints the SQLite database path it uses to stderr. The Rust binary embeds the database schema and `openapi.yaml`; runtime initialization uses the embedded schema. The Rust runtime has no `--openapi` parameter, and `/openapi.yaml` plus `/openapi.json` do not depend on the current working directory.
 
 Then deploy it with your preferred hosting method.
 
@@ -219,8 +219,8 @@ async function verifyAccessToken(token) {
 
 From there, typical integration looks like this:
 
-- start auth-mini with your issuer
-- configure SMTP and your app/page origin from the demo setup page or `/admin/setup`
+- start auth-mini with `--host`, `--port`, and `--db` as needed
+- configure issuer, optional SMTP, optional admin Ed25519, and your app/page origin from the demo setup page or `/admin/setup`
 - sign in via email OTP and optionally register a passkey
 - send the access token to your backend and verify it with `/jwks`
 

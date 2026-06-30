@@ -24,7 +24,7 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
 export const getAdminSetup = <ThrowOnError extends boolean = false>(options?: Options<GetAdminSetupData, ThrowOnError>) => (options?.client ?? client).get<GetAdminSetupResponses, GetAdminSetupErrors, ThrowOnError>({ url: '/admin/setup', ...options });
 
 /**
- * Configure local origin and SMTP setup
+ * Configure local app metadata, admin credential, origin, and optional SMTP
  */
 export const updateAdminSetup = <ThrowOnError extends boolean = false>(options: Options<UpdateAdminSetupData, ThrowOnError>) => (options.client ?? client).put<UpdateAdminSetupResponses, UpdateAdminSetupErrors, ThrowOnError>({
     url: '/admin/setup',

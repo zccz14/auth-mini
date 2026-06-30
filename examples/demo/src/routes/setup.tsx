@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { useDemo } from '@/app/providers/demo-provider';
+import { generateDemoEd25519Keypair } from '@/lib/demo-ed25519';
 
 const DEFAULT_SMTP_PORT = 587;
 
@@ -24,7 +25,11 @@ export function SetupRoute() {
   const navigate = useNavigate();
   const { config, setAuthOrigin } = useDemo();
   const [draftAuthOrigin, setDraftAuthOrigin] = useState(config.authOrigin);
+  const [issuer, setIssuer] = useState(config.authOrigin);
   const [origin, setOrigin] = useState(config.pageOrigin);
+  const [adminKeyName, setAdminKeyName] = useState('Admin key');
+  const [adminPublicKey, setAdminPublicKey] = useState('');
+  const [adminSeed, setAdminSeed] = useState('');
   const [smtpHost, setSmtpHost] = useState('');
   const [smtpPort, setSmtpPort] = useState(DEFAULT_SMTP_PORT);
   const [smtpUsername, setSmtpUsername] = useState('');
@@ -39,6 +44,7 @@ export function SetupRoute() {
 
   useEffect(() => {
     setDraftAuthOrigin(config.authOrigin);
+    setIssuer(config.authOrigin);
   }, [config.authOrigin]);
 
   function handleOriginSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -61,19 +67,32 @@ export function SetupRoute() {
 
     try {
       const api = createApiSdk({ baseUrl: config.authOrigin });
+      const smtp =
+        smtpHost.trim() === ''
+          ? undefined
+          : {
+              host: smtpHost,
+              port: smtpPort,
+              username: smtpUsername,
+              password: smtpPassword,
+              from_email: fromEmail,
+              from_name: fromName,
+              secure: smtpSecure,
+              weight: smtpWeight,
+            };
+      const admin_ed25519 =
+        adminPublicKey.trim() === ''
+          ? undefined
+          : {
+              name: adminKeyName.trim(),
+              public_key: adminPublicKey.trim(),
+            };
       const result = await api.admin.setup.update({
         body: {
+          issuer,
           origin,
-          smtp: {
-            host: smtpHost,
-            port: smtpPort,
-            username: smtpUsername,
-            password: smtpPassword,
-            from_email: fromEmail,
-            from_name: fromName,
-            secure: smtpSecure,
-            weight: smtpWeight,
-          },
+          admin_ed25519,
+          smtp,
         },
         throwOnError: true,
       });
@@ -88,6 +107,24 @@ export function SetupRoute() {
       setStatus('failed');
       setMessage(errorMessage(error));
     }
+  }
+
+  async function handleGenerateAdminKey() {
+    setStatus('saving');
+    setMessage('');
+
+    try {
+      const keypair = await generateDemoEd25519Keypair();
+      setAdminPublicKey(keypair.publicKey);
+      setAdminSeed(keypair.seed);
+      setMessage('Admin key generated');
+    } catch (error) {
+      setStatus('failed');
+      setMessage(errorMessage(error));
+      return;
+    }
+
+    setStatus('idle');
   }
 
   return (
@@ -120,12 +157,47 @@ export function SetupRoute() {
         <form className="space-y-5" onSubmit={handleSetupSubmit}>
           <div className="grid gap-4 md:grid-cols-2">
             <label className="grid gap-2 text-sm font-medium text-slate-700 md:col-span-2">
+              <span>Issuer</span>
+              <Input
+                aria-label="Issuer"
+                value={issuer}
+                onChange={(event) => {
+                  setIssuer(event.currentTarget.value);
+                }}
+                required
+              />
+            </label>
+
+            <label className="grid gap-2 text-sm font-medium text-slate-700 md:col-span-2">
               <span>Allowed page origin</span>
               <Input
                 aria-label="Allowed page origin"
                 value={origin}
                 onChange={(event) => {
                   setOrigin(event.currentTarget.value);
+                }}
+                required
+              />
+            </label>
+
+            <label className="grid gap-2 text-sm font-medium text-slate-700">
+              <span>Admin key name</span>
+              <Input
+                aria-label="Admin key name"
+                value={adminKeyName}
+                onChange={(event) => {
+                  setAdminKeyName(event.currentTarget.value);
+                }}
+              />
+            </label>
+
+            <label className="grid gap-2 text-sm font-medium text-slate-700">
+              <span>Admin Ed25519 public key</span>
+              <Input
+                aria-label="Admin Ed25519 public key"
+                value={adminPublicKey}
+                onChange={(event) => {
+                  setAdminPublicKey(event.currentTarget.value);
                 }}
               />
             </label>
@@ -139,7 +211,6 @@ export function SetupRoute() {
                   setSmtpHost(event.currentTarget.value);
                 }}
                 placeholder="smtp.example.com"
-                required
               />
             </label>
 
@@ -153,7 +224,6 @@ export function SetupRoute() {
                 onChange={(event) => {
                   setSmtpPort(event.currentTarget.valueAsNumber || DEFAULT_SMTP_PORT);
                 }}
-                required
               />
             </label>
 
@@ -165,7 +235,6 @@ export function SetupRoute() {
                 onChange={(event) => {
                   setSmtpUsername(event.currentTarget.value);
                 }}
-                required
               />
             </label>
 
@@ -178,7 +247,6 @@ export function SetupRoute() {
                 onChange={(event) => {
                   setSmtpPassword(event.currentTarget.value);
                 }}
-                required
               />
             </label>
 
@@ -192,7 +260,6 @@ export function SetupRoute() {
                   setFromEmail(event.currentTarget.value);
                 }}
                 placeholder="noreply@example.com"
-                required
               />
             </label>
 
@@ -217,7 +284,6 @@ export function SetupRoute() {
                 onChange={(event) => {
                   setSmtpWeight(event.currentTarget.valueAsNumber || 1);
                 }}
-                required
               />
             </label>
 
@@ -235,6 +301,15 @@ export function SetupRoute() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            <Button
+              disabled={status === 'saving'}
+              onClick={() => {
+                void handleGenerateAdminKey();
+              }}
+              type="button"
+            >
+              Generate admin key
+            </Button>
             <Button disabled={status === 'saving'} type="submit">
               {status === 'saving' ? 'Saving...' : 'Save setup'}
             </Button>
@@ -248,6 +323,24 @@ export function SetupRoute() {
 
         {setupState ? (
           <section className="space-y-3 text-sm text-slate-600">
+            <div className="space-y-1">
+              <strong className="block text-slate-950">Issuer</strong>
+              <div>{setupState.issuer}</div>
+            </div>
+            <div className="space-y-1">
+              <strong className="block text-slate-950">Admin</strong>
+              <div>
+                {setupState.admin_ed25519
+                  ? setupState.admin_ed25519.name
+                  : 'Not configured'}
+              </div>
+            </div>
+            {adminSeed ? (
+              <div className="space-y-1">
+                <strong className="block text-slate-950">Generated admin seed</strong>
+                <div className="break-all">{adminSeed}</div>
+              </div>
+            ) : null}
             <div className="space-y-1">
               <strong className="block text-slate-950">Allowed origins</strong>
               <div>{setupState.origins.map((item) => item.origin).join(', ')}</div>
@@ -264,7 +357,7 @@ export function SetupRoute() {
         <section className="space-y-3 text-sm text-slate-600">
           <div className="space-y-1">
             <strong className="block text-slate-950">Server</strong>
-            <div>auth-mini --issuer {config.authOrigin}</div>
+            <div>auth-mini --host 127.0.0.1 --port 7777 --db ./auth-mini.sqlite</div>
           </div>
           <div className="space-y-1">
             <strong className="block text-slate-950">Page origin</strong>

@@ -73,8 +73,9 @@ describe('AppRouter', () => {
     );
     expect(screen.getByLabelText('SMTP host')).toBeInTheDocument();
     expect(
-      screen.getByText('auth-mini --issuer https://auth.zccz14.com'),
+      screen.getByText('auth-mini --host 127.0.0.1 --port 7777 --db ./auth-mini.sqlite'),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/auth-mini --issuer/i)).not.toBeInTheDocument();
     expect(
       screen.getByText(/configure a self-hosted auth-mini instance/i),
     ).toBeInTheDocument();
