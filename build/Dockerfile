@@ -24,4 +24,4 @@ VOLUME ["/var/lib/auth-mini"]
 EXPOSE 7777
 
 ENTRYPOINT ["auth-mini"]
-CMD ["start", "/var/lib/auth-mini/auth-mini.sqlite", "--host", "0.0.0.0", "--port", "7777", "--issuer", "http://localhost:7777"]
+CMD ["--db", "/var/lib/auth-mini/auth-mini.sqlite", "--host", "0.0.0.0", "--port", "7777", "--issuer", "http://localhost:7777"]

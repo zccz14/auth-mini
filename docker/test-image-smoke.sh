@@ -34,7 +34,7 @@ docker run -d \
 	-v "$DATA_DIR:/var/lib/auth-mini" \
 	-p 127.0.0.1::7777 \
 	"$IMAGE_TAG" \
-	start /var/lib/auth-mini/auth-mini.sqlite --host 0.0.0.0 --port 7777 --issuer http://127.0.0.1:7777 >/dev/null
+	--db /var/lib/auth-mini/auth-mini.sqlite --host 0.0.0.0 --port 7777 --issuer http://127.0.0.1:7777 >/dev/null
 
 host_port=$(docker port "$CONTAINER_NAME" 7777/tcp)
 host_port=${host_port##*:}

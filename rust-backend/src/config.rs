@@ -1,5 +1,7 @@
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+const DEFAULT_DB_PATH_DISPLAY: &str = "~/.auth-mini/default.sqlite3";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
@@ -19,7 +21,10 @@ impl Config {
     pub fn from_args(args: impl IntoIterator<Item = String>) -> io::Result<Self> {
         let mut config = Self::default();
         let mut args = args.into_iter();
-        let mut db_path = None;
+        let mut db_path = config
+            .database
+            .as_ref()
+            .map(|database| database.db_path.clone());
         let mut schema_path = None;
 
         while let Some(arg) = args.next() {
@@ -33,6 +38,7 @@ impl Config {
                 }
                 "--db" => db_path = Some(PathBuf::from(next_arg(&mut args, "--db")?)),
                 "--schema" => schema_path = Some(PathBuf::from(next_arg(&mut args, "--schema")?)),
+                "--issuer" => config.issuer = next_arg(&mut args, "--issuer")?,
                 _ => {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidInput,
@@ -63,10 +69,51 @@ impl Default for Config {
         Self {
             host: "127.0.0.1".to_string(),
             port: 7777,
-            issuer: "auth-mini".to_string(),
-            database: None,
+            issuer: "http://localhost:7777".to_string(),
+            database: Some(DatabaseConfig {
+                db_path: default_db_path().unwrap_or_else(|_| PathBuf::from("auth-mini.sqlite3")),
+                schema_path: PathBuf::from("sql/schema.sql"),
+            }),
         }
     }
+}
+
+fn default_db_path() -> io::Result<PathBuf> {
+    default_home_dir().map(|home| default_db_path_for_home(&home))
+}
+
+fn default_db_path_for_home(home: &Path) -> PathBuf {
+    home.join(".auth-mini").join("default.sqlite3")
+}
+
+#[cfg(not(windows))]
+fn default_home_dir() -> io::Result<PathBuf> {
+    env_path("HOME").ok_or_else(missing_home_error)
+}
+
+#[cfg(windows)]
+fn default_home_dir() -> io::Result<PathBuf> {
+    if let Some(home) = env_path("USERPROFILE") {
+        return Ok(home);
+    }
+
+    match (env_path("HOMEDRIVE"), env_path("HOMEPATH")) {
+        (Some(drive), Some(path)) => Ok(drive.join(path)),
+        _ => Err(missing_home_error()),
+    }
+}
+
+fn env_path(name: &str) -> Option<PathBuf> {
+    std::env::var_os(name)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+}
+
+fn missing_home_error() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::NotFound,
+        format!("cannot determine home directory for default DB path {DEFAULT_DB_PATH_DISPLAY}; pass --db"),
+    )
 }
 
 fn next_arg(args: &mut impl Iterator<Item = String>, name: &str) -> io::Result<String> {
@@ -88,8 +135,8 @@ mod tests {
 
         assert_eq!(config.host, "127.0.0.1");
         assert_eq!(config.port, 7777);
-        assert_eq!(config.issuer, "auth-mini");
-        assert_eq!(config.database, None);
+        assert_eq!(config.issuer, "http://localhost:7777");
+        assert!(config.database.is_some());
     }
 
     #[test]
@@ -107,11 +154,12 @@ mod tests {
     }
 
     #[test]
-    fn rejects_openapi_path_override() {
-        let error = Config::from_args(["--openapi".to_string(), "../openapi.yaml".to_string()])
-            .expect_err("openapi override is rejected");
+    fn parses_issuer() {
+        let config =
+            Config::from_args(["--issuer".to_string(), "https://auth.example".to_string()])
+                .expect("issuer parses");
 
-        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert_eq!(config.issuer, "https://auth.example");
     }
 
     #[test]
@@ -134,16 +182,19 @@ mod tests {
     }
 
     #[test]
-    fn rejects_schema_without_database_path() {
-        let error = Config::from_args(["--schema".to_string(), "../sql/schema.sql".to_string()])
-            .expect_err("schema requires db path");
+    fn parses_schema_with_default_database_path() {
+        let config = Config::from_args(["--schema".to_string(), "../sql/schema.sql".to_string()])
+            .expect("schema uses default db path");
 
-        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert_eq!(
+            config.database.expect("database exists").schema_path,
+            PathBuf::from("../sql/schema.sql")
+        );
     }
 
     #[test]
     fn rejects_unknown_config_argument() {
-        let error = Config::from_args(["--issuer".to_string(), "https://auth.example".to_string()])
+        let error = Config::from_args(["--unknown".to_string(), "value".to_string()])
             .expect_err("unknown args are rejected");
 
         assert_eq!(error.kind(), io::ErrorKind::InvalidInput);

@@ -11,10 +11,7 @@ import { createTestPasskey } from '../tests/helpers/webauthn.js';
 import { hashValue } from '../src/shared/crypto.js';
 
 const repoRoot = resolve(import.meta.dirname, '..');
-const binaryPath = resolve(
-  repoRoot,
-  'rust-backend/target/debug/auth-mini',
-);
+const binaryPath = resolve(repoRoot, 'rust-backend/target/debug/auth-mini');
 const tempRoot = resolve(repoRoot, '.tmp/rust-e2e');
 const webauthnOrigin = 'https://app.example.com';
 const webauthnRpId = 'app.example.com';
@@ -33,34 +30,49 @@ describe('rust external server e2e smoke', () => {
     const homePath = resolve(tempRoot, 'home');
     const defaultDbPath = resolve(homePath, '.auth-mini/default.sqlite3');
 
-    await runCli(['init'], {
-      HOME: homePath,
-      USERPROFILE: homePath,
-    });
+    const port = await getFreePort();
+    const launched = spawn(
+      binaryPath,
+      ['--host', '127.0.0.1', '--port', String(port)],
+      {
+        cwd: repoRoot,
+        env: { ...process.env, HOME: homePath, USERPROFILE: homePath },
+      },
+    );
+    server = launched;
+    await waitForHealthz(`http://127.0.0.1:${port}`);
 
     expect(existsSync(defaultDbPath)).toBe(true);
   });
 
-  it('serves core auth smoke flows from the Rust binary', async () => {
+  it('serves core auth smoke flows from the Rust binary after setup', async () => {
     expect(existsSync(binaryPath)).toBe(true);
 
     await mkdir(tempRoot, { recursive: true });
     const dbPath = resolve(tempRoot, 'auth-mini-rust-e2e.sqlite');
-    const originAdd = await runCli([
-      'origin',
-      'add',
-      dbPath,
-      '--value',
-      webauthnOrigin,
-    ]);
-    expect(originAdd.stderr).toContain(`auth-mini SQLite database: ${dbPath}`);
-    expect(originAdd.stdout).not.toContain('auth-mini SQLite database:');
-    seedOtp(dbPath, 'rust-user@example.com', '123456');
-
     const port = await getFreePort();
     const baseUrl = `http://127.0.0.1:${port}`;
     server = startServer(dbPath, port, baseUrl);
     await waitForHealthz(baseUrl);
+
+    const setup = await putJson(`${baseUrl}/admin/setup`, {
+      origin: webauthnOrigin,
+      smtp: {
+        host: 'smtp.example.com',
+        port: 587,
+        username: 'mailer',
+        password: 'secret',
+        from_email: 'noreply@example.com',
+        secure: false,
+        weight: 1,
+      },
+    });
+    expect(setup.status).toBe(200);
+    expect(await setup.json()).toMatchObject({
+      origins: [expect.objectContaining({ origin: webauthnOrigin })],
+      smtp: expect.objectContaining({ host: 'smtp.example.com' }),
+    });
+    seedOtp(dbPath, 'rust-user@example.com', '123456');
 
     const health = await fetch(`${baseUrl}/healthz`);
     expect(health.status).toBe(200);
@@ -269,32 +281,6 @@ type WebauthnOptionsResponse = {
   };
 };
 
-async function runCli(args: string[], env: NodeJS.ProcessEnv = {}) {
-  const result = await new Promise<{
-    status: number | null;
-    stdout: string;
-    stderr: string;
-  }>((resolveProcess) => {
-    const child = spawn(binaryPath, args, {
-      cwd: repoRoot,
-      env: { ...process.env, ...env },
-    });
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString('utf8');
-    });
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString('utf8');
-    });
-    child.on('close', (status) => resolveProcess({ status, stdout, stderr }));
-  });
-
-  expect(result.status, result.stderr).toBe(0);
-  return result;
-}
-
 function seedOtp(dbPath: string, email: string, code: string) {
   const db = new Database(dbPath);
 
@@ -349,7 +335,7 @@ function startServer(dbPath: string, port: number, issuer: string) {
   return spawn(
     binaryPath,
     [
-      'start',
+      '--db',
       dbPath,
       '--issuer',
       issuer,
@@ -395,6 +381,16 @@ async function postJson(
       'content-type': 'application/json',
       ...(accessToken ? bearerHeaders(accessToken) : {}),
       ...(origin ? { origin } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+async function putJson(url: string, body: unknown) {
+  return fetch(url, {
+    method: 'PUT',
+    headers: {
+      'content-type': 'application/json',
     },
     body: JSON.stringify(body),
   });

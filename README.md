@@ -142,36 +142,32 @@ shasum -a 256 -c auth-mini-x86_64-unknown-linux-gnu.tar.gz.sha256
 tar -xzf auth-mini-x86_64-unknown-linux-gnu.tar.gz
 chmod +x auth-mini
 sudo mv auth-mini /usr/local/bin/auth-mini
-auth-mini --help
+auth-mini
 ```
 
-Use the matching archive for your platform from the GitHub Release assets. The npm package no longer provides a CLI; it only ships SDK exports. The released Rust binary is the official `auth-mini` CLI and server runtime.
+Use the matching archive for your platform from the GitHub Release assets. The npm package no longer provides a CLI; it only ships SDK exports. The released Rust binary is the `auth-mini` server runtime.
 
-Minimal CLI setup:
+Start the server. With no arguments, auth-mini listens on `127.0.0.1:7777`, uses `http://localhost:7777` as the issuer, and stores SQLite data at `~/.auth-mini/default.sqlite3`:
 
 ```bash
-auth-mini init
+auth-mini
 ```
 
-Setup SMTP config:
+For deployment, pass the externally visible issuer and, if needed, an explicit database path:
 
 ```bash
-auth-mini smtp add --from-email 'sample@your-domain.com' --from-name 'sample-name' --host 'smtp.sample.com' --port 465 --secure --username 'sample@your-domain.com' --password '<smtp-password>'
+auth-mini --db ./auth-mini.sqlite --port 7777 --issuer 'https://auth.your-domain.com'
 ```
 
-Setup browser origin policy:
+Configure SMTP and the browser page origin from the demo setup screen, or call the local admin setup API from the machine running auth-mini:
 
 ```bash
-auth-mini origin add --value 'https://frontend.your-domain.com'
+curl -X PUT http://localhost:7777/admin/setup \
+  -H 'content-type: application/json' \
+  -d '{"origin":"https://frontend.your-domain.com","smtp":{"host":"smtp.sample.com","port":465,"username":"sample@your-domain.com","password":"<smtp-password>","from_email":"sample@your-domain.com","from_name":"sample-name","secure":true,"weight":1}}'
 ```
 
-Store browser page origins here for WebAuthn and related origin checks. HTTP CORS is served with `Access-Control-Allow-Origin: *`, so downstream apps need to manage that exposure carefully. No need to add backend API origins.
-
-Start the server:
-
-```bash
-auth-mini start --port 7777 --issuer 'https://auth.your-domain.com'
-```
+Store browser page origins here for WebAuthn and related origin checks. HTTP CORS is served with `Access-Control-Allow-Origin: *`, so downstream apps need to manage that exposure carefully. No need to add backend API origins. The admin setup API is only accepted from loopback clients and never returns the SMTP password.
 
 Docker runtime from GHCR:
 
@@ -180,14 +176,14 @@ docker run --rm \
   -p 7777:7777 \
   -v auth-mini-data:/var/lib/auth-mini \
   ghcr.io/zccz14/auth-mini:latest \
-  start /var/lib/auth-mini/auth-mini.sqlite --host 0.0.0.0 --port 7777 --issuer 'https://auth.your-domain.com'
+  --db /var/lib/auth-mini/auth-mini.sqlite --host 0.0.0.0 --port 7777 --issuer 'https://auth.your-domain.com'
 ```
 
 Use `ghcr.io/zccz14/auth-mini:v0.3.0` for a pinned release version, or `ghcr.io/zccz14/auth-mini:latest` for the latest release image. The image runs the Rust `auth-mini` binary directly as a non-root user. Its default command starts the service on port `7777` with SQLite at `/var/lib/auth-mini/auth-mini.sqlite`, so `docker run -p 7777:7777 -v auth-mini-data:/var/lib/auth-mini ghcr.io/zccz14/auth-mini:latest` is enough for a local smoke run. Override the command as shown above for a production issuer.
 
 To build the same runtime image locally from this repository, run `docker build -f build/Dockerfile -t auth-mini:local .`.
 
-When the Rust binary DB path is omitted, it uses `~/.auth-mini/default.sqlite3`. Commands that use a database create the SQLite file, parent directory, schema, and JWKS keys automatically when missing. Explicit DB paths and explicit `init` remain supported. The Rust binary prints the SQLite database path it uses to stderr so tab-separated command stdout stays machine-readable. The Rust binary embeds the database schema and `openapi.yaml`; existing `--schema` arguments are accepted for compatibility but runtime initialization uses the embedded schema. The Rust CLI has no `--openapi` parameter, and `/openapi.yaml` plus `/openapi.json` do not depend on the current working directory.
+When the Rust binary DB path is omitted, it uses `~/.auth-mini/default.sqlite3`. Server startup creates the SQLite file, parent directory, schema, and JWKS keys automatically when missing. The Rust binary prints the SQLite database path it uses to stderr. The Rust binary embeds the database schema and `openapi.yaml`; runtime initialization uses the embedded schema. The Rust runtime has no `--openapi` parameter, and `/openapi.yaml` plus `/openapi.json` do not depend on the current working directory.
 
 Then deploy it with Cloudflare Tunnel or your preferred hosting method.
 
@@ -237,9 +233,9 @@ async function verifyAccessToken(token) {
 
 From there, typical integration looks like this:
 
-- store your app/page origin with the CLI for WebAuthn/browser origin checks
 - start auth-mini with your issuer
-- configure SMTP, then sign in via email OTP and optionally register a passkey
+- configure SMTP and your app/page origin from the demo setup page or `/admin/setup`
+- sign in via email OTP and optionally register a passkey
 - send the access token to your backend and verify it with `/jwks`
 
 ## Docs and next steps

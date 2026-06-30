@@ -11,7 +11,7 @@ REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 README_PATH="$REPO_ROOT/README.md"
 GUIDE_PATH="$REPO_ROOT/docs/deploy/docker-cloudflared.md"
 
-python - "$MODE" "$README_PATH" "$GUIDE_PATH" <<'PY2'
+python3 - "$MODE" "$README_PATH" "$GUIDE_PATH" <<'PY2'
 from __future__ import annotations
 
 import pathlib
@@ -32,9 +32,9 @@ checks: list[tuple[str, bool]] = [
     ('one docker run path', 'docker run' in guide),
     ('guide runtime contract details', 'entrypoint: `auth-mini`' in guide and 'port: `7777/tcp`' in guide and 'non-root uid `10001`' in guide),
     ('volume layout and db location', '/var/lib/auth-mini/auth-mini.sqlite' in guide and 'mount `/var/lib/auth-mini`' in guide),
-    ('explicit deployment issuer', 'pass an explicit `start ... --issuer <public-origin>` command' in guide),
+    ('explicit deployment issuer', 'pass an explicit `--issuer <public-origin>` command' in guide),
     ('embedded runtime assets', 'does not need `schema.sql` or `openapi.yaml` files at runtime' in guide),
-    ('post start tasks', 'origin add' in guide and 'SMTP' in guide),
+    ('post start tasks', '/admin/setup' in guide and 'SMTP' in guide),
     ('ghcr publishing status', 'publishes `ghcr.io/zccz14/auth-mini` from `v*` release tags' in guide and 'Multi-architecture images and Cloudflared packaging are separate follow-up work' in guide),
 ]
 
