@@ -260,7 +260,7 @@ fn handle_web_asset(request: &Request) -> Option<Response> {
             content_type,
             cache_control,
             body,
-        } => Some(Response::bytes(200, content_type, body.to_vec()).with_header(
+        } => Some(Response::bytes(200, content_type, body).with_header(
             "cache-control",
             cache_control,
         )),
@@ -1128,10 +1128,25 @@ mod tests {
 
     #[test]
     fn serves_embedded_web_asset_with_mime_and_immutable_cache() {
+        let index = route_request(
+            &Request {
+                method: "GET".to_string(),
+                path: "/web/".to_string(),
+                headers: Vec::new(),
+                body: String::new(),
+            },
+            &no_database_config(),
+        )
+        .expect("web index response builds");
+        let index_body = index.body_text();
+        let asset_path = index_body
+            .split('"')
+            .find(|part| part.starts_with("/web/assets/") && part.ends_with(".css"))
+            .expect("index references css asset");
         let response = route_request(
             &Request {
                 method: "GET".to_string(),
-                path: "/web/assets/index-XS1pIkA7.css?v=1".to_string(),
+                path: format!("{asset_path}?v=1"),
                 headers: Vec::new(),
                 body: String::new(),
             },
