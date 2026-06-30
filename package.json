@@ -43,7 +43,7 @@
     "test": "npm run typecheck && npm run test:unit && npm run test:integration",
     "test:unit": "node scripts/run-tests.js",
     "demo:build": "npm run build && npm --prefix examples/demo run build",
-    "demo:build:web": "npm run build && npm --prefix examples/demo run build:web",
+    "demo:build:web": "npm run build && npm --prefix examples/demo run build:web && node scripts/build-web-assets-archive.mjs",
     "demo:dev": "node scripts/dev-examples-demo.mjs",
     "demo:typecheck": "npm --prefix examples/demo run typecheck",
     "test:integration": "npm run build && vitest run tests/integration",

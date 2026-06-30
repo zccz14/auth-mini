@@ -16,7 +16,7 @@ describe('examples demo Pages release contract', () => {
       'npm run build && npm --prefix examples/demo run build',
     );
     expect(packageJson.scripts?.['demo:build:web']).toBe(
-      'npm run build && npm --prefix examples/demo run build:web',
+      'npm run build && npm --prefix examples/demo run build:web && node scripts/build-web-assets-archive.mjs',
     );
   });
 

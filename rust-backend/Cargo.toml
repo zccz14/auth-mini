@@ -7,6 +7,7 @@ publish = false
 [dependencies]
 chrono = { version = "0.4.38", default-features = false, features = ["clock", "std"] }
 ed25519-dalek = "2.1.1"
+flate2 = "1.0.35"
 lettre = { version = "0.11.22", default-features = false, features = ["builder", "hostname", "smtp-transport", "native-tls"] }
 openssl-sys = { version = "0.9.116", features = ["vendored"] }
 rusqlite = { version = "0.32.1", features = ["bundled"] }

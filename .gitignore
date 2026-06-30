@@ -88,6 +88,7 @@ build/runtime/
 build/.tmp/
 .worktrees/
 rust-backend/target/
+rust-backend/web/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
