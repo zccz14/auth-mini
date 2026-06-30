@@ -20,8 +20,8 @@ use crate::jwks::list_public_keys;
 use crate::openapi::{read_openapi_json, read_openapi_yaml};
 use crate::session::{
     authenticate_access_token, current_user_response, logout_peer_session, logout_session,
-    mint_session_tokens, parse_refresh_request, refresh_session_tokens,
-    require_admin_auth, require_passkey_management_auth, token_json, SessionError,
+    mint_session_tokens, parse_refresh_request, refresh_session_tokens, require_admin_auth,
+    require_passkey_management_auth, token_json, SessionError,
 };
 use crate::setup::{
     apply_admin_config, apply_admin_setup, parse_admin_config_request, parse_admin_setup_request,
@@ -260,10 +260,9 @@ fn handle_web_asset(request: &Request) -> Option<Response> {
             content_type,
             cache_control,
             body,
-        } => Some(Response::bytes(200, content_type, body).with_header(
-            "cache-control",
-            cache_control,
-        )),
+        } => Some(
+            Response::bytes(200, content_type, body).with_header("cache-control", cache_control),
+        ),
         WebAsset::MissingAsset => Some(Response::json_error(404, "not_found")),
     }
 }
@@ -398,7 +397,10 @@ fn handle_admin_users(request: &Request, config: &Config) -> io::Result<Response
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(io::Error::other)?;
 
-    Ok(Response::json_value(200, serde_json::json!({ "users": users })))
+    Ok(Response::json_value(
+        200,
+        serde_json::json!({ "users": users }),
+    ))
 }
 
 fn handle_admin_database(request: &Request, config: &Config) -> io::Result<Response> {
@@ -583,6 +585,9 @@ fn handle_ed25519_credential_create(request: &Request, config: &Config) -> io::R
     }
     let body =
         create_ed25519_credential(&connection, &auth.user_id, &parsed).map_err(io::Error::other)?;
+    let Some(body) = body else {
+        return Ok(Response::json_error(400, "invalid_ed25519_credential"));
+    };
 
     Ok(Response::json_value(200, body))
 }
@@ -1119,9 +1124,7 @@ mod tests {
 
         assert_eq!(response.status, 200);
         assert_eq!(response.content_type, "text/html; charset=utf-8");
-        assert!(response
-            .headers
-            .contains(&("cache-control", "no-cache")));
+        assert!(response.headers.contains(&("cache-control", "no-cache")));
         assert!(response.body_text().contains(r#"src="/web/assets/"#));
         assert!(response.body_text().contains(r#"id="root""#));
     }
@@ -1156,11 +1159,12 @@ mod tests {
 
         assert_eq!(response.status, 200);
         assert_eq!(response.content_type, "text/css; charset=utf-8");
-        assert!(response.headers.contains(&(
-            "cache-control",
-            "public, max-age=31536000, immutable",
-        )));
-        assert!(response.body_text().contains("@tailwind") || response.body_text().contains(":root"));
+        assert!(response
+            .headers
+            .contains(&("cache-control", "public, max-age=31536000, immutable",)));
+        assert!(
+            response.body_text().contains("@tailwind") || response.body_text().contains(":root")
+        );
     }
 
     #[test]
@@ -1211,7 +1215,7 @@ mod tests {
             (
                 "POST",
                 "/ed25519/start",
-                r#"{"credential_id":"00000000-0000-4000-8000-000000000000"}"#,
+                r#"{"public_key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#,
             ),
             (
                 "POST",
@@ -1672,6 +1676,59 @@ mod tests {
     }
 
     #[test]
+    fn rejects_duplicate_ed25519_public_key_over_http_boundary() {
+        let db_path = test_db_path("http-ed25519-credential-create-duplicate");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserted");
+        connection
+            .execute(
+                "INSERT INTO ed25519_credentials
+                 (id, user_id, name, public_key, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                (
+                    "credential-1",
+                    "user-1",
+                    "Existing",
+                    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                    "2026-01-01T00:00:00.000Z",
+                ),
+            )
+            .expect("credential inserted");
+        let pair = mint_session_tokens(&connection, "user-1", "email_otp", "auth-mini", None, None)
+            .expect("session minted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/ed25519/credentials".to_string(),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", pair.access_token),
+                )],
+                body: r#"{"name":"Duplicate","public_key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#
+                    .to_string(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig { db_path }),
+                ..Config::default()
+            },
+        )
+        .expect("ed25519 credential create response builds");
+
+        assert_eq!(
+            response,
+            Response::json_error(400, "invalid_ed25519_credential")
+        );
+    }
+
+    #[test]
     fn starts_ed25519_authentication_over_http_boundary() {
         let db_path = test_db_path("http-ed25519-start");
         let connection = Connection::open(&db_path).expect("database opens");
@@ -1691,7 +1748,7 @@ mod tests {
                     "00000000-0000-4000-8000-000000000000",
                     "user-1",
                     "Laptop",
-                    "public-key",
+                    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
                     "2026-01-01T00:00:00.000Z",
                 ),
             )
@@ -1703,7 +1760,7 @@ mod tests {
                 method: "POST".to_string(),
                 path: "/ed25519/start".to_string(),
                 headers: Vec::new(),
-                body: r#"{"credential_id":"00000000-0000-4000-8000-000000000000"}"#.to_string(),
+                body: r#"{"public_key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#.to_string(),
             },
             &Config {
                 database: Some(crate::DatabaseConfig { db_path }),
@@ -1731,7 +1788,7 @@ mod tests {
                 method: "POST".to_string(),
                 path: "/ed25519/start".to_string(),
                 headers: Vec::new(),
-                body: r#"{"credential_id":"00000000-0000-4000-8000-000000000000"}"#.to_string(),
+                body: r#"{"public_key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#.to_string(),
             },
             &Config {
                 database: Some(crate::DatabaseConfig { db_path }),

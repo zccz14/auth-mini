@@ -2,7 +2,7 @@ import { createBrowserSdk } from 'auth-mini/sdk/browser';
 
 type DemoEd25519Api = {
   register(input: { name: string; public_key: string }): Promise<unknown>;
-  start(input: { credential_id: string }): Promise<{
+  start(input: { public_key: string }): Promise<{
     request_id: string;
     challenge: string;
   }>;
@@ -264,7 +264,7 @@ export function createDemoSdk(serverBaseUrl: string): DemoSdk {
           );
         }
       },
-      start(input: { credential_id: string }) {
+      start(input: { public_key: string }) {
         return postJson<{ request_id: string; challenge: string }>(
           '/ed25519/start',
           input,

@@ -1,16 +1,25 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useDemo } from '@/app/providers/demo-provider';
-import { signEd25519Challenge, validateBase64Url32 } from '@/lib/demo-ed25519';
+import {
+  deriveEd25519PublicKey,
+  signEd25519Challenge,
+  validateBase64Url32,
+} from '@/lib/demo-ed25519';
 
 export function LoginRoute() {
   const { adoptDemoSession, sdk } = useDemo();
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
-  const [credentialId, setCredentialId] = useState('');
   const [seed, setSeed] = useState('');
   const [pending, setPending] = useState<string | null>(null);
   const [message, setMessage] = useState('');
@@ -42,7 +51,9 @@ export function LoginRoute() {
     try {
       await sdk.email.verify({ email: email.trim(), code: code.trim() });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Unable to verify code.');
+      setError(
+        cause instanceof Error ? cause.message : 'Unable to verify code.',
+      );
     } finally {
       setPending(null);
     }
@@ -56,7 +67,9 @@ export function LoginRoute() {
     try {
       await sdk.passkey.authenticate();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Passkey sign-in failed.');
+      setError(
+        cause instanceof Error ? cause.message : 'Passkey sign-in failed.',
+      );
     } finally {
       setPending(null);
     }
@@ -69,15 +82,21 @@ export function LoginRoute() {
     setError('');
 
     try {
-      const challenge = await sdk.ed25519.start({ credential_id: credentialId.trim() });
-      const signature = await signEd25519Challenge(seed.trim(), challenge.challenge);
+      const publicKey = await deriveEd25519PublicKey(seed.trim());
+      const challenge = await sdk.ed25519.start({ public_key: publicKey });
+      const signature = await signEd25519Challenge(
+        seed.trim(),
+        challenge.challenge,
+      );
       const tokens = await sdk.ed25519.verify({
         request_id: challenge.request_id,
         signature,
       });
       await adoptDemoSession(tokens);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'ED25519 sign-in failed.');
+      setError(
+        cause instanceof Error ? cause.message : 'ED25519 sign-in failed.',
+      );
     } finally {
       setPending(null);
     }
@@ -88,7 +107,9 @@ export function LoginRoute() {
       <Card className="rounded-lg">
         <CardHeader>
           <CardTitle>Sign in</CardTitle>
-          <CardDescription>Use an account credential to access auth-mini.</CardDescription>
+          <CardDescription>
+            Use an account credential to access auth-mini.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="email">
@@ -105,7 +126,10 @@ export function LoginRoute() {
                   value={email}
                   onChange={(event) => setEmail(event.currentTarget.value)}
                 />
-                <Button type="submit" disabled={!email.trim() || pending !== null}>
+                <Button
+                  type="submit"
+                  disabled={!email.trim() || pending !== null}
+                >
                   {pending === 'email-start' ? 'Sending...' : 'Send code'}
                 </Button>
               </form>
@@ -125,18 +149,17 @@ export function LoginRoute() {
               </form>
             </TabsContent>
             <TabsContent value="passkey" className="space-y-4">
-              <Button disabled={pending !== null} onClick={() => void passkeyLogin()}>
-                {pending === 'passkey' ? 'Signing in...' : 'Sign in with passkey'}
+              <Button
+                disabled={pending !== null}
+                onClick={() => void passkeyLogin()}
+              >
+                {pending === 'passkey'
+                  ? 'Signing in...'
+                  : 'Sign in with passkey'}
               </Button>
             </TabsContent>
             <TabsContent value="ed25519" className="space-y-4">
               <form className="space-y-3" onSubmit={ed25519Login}>
-                <Input
-                  aria-label="Credential ID"
-                  placeholder="Credential ID"
-                  value={credentialId}
-                  onChange={(event) => setCredentialId(event.currentTarget.value)}
-                />
                 <Input
                   aria-label="Private key"
                   placeholder="Base64url private key"
@@ -145,15 +168,21 @@ export function LoginRoute() {
                 />
                 <Button
                   type="submit"
-                  disabled={!credentialId.trim() || Boolean(validateBase64Url32(seed)) || pending !== null}
+                  disabled={
+                    Boolean(validateBase64Url32(seed)) || pending !== null
+                  }
                 >
-                  {pending === 'ed25519' ? 'Signing in...' : 'Sign in with ED25519'}
+                  {pending === 'ed25519'
+                    ? 'Signing in...'
+                    : 'Sign in with ED25519'}
                 </Button>
               </form>
             </TabsContent>
           </Tabs>
 
-          {message ? <p className="mt-4 text-sm text-emerald-700">{message}</p> : null}
+          {message ? (
+            <p className="mt-4 text-sm text-emerald-700">{message}</p>
+          ) : null}
           {error ? <p className="mt-4 text-sm text-rose-600">{error}</p> : null}
         </CardContent>
       </Card>
