@@ -113,6 +113,9 @@ export function createMeResponseParser() {
     return {
       user_id: requireString(record.user_id),
       email: requireNullableString(record.email),
+      // COMPATIBILITY: SDK consumers may still talk to pre-admin-claim servers.
+      // Remove when auth-mini servers before the Admin UI release are unsupported.
+      auth_admin: record.auth_admin === true,
       webauthn_credentials: requireArray(record.webauthn_credentials).map(
         parseWebauthnCredential,
       ),

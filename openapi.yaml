@@ -43,7 +43,7 @@ paths:
       tags:
         - admin
       operationId: updateAdminSetup
-      summary: Configure local app metadata, admin credential, origin, and optional SMTP
+      summary: Initialize the administrator account with an ED25519 credential
       requestBody:
         required: true
         content:
@@ -67,8 +67,100 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 error: admin_setup_forbidden
+        '409':
+          description: Administrator account already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: already_initialized
         '501':
           description: Database-backed setup is not available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: not_implemented
+  /admin/config:
+    get:
+      tags:
+        - admin
+      operationId: getAdminConfig
+      summary: Read administrator configuration
+      responses:
+        '200':
+          description: Current administrator configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSetupState'
+        '401':
+          $ref: '#/components/responses/InvalidAccessToken'
+        '403':
+          $ref: '#/components/responses/AdminRequired'
+    put:
+      tags:
+        - admin
+      operationId: updateAdminConfig
+      summary: Update issuer, allowed origin, and SMTP configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminConfigRequest'
+      responses:
+        '200':
+          description: Updated administrator configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSetupState'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidAccessToken'
+        '403':
+          $ref: '#/components/responses/AdminRequired'
+  /admin/users:
+    get:
+      tags:
+        - admin
+      operationId: listAdminUsers
+      summary: List users for the administrator UI
+      responses:
+        '200':
+          description: Users with credential and session counts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUsersResponse'
+        '401':
+          $ref: '#/components/responses/InvalidAccessToken'
+        '403':
+          $ref: '#/components/responses/AdminRequired'
+  /admin/database:
+    get:
+      tags:
+        - admin
+      operationId: exportAdminDatabase
+      summary: Export the SQLite database
+      responses:
+        '200':
+          description: SQLite database bytes
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/InvalidAccessToken'
+        '403':
+          $ref: '#/components/responses/AdminRequired'
+        '501':
+          description: Database-backed export is not available
           content:
             application/json:
               schema:
@@ -669,6 +761,14 @@ components:
             $ref: '#/components/schemas/ErrorResponse'
           example:
             error: insufficient_authentication_method
+    AdminRequired:
+      description: Access token is valid but does not belong to the configured administrator
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: admin_required
     CredentialNotFound:
       description: Credential id does not exist for the authenticated user
       content:
@@ -707,6 +807,14 @@ components:
       type: object
       additionalProperties: false
       required:
+        - admin_ed25519
+      properties:
+        admin_ed25519:
+          $ref: '#/components/schemas/AdminSetupEd25519Input'
+    AdminConfigRequest:
+      type: object
+      additionalProperties: false
+      required:
         - issuer
         - origin
       properties:
@@ -716,10 +824,6 @@ components:
         origin:
           type: string
           format: uri
-        admin_ed25519:
-          oneOf:
-            - $ref: '#/components/schemas/AdminSetupEd25519Input'
-            - type: 'null'
         smtp:
           oneOf:
             - $ref: '#/components/schemas/AdminSetupSmtpInput'
@@ -773,6 +877,52 @@ components:
           type: integer
           minimum: 1
           default: 1
+    AdminUsersResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - users
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminUserSummary'
+    AdminUserSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - email
+        - email_verified_at
+        - created_at
+        - active_session_count
+        - passkey_count
+        - ed25519_count
+      properties:
+        id:
+          type: string
+        email:
+          type:
+            - string
+            - 'null'
+          format: email
+        email_verified_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        active_session_count:
+          type: integer
+          minimum: 0
+        passkey_count:
+          type: integer
+          minimum: 0
+        ed25519_count:
+          type: integer
+          minimum: 0
     AdminSetupState:
       type: object
       additionalProperties: false
@@ -1027,6 +1177,7 @@ components:
       required:
         - user_id
         - email
+        - auth_admin
         - webauthn_credentials
         - ed25519_credentials
         - active_sessions
@@ -1038,6 +1189,8 @@ components:
             - 'string'
             - 'null'
           format: email
+        auth_admin:
+          type: boolean
         webauthn_credentials:
           type: array
           items:

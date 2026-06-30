@@ -10,6 +10,7 @@ import type { PropsWithChildren } from 'react';
 import { getInitialDemoConfig } from '@/lib/demo-config';
 import {
   createDemoSdk,
+  type AdminSetupState,
   persistDemoSession,
   type DemoSdk,
   type DemoSessionTokens,
@@ -31,8 +32,12 @@ type DemoContextValue = {
   config: ReturnType<typeof getInitialDemoConfig>;
   sdk: DemoSdk | null;
   session: DemoSession;
+  setupState: AdminSetupState | null;
+  setupLoading: boolean;
+  setupError: string;
   adoptDemoSession: (tokens: DemoSessionTokens) => Promise<void>;
   clearLocalAuthState: () => Promise<void>;
+  reloadSetupState: () => Promise<void>;
 };
 
 const DemoContext = createContext<DemoContextValue | null>(null);
@@ -57,6 +62,9 @@ export function DemoProvider({
 
   const [sdk, setSdk] = useState<DemoSdk | null>(null);
   const [session, setSession] = useState<DemoSession>(ANONYMOUS_SESSION);
+  const [setupState, setSetupState] = useState<AdminSetupState | null>(null);
+  const [setupLoading, setSetupLoading] = useState(true);
+  const [setupError, setSetupError] = useState('');
   const unsubscribeRef = useRef<(() => void) | null>(null);
 
   let storage: Storage | undefined;
@@ -82,11 +90,39 @@ export function DemoProvider({
     });
   }
 
+  async function loadSetupState(nextSdk: DemoSdk, active = () => true) {
+    setSetupLoading(true);
+    setSetupError('');
+
+    try {
+      const nextSetupState = await nextSdk.admin.setup.fetch();
+      if (!active()) {
+        return;
+      }
+      setSetupState(nextSetupState);
+    } catch (cause) {
+      if (!active()) {
+        return;
+      }
+      setSetupState(null);
+      setSetupError(
+        cause instanceof Error ? cause.message : 'Unable to load server setup.',
+      );
+    } finally {
+      if (active()) {
+        setSetupLoading(false);
+      }
+    }
+  }
+
   useEffect(() => {
     const nextSdk = createDemoSdk(config.resolvedServerBaseUrl);
+    let active = true;
     attachSdk(nextSdk);
+    void loadSetupState(nextSdk, () => active);
 
     return () => {
+      active = false;
       unsubscribeRef.current?.();
       unsubscribeRef.current = null;
     };
@@ -113,10 +149,20 @@ export function DemoProvider({
         await sdk.session.logout();
         setSession(sdk.session.getState());
       },
+      reloadSetupState: async () => {
+        if (!sdk) {
+          return;
+        }
+
+        await loadSetupState(sdk);
+      },
       sdk,
       session,
+      setupError,
+      setupLoading,
+      setupState,
     }),
-    [config, sdk, session],
+    [config, sdk, session, setupError, setupLoading, setupState],
   );
 
   return <DemoContext.Provider value={value}>{children}</DemoContext.Provider>;

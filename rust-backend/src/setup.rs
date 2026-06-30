@@ -35,9 +35,13 @@ pub struct SmtpConfigSummary {
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct AdminSetupRequest {
+    pub admin_ed25519: AdminEd25519Input,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct AdminConfigRequest {
     pub issuer: String,
     pub origin: String,
-    pub admin_ed25519: Option<AdminEd25519Input>,
     pub smtp: Option<SmtpConfigInput>,
 }
 
@@ -73,11 +77,16 @@ pub struct SmtpConfigInput {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SetupError {
+    AlreadyInitialized,
     InvalidRequest,
     Database,
 }
 
 pub fn parse_admin_setup_request(body: &str) -> Result<AdminSetupRequest, SetupError> {
+    serde_json::from_str(body).map_err(|_| SetupError::InvalidRequest)
+}
+
+pub fn parse_admin_config_request(body: &str) -> Result<AdminConfigRequest, SetupError> {
     serde_json::from_str(body).map_err(|_| SetupError::InvalidRequest)
 }
 
@@ -100,14 +109,22 @@ pub fn apply_admin_setup(
     connection: &Connection,
     request: &AdminSetupRequest,
 ) -> Result<AdminSetupState, SetupError> {
+    if read_app_meta(connection)?.1.is_some() {
+        return Err(SetupError::AlreadyInitialized);
+    }
+    upsert_admin_ed25519(connection, &request.admin_ed25519)?;
+    read_admin_setup(connection)
+}
+
+pub fn apply_admin_config(
+    connection: &Connection,
+    request: &AdminConfigRequest,
+) -> Result<AdminSetupState, SetupError> {
     let issuer = normalize_allowed_origin(&request.issuer)?;
     update_issuer(connection, &issuer)?;
     upsert_allowed_origin(connection, &request.origin)?;
     if let Some(smtp) = &request.smtp {
         upsert_smtp_config(connection, smtp)?;
-    }
-    if let Some(admin_ed25519) = &request.admin_ed25519 {
-        upsert_admin_ed25519(connection, admin_ed25519)?;
     }
     read_admin_setup(connection)
 }
@@ -431,10 +448,9 @@ mod tests {
     #[test]
     fn admin_setup_writes_origin_and_smtp_without_returning_password() {
         let connection = test_connection("setup-roundtrip");
-        let request = AdminSetupRequest {
+        let request = AdminConfigRequest {
             issuer: "https://auth.example.com".to_string(),
             origin: "https://DEMO.example.com".to_string(),
-            admin_ed25519: None,
             smtp: Some(SmtpConfigInput {
                 host: "smtp.example.com".to_string(),
                 port: 587,
@@ -447,7 +463,7 @@ mod tests {
             }),
         };
 
-        let state = apply_admin_setup(&connection, &request).expect("setup applies");
+        let state = apply_admin_config(&connection, &request).expect("setup applies");
 
         assert_eq!(state.issuer, "https://auth.example.com");
         assert_eq!(state.origins[0].origin, "https://demo.example.com");
@@ -463,10 +479,10 @@ mod tests {
     fn admin_setup_updates_existing_smtp_config() {
         let connection = test_connection("setup-update");
         let mut request = valid_request();
-        apply_admin_setup(&connection, &request).expect("initial setup applies");
+        apply_admin_config(&connection, &request).expect("initial setup applies");
         request.smtp.as_mut().expect("smtp exists").host = "smtp-2.example.com".to_string();
 
-        let state = apply_admin_setup(&connection, &request).expect("setup updates");
+        let state = apply_admin_config(&connection, &request).expect("setup updates");
 
         assert_eq!(state.smtp.as_ref().expect("smtp exists").id, 1);
         assert_eq!(
@@ -493,19 +509,16 @@ mod tests {
     fn admin_setup_creates_admin_ed25519_without_smtp_or_email() {
         let connection = test_connection("setup-admin-ed25519");
         let request = AdminSetupRequest {
-            issuer: "https://auth.example.com".to_string(),
-            origin: "https://demo.example.com".to_string(),
-            admin_ed25519: Some(AdminEd25519Input {
+            admin_ed25519: AdminEd25519Input {
                 name: "Admin key".to_string(),
                 public_key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_string(),
-            }),
-            smtp: None,
+            },
         };
 
         let state = apply_admin_setup(&connection, &request).expect("setup applies");
 
         let admin_user_id = state.admin_user_id.expect("admin user id exists");
-        assert_eq!(state.issuer, "https://auth.example.com");
+        assert_eq!(state.issuer, "http://localhost:7777");
         assert_eq!(
             state.admin_ed25519.expect("admin credential exists").name,
             "Admin key"
@@ -521,11 +534,10 @@ mod tests {
         assert_eq!(state.smtp, None);
     }
 
-    fn valid_request() -> AdminSetupRequest {
-        AdminSetupRequest {
+    fn valid_request() -> AdminConfigRequest {
+        AdminConfigRequest {
             issuer: "https://auth.example.com".to_string(),
             origin: "https://demo.example.com".to_string(),
-            admin_ed25519: None,
             smtp: Some(SmtpConfigInput {
                 host: "smtp.example.com".to_string(),
                 port: 587,

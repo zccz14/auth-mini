@@ -8,7 +8,7 @@ export function StatusBanner() {
   return (
     <Alert className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
       <div>
-        <AlertTitle>Demo status</AlertTitle>
+        <AlertTitle>Backend status</AlertTitle>
         <AlertDescription>
           {config.configError || `Connected to ${config.serverBaseUrl}`}
         </AlertDescription>
