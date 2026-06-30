@@ -7,14 +7,12 @@ const DEFAULT_DB_PATH_DISPLAY: &str = "~/.auth-mini/default.sqlite3";
 pub struct Config {
     pub host: String,
     pub port: u16,
-    pub issuer: String,
     pub database: Option<DatabaseConfig>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatabaseConfig {
     pub db_path: PathBuf,
-    pub schema_path: PathBuf,
 }
 
 impl Config {
@@ -25,7 +23,6 @@ impl Config {
             .database
             .as_ref()
             .map(|database| database.db_path.clone());
-        let mut schema_path = None;
 
         while let Some(arg) = args.next() {
             match arg.as_str() {
@@ -37,8 +34,6 @@ impl Config {
                     })?;
                 }
                 "--db" => db_path = Some(PathBuf::from(next_arg(&mut args, "--db")?)),
-                "--schema" => schema_path = Some(PathBuf::from(next_arg(&mut args, "--schema")?)),
-                "--issuer" => config.issuer = next_arg(&mut args, "--issuer")?,
                 _ => {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidInput,
@@ -48,17 +43,7 @@ impl Config {
             }
         }
 
-        if schema_path.is_some() && db_path.is_none() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "--schema requires --db",
-            ));
-        }
-
-        config.database = db_path.map(|db_path| DatabaseConfig {
-            db_path,
-            schema_path: schema_path.unwrap_or_else(|| PathBuf::from("sql/schema.sql")),
-        });
+        config.database = db_path.map(|db_path| DatabaseConfig { db_path });
 
         Ok(config)
     }
@@ -69,10 +54,8 @@ impl Default for Config {
         Self {
             host: "127.0.0.1".to_string(),
             port: 7777,
-            issuer: "http://localhost:7777".to_string(),
             database: Some(DatabaseConfig {
                 db_path: default_db_path().unwrap_or_else(|_| PathBuf::from("auth-mini.sqlite3")),
-                schema_path: PathBuf::from("sql/schema.sql"),
             }),
         }
     }
@@ -135,7 +118,6 @@ mod tests {
 
         assert_eq!(config.host, "127.0.0.1");
         assert_eq!(config.port, 7777);
-        assert_eq!(config.issuer, "http://localhost:7777");
         assert!(config.database.is_some());
     }
 
@@ -154,42 +136,33 @@ mod tests {
     }
 
     #[test]
-    fn parses_issuer() {
-        let config =
-            Config::from_args(["--issuer".to_string(), "https://auth.example".to_string()])
-                .expect("issuer parses");
-
-        assert_eq!(config.issuer, "https://auth.example");
-    }
-
-    #[test]
     fn parses_database_config() {
-        let config = Config::from_args([
-            "--db".to_string(),
-            "target/test-dbs/app.sqlite".to_string(),
-            "--schema".to_string(),
-            "../sql/schema.sql".to_string(),
-        ])
-        .expect("database config parses");
+        let config =
+            Config::from_args(["--db".to_string(), "target/test-dbs/app.sqlite".to_string()])
+                .expect("database config parses");
 
         assert_eq!(
             config.database,
             Some(DatabaseConfig {
                 db_path: PathBuf::from("target/test-dbs/app.sqlite"),
-                schema_path: PathBuf::from("../sql/schema.sql"),
             })
         );
     }
 
     #[test]
-    fn parses_schema_with_default_database_path() {
-        let config = Config::from_args(["--schema".to_string(), "../sql/schema.sql".to_string()])
-            .expect("schema uses default db path");
+    fn rejects_removed_issuer_argument() {
+        let error = Config::from_args(["--issuer".to_string(), "https://auth.example".to_string()])
+            .expect_err("issuer is managed in app_meta");
 
-        assert_eq!(
-            config.database.expect("database exists").schema_path,
-            PathBuf::from("../sql/schema.sql")
-        );
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn rejects_removed_schema_argument() {
+        let error = Config::from_args(["--schema".to_string(), "../sql/schema.sql".to_string()])
+            .expect_err("schema is embedded at runtime");
+
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
     }
 
     #[test]

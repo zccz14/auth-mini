@@ -2,7 +2,7 @@ use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 
 use crate::config::Config;
-use crate::db::initialize_runtime_database;
+use crate::db::{initialize_runtime_database, read_app_issuer};
 use crate::ed25519::{
     create_credential as create_ed25519_credential, delete_credential as delete_ed25519_credential,
     list_credentials as list_ed25519_credentials, parse_credential_create_request,
@@ -324,11 +324,12 @@ fn handle_email_verify(request: &Request, config: &Config) -> io::Result<Respons
         EmailVerifyOutcome::OtpConsumed { user_id } => {
             let connection =
                 rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
+            let issuer = read_app_issuer(&connection).map_err(io::Error::other)?;
             let pair = mint_session_tokens(
                 &connection,
                 &user_id,
                 "email_otp",
-                &config.issuer,
+                &issuer,
                 None,
                 request.header("User-Agent").as_deref(),
             )
@@ -348,8 +349,9 @@ fn handle_session_refresh(request: &Request, config: &Config) -> io::Result<Resp
         return Ok(Response::json_error(501, "not_implemented"));
     };
     let connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
+    let issuer = read_app_issuer(&connection).map_err(io::Error::other)?;
 
-    match refresh_session_tokens(&connection, &parsed, &config.issuer) {
+    match refresh_session_tokens(&connection, &parsed, &issuer) {
         Ok(pair) => Ok(Response::json_value(200, token_json(pair))),
         Err(SessionError::SessionSuperseded) => Ok(Response::json_error(401, "session_superseded")),
         Err(_) => Ok(Response::json_error(401, "session_invalidated")),
@@ -590,11 +592,12 @@ fn handle_webauthn_authentication_verify(
 
     match webauthn_authentication_verify(&connection, &parsed, &origin) {
         Ok(outcome) => {
+            let issuer = read_app_issuer(&connection).map_err(io::Error::other)?;
             let pair = mint_session_tokens(
                 &connection,
                 &outcome.user_id,
                 "webauthn",
-                &config.issuer,
+                &issuer,
                 None,
                 request.header("User-Agent").as_deref(),
             )
@@ -634,11 +637,12 @@ fn handle_ed25519_verify(request: &Request, config: &Config) -> io::Result<Respo
         return Ok(Response::json_error(501, "not_implemented"));
     };
     let mut connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
+    let issuer = read_app_issuer(&connection).map_err(io::Error::other)?;
 
     match verify_ed25519_authentication(
         &mut connection,
         &parsed,
-        &config.issuer,
+        &issuer,
         None,
         request.header("User-Agent").as_deref(),
     ) {
@@ -1004,10 +1008,7 @@ mod tests {
         let db_path = test_db_path("http-admin-setup");
         initialize_runtime_database(&db_path).expect("database initializes");
         let config = Config {
-            database: Some(crate::DatabaseConfig {
-                db_path,
-                schema_path: PathBuf::from("sql/schema.sql"),
-            }),
+            database: Some(crate::DatabaseConfig { db_path }),
             ..Config::default()
         };
         let headers = vec![("x-auth-mini-peer-loopback".to_string(), "true".to_string())];
@@ -1017,7 +1018,7 @@ mod tests {
                 method: "PUT".to_string(),
                 path: "/admin/setup".to_string(),
                 headers: headers.clone(),
-                body: r#"{"origin":"https://demo.example.com","smtp":{"host":"smtp.example.com","port":587,"username":"mailer","password":"secret","from_email":"noreply@example.com","from_name":"Auth Mini","secure":true,"weight":1}}"#
+                body: r#"{"issuer":"https://auth.example.com","origin":"https://demo.example.com","smtp":{"host":"smtp.example.com","port":587,"username":"mailer","password":"secret","from_email":"noreply@example.com","from_name":"Auth Mini","secure":true,"weight":1}}"#
                     .to_string(),
             },
             &config,
@@ -1025,6 +1026,7 @@ mod tests {
         .expect("admin setup put response builds");
 
         assert_eq!(put.status, 200);
+        assert!(put.body.contains("https://auth.example.com"));
         assert!(put.body.contains("https://demo.example.com"));
         assert!(!put.body.contains("secret"));
 
@@ -1108,10 +1110,18 @@ mod tests {
                 );
                 CREATE TABLE users (
                     id TEXT PRIMARY KEY,
-                    email TEXT UNIQUE NOT NULL,
+                    email TEXT UNIQUE,
                     email_verified_at TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
+                CREATE TABLE app_meta (
+                    id TEXT PRIMARY KEY CHECK (id = 'APP'),
+                    issuer TEXT NOT NULL,
+                    admin_user_id TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                INSERT INTO app_meta (id, issuer) VALUES ('APP', 'auth-mini');
                 CREATE TABLE sessions (
                     id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL,
@@ -1153,7 +1163,6 @@ mod tests {
             &Config {
                 database: Some(crate::DatabaseConfig {
                     db_path: db_path.clone(),
-                    schema_path: PathBuf::from("../sql/schema.sql"),
                 }),
                 ..Config::default()
             },
@@ -1209,10 +1218,7 @@ mod tests {
                 ),
             },
             &Config {
-                database: Some(crate::DatabaseConfig {
-                    db_path,
-                    schema_path: PathBuf::from("../sql/schema.sql"),
-                }),
+                database: Some(crate::DatabaseConfig { db_path }),
                 ..Config::default()
             },
         )
@@ -1249,10 +1255,7 @@ mod tests {
                 body: String::new(),
             },
             &Config {
-                database: Some(crate::DatabaseConfig {
-                    db_path,
-                    schema_path: PathBuf::from("../sql/schema.sql"),
-                }),
+                database: Some(crate::DatabaseConfig { db_path }),
                 ..Config::default()
             },
         )
@@ -1292,10 +1295,7 @@ mod tests {
                 body: String::new(),
             },
             &Config {
-                database: Some(crate::DatabaseConfig {
-                    db_path,
-                    schema_path: PathBuf::from("../sql/schema.sql"),
-                }),
+                database: Some(crate::DatabaseConfig { db_path }),
                 ..Config::default()
             },
         )
@@ -1333,10 +1333,7 @@ mod tests {
                 body: String::new(),
             },
             &Config {
-                database: Some(crate::DatabaseConfig {
-                    db_path,
-                    schema_path: PathBuf::from("../sql/schema.sql"),
-                }),
+                database: Some(crate::DatabaseConfig { db_path }),
                 ..Config::default()
             },
         )
@@ -1374,7 +1371,6 @@ mod tests {
             &Config {
                 database: Some(crate::DatabaseConfig {
                     db_path,
-                    schema_path: PathBuf::from("../sql/schema.sql"),
                 }),
                 ..Config::default()
             },
@@ -1427,10 +1423,7 @@ mod tests {
                 body: r#"{"credential_id":"00000000-0000-4000-8000-000000000000"}"#.to_string(),
             },
             &Config {
-                database: Some(crate::DatabaseConfig {
-                    db_path,
-                    schema_path: PathBuf::from("../sql/schema.sql"),
-                }),
+                database: Some(crate::DatabaseConfig { db_path }),
                 ..Config::default()
             },
         )
@@ -1458,10 +1451,7 @@ mod tests {
                 body: r#"{"credential_id":"00000000-0000-4000-8000-000000000000"}"#.to_string(),
             },
             &Config {
-                database: Some(crate::DatabaseConfig {
-                    db_path,
-                    schema_path: PathBuf::from("../sql/schema.sql"),
-                }),
+                database: Some(crate::DatabaseConfig { db_path }),
                 ..Config::default()
             },
         )
@@ -1548,10 +1538,7 @@ mod tests {
                 body: String::new(),
             },
             &Config {
-                database: Some(crate::DatabaseConfig {
-                    db_path,
-                    schema_path: PathBuf::from("../sql/schema.sql"),
-                }),
+                database: Some(crate::DatabaseConfig { db_path }),
                 ..Config::default()
             },
         )
@@ -1605,10 +1592,7 @@ mod tests {
                 body: r#"{"name":"Renamed laptop"}"#.to_string(),
             },
             &Config {
-                database: Some(crate::DatabaseConfig {
-                    db_path,
-                    schema_path: PathBuf::from("../sql/schema.sql"),
-                }),
+                database: Some(crate::DatabaseConfig { db_path }),
                 ..Config::default()
             },
         )
@@ -1662,10 +1646,7 @@ mod tests {
                 body: String::new(),
             },
             &Config {
-                database: Some(crate::DatabaseConfig {
-                    db_path,
-                    schema_path: PathBuf::from("../sql/schema.sql"),
-                }),
+                database: Some(crate::DatabaseConfig { db_path }),
                 ..Config::default()
             },
         )
@@ -1717,10 +1698,7 @@ mod tests {
                 body: String::new(),
             },
             &Config {
-                database: Some(crate::DatabaseConfig {
-                    db_path,
-                    schema_path: PathBuf::from("../sql/schema.sql"),
-                }),
+                database: Some(crate::DatabaseConfig { db_path }),
                 ..Config::default()
             },
         )
@@ -1771,7 +1749,6 @@ mod tests {
             &Config {
                 database: Some(crate::DatabaseConfig {
                     db_path: db_path.clone(),
-                    schema_path: PathBuf::from("../sql/schema.sql"),
                 }),
                 ..Config::default()
             },
@@ -1833,10 +1810,7 @@ mod tests {
                 body: String::new(),
             },
             &Config {
-                database: Some(crate::DatabaseConfig {
-                    db_path,
-                    schema_path: PathBuf::from("../sql/schema.sql"),
-                }),
+                database: Some(crate::DatabaseConfig { db_path }),
                 ..Config::default()
             },
         )
@@ -1871,10 +1845,7 @@ mod tests {
                 body: String::new(),
             },
             &Config {
-                database: Some(crate::DatabaseConfig {
-                    db_path,
-                    schema_path: PathBuf::from("../sql/schema.sql"),
-                }),
+                database: Some(crate::DatabaseConfig { db_path }),
                 ..Config::default()
             },
         )
@@ -1923,7 +1894,6 @@ mod tests {
             &Config {
                 database: Some(crate::DatabaseConfig {
                     db_path: db_path.clone(),
-                    schema_path: PathBuf::from("../sql/schema.sql"),
                 }),
                 ..Config::default()
             },
@@ -1999,10 +1969,7 @@ mod tests {
                 body: r#"{"rp_id":"app.example.com"}"#.to_string(),
             },
             &Config {
-                database: Some(crate::DatabaseConfig {
-                    db_path,
-                    schema_path: PathBuf::from("../sql/schema.sql"),
-                }),
+                database: Some(crate::DatabaseConfig { db_path }),
                 ..Config::default()
             },
         )
@@ -2067,7 +2034,6 @@ mod tests {
             &Config {
                 database: Some(crate::DatabaseConfig {
                     db_path: db_path.clone(),
-                    schema_path: PathBuf::from("../sql/schema.sql"),
                 }),
                 ..Config::default()
             },
@@ -2121,7 +2087,6 @@ mod tests {
             &Config {
                 database: Some(crate::DatabaseConfig {
                     db_path,
-                    schema_path: PathBuf::from("../sql/schema.sql"),
                 }),
                 ..Config::default()
             },
@@ -2178,10 +2143,7 @@ mod tests {
                 body: register_verify_body(),
             },
             &Config {
-                database: Some(crate::DatabaseConfig {
-                    db_path,
-                    schema_path: PathBuf::from("../sql/schema.sql"),
-                }),
+                database: Some(crate::DatabaseConfig { db_path }),
                 ..Config::default()
             },
         )
@@ -2223,10 +2185,7 @@ mod tests {
                 body: r#"{"rp_id":"app.example.com","extra":true}"#.to_string(),
             },
             &Config {
-                database: Some(crate::DatabaseConfig {
-                    db_path,
-                    schema_path: PathBuf::from("../sql/schema.sql"),
-                }),
+                database: Some(crate::DatabaseConfig { db_path }),
                 ..Config::default()
             },
         )
@@ -2259,7 +2218,6 @@ mod tests {
             &Config {
                 database: Some(crate::DatabaseConfig {
                     db_path: db_path.clone(),
-                    schema_path: PathBuf::from("../sql/schema.sql"),
                 }),
                 ..Config::default()
             },
@@ -2308,10 +2266,7 @@ mod tests {
                 body: r#"{"rp_id":"example.com"}"#.to_string(),
             },
             &Config {
-                database: Some(crate::DatabaseConfig {
-                    db_path,
-                    schema_path: PathBuf::from("../sql/schema.sql"),
-                }),
+                database: Some(crate::DatabaseConfig { db_path }),
                 ..Config::default()
             },
         )
@@ -2375,7 +2330,6 @@ mod tests {
             &Config {
                 database: Some(crate::DatabaseConfig {
                     db_path: db_path.clone(),
-                    schema_path: PathBuf::from("../sql/schema.sql"),
                 }),
                 ..Config::default()
             },
@@ -2432,10 +2386,7 @@ mod tests {
                 body: authentication_verify_body(),
             },
             &Config {
-                database: Some(crate::DatabaseConfig {
-                    db_path,
-                    schema_path: PathBuf::from("../sql/schema.sql"),
-                }),
+                database: Some(crate::DatabaseConfig { db_path }),
                 ..Config::default()
             },
         )
@@ -2474,10 +2425,7 @@ mod tests {
                 body: String::new(),
             },
             &Config {
-                database: Some(crate::DatabaseConfig {
-                    db_path,
-                    schema_path: PathBuf::from("../sql/schema.sql"),
-                }),
+                database: Some(crate::DatabaseConfig { db_path }),
                 ..Config::default()
             },
         )
@@ -2504,10 +2452,7 @@ mod tests {
                 body: String::new(),
             },
             &Config {
-                database: Some(crate::DatabaseConfig {
-                    db_path,
-                    schema_path: PathBuf::from("../sql/schema.sql"),
-                }),
+                database: Some(crate::DatabaseConfig { db_path }),
                 ..Config::default()
             },
         )
@@ -2574,7 +2519,7 @@ mod tests {
                 );
                 CREATE TABLE users (
                     id TEXT PRIMARY KEY,
-                    email TEXT UNIQUE NOT NULL,
+                    email TEXT UNIQUE,
                     email_verified_at TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );",
@@ -2590,10 +2535,7 @@ mod tests {
                 body: r#"{"email":"missing@example.com","code":"123456"}"#.to_string(),
             },
             &Config {
-                database: Some(crate::DatabaseConfig {
-                    db_path,
-                    schema_path: PathBuf::from("../sql/schema.sql"),
-                }),
+                database: Some(crate::DatabaseConfig { db_path }),
                 ..Config::default()
             },
         )
@@ -2640,7 +2582,7 @@ mod tests {
             .execute_batch(
                 "CREATE TABLE users (
                     id TEXT PRIMARY KEY,
-                    email TEXT UNIQUE NOT NULL,
+                    email TEXT UNIQUE,
                     email_verified_at TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
@@ -2654,6 +2596,13 @@ mod tests {
                     expires_at TEXT NOT NULL,
                     revoked_at TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE app_meta (
+                    id TEXT PRIMARY KEY CHECK (id = 'APP'),
+                    issuer TEXT NOT NULL,
+                    admin_user_id TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
                 CREATE TABLE jwks_keys (
                     id TEXT PRIMARY KEY CHECK (id IN ('CURRENT', 'STANDBY')),
@@ -2704,6 +2653,12 @@ mod tests {
                 );",
             )
             .expect("auth schema exists");
+        connection
+            .execute(
+                "INSERT OR IGNORE INTO app_meta (id, issuer) VALUES ('APP', 'auth-mini')",
+                [],
+            )
+            .expect("app meta exists");
     }
 
     fn no_database_config() -> Config {

@@ -196,14 +196,19 @@ pub(crate) fn register_options(
     request: &OptionsRequest,
     origin: &str,
 ) -> Result<Value, RegisterOptionsError> {
-    let email = user_email(connection, user_id)?;
+    let display_name = user_display_name(connection, user_id)?;
     let resolved = resolve_options_input(connection, request, origin)
         .map_err(|_| RegisterOptionsError::WebauthnRegistration)?;
     let request_id = random_uuid(connection).map_err(|_| RegisterOptionsError::Request)?;
     let webauthn = build_webauthn(&resolved.rp_id, &resolved.origin)
         .map_err(|_| RegisterOptionsError::WebauthnRegistration)?;
     let (options, state) = webauthn
-        .start_passkey_registration(user_webauthn_id(user_id), &email, &email, None)
+        .start_passkey_registration(
+            user_webauthn_id(user_id),
+            &display_name,
+            &display_name,
+            None,
+        )
         .map_err(|_| RegisterOptionsError::Request)?;
     let state_json = serde_json::to_string(&state).map_err(|_| RegisterOptionsError::Request)?;
     let public_key =
@@ -521,16 +526,21 @@ pub(crate) fn delete_credential(
     Ok(result > 0)
 }
 
-fn user_email(connection: &Connection, user_id: &str) -> Result<String, RegisterOptionsError> {
-    connection
+fn user_display_name(
+    connection: &Connection,
+    user_id: &str,
+) -> Result<String, RegisterOptionsError> {
+    let email = connection
         .query_row(
             "SELECT email FROM users WHERE id = ?1 LIMIT 1",
             [user_id],
-            |row| row.get(0),
+            |row| row.get::<_, Option<String>>(0),
         )
         .optional()
         .map_err(|_| RegisterOptionsError::AccessToken)?
-        .ok_or(RegisterOptionsError::AccessToken)
+        .ok_or(RegisterOptionsError::AccessToken)?;
+
+    Ok(email.unwrap_or_else(|| user_id.to_string()))
 }
 
 struct RegisterChallengePrecheckRow {
@@ -1057,6 +1067,33 @@ mod tests {
     }
 
     #[test]
+    fn register_options_uses_user_id_display_name_when_user_has_no_email() {
+        let connection = Connection::open_in_memory().expect("database opens");
+        create_register_options_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email) VALUES (?1, NULL)",
+                ["user-1"],
+            )
+            .expect("user inserts");
+        connection
+            .execute(
+                "INSERT INTO allowed_origins (origin) VALUES (?1)",
+                ["https://app.example.com"],
+            )
+            .expect("origin inserts");
+        let request = OptionsRequest {
+            rp_id: "app.example.com".to_string(),
+        };
+
+        let body = register_options(&connection, "user-1", &request, "https://app.example.com")
+            .expect("options generate");
+
+        assert_eq!(body["publicKey"]["user"]["name"], "user-1");
+        assert_eq!(body["publicKey"]["user"]["displayName"], "user-1");
+    }
+
+    #[test]
     fn creates_authentication_options_and_stores_anonymous_challenge() {
         let connection = Connection::open_in_memory().expect("database opens");
         create_register_options_schema(&connection);
@@ -1348,7 +1385,7 @@ mod tests {
             .execute_batch(
                 "CREATE TABLE users (
                     id TEXT PRIMARY KEY,
-                    email TEXT UNIQUE NOT NULL,
+                    email TEXT UNIQUE,
                     email_verified_at TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );

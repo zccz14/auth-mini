@@ -112,7 +112,7 @@ export function createMeResponseParser() {
 
     return {
       user_id: requireString(record.user_id),
-      email: requireString(record.email),
+      email: requireNullableString(record.email),
       webauthn_credentials: requireArray(record.webauthn_credentials).map(
         parseWebauthnCredential,
       ),

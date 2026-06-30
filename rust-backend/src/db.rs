@@ -6,6 +6,7 @@ use rusqlite::Connection;
 use crate::jwks::bootstrap_keys;
 
 const SCHEMA_SQL: &str = include_str!("../../sql/schema.sql");
+const DEFAULT_ISSUER: &str = "http://localhost:7777";
 
 pub fn initialize_database(
     db_path: &Path,
@@ -19,6 +20,8 @@ pub fn initialize_database(
 pub fn initialize_runtime_database(db_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     initialize_database_from_schema(db_path, SCHEMA_SQL)?;
     let connection = Connection::open(db_path)?;
+    migrate_runtime_schema(&connection)?;
+    ensure_app_meta(&connection)?;
     bootstrap_keys(&connection)?;
 
     Ok(())
@@ -37,7 +40,45 @@ pub fn initialize_database_from_schema(
     connection.pragma_update(None, "foreign_keys", "ON")?;
     connection.pragma_update(None, "journal_mode", "WAL")?;
     connection.execute_batch(schema)?;
+    ensure_app_meta(&connection)?;
     assert_required_schema(&connection)?;
+
+    Ok(())
+}
+
+pub(crate) fn read_app_issuer(connection: &Connection) -> rusqlite::Result<String> {
+    connection.query_row("SELECT issuer FROM app_meta WHERE id = 'APP'", [], |row| {
+        row.get(0)
+    })
+}
+
+fn migrate_runtime_schema(connection: &Connection) -> rusqlite::Result<()> {
+    // COMPATIBILITY: SQLite files created before app_meta allowed only non-null
+    // users.email. Remove after old auth-mini SQLite files no longer need
+    // automatic runtime upgrade support.
+    if users_email_is_not_null(connection)? {
+        connection.execute_batch("DROP TABLE IF EXISTS app_meta;")?;
+        rebuild_users_with_nullable_email(connection)?;
+    }
+    connection.execute_batch(
+        "CREATE TABLE IF NOT EXISTS app_meta (
+            id TEXT PRIMARY KEY CHECK (id = 'APP'),
+            issuer TEXT NOT NULL,
+            admin_user_id TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (admin_user_id) REFERENCES users(id) ON DELETE SET NULL
+        );",
+    )?;
+
+    Ok(())
+}
+
+fn ensure_app_meta(connection: &Connection) -> rusqlite::Result<()> {
+    connection.execute(
+        "INSERT OR IGNORE INTO app_meta (id, issuer) VALUES ('APP', ?1)",
+        [DEFAULT_ISSUER],
+    )?;
 
     Ok(())
 }
@@ -47,6 +88,10 @@ fn assert_required_schema(connection: &Connection) -> rusqlite::Result<()> {
         (
             "users",
             &["id", "email", "email_verified_at", "created_at"][..],
+        ),
+        (
+            "app_meta",
+            &["id", "issuer", "admin_user_id", "created_at", "updated_at"][..],
         ),
         (
             "sessions",
@@ -194,6 +239,43 @@ fn table_has_column(
     Ok(false)
 }
 
+fn users_email_is_not_null(connection: &Connection) -> rusqlite::Result<bool> {
+    let mut statement = connection.prepare("PRAGMA table_info(users)")?;
+    let rows = statement.query_map([], |row| {
+        Ok((row.get::<_, String>(1)?, row.get::<_, i64>(3)?))
+    })?;
+
+    for row in rows {
+        let (column_name, not_null) = row?;
+        if column_name == "email" {
+            return Ok(not_null == 1);
+        }
+    }
+
+    Ok(false)
+}
+
+fn rebuild_users_with_nullable_email(connection: &Connection) -> rusqlite::Result<()> {
+    connection.pragma_update(None, "foreign_keys", "OFF")?;
+    connection.pragma_update(None, "legacy_alter_table", "ON")?;
+    let result = connection.execute_batch(
+        "ALTER TABLE users RENAME TO users_old;
+         CREATE TABLE users (
+            id TEXT PRIMARY KEY,
+            email TEXT UNIQUE,
+            email_verified_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+         );
+         INSERT INTO users (id, email, email_verified_at, created_at)
+            SELECT id, email, email_verified_at, created_at FROM users_old;
+         DROP TABLE users_old;",
+    );
+    connection.pragma_update(None, "legacy_alter_table", "OFF")?;
+    connection.pragma_update(None, "foreign_keys", "ON")?;
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
@@ -229,6 +311,8 @@ mod tests {
 
         let connection = Connection::open(db_path).expect("database opens");
         assert_required_schema(&connection).expect("required schema is present");
+        let issuer = read_app_issuer(&connection).expect("app issuer reads");
+        assert_eq!(issuer, "http://localhost:7777");
         let keys: i64 = connection
             .query_row("SELECT COUNT(*) FROM jwks_keys", [], |row| row.get(0))
             .expect("jwks count reads");
@@ -241,6 +325,44 @@ mod tests {
             )
             .expect("current key reads");
         assert_eq!(current_kid, first_current_kid);
+    }
+
+    #[test]
+    fn runtime_database_allows_users_without_email() {
+        let db_path = test_db_path("nullable-email");
+        initialize_runtime_database(&db_path).expect("runtime database initializes");
+        let connection = Connection::open(db_path).expect("database opens");
+
+        connection
+            .execute(
+                "INSERT INTO users (id, email) VALUES ('admin-1', NULL), ('admin-2', NULL)",
+                [],
+            )
+            .expect("nullable email users insert");
+    }
+
+    #[test]
+    fn runtime_database_migrates_legacy_users_not_null_email() {
+        let db_path = test_db_path("legacy-users-email");
+        let connection = Connection::open(&db_path).expect("database opens");
+        connection
+            .execute_batch(
+                "CREATE TABLE users (
+                    id TEXT PRIMARY KEY,
+                    email TEXT NOT NULL UNIQUE,
+                    email_verified_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );",
+            )
+            .expect("legacy users table is created");
+        drop(connection);
+
+        initialize_runtime_database(&db_path).expect("legacy database migrates");
+        let connection = Connection::open(db_path).expect("database opens");
+        assert!(!users_email_is_not_null(&connection).expect("email nullability reads"));
+        connection
+            .execute("INSERT INTO users (id, email) VALUES ('admin-1', NULL)", [])
+            .expect("nullable email insert succeeds after migration");
     }
 
     #[test]

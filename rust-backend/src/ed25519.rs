@@ -56,8 +56,16 @@ pub(crate) fn parse_credential_create_request(
 ) -> Result<CredentialCreateRequest, serde_json::Error> {
     let request: CredentialCreateRequest = serde_json::from_str(body)?;
 
+    validate_credential_create_request(&request)?;
+
+    Ok(request)
+}
+
+pub(crate) fn validate_credential_create_request(
+    request: &CredentialCreateRequest,
+) -> Result<(), serde_json::Error> {
     if !request.name.is_empty() && base64url_decoded_len(&request.public_key) == Some(32) {
-        return Ok(request);
+        return Ok(());
     }
 
     Err(invalid_request_error("invalid credential create request"))

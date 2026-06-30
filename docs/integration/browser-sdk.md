@@ -25,7 +25,7 @@ Browser SDK persistence semantics remain browser-only: the maintained browser mo
 
 ## Cross-origin guidance
 
-Browser pages may be hosted on a different origin than the auth server. Store the page origin with the demo setup page or `PUT /admin/setup` for WebAuthn and related origin checks; HTTP CORS is served separately with `Access-Control-Allow-Origin: *`.
+Browser pages may be hosted on a different origin than the auth server. Store the page origin with the demo setup page or loopback-only `PUT /admin/setup` for WebAuthn and related origin checks; HTTP CORS is served separately with `Access-Control-Allow-Origin: *`.
 
 Same-origin proxy deployment is still supported if you prefer to front auth-mini through your app origin, but direct cross-origin browser access to the auth-mini API is also supported. Because auth-mini serves wildcard CORS for HTTP routes, downstream apps should decide whether to keep direct access or place their own proxy/gateway controls in front.
 
@@ -106,8 +106,10 @@ Open:
 https://example.github.io/auth-mini/#/setup?auth-origin=https://auth.zccz14.com
 ```
 
-Configure the published docs origin through the setup page or local admin setup API, then start auth-mini with:
+Start auth-mini with the local listener and database options:
 
 ```bash
-auth-mini --db ./auth-mini.sqlite --issuer https://auth.zccz14.com
+auth-mini --host 127.0.0.1 --port 7777 --db ./auth-mini.sqlite
 ```
+
+Then configure the externally visible issuer and published docs origin through the setup page or local admin setup API. The setup API writes `app_meta`, including `app_meta.issuer`; SMTP is optional, and admin Ed25519 bootstrap does not require SMTP.

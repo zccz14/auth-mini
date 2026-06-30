@@ -215,7 +215,7 @@ pub(crate) fn current_user_response(
         .query_row(
             "SELECT id, email FROM users WHERE id = ?1 LIMIT 1",
             [&auth.user_id],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
         )
         .optional()
         .map_err(|_| SessionError::InvalidAccessToken)?;
@@ -448,7 +448,7 @@ mod tests {
             .execute_batch(
                 "CREATE TABLE users (
                     id TEXT PRIMARY KEY,
-                    email TEXT NOT NULL,
+                    email TEXT,
                     email_verified_at TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                  );

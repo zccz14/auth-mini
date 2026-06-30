@@ -22,46 +22,49 @@ Run auth-mini with no arguments for local development:
 auth-mini
 ```
 
-With no arguments, auth-mini listens on `127.0.0.1:7777`, uses `http://localhost:7777` as the issuer, and stores SQLite data at `~/.auth-mini/default.sqlite3`. The database is initialized automatically when the server starts, including parent directory creation, schema creation, and JWKS key bootstrap.
+With no arguments, auth-mini listens on `127.0.0.1:7777` and stores SQLite data at `~/.auth-mini/default.sqlite3`. The database is initialized automatically when the server starts, including parent directory creation, `app_meta`, JWKS key bootstrap, and schema creation.
 
-For deployment, set the externally visible issuer and optionally a database path:
+For deployment, the CLI only accepts the bind host, bind port, and database path:
 
 ```bash
-auth-mini --db ./auth-mini.sqlite --issuer https://auth.your-domain.com
+auth-mini --host 127.0.0.1 --port 7777 --db ./auth-mini.sqlite
 ```
 
 The Rust binary embeds the database schema and `openapi.yaml` for release-binary use. Runtime initialization uses the embedded schema. Rust `/openapi.yaml` and `/openapi.json` do not depend on the current working directory, and the Rust runtime has no `--openapi` override parameter.
 
 The Rust binary prints one `auth-mini SQLite database: <path>` line to stderr when a database is configured.
 
-The old npm/oclif commands and Rust management subcommands have been removed. Configure the instance through the GUI demo or the local admin setup API.
+The old npm/oclif commands and Rust management subcommands have been removed. Configure app metadata through the GUI demo or the local admin setup API.
 
 ## Stored browser origins
 
-Manage browser page origins for WebAuthn and related origin checks with the GUI demo setup page or `PUT /admin/setup`. This does not control HTTP CORS; auth-mini serves `Access-Control-Allow-Origin: *` on CORS responses.
+Manage the externally visible issuer and browser page origins for WebAuthn and related origin checks with the GUI demo setup page or loopback-only `PUT /admin/setup`. This writes app metadata stored in `app_meta`, including `app_meta.issuer`; it does not control HTTP CORS, and auth-mini serves `Access-Control-Allow-Origin: *` on CORS responses.
 
 ```bash
-curl -X PUT http://localhost:7777/admin/setup \
+curl -X PUT http://127.0.0.1:7777/admin/setup \
   -H 'content-type: application/json' \
-  -d '{"origin":"https://app.example.com","smtp":{"host":"smtp.example.com","port":587,"username":"mailer","password":"secret","from_email":"noreply@example.com","secure":false,"weight":1}}'
+  -d '{"issuer":"https://auth.example.com","origin":"https://app.example.com","admin_ed25519":{"name":"ops laptop","public_key":"<base64url-ed25519-public-key>"}}'
 ```
+
+The optional `admin_ed25519` value can create an admin user without an email address. Use that key for later Ed25519 admin login.
 
 ## SMTP configuration
 
-Manage SMTP with the same setup API. The response returns an SMTP summary and never returns the stored password:
+Manage SMTP with the same setup API when email OTP is needed. SMTP is optional, and admin Ed25519 bootstrap does not depend on SMTP. The response returns an SMTP summary and never returns the stored password:
 
 ```bash
-curl http://localhost:7777/admin/setup
+curl http://127.0.0.1:7777/admin/setup
 ```
 
 ## Starting the server
 
-`--issuer` is the externally visible auth origin that clients, JWT verifiers, and WebAuthn flows should use. It is not the local bind address from `--host`/`--port`.
+The CLI controls only the local listener and database path. The externally visible issuer used by clients, JWT verifiers, and WebAuthn flows is app metadata set through `/admin/setup`.
 
 ```bash
 auth-mini \
+  --host 127.0.0.1 \
   --port 7777 \
-  --issuer https://auth.zccz14.com
+  --db ./auth-mini.sqlite
 ```
 
 ## Release version rule
@@ -79,7 +82,7 @@ Run `npm run check:release-version -- vX.Y.Z` before pushing the tag. The releas
 auth-mini writes structured JSON logs by default. The logs are suitable for redirection to a file:
 
 ```bash
-auth-mini --issuer https://auth.zccz14.com >> auth-mini.log
+auth-mini --host 127.0.0.1 --port 7777 --db ./auth-mini.sqlite >> auth-mini.log
 ```
 
 In the current version, logs may contain plaintext email addresses and client IPs. Logs intentionally exclude OTP values, tokens, and SMTP passwords.

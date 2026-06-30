@@ -13,8 +13,15 @@ export type ErrorResponse = {
 };
 
 export type AdminSetupRequest = {
+    issuer: string;
     origin: string;
-    smtp: AdminSetupSmtpInput;
+    admin_ed25519?: AdminSetupEd25519Input | null;
+    smtp?: AdminSetupSmtpInput | null;
+};
+
+export type AdminSetupEd25519Input = {
+    name: string;
+    public_key: string;
 };
 
 export type AdminSetupSmtpInput = {
@@ -28,6 +35,9 @@ export type AdminSetupSmtpInput = {
 };
 
 export type AdminSetupState = {
+    issuer: string;
+    admin_user_id: string | null;
+    admin_ed25519: AdminEd25519CredentialSummary | null;
     origins: Array<AdminAllowedOrigin>;
     smtp: AdminSmtpConfigSummary | null;
 };
@@ -48,6 +58,14 @@ export type AdminSmtpConfigSummary = {
     secure: boolean;
     is_active: boolean;
     weight: number;
+};
+
+export type AdminEd25519CredentialSummary = {
+    id: string;
+    name: string;
+    public_key: string;
+    last_used_at: string | null;
+    created_at: string;
 };
 
 export type EmailStartRequest = {
@@ -100,7 +118,7 @@ export type WebauthnCredential = {
 
 export type MeResponse = {
     user_id: string;
-    email: string;
+    email: string | null;
     webauthn_credentials: Array<WebauthnCredential>;
     ed25519_credentials: Array<Ed25519Credential>;
     active_sessions: Array<SessionSummary>;
@@ -229,8 +247,10 @@ export type JwksResponse = {
 };
 
 export type AdminSetupRequestWritable = {
+    issuer: string;
     origin: string;
-    smtp: AdminSetupSmtpInputWritable;
+    admin_ed25519?: AdminSetupEd25519Input | null;
+    smtp?: AdminSetupSmtpInputWritable | null;
 };
 
 export type AdminSetupSmtpInputWritable = {

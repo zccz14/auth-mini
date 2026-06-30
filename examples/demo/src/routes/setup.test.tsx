@@ -1,8 +1,9 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { DemoProvider } from '@/app/providers/demo-provider';
+import { AUTH_ORIGIN_KEY } from '@/lib/demo-storage';
 import { SetupRoute } from './setup';
 
 const apiMocks = vi.hoisted(() => ({
@@ -19,11 +20,19 @@ vi.mock('auth-mini/sdk/api', () => ({
   })),
 }));
 
+const DEFAULT_AUTH_ORIGIN = 'https://auth.zccz14.com';
+
 describe('SetupRoute', () => {
+  beforeEach(() => {
+    window.localStorage.removeItem(AUTH_ORIGIN_KEY);
+    apiMocks.update.mockReset();
+  });
+
   it('renders setup controls without smtp or origin CLI commands', () => {
     const { container } = renderSetupRoute();
 
     expect(screen.getByLabelText('Auth server origin')).toBeInTheDocument();
+    expect(screen.getByLabelText('Issuer')).toHaveValue(DEFAULT_AUTH_ORIGIN);
     expect(screen.getByLabelText('Allowed page origin')).toHaveValue(
       'https://demo.example.com',
     );
@@ -31,11 +40,21 @@ describe('SetupRoute', () => {
     expect(container.querySelectorAll('code')).toHaveLength(0);
     expect(screen.queryByText(/auth-mini smtp/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/auth-mini origin/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/--issuer/i)).not.toBeInTheDocument();
   });
 
   it('submits admin setup through the API', async () => {
     apiMocks.update.mockResolvedValueOnce({
       data: {
+        issuer: DEFAULT_AUTH_ORIGIN,
+        admin_user_id: 'admin-1',
+        admin_ed25519: {
+          id: '00000000-0000-4000-8000-000000000000',
+          name: 'Admin key',
+          public_key: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+          last_used_at: null,
+          created_at: '2026-06-30T00:00:00Z',
+        },
         origins: [
           {
             id: 1,
@@ -59,6 +78,10 @@ describe('SetupRoute', () => {
     renderSetupRoute();
     const user = userEvent.setup();
 
+    await user.type(
+      screen.getByLabelText('Admin Ed25519 public key'),
+      'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+    );
     await user.type(screen.getByLabelText('SMTP host'), 'smtp.example.com');
     await user.type(screen.getByLabelText('SMTP username'), 'mailer');
     await user.type(screen.getByLabelText('SMTP password'), 'secret');
@@ -69,7 +92,12 @@ describe('SetupRoute', () => {
     await waitFor(() => {
       expect(apiMocks.update).toHaveBeenCalledWith({
         body: {
+          issuer: DEFAULT_AUTH_ORIGIN,
           origin: 'https://demo.example.com',
+          admin_ed25519: {
+            name: 'Admin key',
+            public_key: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+          },
           smtp: {
             host: 'smtp.example.com',
             port: 587,
@@ -85,8 +113,45 @@ describe('SetupRoute', () => {
       });
     });
     expect(screen.getByText('Setup saved')).toBeInTheDocument();
+    expect(screen.getAllByText(DEFAULT_AUTH_ORIGIN)).toHaveLength(2);
+    expect(screen.getByText('Admin key')).toBeInTheDocument();
     expect(screen.getByText('smtp.example.com')).toBeInTheDocument();
     expect(screen.queryByText('secret')).not.toBeInTheDocument();
+  });
+
+  it('submits setup without smtp when smtp host is blank', async () => {
+    apiMocks.update.mockResolvedValueOnce({
+      data: {
+        issuer: DEFAULT_AUTH_ORIGIN,
+        admin_user_id: null,
+        admin_ed25519: null,
+        origins: [
+          {
+            id: 1,
+            origin: 'https://demo.example.com',
+            created_at: '2026-06-30T00:00:00Z',
+          },
+        ],
+        smtp: null,
+      },
+    });
+    renderSetupRoute();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Save setup' }));
+
+    await waitFor(() => {
+      expect(apiMocks.update).toHaveBeenCalledWith({
+        body: {
+          issuer: DEFAULT_AUTH_ORIGIN,
+          origin: 'https://demo.example.com',
+          admin_ed25519: undefined,
+          smtp: undefined,
+        },
+        throwOnError: true,
+      });
+    });
+    expect(screen.getAllByText('Not configured')).toHaveLength(2);
   });
 });
 

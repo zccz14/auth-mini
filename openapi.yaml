@@ -43,7 +43,7 @@ paths:
       tags:
         - admin
       operationId: updateAdminSetup
-      summary: Configure local origin and SMTP setup
+      summary: Configure local app metadata, admin credential, origin, and optional SMTP
       requestBody:
         required: true
         content:
@@ -707,14 +707,36 @@ components:
       type: object
       additionalProperties: false
       required:
+        - issuer
         - origin
-        - smtp
       properties:
+        issuer:
+          type: string
+          format: uri
         origin:
           type: string
           format: uri
+        admin_ed25519:
+          oneOf:
+            - $ref: '#/components/schemas/AdminSetupEd25519Input'
+            - type: 'null'
         smtp:
-          $ref: '#/components/schemas/AdminSetupSmtpInput'
+          oneOf:
+            - $ref: '#/components/schemas/AdminSetupSmtpInput'
+            - type: 'null'
+    AdminSetupEd25519Input:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - public_key
+      properties:
+        name:
+          type: string
+          minLength: 1
+        public_key:
+          type: string
+          minLength: 1
     AdminSetupSmtpInput:
       type: object
       additionalProperties: false
@@ -755,9 +777,23 @@ components:
       type: object
       additionalProperties: false
       required:
+        - issuer
+        - admin_user_id
+        - admin_ed25519
         - origins
         - smtp
       properties:
+        issuer:
+          type: string
+          format: uri
+        admin_user_id:
+          type:
+            - 'string'
+            - 'null'
+        admin_ed25519:
+          oneOf:
+            - $ref: '#/components/schemas/AdminEd25519CredentialSummary'
+            - type: 'null'
         origins:
           type: array
           items:
@@ -815,6 +851,31 @@ components:
           type: boolean
         weight:
           type: integer
+    AdminEd25519CredentialSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - public_key
+        - last_used_at
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        public_key:
+          type: string
+        last_used_at:
+          type:
+            - 'string'
+            - 'null'
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
     EmailStartRequest:
       type: object
       additionalProperties: false
@@ -973,7 +1034,9 @@ components:
         user_id:
           type: string
         email:
-          type: string
+          type:
+            - 'string'
+            - 'null'
           format: email
         webauthn_credentials:
           type: array
