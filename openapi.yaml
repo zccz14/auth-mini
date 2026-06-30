@@ -1229,11 +1229,12 @@ components:
       type: object
       additionalProperties: false
       required:
-        - credential_id
+        - public_key
       properties:
-        credential_id:
+        public_key:
           type: string
-          format: uuid
+          minLength: 43
+          maxLength: 43
     Ed25519ChallengeResponse:
       type: object
       additionalProperties: false

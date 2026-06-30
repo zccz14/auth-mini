@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS ed25519_credentials (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
   name TEXT NOT NULL,
-  public_key TEXT NOT NULL,
+  public_key TEXT NOT NULL UNIQUE,
   last_used_at TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE

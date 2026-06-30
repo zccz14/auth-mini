@@ -2,7 +2,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use url::{Host, Url};
 
-use crate::ed25519::{create_credential, CredentialCreateRequest};
+use crate::ed25519::{create_credential, credential_ids_by_public_key, CredentialCreateRequest};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AdminSetupState {
@@ -166,8 +166,9 @@ fn upsert_admin_ed25519(
     match existing_id {
         Some(id) => update_admin_ed25519_name(connection, &id, &input.name),
         None => create_credential(connection, &user_id, &request)
+            .map_err(|_| SetupError::Database)?
             .map(|_| ())
-            .map_err(|_| SetupError::Database),
+            .ok_or(SetupError::InvalidRequest),
     }
 }
 
@@ -208,14 +209,26 @@ fn existing_admin_ed25519_id(
     user_id: &str,
     public_key: &str,
 ) -> Result<Option<String>, SetupError> {
-    connection
+    let credential_ids =
+        credential_ids_by_public_key(connection, public_key).map_err(|_| SetupError::Database)?;
+    let [credential_id] = credential_ids.as_slice() else {
+        if credential_ids.is_empty() {
+            return Ok(None);
+        }
+        return Err(SetupError::InvalidRequest);
+    };
+    let owner_id: String = connection
         .query_row(
-            "SELECT id FROM ed25519_credentials WHERE user_id = ?1 AND public_key = ?2 LIMIT 1",
-            params![user_id, public_key],
+            "SELECT user_id FROM ed25519_credentials WHERE id = ?1 LIMIT 1",
+            [&credential_id],
             |row| row.get(0),
         )
-        .optional()
-        .map_err(|_| SetupError::Database)
+        .map_err(|_| SetupError::Database)?;
+    if owner_id == user_id {
+        return Ok(Some(credential_id.clone()));
+    }
+
+    Err(SetupError::InvalidRequest)
 }
 
 fn update_admin_ed25519_name(
@@ -532,6 +545,41 @@ mod tests {
             .expect("admin email reads");
         assert_eq!(email, None);
         assert_eq!(state.smtp, None);
+    }
+
+    #[test]
+    fn admin_setup_rejects_ed25519_public_key_owned_by_another_user() {
+        let connection = test_connection("setup-admin-ed25519-duplicate");
+        connection
+            .execute(
+                "INSERT INTO users (id, email) VALUES (?1, ?2)",
+                ("user-1", "user@example.com"),
+            )
+            .expect("user inserts");
+        connection
+            .execute(
+                "INSERT INTO ed25519_credentials
+                 (id, user_id, name, public_key, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                (
+                    "credential-1",
+                    "user-1",
+                    "Existing",
+                    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                    "2026-01-01T00:00:00.000Z",
+                ),
+            )
+            .expect("credential inserts");
+        let request = AdminSetupRequest {
+            admin_ed25519: AdminEd25519Input {
+                name: "Admin key".to_string(),
+                public_key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_string(),
+            },
+        };
+
+        let error = apply_admin_setup(&connection, &request).expect_err("setup rejects duplicate");
+
+        assert_eq!(error, SetupError::InvalidRequest);
     }
 
     fn valid_request() -> AdminConfigRequest {

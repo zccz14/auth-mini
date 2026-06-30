@@ -106,7 +106,6 @@ export function createDeviceSdk(options: DeviceSdkOptions): DeviceSdkApi {
 
   const ready = (async () => {
     await authenticateDevice({
-      credentialId: options.credentialId,
       http,
       privateKey,
       session: {

@@ -109,7 +109,7 @@ describe.sequential('rust external server e2e smoke', () => {
     });
 
     const adminStartResponse = await postJson(`${baseUrl}/ed25519/start`, {
-      credential_id: setupState.admin_ed25519.id,
+      public_key: setupState.admin_ed25519.public_key,
     });
     expect(adminStartResponse.status).toBe(200);
     const adminChallenge = (await adminStartResponse.json()) as {
@@ -189,17 +189,20 @@ describe.sequential('rust external server e2e smoke', () => {
       active_sessions: [expect.objectContaining({ auth_method: 'email_otp' })],
     });
 
-    const deviceKey = createTestEd25519Keypair('default');
+    const deviceKey = createTestEd25519Keypair('alternate');
     const credentialResponse = await postJson(
       `${baseUrl}/ed25519/credentials`,
       { name: 'Rust E2E device', public_key: deviceKey.publicKey },
       emailTokens.access_token,
     );
     expect(credentialResponse.status).toBe(200);
-    const credential = (await credentialResponse.json()) as { id: string };
+    const credential = (await credentialResponse.json()) as {
+      id: string;
+      public_key: string;
+    };
 
     const startResponse = await postJson(`${baseUrl}/ed25519/start`, {
-      credential_id: credential.id,
+      public_key: credential.public_key,
     });
     expect(startResponse.status).toBe(200);
     const challenge = (await startResponse.json()) as {

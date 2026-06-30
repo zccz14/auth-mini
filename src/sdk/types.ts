@@ -75,7 +75,6 @@ export type Listener = (state: SessionSnapshot) => void;
 
 export type DeviceSdkOptions = {
   serverBaseUrl: string;
-  credentialId: string;
   privateKeySeed: string;
   fetch?: FetchLike;
   now?: () => number;

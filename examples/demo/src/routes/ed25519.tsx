@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react';
 import { FlowCard } from '@/components/app/flow-card';
 import { JsonPanel } from '@/components/app/json-panel';
 import { Button } from '@/components/ui/button';
@@ -19,13 +25,10 @@ export function Ed25519Route() {
   const { adoptDemoSession, config, sdk, session } = useDemo();
   const [credentialName, setCredentialName] = useState('');
   const [publicKey, setPublicKey] = useState('');
-  const [credentialId, setCredentialId] = useState('');
   const [seed, setSeed] = useState('');
   const [seedPublicKey, setSeedPublicKey] = useState('');
   const [generatedSeed, setGeneratedSeed] = useState('');
   const [generatedPublicKey, setGeneratedPublicKey] = useState('');
-  const [lastRegisteredCredentialId, setLastRegisteredCredentialId] =
-    useState('');
   const [pendingAction, setPendingAction] = useState<
     'generate' | 'register' | 'signin' | null
   >(null);
@@ -59,59 +62,59 @@ export function Ed25519Route() {
     registerPublicKeyError === '' &&
     pendingAction === null;
   const canSignIn =
-    setupReady &&
-    credentialId.trim() !== '' &&
-    seedValidationError === '' &&
-    pendingAction === null;
+    setupReady && seedValidationError === '' && pendingAction === null;
 
-  const loadMe = useCallback(async (options?: { warningMessage?: string }) => {
-    const requestId = loadMeRequestIdRef.current + 1;
-    loadMeRequestIdRef.current = requestId;
+  const loadMe = useCallback(
+    async (options?: { warningMessage?: string }) => {
+      const requestId = loadMeRequestIdRef.current + 1;
+      loadMeRequestIdRef.current = requestId;
 
-    if (!sdk || config.status !== 'ready' || !session.authenticated) {
-      setMe(null);
-      setMeError('');
-      setMeWarning('');
-      setLoadingMe(false);
-      return;
-    }
-
-    setLoadingMe(true);
-    setMeError('');
-    if (!options?.warningMessage) {
-      setMeWarning('');
-    }
-
-    try {
-      const nextMe = await sdk.me.fetch();
-      if (loadMeRequestIdRef.current !== requestId) {
-        return;
-      }
-
-      setMe(nextMe);
-      setMeWarning('');
-    } catch (cause) {
-      if (loadMeRequestIdRef.current !== requestId) {
-        return;
-      }
-
-      if (options?.warningMessage) {
-        setMeWarning(options.warningMessage);
-        return;
-      }
-
-      setMe(null);
-      setMeError(
-        cause instanceof Error
-          ? cause.message
-          : 'Unable to load current credentials.',
-      );
-    } finally {
-      if (loadMeRequestIdRef.current === requestId) {
+      if (!sdk || config.status !== 'ready' || !session.authenticated) {
+        setMe(null);
+        setMeError('');
+        setMeWarning('');
         setLoadingMe(false);
+        return;
       }
-    }
-  }, [config.status, sdk, session.authenticated, session.sessionId]);
+
+      setLoadingMe(true);
+      setMeError('');
+      if (!options?.warningMessage) {
+        setMeWarning('');
+      }
+
+      try {
+        const nextMe = await sdk.me.fetch();
+        if (loadMeRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        setMe(nextMe);
+        setMeWarning('');
+      } catch (cause) {
+        if (loadMeRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        if (options?.warningMessage) {
+          setMeWarning(options.warningMessage);
+          return;
+        }
+
+        setMe(null);
+        setMeError(
+          cause instanceof Error
+            ? cause.message
+            : 'Unable to load current credentials.',
+        );
+      } finally {
+        if (loadMeRequestIdRef.current === requestId) {
+          setLoadingMe(false);
+        }
+      }
+    },
+    [config.status, sdk, session.authenticated, session.sessionId],
+  );
 
   useEffect(() => {
     void loadMe();
@@ -162,7 +165,7 @@ export function Ed25519Route() {
       setSeedPublicKey(derivedPublicKey);
 
       const challenge = await sdk.ed25519.start({
-        credential_id: credentialId.trim(),
+        public_key: derivedPublicKey,
       });
       const signature = await signEd25519Challenge(
         normalizedSeed,
@@ -198,15 +201,11 @@ export function Ed25519Route() {
         public_key: publicKey.trim(),
       });
       await loadMe({
-        warningMessage: 'Credential registered, but current credential data could not be refreshed.',
+        warningMessage:
+          'Credential registered, but current credential data could not be refreshed.',
       });
 
       setLastResponses((current) => ({ ...current, register: result }));
-      setLastRegisteredCredentialId(
-        typeof (result as { id?: unknown }).id === 'string'
-          ? (result as { id: string }).id
-          : '',
-      );
     } catch (cause) {
       setRegisterError(formatDemoError(cause));
       setLastResponses((current) => ({ ...current, register: cause }));
@@ -230,7 +229,9 @@ export function Ed25519Route() {
               <Input
                 aria-label="Credential name"
                 value={credentialName}
-                onChange={(event) => setCredentialName(event.currentTarget.value)}
+                onChange={(event) =>
+                  setCredentialName(event.currentTarget.value)
+                }
                 placeholder="Laptop signer"
               />
             </label>
@@ -281,17 +282,11 @@ export function Ed25519Route() {
               </div>
             </div>
             <div className="space-y-1">
-              <div className="font-medium text-slate-950">Generated public key</div>
+              <div className="font-medium text-slate-950">
+                Generated public key
+              </div>
               <div className="break-all font-mono text-xs">
                 {generatedPublicKey || 'None generated yet.'}
-              </div>
-            </div>
-            <div className="space-y-1 md:col-span-2">
-              <div className="font-medium text-slate-950">
-                Last registered credential id
-              </div>
-              <div className="break-all font-mono text-xs">
-                {lastRegisteredCredentialId || 'No credential registered yet.'}
               </div>
             </div>
           </div>
@@ -312,16 +307,6 @@ export function Ed25519Route() {
 
           <form className="space-y-4" onSubmit={handleSignIn}>
             <label className="grid gap-2 text-sm font-medium text-slate-700">
-              <span>Credential id</span>
-              <Input
-                aria-label="Credential id"
-                value={credentialId}
-                onChange={(event) => setCredentialId(event.currentTarget.value)}
-                placeholder="cred_123"
-              />
-            </label>
-
-            <label className="grid gap-2 text-sm font-medium text-slate-700">
               <span>Seed (base64url 32-byte)</span>
               <Input
                 aria-label="Seed (base64url 32-byte)"
@@ -331,7 +316,9 @@ export function Ed25519Route() {
               />
             </label>
 
-            {seedError ? <p className="text-sm text-rose-600">{seedError}</p> : null}
+            {seedError ? (
+              <p className="text-sm text-rose-600">{seedError}</p>
+            ) : null}
 
             <div className="flex flex-wrap gap-3">
               <Button
@@ -343,13 +330,6 @@ export function Ed25519Route() {
                 }}
               >
                 Use current generated seed
-              </Button>
-              <Button
-                type="button"
-                disabled={lastRegisteredCredentialId === '' || pendingAction !== null}
-                onClick={() => setCredentialId(lastRegisteredCredentialId)}
-              >
-                Use last registered credential id
               </Button>
               <Button type="submit" disabled={!canSignIn}>
                 {pendingAction === 'signin'
@@ -376,10 +356,16 @@ export function Ed25519Route() {
           <JsonPanel title="last responses" value={lastResponses} />
           <div className="space-y-3">
             {loadingMe ? (
-              <p className="text-sm text-slate-600">Loading current credentials…</p>
+              <p className="text-sm text-slate-600">
+                Loading current credentials…
+              </p>
             ) : null}
-            {meError ? <p className="text-sm text-rose-600">{meError}</p> : null}
-            {meWarning ? <p className="text-sm text-amber-700">{meWarning}</p> : null}
+            {meError ? (
+              <p className="text-sm text-rose-600">{meError}</p>
+            ) : null}
+            {meWarning ? (
+              <p className="text-sm text-amber-700">{meWarning}</p>
+            ) : null}
             <JsonPanel
               title="current credentials"
               value={meError ? null : (me?.ed25519_credentials ?? [])}

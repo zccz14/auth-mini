@@ -152,7 +152,7 @@ export type Ed25519CredentialUpdateRequest = {
 };
 
 export type Ed25519StartRequest = {
-    credential_id: string;
+    public_key: string;
 };
 
 export type Ed25519ChallengeResponse = {

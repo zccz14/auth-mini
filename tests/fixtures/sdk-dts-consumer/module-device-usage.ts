@@ -5,7 +5,6 @@ const privateKeySeed = '7rANewlCLceTsUo9feN0DLjnu-ayYsdhkVWvHT4FelM';
 
 const sdk: DeviceSdkApi = createDeviceSdk({
   serverBaseUrl: 'https://auth.example.com',
-  credentialId: '550e8400-e29b-41d4-a716-446655440000',
   privateKeySeed,
 });
 
