@@ -3,7 +3,7 @@ pub(crate) const WEB_INDEX_CACHE_CONTROL: &str = "no-cache";
 
 const INDEX_HTML: &[u8] = include_bytes!("../web/index.html");
 const INDEX_CSS: &[u8] = include_bytes!("../web/assets/index-XS1pIkA7.css");
-const INDEX_JS: &[u8] = include_bytes!("../web/assets/index-BBu2HtYM.js");
+const INDEX_JS: &[u8] = include_bytes!("../web/assets/index-DEriteJU.js");
 
 pub(crate) enum WebAsset {
     Redirect,
@@ -40,7 +40,7 @@ fn match_asset(path: &str) -> WebAsset {
             cache_control: WEB_ASSET_CACHE_CONTROL,
             body: INDEX_CSS,
         },
-        "index-BBu2HtYM.js" => WebAsset::Body {
+        "index-DEriteJU.js" => WebAsset::Body {
             content_type: content_type(path),
             cache_control: WEB_ASSET_CACHE_CONTROL,
             body: INDEX_JS,
@@ -85,7 +85,7 @@ mod tests {
             content_type,
             cache_control,
             body,
-        }) = match_web_asset("/web/assets/index-BBu2HtYM.js?v=1")
+        }) = match_web_asset("/web/assets/index-DEriteJU.js?v=1")
         else {
             panic!("expected embedded js asset");
         };

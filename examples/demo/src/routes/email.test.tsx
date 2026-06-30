@@ -2,7 +2,6 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
-import { AUTH_ORIGIN_KEY } from '@/lib/demo-storage';
 import { AppRouter } from '@/app/router';
 
 type MockSessionState = {
@@ -79,9 +78,12 @@ describe('EmailRoute', () => {
     };
   });
 
-  it('uses the hosted default auth origin to start email sign-in without a local override', async () => {
+  it('uses the embedded server base URL to start email sign-in', async () => {
     const user = userEvent.setup();
-    sdkMocks.emailStart.mockResolvedValueOnce({ ok: true, requestId: 'otp-default' });
+    sdkMocks.emailStart.mockResolvedValueOnce({
+      ok: true,
+      requestId: 'otp-default',
+    });
 
     render(
       <MemoryRouter initialEntries={['/email']}>
@@ -90,7 +92,7 @@ describe('EmailRoute', () => {
     );
 
     expect(sdkMocks.createBrowserSdk).toHaveBeenCalledWith(
-      'https://auth.zccz14.com',
+      'http://localhost:3000/',
     );
 
     await user.type(screen.getByLabelText('Email address'), 'user@example.com');
@@ -101,12 +103,13 @@ describe('EmailRoute', () => {
     expect(sdkMocks.emailStart).toHaveBeenCalledWith({
       email: 'user@example.com',
     });
-    expect(await screen.findByText(/"requestId": "otp-default"/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/"requestId": "otp-default"/),
+    ).toBeInTheDocument();
   });
 
   it('renders email start results after a successful submit', async () => {
     const user = userEvent.setup();
-    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
     sdkMocks.emailStart.mockResolvedValueOnce({ ok: true, requestId: 'otp-1' });
 
     render(
@@ -128,7 +131,6 @@ describe('EmailRoute', () => {
 
   it('renders verify errors from the sdk', async () => {
     const user = userEvent.setup();
-    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
     sdkMocks.emailVerify.mockRejectedValueOnce(new Error('Invalid code'));
 
     render(

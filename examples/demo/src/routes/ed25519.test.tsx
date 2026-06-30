@@ -2,7 +2,6 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
-import { AUTH_ORIGIN_KEY } from '@/lib/demo-storage';
 import { AppRouter } from '@/app/router';
 
 type MockSessionState = {
@@ -131,12 +130,17 @@ describe('Ed25519Route', () => {
   it('disables register when setup is not ready or no session is present', () => {
     renderRoute();
 
-    expect(screen.getByRole('button', { name: 'Register credential' })).toBeDisabled();
-    expect(screen.getByText('Registering an ED25519 credential requires an existing session.')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Register credential' }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText(
+        'Registering an ED25519 credential requires an existing session.',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('loads current credentials from route-owned /me state', async () => {
-    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
     sdkMocks.sessionState.current = authenticatedSession();
     sdkMocks.meFetch.mockResolvedValueOnce({
       user_id: 'user-1',
@@ -155,28 +159,38 @@ describe('Ed25519Route', () => {
     renderRoute();
 
     const currentCredentialsPanel = getJsonPanel('current credentials');
-    expect(screen.getByText('Loading current credentials…')).toBeInTheDocument();
+    expect(
+      screen.getByText('Loading current credentials…'),
+    ).toBeInTheDocument();
     await waitFor(() => {
-      expect(within(currentCredentialsPanel).getByText(/Laptop signer/)).toBeInTheDocument();
+      expect(
+        within(currentCredentialsPanel).getByText(/Laptop signer/),
+      ).toBeInTheDocument();
     });
   });
 
   it('shows the /me error without falling through to an empty credentials panel', async () => {
-    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
     sdkMocks.sessionState.current = authenticatedSession();
-    sdkMocks.meFetch.mockRejectedValueOnce(new Error('Unable to load current credentials.'));
+    sdkMocks.meFetch.mockRejectedValueOnce(
+      new Error('Unable to load current credentials.'),
+    );
 
     renderRoute();
 
     const currentCredentialsPanel = getJsonPanel('current credentials');
-    expect(await screen.findByText('Unable to load current credentials.')).toBeInTheDocument();
-    expect(within(currentCredentialsPanel).queryByText('[]')).not.toBeInTheDocument();
-    expect(within(currentCredentialsPanel).getByText('null')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Unable to load current credentials.'),
+    ).toBeInTheDocument();
+    expect(
+      within(currentCredentialsPanel).queryByText('[]'),
+    ).not.toBeInTheDocument();
+    expect(
+      within(currentCredentialsPanel).getByText('null'),
+    ).toBeInTheDocument();
   });
 
   it('refreshes local /me after registration succeeds', async () => {
     const user = userEvent.setup();
-    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
     sdkMocks.sessionState.current = authenticatedSession();
     sdkMocks.meFetch
       .mockResolvedValueOnce({
@@ -213,7 +227,9 @@ describe('Ed25519Route', () => {
       screen.getByLabelText('Public key (base64url 32-byte)'),
       'jt2HpVJxALeSteTe7QlqBRiOxVeloHMMImehYhZc9Rg',
     );
-    await user.click(screen.getByRole('button', { name: 'Register credential' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Register credential' }),
+    );
 
     expect(sdkMocks.ed25519Register).toHaveBeenCalledWith({
       name: 'Laptop signer',
@@ -221,13 +237,14 @@ describe('Ed25519Route', () => {
     });
     expect(sdkMocks.meFetch).toHaveBeenCalledTimes(2);
     await waitFor(() => {
-      expect(within(currentCredentialsPanel).getByText(/cred-1/)).toBeInTheDocument();
+      expect(
+        within(currentCredentialsPanel).getByText(/cred-1/),
+      ).toBeInTheDocument();
     });
   });
 
   it('preserves registration success when follow-up /me refresh fails', async () => {
     const user = userEvent.setup();
-    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
     sdkMocks.sessionState.current = authenticatedSession();
     sdkMocks.meFetch
       .mockResolvedValueOnce({
@@ -237,7 +254,9 @@ describe('Ed25519Route', () => {
         ed25519_credentials: [],
         active_sessions: [],
       })
-      .mockRejectedValueOnce(new Error('Unable to refresh current credential data.'));
+      .mockRejectedValueOnce(
+        new Error('Unable to refresh current credential data.'),
+      );
     sdkMocks.ed25519Register.mockResolvedValueOnce({
       id: 'cred-1',
       name: 'Laptop signer',
@@ -251,16 +270,23 @@ describe('Ed25519Route', () => {
       screen.getByLabelText('Public key (base64url 32-byte)'),
       'jt2HpVJxALeSteTe7QlqBRiOxVeloHMMImehYhZc9Rg',
     );
-    await user.click(screen.getByRole('button', { name: 'Register credential' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Register credential' }),
+    );
 
-    expect(await screen.findByText('Credential registered, but current credential data could not be refreshed.')).toBeInTheDocument();
-    expect(screen.queryByText('Unable to refresh current credential data.')).not.toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        'Credential registered, but current credential data could not be refreshed.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('Unable to refresh current credential data.'),
+    ).not.toBeInTheDocument();
     expect(await screen.findByText(/"id": "cred-1"/)).toBeInTheDocument();
   });
 
   it('signs in with credential id + seed and updates the shared session panel', async () => {
     const user = userEvent.setup();
-    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
     sdkMocks.ed25519Start.mockResolvedValueOnce({
       request_id: 'request-1',
       challenge: 'challenge-value',
@@ -272,17 +298,19 @@ describe('Ed25519Route', () => {
       expires_in: 3600,
       token_type: 'Bearer',
     });
-    sdkMocks.persistDemoSession.mockImplementation((_storage, _origin, tokens) => {
-      sdkMocks.sessionState.current = {
-        status: 'authenticated',
-        authenticated: true,
-        sessionId: tokens.session_id,
-        accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token,
-        receivedAt: '2026-04-12T00:00:00.000Z',
-        expiresAt: '2026-04-12T01:00:00.000Z',
-      };
-    });
+    sdkMocks.persistDemoSession.mockImplementation(
+      (_storage, _origin, tokens) => {
+        sdkMocks.sessionState.current = {
+          status: 'authenticated',
+          authenticated: true,
+          sessionId: tokens.session_id,
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token,
+          receivedAt: '2026-04-12T00:00:00.000Z',
+          expiresAt: '2026-04-12T01:00:00.000Z',
+        };
+      },
+    );
     sdkMocks.meFetch.mockResolvedValueOnce({
       user_id: 'user-2',
       email: 'user2@example.com',
@@ -298,16 +326,24 @@ describe('Ed25519Route', () => {
       screen.getByLabelText('Seed (base64url 32-byte)'),
       '7rANewlCLceTsUo9feN0DLjnu-ayYsdhkVWvHT4FelM',
     );
-    await user.click(screen.getByRole('button', { name: 'Sign in with private key' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Sign in with private key' }),
+    );
 
-    expect(sdkMocks.ed25519Start).toHaveBeenCalledWith({ credential_id: 'cred-1' });
+    expect(sdkMocks.ed25519Start).toHaveBeenCalledWith({
+      credential_id: 'cred-1',
+    });
     await waitFor(() => {
       expect(sdkMocks.ed25519Verify).toHaveBeenCalledWith({
         request_id: 'request-1',
         signature: expect.stringMatching(/^[A-Za-z0-9_-]+$/),
       });
     });
-    expect(await screen.findByText(/"status": "authenticated"/)).toBeInTheDocument();
-    expect(await screen.findByText(/"session_id": "session-2"/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/"status": "authenticated"/),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText(/"session_id": "session-2"/),
+    ).toBeInTheDocument();
   });
 });

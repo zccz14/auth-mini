@@ -14,11 +14,6 @@ import {
   type DemoSdk,
   type DemoSessionTokens,
 } from '@/lib/demo-sdk';
-import {
-  clearStoredAuthOrigin,
-  getStoredAuthOrigin,
-  setStoredAuthOrigin,
-} from '@/lib/demo-storage';
 
 const ANONYMOUS_SESSION = {
   status: 'anonymous',
@@ -30,20 +25,6 @@ const ANONYMOUS_SESSION = {
   expiresAt: null,
 } as const;
 
-function clearHashAuthOrigin(hash: string) {
-  const queryIndex = hash.indexOf('?');
-  if (queryIndex < 0) {
-    return hash;
-  }
-
-  const pathname = hash.slice(0, queryIndex);
-  const params = new URLSearchParams(hash.slice(queryIndex + 1));
-  params.delete('auth-origin');
-  const nextQuery = params.toString();
-
-  return nextQuery ? `${pathname}?${nextQuery}` : pathname;
-}
-
 type DemoSession = ReturnType<DemoSdk['session']['getState']>;
 
 type DemoContextValue = {
@@ -52,13 +33,13 @@ type DemoContextValue = {
   session: DemoSession;
   adoptDemoSession: (tokens: DemoSessionTokens) => Promise<void>;
   clearLocalAuthState: () => Promise<void>;
-  setAuthOrigin: (authOrigin: string) => void;
 };
 
 const DemoContext = createContext<DemoContextValue | null>(null);
 
 type DemoLocation = {
   hash: string;
+  href?: string;
   search: string;
   origin: string;
 };
@@ -69,16 +50,13 @@ export function DemoProvider({
 }: PropsWithChildren<{ initialLocation?: DemoLocation }>) {
   const location = initialLocation ?? {
     hash: window.location.hash,
+    href: window.location.href,
     search: window.location.search,
     origin: window.location.origin,
   };
 
   const [sdk, setSdk] = useState<DemoSdk | null>(null);
   const [session, setSession] = useState<DemoSession>(ANONYMOUS_SESSION);
-  const [authOriginOverride, setAuthOriginOverride] = useState<string | null>(
-    null,
-  );
-  const [hashOverride, setHashOverride] = useState<string | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
 
   let storage: Storage | undefined;
@@ -90,15 +68,8 @@ export function DemoProvider({
     }
   }
 
-  const storageOrigin =
-    authOriginOverride === null
-      ? getStoredAuthOrigin(storage)
-      : authOriginOverride;
-  const hash = hashOverride ?? location.hash;
   const config = getInitialDemoConfig({
-    hash,
-    search: location.search,
-    storageOrigin,
+    pageHref: location.href ?? `${location.origin}/web/#/`,
     pageOrigin: location.origin,
   });
 
@@ -112,68 +83,28 @@ export function DemoProvider({
   }
 
   useEffect(() => {
-    if (!storage) {
-      return;
-    }
-
-    if (config.status === 'ready') {
-      setStoredAuthOrigin(config.authOrigin, storage);
-      return;
-    }
-
-    clearStoredAuthOrigin(storage);
-  }, [config.authOrigin, config.status, storage]);
-
-  useEffect(() => {
-    if (config.status !== 'ready') {
-      unsubscribeRef.current?.();
-      unsubscribeRef.current = null;
-      setSdk(null);
-      setSession(ANONYMOUS_SESSION);
-      return;
-    }
-
-    const nextSdk = createDemoSdk(config.authOrigin);
+    const nextSdk = createDemoSdk(config.resolvedServerBaseUrl);
     attachSdk(nextSdk);
 
     return () => {
       unsubscribeRef.current?.();
       unsubscribeRef.current = null;
     };
-  }, [config.authOrigin, config.status]);
+  }, [config.resolvedServerBaseUrl]);
 
   const value = useMemo<DemoContextValue>(
     () => ({
       config,
       adoptDemoSession: async (tokens) => {
-        if (!storage || config.status !== 'ready') {
+        if (!storage) {
           throw new Error('Demo setup is not ready');
         }
 
-        persistDemoSession(storage, config.authOrigin, tokens);
-        const nextSdk = createDemoSdk(config.authOrigin);
+        persistDemoSession(storage, config.resolvedServerBaseUrl, tokens);
+        const nextSdk = createDemoSdk(config.resolvedServerBaseUrl);
         attachSdk(nextSdk);
       },
       clearLocalAuthState: async () => {
-        const nextHash = clearHashAuthOrigin(
-          typeof window === 'undefined' ? hash : window.location.hash,
-        );
-
-        if (
-          typeof window !== 'undefined' &&
-          nextHash !== window.location.hash
-        ) {
-          window.history.replaceState(
-            window.history.state,
-            '',
-            `${window.location.pathname}${window.location.search}${nextHash}`,
-          );
-        }
-
-        setAuthOriginOverride('');
-        setHashOverride(nextHash);
-        clearStoredAuthOrigin(storage);
-
         if (!sdk) {
           setSession(ANONYMOUS_SESSION);
           return;
@@ -184,9 +115,6 @@ export function DemoProvider({
       },
       sdk,
       session,
-      setAuthOrigin: (authOrigin) => {
-        setAuthOriginOverride(authOrigin.trim());
-      },
     }),
     [config, sdk, session],
   );

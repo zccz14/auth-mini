@@ -68,20 +68,21 @@ export function HomeRoute() {
               Minimal Self-Hosted Auth Server for your Apps
             </h1>
             <p className="max-w-3xl text-base leading-7 text-slate-600 sm:text-lg">
-              Run a self-hosted auth core for your apps with email OTP, passkeys,
-              sessions, and JWKS-backed token verification while keeping service
-              ownership and user data in your stack.
+              Run a self-hosted auth core for your apps with email OTP,
+              passkeys, sessions, and JWKS-backed token verification while
+              keeping service ownership and user data in your stack.
             </p>
             <p className="max-w-3xl text-sm leading-6 text-slate-500">
               This is the default product overview for the official demo. Setup,
-              Email, Passkey, and Session still exist as proof-flow pages inside the
-              current app shell when you want to validate the implementation.
+              Email, Passkey, and Session still exist as proof-flow pages inside
+              the current app shell when you want to validate the
+              implementation.
             </p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
             {config.status === 'ready'
-              ? 'Demo setup status: ready — auth origin configured for interactive browser flows.'
-              : 'Demo setup status: visit Setup to connect an auth origin before trying live browser flows.'}
+              ? 'Demo setup status: ready - browser flows use the current server.'
+              : 'Demo setup status: waiting for the current server.'}
           </div>
         </div>
       </section>
@@ -92,9 +93,9 @@ export function HomeRoute() {
             Why teams pick auth-mini
           </h2>
           <p className="max-w-3xl text-sm leading-6 text-slate-600">
-            The value proposition stays narrow on purpose: a trustworthy auth server
-            core that covers the common sign-in and token-verification path without
-            turning into a larger identity platform.
+            The value proposition stays narrow on purpose: a trustworthy auth
+            server core that covers the common sign-in and token-verification
+            path without turning into a larger identity platform.
           </p>
         </div>
         <div className="grid gap-4 md:grid-cols-2">
@@ -113,8 +114,8 @@ export function HomeRoute() {
         <div className="space-y-4">
           <h2 className="text-2xl font-semibold">Auth server capabilities</h2>
           <p className="max-w-3xl text-sm leading-6 text-slate-300">
-            Scan the auth core quickly, then dive into the dedicated demo routes only
-            when you want hands-on verification.
+            Scan the auth core quickly, then dive into the dedicated demo routes
+            only when you want hands-on verification.
           </p>
           <div className="flex flex-wrap gap-2">
             {capabilityItems.map((item) => (
@@ -134,8 +135,8 @@ export function HomeRoute() {
           <CardHeader>
             <h3 className="text-lg font-semibold text-slate-950">Good fit</h3>
             <CardDescription>
-              Choose auth-mini when you want a self-hosted authentication core with
-              clear scope and a backend-friendly verification story.
+              Choose auth-mini when you want a self-hosted authentication core
+              with clear scope and a backend-friendly verification story.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -151,10 +152,12 @@ export function HomeRoute() {
         </Card>
         <Card className="h-full border-amber-200 bg-amber-50/60">
           <CardHeader>
-            <h3 className="text-lg font-semibold text-slate-950">Not included</h3>
+            <h3 className="text-lg font-semibold text-slate-950">
+              Not included
+            </h3>
             <CardDescription>
-              Keep the boundary explicit so the homepage does not imply a full identity
-              platform or broader product suite.
+              Keep the boundary explicit so the homepage does not imply a full
+              identity platform or broader product suite.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -177,9 +180,9 @@ export function HomeRoute() {
               Validate the browser flows when you are ready
             </h2>
             <p className="max-w-3xl text-sm leading-6 text-slate-600">
-              Use Setup to connect your auth origin, then move through Email,
-              Passkey, and Session to inspect the product in action without turning
-              the homepage into a setup checklist.
+              Use Setup to configure this auth-mini instance, then move through
+              Email, Passkey, and Session to inspect the product in action
+              without turning the homepage into a setup checklist.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
