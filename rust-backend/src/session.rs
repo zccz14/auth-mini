@@ -19,6 +19,7 @@ pub(crate) struct RefreshRequest {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum SessionError {
     InvalidAccessToken,
+    AdminRequired,
     InsufficientAuthenticationMethod,
     SessionInvalidated,
     SessionSuperseded,
@@ -178,6 +179,39 @@ pub(crate) fn require_passkey_management_auth(auth: &AuthContext) -> Result<(), 
     Err(SessionError::InsufficientAuthenticationMethod)
 }
 
+pub(crate) fn require_admin_auth(
+    connection: &Connection,
+    auth: &AuthContext,
+) -> Result<(), SessionError> {
+    let admin_user_id = read_admin_user_id(connection)
+        .map_err(|_| SessionError::InvalidAccessToken)?;
+
+    if admin_user_id.as_deref() == Some(auth.user_id.as_str()) {
+        return Ok(());
+    }
+
+    Err(SessionError::AdminRequired)
+}
+
+fn read_admin_user_id(connection: &Connection) -> rusqlite::Result<Option<String>> {
+    match connection
+        .query_row(
+            "SELECT admin_user_id FROM app_meta WHERE id = 'APP'",
+            [],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional()
+    {
+        Ok(value) => Ok(value.flatten()),
+        Err(rusqlite::Error::SqliteFailure(_, Some(message)))
+            if message.contains("no such table: app_meta") =>
+        {
+            Ok(None)
+        }
+        Err(error) => Err(error),
+    }
+}
+
 pub(crate) fn logout_session(connection: &Connection, session_id: &str) -> rusqlite::Result<()> {
     connection.execute(
         "UPDATE sessions SET expires_at = ?1 WHERE id = ?2 AND expires_at > ?1",
@@ -225,6 +259,10 @@ pub(crate) fn current_user_response(
 
     let active_sessions =
         list_active_sessions(connection, &user_id).map_err(|_| SessionError::InvalidAccessToken)?;
+    let auth_admin = read_admin_user_id(connection)
+        .map_err(|_| SessionError::InvalidAccessToken)?
+        .as_deref()
+        == Some(user_id.as_str());
 
     let webauthn_credentials = list_webauthn_credentials(connection, &user_id)
         .map_err(|_| SessionError::InvalidAccessToken)?;
@@ -234,6 +272,7 @@ pub(crate) fn current_user_response(
     Ok(json!({
         "user_id": user_id,
         "email": email,
+        "auth_admin": auth_admin,
         "webauthn_credentials": webauthn_credentials,
         "ed25519_credentials": ed25519_credentials,
         "active_sessions": active_sessions,

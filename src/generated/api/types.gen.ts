@@ -13,9 +13,12 @@ export type ErrorResponse = {
 };
 
 export type AdminSetupRequest = {
+    admin_ed25519: AdminSetupEd25519Input;
+};
+
+export type AdminConfigRequest = {
     issuer: string;
     origin: string;
-    admin_ed25519?: AdminSetupEd25519Input | null;
     smtp?: AdminSetupSmtpInput | null;
 };
 
@@ -32,6 +35,20 @@ export type AdminSetupSmtpInput = {
     from_name?: string;
     secure?: boolean;
     weight?: number;
+};
+
+export type AdminUsersResponse = {
+    users: Array<AdminUserSummary>;
+};
+
+export type AdminUserSummary = {
+    id: string;
+    email: string | null;
+    email_verified_at: string | null;
+    created_at: string;
+    active_session_count: number;
+    passkey_count: number;
+    ed25519_count: number;
 };
 
 export type AdminSetupState = {
@@ -119,6 +136,7 @@ export type WebauthnCredential = {
 export type MeResponse = {
     user_id: string;
     email: string | null;
+    auth_admin: boolean;
     webauthn_credentials: Array<WebauthnCredential>;
     ed25519_credentials: Array<Ed25519Credential>;
     active_sessions: Array<SessionSummary>;
@@ -246,10 +264,9 @@ export type JwksResponse = {
     keys: Array<JwkPublicEd25519>;
 };
 
-export type AdminSetupRequestWritable = {
+export type AdminConfigRequestWritable = {
     issuer: string;
     origin: string;
-    admin_ed25519?: AdminSetupEd25519Input | null;
     smtp?: AdminSetupSmtpInputWritable | null;
 };
 
@@ -296,7 +313,7 @@ export type GetAdminSetupResponses = {
 export type GetAdminSetupResponse = GetAdminSetupResponses[keyof GetAdminSetupResponses];
 
 export type UpdateAdminSetupData = {
-    body: AdminSetupRequestWritable;
+    body: AdminSetupRequest;
     path?: never;
     query?: never;
     url: '/admin/setup';
@@ -311,6 +328,10 @@ export type UpdateAdminSetupErrors = {
      * Admin setup is only available from loopback clients
      */
     403: ErrorResponse;
+    /**
+     * Administrator account already exists
+     */
+    409: ErrorResponse;
     /**
      * Database-backed setup is not available
      */
@@ -327,6 +348,130 @@ export type UpdateAdminSetupResponses = {
 };
 
 export type UpdateAdminSetupResponse = UpdateAdminSetupResponses[keyof UpdateAdminSetupResponses];
+
+export type GetAdminConfigData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/config';
+};
+
+export type GetAdminConfigErrors = {
+    /**
+     * Missing, malformed, expired, or revoked access token
+     */
+    401: ErrorResponse;
+    /**
+     * Access token is valid but does not belong to the configured administrator
+     */
+    403: ErrorResponse;
+};
+
+export type GetAdminConfigError = GetAdminConfigErrors[keyof GetAdminConfigErrors];
+
+export type GetAdminConfigResponses = {
+    /**
+     * Current administrator configuration
+     */
+    200: AdminSetupState;
+};
+
+export type GetAdminConfigResponse = GetAdminConfigResponses[keyof GetAdminConfigResponses];
+
+export type UpdateAdminConfigData = {
+    body: AdminConfigRequestWritable;
+    path?: never;
+    query?: never;
+    url: '/admin/config';
+};
+
+export type UpdateAdminConfigErrors = {
+    /**
+     * Request body or path parameters do not match the route contract
+     */
+    400: ErrorResponse;
+    /**
+     * Missing, malformed, expired, or revoked access token
+     */
+    401: ErrorResponse;
+    /**
+     * Access token is valid but does not belong to the configured administrator
+     */
+    403: ErrorResponse;
+};
+
+export type UpdateAdminConfigError = UpdateAdminConfigErrors[keyof UpdateAdminConfigErrors];
+
+export type UpdateAdminConfigResponses = {
+    /**
+     * Updated administrator configuration
+     */
+    200: AdminSetupState;
+};
+
+export type UpdateAdminConfigResponse = UpdateAdminConfigResponses[keyof UpdateAdminConfigResponses];
+
+export type ListAdminUsersData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/users';
+};
+
+export type ListAdminUsersErrors = {
+    /**
+     * Missing, malformed, expired, or revoked access token
+     */
+    401: ErrorResponse;
+    /**
+     * Access token is valid but does not belong to the configured administrator
+     */
+    403: ErrorResponse;
+};
+
+export type ListAdminUsersError = ListAdminUsersErrors[keyof ListAdminUsersErrors];
+
+export type ListAdminUsersResponses = {
+    /**
+     * Users with credential and session counts
+     */
+    200: AdminUsersResponse;
+};
+
+export type ListAdminUsersResponse = ListAdminUsersResponses[keyof ListAdminUsersResponses];
+
+export type ExportAdminDatabaseData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/database';
+};
+
+export type ExportAdminDatabaseErrors = {
+    /**
+     * Missing, malformed, expired, or revoked access token
+     */
+    401: ErrorResponse;
+    /**
+     * Access token is valid but does not belong to the configured administrator
+     */
+    403: ErrorResponse;
+    /**
+     * Database-backed export is not available
+     */
+    501: ErrorResponse;
+};
+
+export type ExportAdminDatabaseError = ExportAdminDatabaseErrors[keyof ExportAdminDatabaseErrors];
+
+export type ExportAdminDatabaseResponses = {
+    /**
+     * SQLite database bytes
+     */
+    200: Blob | File;
+};
+
+export type ExportAdminDatabaseResponse = ExportAdminDatabaseResponses[keyof ExportAdminDatabaseResponses];
 
 export type StartEmailAuthData = {
     body: EmailStartRequest;

@@ -1,3 +1,4 @@
+use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 
@@ -20,9 +21,12 @@ use crate::openapi::{read_openapi_json, read_openapi_yaml};
 use crate::session::{
     authenticate_access_token, current_user_response, logout_peer_session, logout_session,
     mint_session_tokens, parse_refresh_request, refresh_session_tokens,
-    require_passkey_management_auth, token_json, SessionError,
+    require_admin_auth, require_passkey_management_auth, token_json, SessionError,
 };
-use crate::setup::{apply_admin_setup, parse_admin_setup_request, read_admin_setup, SetupError};
+use crate::setup::{
+    apply_admin_config, apply_admin_setup, parse_admin_config_request, parse_admin_setup_request,
+    read_admin_setup, SetupError,
+};
 use crate::web_assets::{match_web_asset, WebAsset};
 use crate::webauthn::{
     authentication_options as webauthn_authentication_options,
@@ -133,18 +137,34 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
         return Ok(cors(request, Response::json_value(200, body)));
     }
 
-    if request.method == "GET" {
-        if let Some(response) = handle_web_asset(request) {
-            return Ok(response);
-        }
-    }
-
     if request.method == "GET" && request.path == "/admin/setup" {
         return handle_admin_setup_get(request, config).map(|response| cors(request, response));
     }
 
     if request.method == "PUT" && request.path == "/admin/setup" {
         return handle_admin_setup_put(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "GET" && request.path == "/admin/config" {
+        return handle_admin_config_get(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "PUT" && request.path == "/admin/config" {
+        return handle_admin_config_put(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "GET" && request.path == "/admin/users" {
+        return handle_admin_users(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "GET" && request.path == "/admin/database" {
+        return handle_admin_database(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "GET" {
+        if let Some(response) = handle_web_asset(request) {
+            return Ok(response);
+        }
     }
 
     if request.method == "POST" && request.path == "/email/start" {
@@ -262,6 +282,7 @@ fn handle_admin_setup_get(request: &Request, config: &Config) -> io::Result<Resp
             200,
             serde_json::to_value(state).map_err(io::Error::other)?,
         )),
+        Err(SetupError::AlreadyInitialized) => Ok(Response::json_error(409, "already_initialized")),
         Err(SetupError::InvalidRequest) => Ok(Response::json_error(400, "invalid_request")),
         Err(SetupError::Database) => Ok(Response::json_error(500, "internal_error")),
     }
@@ -270,6 +291,9 @@ fn handle_admin_setup_get(request: &Request, config: &Config) -> io::Result<Resp
 fn handle_admin_setup_put(request: &Request, config: &Config) -> io::Result<Response> {
     let parsed = match parse_admin_setup_request(&request.body) {
         Ok(parsed) => parsed,
+        Err(SetupError::AlreadyInitialized) => {
+            return Ok(Response::json_error(409, "already_initialized"))
+        }
         Err(SetupError::InvalidRequest) => return Ok(Response::json_error(400, "invalid_request")),
         Err(SetupError::Database) => return Ok(Response::json_error(500, "internal_error")),
     };
@@ -286,9 +310,125 @@ fn handle_admin_setup_put(request: &Request, config: &Config) -> io::Result<Resp
             200,
             serde_json::to_value(state).map_err(io::Error::other)?,
         )),
+        Err(SetupError::AlreadyInitialized) => Ok(Response::json_error(409, "already_initialized")),
         Err(SetupError::InvalidRequest) => Ok(Response::json_error(400, "invalid_request")),
         Err(SetupError::Database) => Ok(Response::json_error(500, "internal_error")),
     }
+}
+
+fn handle_admin_config_get(request: &Request, config: &Config) -> io::Result<Response> {
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    if require_admin_auth(&connection, &auth).is_err() {
+        return Ok(Response::json_error(403, "admin_required"));
+    }
+
+    match read_admin_setup(&connection) {
+        Ok(state) => Ok(Response::json_value(
+            200,
+            serde_json::to_value(state).map_err(io::Error::other)?,
+        )),
+        Err(_) => Ok(Response::json_error(500, "internal_error")),
+    }
+}
+
+fn handle_admin_config_put(request: &Request, config: &Config) -> io::Result<Response> {
+    let parsed = match parse_admin_config_request(&request.body) {
+        Ok(parsed) => parsed,
+        Err(_) => return Ok(Response::json_error(400, "invalid_request")),
+    };
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    if require_admin_auth(&connection, &auth).is_err() {
+        return Ok(Response::json_error(403, "admin_required"));
+    }
+
+    match apply_admin_config(&connection, &parsed) {
+        Ok(state) => Ok(Response::json_value(
+            200,
+            serde_json::to_value(state).map_err(io::Error::other)?,
+        )),
+        Err(SetupError::InvalidRequest) => Ok(Response::json_error(400, "invalid_request")),
+        Err(_) => Ok(Response::json_error(500, "internal_error")),
+    }
+}
+
+fn handle_admin_users(request: &Request, config: &Config) -> io::Result<Response> {
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    if require_admin_auth(&connection, &auth).is_err() {
+        return Ok(Response::json_error(403, "admin_required"));
+    }
+
+    let mut statement = connection
+        .prepare(
+            "SELECT
+                users.id,
+                users.email,
+                users.email_verified_at,
+                users.created_at,
+                COUNT(DISTINCT sessions.id),
+                COUNT(DISTINCT webauthn_credentials.credential_id),
+                COUNT(DISTINCT ed25519_credentials.id)
+             FROM users
+             LEFT JOIN sessions ON sessions.user_id = users.id AND sessions.expires_at > CURRENT_TIMESTAMP
+             LEFT JOIN webauthn_credentials ON webauthn_credentials.user_id = users.id
+             LEFT JOIN ed25519_credentials ON ed25519_credentials.user_id = users.id
+             GROUP BY users.id
+             ORDER BY users.created_at DESC, users.id ASC",
+        )
+        .map_err(io::Error::other)?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok(serde_json::json!({
+                "id": row.get::<_, String>(0)?,
+                "email": row.get::<_, Option<String>>(1)?,
+                "email_verified_at": row.get::<_, Option<String>>(2)?,
+                "created_at": row.get::<_, String>(3)?,
+                "active_session_count": row.get::<_, i64>(4)?,
+                "passkey_count": row.get::<_, i64>(5)?,
+                "ed25519_count": row.get::<_, i64>(6)?,
+            }))
+        })
+        .map_err(io::Error::other)?;
+    let users = rows
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(io::Error::other)?;
+
+    Ok(Response::json_value(200, serde_json::json!({ "users": users })))
+}
+
+fn handle_admin_database(request: &Request, config: &Config) -> io::Result<Response> {
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    if require_admin_auth(&connection, &auth).is_err() {
+        return Ok(Response::json_error(403, "admin_required"));
+    }
+    if config.database.is_none() {
+        return Ok(Response::json_error(501, "not_implemented"));
+    }
+    let export_path = std::env::temp_dir().join(format!(
+        "auth-mini-export-{}-{}.sqlite",
+        std::process::id(),
+        auth.session_id
+    ));
+    let _ = fs::remove_file(&export_path);
+    connection
+        .execute(
+            "VACUUM INTO ?1",
+            [export_path
+                .to_str()
+                .ok_or_else(|| io::Error::other("invalid export path"))?],
+        )
+        .map_err(io::Error::other)?;
+    let bytes = fs::read(&export_path).map_err(io::Error::other)?;
+    fs::remove_file(export_path).map_err(io::Error::other)?;
+
+    Ok(Response::bytes(200, "application/octet-stream", bytes))
 }
 
 fn admin_setup_connection(request: &Request, config: &Config) -> io::Result<AdminSetupAccess> {
@@ -1134,7 +1274,7 @@ mod tests {
     }
 
     #[test]
-    fn admin_setup_put_writes_configuration_and_get_hides_password() {
+    fn admin_setup_put_creates_admin_user_and_key() {
         let db_path = test_db_path("http-admin-setup");
         initialize_runtime_database(&db_path).expect("database initializes");
         let config = Config {
@@ -1148,7 +1288,7 @@ mod tests {
                 method: "PUT".to_string(),
                 path: "/admin/setup".to_string(),
                 headers: headers.clone(),
-                body: r#"{"issuer":"https://auth.example.com","origin":"https://demo.example.com","smtp":{"host":"smtp.example.com","port":587,"username":"mailer","password":"secret","from_email":"noreply@example.com","from_name":"Auth Mini","secure":true,"weight":1}}"#
+                body: r#"{"admin_ed25519":{"name":"Admin key","public_key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}}"#
                     .to_string(),
             },
             &config,
@@ -1156,9 +1296,8 @@ mod tests {
         .expect("admin setup put response builds");
 
         assert_eq!(put.status, 200);
-        assert!(put.body_text().contains("https://auth.example.com"));
-        assert!(put.body_text().contains("https://demo.example.com"));
-        assert!(!put.body_text().contains("secret"));
+        assert!(put.body_text().contains("admin_user_id"));
+        assert!(put.body_text().contains("Admin key"));
 
         let get = route_request(
             &Request {
@@ -1172,8 +1311,7 @@ mod tests {
         .expect("admin setup get response builds");
 
         assert_eq!(get.status, 200);
-        assert!(get.body_text().contains("smtp.example.com"));
-        assert!(!get.body_text().contains("secret"));
+        assert!(get.body_text().contains("admin_ed25519"));
     }
 
     #[test]

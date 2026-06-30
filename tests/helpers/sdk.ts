@@ -501,6 +501,7 @@ function createMe(overrides: Partial<MeResponse> = {}): MeResponse {
   return {
     user_id: 'user-1',
     email: 'u@example.com',
+    auth_admin: false,
     webauthn_credentials: [],
     ed25519_credentials: [],
     active_sessions: [],
