@@ -95,7 +95,7 @@ describe('formal GUI routes', () => {
       admin_ed25519: null,
       admin_user_id: 'admin-user',
       issuer: 'https://auth.example.com',
-      origins: [],
+      rp_id: 'auth.example.com',
       smtp: null,
     });
     sdk.admin.users.mockResolvedValue({ users: [] });

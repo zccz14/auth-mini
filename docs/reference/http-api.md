@@ -7,8 +7,8 @@ If you want a typed low-level client for that contract, use `auth-mini/sdk/api` 
 
 ## Public endpoints
 
-- `GET /admin/setup` returns loopback-only setup state, including issuer, admin user id, admin Ed25519 credential summary, allowed origins, and SMTP summary without password.
-- `PUT /admin/setup` updates loopback-only setup state: issuer and origin are required; SMTP and admin Ed25519 bootstrap are optional.
+- `GET /admin/setup` returns loopback-only setup state, including issuer, passkey RP ID, admin user id, admin Ed25519 credential summary, and SMTP summary without password.
+- `PUT /admin/setup` initializes the administrator Ed25519 credential from loopback clients.
 - `POST /email/start` sends an OTP to the email address.
 - `POST /email/verify` verifies the OTP and returns an access/refresh token pair plus `session_id`.
 - `POST /session/refresh` exchanges `{ session_id, refresh_token }` for a new access/refresh token pair.
@@ -37,29 +37,27 @@ Access tokens issued by this API include an `amr` (Authentication Methods Refere
 
 ### `PUT /admin/setup`
 
-Configures app metadata from the machine running auth-mini. Non-loopback callers receive `admin_setup_forbidden`.
+Initializes the administrator account from the machine running auth-mini. Non-loopback callers receive `admin_setup_forbidden`.
 
 Request body:
 
 ```json
 {
-  "issuer": "https://auth.example.com",
-  "origin": "https://app.example.com",
   "admin_ed25519": {
     "name": "ops laptop",
     "public_key": "<base64url-ed25519-public-key>"
-  },
-  "smtp": null
+  }
 }
 ```
 
-`admin_ed25519` and `smtp` may be omitted or `null`. When `admin_ed25519` is present, auth-mini creates or reuses the configured admin user and stores `app_meta.admin_user_id`; the admin user can have `email: null` and can sign in through the normal Ed25519 start/verify flow.
+`admin_ed25519` is required. auth-mini creates or reuses the configured admin user and stores `app_meta.admin_user_id`; the admin user can have `email: null` and can sign in through the normal Ed25519 start/verify flow.
 
 Example response:
 
 ```json
 {
   "issuer": "https://auth.example.com",
+  "rp_id": "auth.example.com",
   "admin_user_id": "user-id",
   "admin_ed25519": {
     "id": "credential-id",
@@ -68,7 +66,6 @@ Example response:
     "last_used_at": null,
     "created_at": "2026-06-30T00:00:00Z"
   },
-  "origins": [],
   "smtp": null
 }
 ```
@@ -154,7 +151,7 @@ This route requires a human-authenticated session. The presented access token mu
 Request body:
 
 ```json
-{ "rp_id": "example.com" }
+{}
 ```
 
 Response shape:
@@ -190,7 +187,7 @@ Starts a username-less passkey sign-in challenge.
 Request body:
 
 ```json
-{ "rp_id": "example.com" }
+{}
 ```
 
 Response shape:

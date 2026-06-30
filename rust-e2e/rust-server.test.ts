@@ -13,9 +13,6 @@ import { hashValue } from '../src/shared/crypto.js';
 const repoRoot = resolve(import.meta.dirname, '..');
 const binaryPath = resolve(repoRoot, 'rust-backend/target/debug/auth-mini');
 const tempRoot = resolve(repoRoot, '.tmp/rust-e2e');
-const webauthnOrigin = 'https://app.example.com';
-const webauthnRpId = 'app.example.com';
-
 let server: ChildProcessWithoutNullStreams | null = null;
 let serverStderr = '';
 
@@ -54,6 +51,8 @@ describe.sequential('rust external server e2e smoke', () => {
     const dbPath = resolve(tempRoot, 'auth-mini-rust-e2e.sqlite');
     const port = await getFreePort();
     const baseUrl = `http://127.0.0.1:${port}`;
+    const webauthnOrigin = `http://localhost:${port}`;
+    const webauthnRpId = 'localhost';
     server = startServer(dbPath, port);
     await waitForHealthz(baseUrl);
     const adminKey = createTestEd25519Keypair('admin');
@@ -93,7 +92,7 @@ describe.sequential('rust external server e2e smoke', () => {
         name: 'Rust E2E admin',
         public_key: adminKey.publicKey,
       }),
-      origins: [],
+      rp_id: 'localhost',
       smtp: null,
     });
     seedOtp(dbPath, 'rust-user@example.com', '123456');
@@ -125,16 +124,16 @@ describe.sequential('rust external server e2e smoke', () => {
     const adminConfig = await putJson(
       `${baseUrl}/admin/config`,
       {
-        issuer: baseUrl,
-        origin: webauthnOrigin,
+        issuer: webauthnOrigin,
+        rp_id: webauthnRpId,
         smtp: null,
       },
       adminTokens.access_token,
     );
     expect(adminConfig.status).toBe(200);
     expect(await adminConfig.json()).toMatchObject({
-      issuer: baseUrl,
-      origins: [expect.objectContaining({ origin: webauthnOrigin })],
+      issuer: webauthnOrigin,
+      rp_id: webauthnRpId,
     });
     const adminMe = await fetch(`${baseUrl}/me`, {
       headers: bearerHeaders(adminTokens.access_token),
@@ -237,7 +236,7 @@ describe.sequential('rust external server e2e smoke', () => {
     const passkey = createTestPasskey('rust-e2e-webauthn');
     const registerOptionsResponse = await postJson(
       `${baseUrl}/webauthn/register/options`,
-      { rp_id: webauthnRpId },
+      {},
       emailTokens.access_token,
       webauthnOrigin,
     );
@@ -276,7 +275,7 @@ describe.sequential('rust external server e2e smoke', () => {
 
     const authOptionsResponse = await postJson(
       `${baseUrl}/webauthn/authenticate/options`,
-      { rp_id: webauthnRpId },
+      {},
       undefined,
       webauthnOrigin,
     );

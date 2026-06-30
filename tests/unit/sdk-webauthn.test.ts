@@ -12,8 +12,6 @@ import {
   readJsonBody,
 } from '../helpers/sdk.js';
 
-const originalLocation = globalThis.location;
-
 function createWebauthnSdkForTest(
   options: {
     fetch?: typeof globalThis.fetch;
@@ -42,8 +40,7 @@ describe('sdk webauthn flows', () => {
     vi.unstubAllGlobals();
   });
 
-  it('defaults passkey authenticate rp_id to the current page hostname', async () => {
-    vi.stubGlobal('location', new URL('https://app.example.com/account'));
+  it('starts passkey authenticate with server-configured rp_id', async () => {
     const fetch = createWebauthnRequestRecorder();
     const sdk = createWebauthnSdkForTest({
       fetch,
@@ -52,31 +49,10 @@ describe('sdk webauthn flows', () => {
 
     await sdk.passkey.authenticate();
 
-    expect(readJsonBody(fetch, '/webauthn/authenticate/options')).toEqual({
-      rp_id: 'app.example.com',
-    });
+    expect(readJsonBody(fetch, '/webauthn/authenticate/options')).toEqual({});
   });
 
-  it('restores the original global location after each test', () => {
-    expect(globalThis.location).toBe(originalLocation);
-  });
-
-  it('passes explicit rpId override through the passkey authenticate options call', async () => {
-    const fetch = createWebauthnRequestRecorder();
-    const sdk = createWebauthnSdkForTest({
-      fetch,
-      navigatorCredentials: fakeNavigatorCredentials(),
-    });
-
-    await sdk.passkey.authenticate({ rpId: 'example.com' });
-
-    expect(readJsonBody(fetch, '/webauthn/authenticate/options')).toEqual({
-      rp_id: 'example.com',
-    });
-  });
-
-  it('defaults passkey register rp_id to the current page hostname', async () => {
-    vi.stubGlobal('location', new URL('https://app.example.com/settings'));
+  it('starts passkey register with server-configured rp_id', async () => {
     const fetch = createWebauthnRequestRecorder();
     const sdk = createWebauthnSdkForTest({
       fetch,
@@ -86,24 +62,7 @@ describe('sdk webauthn flows', () => {
 
     await sdk.passkey.register();
 
-    expect(readJsonBody(fetch, '/webauthn/register/options')).toEqual({
-      rp_id: 'app.example.com',
-    });
-  });
-
-  it('passes explicit rpId override through the passkey register options call', async () => {
-    const fetch = createWebauthnRequestRecorder();
-    const sdk = createWebauthnSdkForTest({
-      fetch,
-      storage: fakeAuthenticatedStorage(),
-      navigatorCredentials: fakeNavigatorCredentials(),
-    });
-
-    await sdk.passkey.register({ rpId: 'example.com' });
-
-    expect(readJsonBody(fetch, '/webauthn/register/options')).toEqual({
-      rp_id: 'example.com',
-    });
+    expect(readJsonBody(fetch, '/webauthn/register/options')).toEqual({});
   });
 
   it('throws webauthn_unsupported when browser webauthn apis are unavailable', async () => {

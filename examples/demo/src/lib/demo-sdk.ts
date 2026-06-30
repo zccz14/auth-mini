@@ -14,9 +14,9 @@ type DemoEd25519Api = {
 
 export type AdminSetupState = {
   issuer: string;
+  rp_id: string;
   admin_user_id: string | null;
   admin_ed25519: unknown | null;
-  origins: Array<{ id: number; origin: string; created_at: string }>;
   smtp: null | {
     id: number;
     host: string;
@@ -32,7 +32,7 @@ export type AdminSetupState = {
 
 export type AdminConfigInput = {
   issuer: string;
-  origin: string;
+  rp_id: string;
   smtp: null | {
     host: string;
     port: number;

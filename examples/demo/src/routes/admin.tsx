@@ -6,12 +6,12 @@ import { useDemo } from '@/app/providers/demo-provider';
 import type { AdminConfigInput, AdminSetupState } from '@/lib/demo-sdk';
 
 export function AdminRoute() {
-  const { config, sdk, session } = useDemo();
+  const { sdk, session } = useDemo();
   const [settings, setSettings] = useState<AdminSetupState | null>(null);
   const [users, setUsers] = useState<Array<Record<string, unknown>>>([]);
   const [form, setForm] = useState<AdminConfigInput>({
     issuer: '',
-    origin: '',
+    rp_id: '',
     smtp: null,
   });
   const [pending, setPending] = useState<string | null>(null);
@@ -27,7 +27,7 @@ export function AdminRoute() {
     setUsers(nextUsers.users);
     setForm({
       issuer: nextSettings.issuer,
-      origin: nextSettings.origins[0]?.origin ?? new URL(config.resolvedServerBaseUrl).origin,
+      rp_id: nextSettings.rp_id,
       smtp: nextSettings.smtp
         ? {
             host: nextSettings.smtp.host,
@@ -41,7 +41,7 @@ export function AdminRoute() {
           }
         : null,
     });
-  }, [config.resolvedServerBaseUrl, sdk, session.authenticated]);
+  }, [sdk, session.authenticated]);
 
   useEffect(() => {
     void loadAdmin().catch((cause) => {
@@ -123,6 +123,7 @@ export function AdminRoute() {
           <div className="grid gap-2 text-sm text-slate-700">
             <div>Admin user ID: <span className="font-mono">{settings?.admin_user_id}</span></div>
             <div>Issuer: {settings?.issuer ?? 'Loading...'}</div>
+            <div>Passkey RP ID: {settings?.rp_id ?? 'Loading...'}</div>
           </div>
           {error ? <p className="text-sm text-rose-600">{error}</p> : null}
         </CardContent>
@@ -131,7 +132,7 @@ export function AdminRoute() {
       <Card className="rounded-lg">
         <CardHeader>
           <CardTitle>Configuration</CardTitle>
-          <CardDescription>Issuer, allowed browser origin, and SMTP delivery.</CardDescription>
+          <CardDescription>Issuer, passkey RP ID, and SMTP delivery.</CardDescription>
         </CardHeader>
         <CardContent>
           <form className="grid gap-4" onSubmit={saveConfig}>
@@ -142,10 +143,10 @@ export function AdminRoute() {
               onChange={(event) => setForm({ ...form, issuer: event.currentTarget.value })}
             />
             <Input
-              aria-label="Allowed origin"
-              placeholder="https://app.example.com"
-              value={form.origin}
-              onChange={(event) => setForm({ ...form, origin: event.currentTarget.value })}
+              aria-label="Passkey RP ID"
+              placeholder="auth.example.com"
+              value={form.rp_id}
+              onChange={(event) => setForm({ ...form, rp_id: event.currentTarget.value })}
             />
             <label className="flex items-center gap-2 text-sm text-slate-700">
               <input

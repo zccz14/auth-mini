@@ -18,7 +18,7 @@ export type AdminSetupRequest = {
 
 export type AdminConfigRequest = {
     issuer: string;
-    origin: string;
+    rp_id: string;
     smtp?: AdminSetupSmtpInput | null;
 };
 
@@ -53,16 +53,10 @@ export type AdminUserSummary = {
 
 export type AdminSetupState = {
     issuer: string;
+    rp_id: string;
     admin_user_id: string | null;
     admin_ed25519: AdminEd25519CredentialSummary | null;
-    origins: Array<AdminAllowedOrigin>;
     smtp: AdminSmtpConfigSummary | null;
-};
-
-export type AdminAllowedOrigin = {
-    id: number;
-    origin: string;
-    created_at: string;
 };
 
 export type AdminSmtpConfigSummary = {
@@ -166,7 +160,7 @@ export type Ed25519VerifyRequest = {
 };
 
 export type WebauthnOptionsRequest = {
-    rp_id: string;
+    [key: string]: never;
 };
 
 export type WebauthnRegistrationOptionsResponse = {
@@ -266,7 +260,7 @@ export type JwksResponse = {
 
 export type AdminConfigRequestWritable = {
     issuer: string;
-    origin: string;
+    rp_id: string;
     smtp?: AdminSetupSmtpInputWritable | null;
 };
 
@@ -279,6 +273,10 @@ export type AdminSetupSmtpInputWritable = {
     from_name?: string;
     secure?: boolean;
     weight?: number;
+};
+
+export type WebauthnOptionsRequestWritable = {
+    [key: string]: never;
 };
 
 export type CredentialId = string;
@@ -836,7 +834,7 @@ export type UpdateEd25519CredentialResponses = {
 export type UpdateEd25519CredentialResponse = UpdateEd25519CredentialResponses[keyof UpdateEd25519CredentialResponses];
 
 export type CreateWebauthnRegistrationOptionsData = {
-    body: WebauthnOptionsRequest;
+    body: WebauthnOptionsRequestWritable;
     path?: never;
     query?: never;
     url: '/webauthn/register/options';
@@ -844,7 +842,7 @@ export type CreateWebauthnRegistrationOptionsData = {
 
 export type CreateWebauthnRegistrationOptionsErrors = {
     /**
-     * Request body or origin/rp_id combination is invalid
+     * Request body or configured WebAuthn RP ID is invalid
      */
     400: ErrorResponse;
     /**
@@ -906,7 +904,7 @@ export type VerifyWebauthnRegistrationResponses = {
 export type VerifyWebauthnRegistrationResponse = VerifyWebauthnRegistrationResponses[keyof VerifyWebauthnRegistrationResponses];
 
 export type CreateWebauthnAuthenticationOptionsData = {
-    body: WebauthnOptionsRequest;
+    body: WebauthnOptionsRequestWritable;
     path?: never;
     query?: never;
     url: '/webauthn/authenticate/options';
@@ -914,7 +912,7 @@ export type CreateWebauthnAuthenticationOptionsData = {
 
 export type CreateWebauthnAuthenticationOptionsErrors = {
     /**
-     * Request body or origin/rp_id combination is invalid
+     * Request body or configured WebAuthn RP ID is invalid
      */
     400: ErrorResponse;
 };

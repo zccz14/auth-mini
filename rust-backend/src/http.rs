@@ -672,11 +672,8 @@ fn handle_webauthn_register_options(request: &Request, config: &Config) -> io::R
         Ok(parsed) => parsed,
         Err(_) => return Ok(Response::json_error(400, "invalid_request")),
     };
-    let Some(origin) = options_request_origin(request) else {
-        return Ok(Response::json_error(400, "invalid_webauthn_registration"));
-    };
 
-    match webauthn_register_options(&connection, &auth.user_id, &parsed, &origin) {
+    match webauthn_register_options(&connection, &auth.user_id, &parsed) {
         Ok(body) => Ok(Response::json_value(200, body)),
         Err(RegisterOptionsError::Request) => Ok(Response::json_error(400, "invalid_request")),
         Err(RegisterOptionsError::WebauthnRegistration) => {
@@ -702,11 +699,8 @@ fn handle_webauthn_register_verify(request: &Request, config: &Config) -> io::Re
         Ok(parsed) => parsed,
         Err(_) => return Ok(Response::json_error(400, "invalid_request")),
     };
-    let Some(origin) = options_request_origin(request) else {
-        return Ok(Response::json_error(400, "invalid_webauthn_registration"));
-    };
 
-    match webauthn_register_verify(&connection, &auth.user_id, &parsed, &origin) {
+    match webauthn_register_verify(&connection, &auth.user_id, &parsed) {
         Ok(body) => Ok(Response::json_value(200, body)),
         Err(RegisterVerifyError::InvalidWebauthnRegistration) => {
             Ok(Response::json_error(400, "invalid_webauthn_registration"))
@@ -725,12 +719,9 @@ fn handle_webauthn_authentication_options(
     let Some(database) = &config.database else {
         return Ok(Response::json_error(501, "not_implemented"));
     };
-    let Some(origin) = options_request_origin(request) else {
-        return Ok(Response::json_error(400, "invalid_webauthn_authentication"));
-    };
     let connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
 
-    match webauthn_authentication_options(&connection, &parsed, &origin) {
+    match webauthn_authentication_options(&connection, &parsed) {
         Ok(body) => Ok(Response::json_value(200, body)),
         Err(AuthenticationOptionsError::InvalidRequest) => {
             Ok(Response::json_error(400, "invalid_request"))
@@ -752,12 +743,9 @@ fn handle_webauthn_authentication_verify(
     let Some(database) = &config.database else {
         return Ok(Response::json_error(501, "not_implemented"));
     };
-    let Some(origin) = options_request_origin(request) else {
-        return Ok(Response::json_error(400, "invalid_webauthn_authentication"));
-    };
     let connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
 
-    match webauthn_authentication_verify(&connection, &parsed, &origin) {
+    match webauthn_authentication_verify(&connection, &parsed) {
         Ok(outcome) => {
             let issuer = read_app_issuer(&connection).map_err(io::Error::other)?;
             let pair = mint_session_tokens(
@@ -865,23 +853,6 @@ fn bearer_token(request: &Request) -> Option<String> {
     request
         .header("Authorization")
         .and_then(|header| header.strip_prefix("Bearer ").map(str::to_string))
-}
-
-fn options_request_origin(request: &Request) -> Option<String> {
-    if let Some(origin) = request.header("Origin") {
-        return Some(origin);
-    }
-
-    if request.path.starts_with("http://") || request.path.starts_with("https://") {
-        let (scheme, rest) = request.path.split_once("://")?;
-        let host = rest.split('/').next()?;
-
-        if !host.is_empty() {
-            return Some(format!("{scheme}://{host}"));
-        }
-    }
-
-    request.header("Host").map(|host| format!("http://{host}"))
 }
 
 fn ed25519_credential_id(request: &Request) -> Option<&str> {
@@ -1237,7 +1208,7 @@ mod tests {
             (
                 "POST",
                 "/webauthn/register/options",
-                r#"{"rp_id":"example.com"}"#,
+                r#"{}"#,
             ),
             (
                 "POST",
@@ -1247,7 +1218,7 @@ mod tests {
             (
                 "POST",
                 "/webauthn/authenticate/options",
-                r#"{"rp_id":"example.com"}"#,
+                r#"{}"#,
             ),
             (
                 "POST",
@@ -1404,6 +1375,7 @@ mod tests {
                 CREATE TABLE app_meta (
                     id TEXT PRIMARY KEY CHECK (id = 'APP'),
                     issuer TEXT NOT NULL,
+                    rp_id TEXT NOT NULL DEFAULT 'localhost',
                     admin_user_id TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -2208,12 +2180,6 @@ mod tests {
                 ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
             )
             .expect("user inserted");
-        connection
-            .execute(
-                "INSERT INTO allowed_origins (origin) VALUES (?1)",
-                ["https://app.example.com"],
-            )
-            .expect("origin inserted");
         let pair = mint_session_tokens(&connection, "user-1", "email_otp", "auth-mini", None, None)
             .expect("session minted");
         drop(connection);
@@ -2227,9 +2193,8 @@ mod tests {
                         "Authorization".to_string(),
                         format!("Bearer {}", pair.access_token),
                     ),
-                    ("Origin".to_string(), "https://app.example.com".to_string()),
                 ],
-                body: r#"{"rp_id":"EXAMPLE.COM."}"#.to_string(),
+                body: r#"{}"#.to_string(),
             },
             &Config {
                 database: Some(crate::DatabaseConfig {
@@ -2269,8 +2234,8 @@ mod tests {
             &Request {
                 method: "POST".to_string(),
                 path: "/webauthn/register/options".to_string(),
-                headers: vec![("Origin".to_string(), "https://app.example.com".to_string())],
-                body: r#"{"rp_id":"app.example.com"}"#.to_string(),
+                headers: vec![],
+                body: r#"{}"#.to_string(),
             },
             &Config::default(),
         )
@@ -2304,9 +2269,8 @@ mod tests {
                         "Authorization".to_string(),
                         format!("Bearer {}", pair.access_token),
                     ),
-                    ("Origin".to_string(), "https://app.example.com".to_string()),
                 ],
-                body: r#"{"rp_id":"app.example.com"}"#.to_string(),
+                body: r#"{}"#.to_string(),
             },
             &Config {
                 database: Some(crate::DatabaseConfig { db_path }),
@@ -2335,12 +2299,6 @@ mod tests {
             .expect("user inserted");
         connection
             .execute(
-                "INSERT INTO allowed_origins (origin) VALUES (?1)",
-                ["https://app.example.com"],
-            )
-            .expect("origin inserted");
-        connection
-            .execute(
                 "INSERT INTO webauthn_challenges
                  (request_id, type, state_json, user_id, expires_at, rp_id, origin)
                  VALUES (?1, 'register', ?2, ?3, ?4, ?5, ?6)",
@@ -2367,7 +2325,6 @@ mod tests {
                         "Authorization".to_string(),
                         format!("Bearer {}", pair.access_token),
                     ),
-                    ("Origin".to_string(), "https://app.example.com".to_string()),
                 ],
                 body: register_verify_body(),
             },
@@ -2420,7 +2377,6 @@ mod tests {
                         "Authorization".to_string(),
                         format!("Bearer {}", pair.access_token),
                     ),
-                    ("Origin".to_string(), "https://app.example.com".to_string()),
                 ],
                 body: r#"{"request_id":"00000000-0000-4000-8000-000000000000","credential":{"id":"credential-id","rawId":"raw-id","type":"public-key","response":{"clientDataJSON":"client-data","attestationObject":"attestation"}},"extra":true}"#.to_string(),
             },
@@ -2443,7 +2399,7 @@ mod tests {
             &Request {
                 method: "POST".to_string(),
                 path: "/webauthn/register/verify".to_string(),
-                headers: vec![("Origin".to_string(), "https://app.example.com".to_string())],
+                headers: vec![],
                 body: register_verify_body(),
             },
             &Config::default(),
@@ -2478,7 +2434,6 @@ mod tests {
                         "Authorization".to_string(),
                         format!("Bearer {}", pair.access_token),
                     ),
-                    ("Origin".to_string(), "https://app.example.com".to_string()),
                 ],
                 body: register_verify_body(),
             },
@@ -2520,9 +2475,8 @@ mod tests {
                         "Authorization".to_string(),
                         format!("Bearer {}", pair.access_token),
                     ),
-                    ("Origin".to_string(), "https://app.example.com".to_string()),
                 ],
-                body: r#"{"rp_id":"app.example.com","extra":true}"#.to_string(),
+                body: r#"{"extra":true}"#.to_string(),
             },
             &Config {
                 database: Some(crate::DatabaseConfig { db_path }),
@@ -2540,20 +2494,14 @@ mod tests {
         let db_path = test_db_path("http-webauthn-authentication-options");
         let connection = Connection::open(&db_path).expect("database opens");
         create_auth_schema(&connection);
-        connection
-            .execute(
-                "INSERT INTO allowed_origins (origin) VALUES (?1)",
-                ["https://app.example.com"],
-            )
-            .expect("origin inserted");
         drop(connection);
 
         let response = route_request(
             &Request {
                 method: "POST".to_string(),
                 path: "/webauthn/authenticate/options".to_string(),
-                headers: vec![("Origin".to_string(), "https://app.example.com".to_string())],
-                body: r#"{"rp_id":"EXAMPLE.COM."}"#.to_string(),
+                headers: vec![],
+                body: r#"{}"#.to_string(),
             },
             &Config {
                 database: Some(crate::DatabaseConfig {
@@ -2586,24 +2534,21 @@ mod tests {
     }
 
     #[test]
-    fn rejects_webauthn_authentication_options_unallowlisted_origin() {
+    fn rejects_webauthn_authentication_options_for_invalid_stored_rp_id() {
         let db_path = test_db_path("http-webauthn-authentication-options-bad-origin");
         let connection = Connection::open(&db_path).expect("database opens");
         create_auth_schema(&connection);
         connection
-            .execute(
-                "INSERT INTO allowed_origins (origin) VALUES (?1)",
-                ["https://app.example.com"],
-            )
-            .expect("origin inserted");
+            .execute("UPDATE app_meta SET rp_id = 'login.example.com'", [])
+            .expect("app meta updates");
         drop(connection);
 
         let response = route_request(
             &Request {
                 method: "POST".to_string(),
                 path: "/webauthn/authenticate/options".to_string(),
-                headers: vec![("Origin".to_string(), "https://evil.example.com".to_string())],
-                body: r#"{"rp_id":"example.com"}"#.to_string(),
+                headers: vec![],
+                body: r#"{}"#.to_string(),
             },
             &Config {
                 database: Some(crate::DatabaseConfig { db_path }),
@@ -2624,12 +2569,6 @@ mod tests {
         let db_path = test_db_path("http-webauthn-authentication-verify-legacy-state");
         let connection = Connection::open(&db_path).expect("database opens");
         create_auth_schema(&connection);
-        connection
-            .execute(
-                "INSERT INTO allowed_origins (origin) VALUES (?1)",
-                ["https://app.example.com"],
-            )
-            .expect("origin inserted");
         connection
             .execute(
                 "INSERT INTO webauthn_challenges
@@ -2664,7 +2603,7 @@ mod tests {
             &Request {
                 method: "POST".to_string(),
                 path: "/webauthn/authenticate/verify".to_string(),
-                headers: vec![("Origin".to_string(), "https://app.example.com".to_string())],
+                headers: vec![],
                 body: authentication_verify_body(),
             },
             &Config {
@@ -2700,7 +2639,7 @@ mod tests {
             &Request {
                 method: "POST".to_string(),
                 path: "/webauthn/authenticate/verify".to_string(),
-                headers: vec![("Origin".to_string(), "https://app.example.com".to_string())],
+                headers: vec![],
                 body: r#"{"request_id":"00000000-0000-4000-8000-000000000000","credential":{"id":"credential-id","rawId":"raw-id","type":"public-key","response":{"clientDataJSON":"client-data","authenticatorData":"auth-data","signature":"signature"}},"extra":true}"#.to_string(),
             },
             &Config::default(),
@@ -2722,7 +2661,7 @@ mod tests {
             &Request {
                 method: "POST".to_string(),
                 path: "/webauthn/authenticate/verify".to_string(),
-                headers: vec![("Origin".to_string(), "https://app.example.com".to_string())],
+                headers: vec![],
                 body: authentication_verify_body(),
             },
             &Config {
@@ -2940,6 +2879,7 @@ mod tests {
                 CREATE TABLE app_meta (
                     id TEXT PRIMARY KEY CHECK (id = 'APP'),
                     issuer TEXT NOT NULL,
+                    rp_id TEXT NOT NULL,
                     admin_user_id TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -2970,11 +2910,6 @@ mod tests {
                     consumed_at TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
-                CREATE TABLE allowed_origins (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    origin TEXT NOT NULL UNIQUE,
-                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-                );
                 CREATE TABLE ed25519_credentials (
                     id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL,
@@ -2995,7 +2930,7 @@ mod tests {
             .expect("auth schema exists");
         connection
             .execute(
-                "INSERT OR IGNORE INTO app_meta (id, issuer) VALUES ('APP', 'auth-mini')",
+                "INSERT OR IGNORE INTO app_meta (id, issuer, rp_id) VALUES ('APP', 'https://app.example.com', 'example.com')",
                 [],
             )
             .expect("app meta exists");

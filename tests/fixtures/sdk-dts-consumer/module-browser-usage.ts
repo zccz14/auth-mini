@@ -17,9 +17,7 @@ const emailVerifyResult = await sdk.email.verify({
 });
 const sessionRefreshResult = await sdk.session.refresh();
 const webauthnAuthenticateResult = await sdk.webauthn.authenticate();
-const passkeyAuthenticateResult = await sdk.passkey.authenticate({
-  rpId: 'auth.example.com',
-});
+const passkeyAuthenticateResult = await sdk.passkey.authenticate();
 // @ts-expect-error session snapshots no longer expose me
 void sdk.session.getState().me;
 // @ts-expect-error me.get was removed from the public contract

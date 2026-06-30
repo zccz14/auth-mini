@@ -45,7 +45,7 @@ export const getAdminConfig = <ThrowOnError extends boolean = false>(options?: O
 });
 
 /**
- * Update issuer, allowed origin, and SMTP configuration
+ * Update issuer, passkey RP ID, and SMTP configuration
  */
 export const updateAdminConfig = <ThrowOnError extends boolean = false>(options: Options<UpdateAdminConfigData, ThrowOnError>) => (options.client ?? client).put<UpdateAdminConfigResponses, UpdateAdminConfigErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],

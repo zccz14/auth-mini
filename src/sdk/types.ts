@@ -62,10 +62,6 @@ export type EmailStartResponse = {
 
 export type WebauthnVerifyResponse = Record<string, unknown>;
 
-export type PasskeyOptionsInput = {
-  rpId?: string;
-};
-
 export type NavigatorCredentialsLike = {
   create?: (options?: CredentialCreationOptions) => Promise<unknown>;
   get?: (options?: CredentialRequestOptions) => Promise<unknown>;
@@ -101,8 +97,8 @@ export type AuthMiniApi = {
     verify(input: EmailVerifyInput): Promise<SessionResult>;
   };
   passkey: {
-    authenticate(input?: PasskeyOptionsInput): Promise<SessionResult>;
-    register(input?: PasskeyOptionsInput): Promise<WebauthnVerifyResponse>;
+    authenticate(): Promise<SessionResult>;
+    register(): Promise<WebauthnVerifyResponse>;
   };
   me: {
     fetch(): Promise<MeResponse>;
@@ -114,8 +110,8 @@ export type AuthMiniApi = {
     logout(): Promise<void>;
   };
   webauthn: {
-    authenticate(input?: PasskeyOptionsInput): Promise<SessionResult>;
-    register(input?: PasskeyOptionsInput): Promise<WebauthnVerifyResponse>;
+    authenticate(): Promise<SessionResult>;
+    register(): Promise<WebauthnVerifyResponse>;
   };
 };
 
