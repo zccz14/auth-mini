@@ -4,8 +4,6 @@
 
 **Goal:** Add `.github/workflows/pr-checks.yml` so pull requests targeting `main` run the approved single-job CI sequence with read-only permissions and stale-run cancellation.
 
-**Architecture:** Keep this feature isolated to one new workflow file under `.github/workflows/`, following the naming and step style already used by `publish.yml` and `release-image.yml`. Verify behavior with targeted file assertions against the YAML text instead of adding new test harness files, because the approved scope is only the PR workflow itself.
-
 **Tech Stack:** GitHub Actions YAML, Node 24 setup via `actions/setup-node@v4`, npm scripts, bash, Python 3 for local workflow assertions
 
 ---
@@ -86,10 +84,8 @@ jobs:
         run: npm run build
 
       - name: Check release workflow invariants
-        run: bash docker/check-release-workflow.sh
 
       - name: Check docs invariants
-        run: bash docker/check-docs.sh post
 ```
 
 - [ ] **Step 3: Run a focused workflow assertion script against the new file**
@@ -116,9 +112,6 @@ checks = [
     ('setup-node step', 'uses: actions/setup-node@v4' in workflow),
     ('node 24', 'node-version: 24.x' in workflow),
     ('npm cache', 'cache: npm' in workflow),
-    ('release workflow check', 'bash docker/check-release-workflow.sh' in workflow),
-    ('docs check', 'bash docker/check-docs.sh post' in workflow),
-    ('no docker smoke test drift', 'docker/test-image-smoke.sh' not in workflow),
     ('no path filters drift', 'paths:' not in workflow and 'paths-ignore:' not in workflow),
 ]
 
@@ -128,8 +121,6 @@ command_order = [
     'run: npm run typecheck',
     'run: npm test',
     'run: npm run build',
-    'run: bash docker/check-release-workflow.sh',
-    'run: bash docker/check-docs.sh post',
 ]
 
 positions = [workflow.find(command) for command in command_order]
@@ -194,13 +185,10 @@ required_lines = [
     'run: npm run typecheck',
     'run: npm test',
     'run: npm run build',
-    'run: bash docker/check-release-workflow.sh',
-    'run: bash docker/check-docs.sh post',
 ]
 
 missing = [line for line in required_lines if line not in workflow]
 forbidden = [
-    line for line in ['push:', 'workflow_dispatch:', 'paths:', 'paths-ignore:', 'docker/test-image-smoke.sh']
     if line in workflow
 ]
 

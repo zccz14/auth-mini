@@ -136,10 +136,10 @@ Pre-requisites:
 Install the release binary for your platform, verify its checksum, and put `auth-mini` on `PATH`:
 
 ```bash
-curl -LO https://github.com/zccz14/auth-mini/releases/download/v0.3.0/auth-mini-x86_64-unknown-linux-gnu.tar.gz
-curl -LO https://github.com/zccz14/auth-mini/releases/download/v0.3.0/auth-mini-x86_64-unknown-linux-gnu.tar.gz.sha256
-shasum -a 256 -c auth-mini-x86_64-unknown-linux-gnu.tar.gz.sha256
-tar -xzf auth-mini-x86_64-unknown-linux-gnu.tar.gz
+curl -LO https://github.com/zccz14/auth-mini/releases/download/latest/auth-mini-linux-x86_64.tar.gz
+curl -LO https://github.com/zccz14/auth-mini/releases/download/latest/auth-mini-linux-x86_64.tar.gz.sha256
+shasum -a 256 -c auth-mini-linux-x86_64.tar.gz.sha256
+tar -xzf auth-mini-linux-x86_64.tar.gz
 chmod +x auth-mini
 sudo mv auth-mini /usr/local/bin/auth-mini
 auth-mini
@@ -169,23 +169,9 @@ curl -X PUT http://localhost:7777/admin/setup \
 
 Store browser page origins here for WebAuthn and related origin checks. HTTP CORS is served with `Access-Control-Allow-Origin: *`, so downstream apps need to manage that exposure carefully. No need to add backend API origins. The admin setup API is only accepted from loopback clients and never returns the SMTP password.
 
-Docker runtime from GHCR:
-
-```bash
-docker run --rm \
-  -p 7777:7777 \
-  -v auth-mini-data:/var/lib/auth-mini \
-  ghcr.io/zccz14/auth-mini:latest \
-  --db /var/lib/auth-mini/auth-mini.sqlite --host 0.0.0.0 --port 7777 --issuer 'https://auth.your-domain.com'
-```
-
-Use `ghcr.io/zccz14/auth-mini:v0.3.0` for a pinned release version, or `ghcr.io/zccz14/auth-mini:latest` for the latest release image. The image runs the Rust `auth-mini` binary directly as a non-root user. Its default command starts the service on port `7777` with SQLite at `/var/lib/auth-mini/auth-mini.sqlite`, so `docker run -p 7777:7777 -v auth-mini-data:/var/lib/auth-mini ghcr.io/zccz14/auth-mini:latest` is enough for a local smoke run. Override the command as shown above for a production issuer.
-
-To build the same runtime image locally from this repository, run `docker build -f build/Dockerfile -t auth-mini:local .`.
-
 When the Rust binary DB path is omitted, it uses `~/.auth-mini/default.sqlite3`. Server startup creates the SQLite file, parent directory, schema, and JWKS keys automatically when missing. The Rust binary prints the SQLite database path it uses to stderr. The Rust binary embeds the database schema and `openapi.yaml`; runtime initialization uses the embedded schema. The Rust runtime has no `--openapi` parameter, and `/openapi.yaml` plus `/openapi.json` do not depend on the current working directory.
 
-Then deploy it with Cloudflare Tunnel or your preferred hosting method.
+Then deploy it with your preferred hosting method.
 
 Minimal browser SDK usage:
 
@@ -248,9 +234,6 @@ From there, typical integration looks like this:
 - Backend JWT verification: [docs/integration/backend-jwt-verification.md](docs/integration/backend-jwt-verification.md)
 - HTTP API reference: [docs/reference/http-api.md](docs/reference/http-api.md)
 - CLI and operations: [docs/reference/cli-and-operations.md](docs/reference/cli-and-operations.md)
-- Docker deployment: [docs/deploy/docker-cloudflared.md](docs/deploy/docker-cloudflared.md)
-
-For the container runtime path, see [docs/deploy/docker-cloudflared.md](docs/deploy/docker-cloudflared.md). GHCR release images cover `linux/amd64`; Cloudflared packaging and multi-architecture images are not part of the current Docker runtime.
 
 ## Philosophy
 
@@ -278,7 +261,7 @@ Run `npm run format`, `npm run lint`, `npm run typecheck`, and `npm test`.
 
 Git tag `vX.Y.Z` is the single source of truth for a release version. Before pushing a release tag, manually set `package.json`, `rust-backend/Cargo.toml`, and the `auth-mini` package entry in `rust-backend/Cargo.lock` to `X.Y.Z`, then run `npm run check:release-version -- vX.Y.Z`.
 
-The release workflows fail before building binaries or publishing images when the tag or any manifest version does not match. The check never bumps versions or creates release tags.
+The release workflows fail before building binaries when the tag or any manifest version does not match. The check never bumps versions or creates release tags.
 
 ## License
 

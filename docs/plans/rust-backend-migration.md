@@ -100,9 +100,7 @@
 
 实现内容：
 
-- 切换 CLI/Docker 启动到 Rust 后端。
 - 保留 npm SDK 构建，不改变 SDK 导出路径。
-- 更新 Docker smoke test 和发布 workflow。
 - 删除已被 Rust 覆盖且不再被 SDK/CLI 使用的 TypeScript 后端代码。
 
 当前清理切片：
@@ -112,7 +110,6 @@
 - 保留 npm SDK 构建链路：`src/sdk/**`、`src/generated/**`、`openapi.yaml`、`openapi-ts.config.ts`、SDK browser/device/api exports。
 - 保留 Rust E2E 依赖的测试 helper：WebAuthn test helper、Ed25519 helper、`shared/crypto`。
 - 默认 Node 测试范围收敛为 SDK、generated、OpenAPI 构建/合同和 demo 相关单元测试；Node 后端/CLI integration tests 删除，核心运行时由 `npm run test:rust-e2e`、cargo test/clippy/build 覆盖。
-- 本切片不切换 Docker runtime；删除仍依赖 Node `dist/index.js` 的 Docker PR check、image release workflow 与对应 PR invariant check。Docker runtime 若要继续发布，后续单独 PR 切换到 Rust binary。
 
 验证命令：
 
@@ -191,7 +188,6 @@
 - 每个目标产出平台命名 archive：Unix 使用 `.tar.gz`，Windows 使用 `.zip`；每个 archive 同时产出 `.sha256` checksum。
 - workflow 使用各 runner 默认 shell 执行构建；打包逻辑移入 `scripts/package-rust-release.py`，避免 Windows 在 Git Bash 下构建 vendored OpenSSL 时选中缺少 `Locale::Maketext::Simple` 的 Git/MSYS Perl。
 - 首轮不加入 Linux aarch64 或 musl，避免在未验证 linker/system dependency 前引入脆弱 cross toolchain。
-- Rust release readiness 不包含 Docker publishing；不发布 Docker image、不推送 GHCR、不改动现有 Docker image release workflow。
 - 不切换 npm 包 CLI，不迁移 `rotate jwks`、`init`、`start`，不删除 TypeScript CLI。
 
 验证命令：
@@ -248,7 +244,6 @@
 - 审计结论：`GET /me` 两端均返回 user/email、WebAuthn credentials、Ed25519 credentials 与 active sessions；WebAuthn credential shape 继续遵循已决策的 Rust-first `credential_id` 方向，不回加 Node 兼容。
 - 审计结论：unauthorized 与业务错误 JSON 基本对齐为 `{"error":"..."}`；本轮发现并修复最小明确 gap：Rust peer logout self-target 从 `400 session_peer_logout_self_target` 改为 TypeScript 对齐的 `400 invalid_request`，并补 Rust HTTP 边界测试。
 - 审计结论：invalid request 校验继续以拒绝无效 JSON、字段缺失、字段类型错误和额外字段为边界；不新增兼容 fallback，不改变 OpenAPI、SDK、TypeScript 生产入口或旧数据兼容路径。
-- 发布准备记录：Rust 不要求 Docker publishing；未来 Rust release readiness 应面向 cross-compilation、二进制产物校验和运行 smoke test。Docker runtime/publishing 不作为当前 Rust readiness 门禁。
 
 验证命令：
 
@@ -279,7 +274,6 @@
 - `smtp_configs.secure=0` 映射为 lettre 明文 SMTP transport；`secure=1` 映射为 lettre SMTPS/TLS transport，不再直接以未实现拒绝。
 - 现有 schema 只有 `secure` boolean，无法区分 STARTTLS-required 和 SMTPS；本轮不新增复杂兼容配置，STARTTLS-required 留作后续 schema/配置设计。
 - Rust 测试先迁移为 lettre stub/builder 边界：覆盖发送成功仍创建 OTP、发送失败仍失效 OTP、secure 配置不会假成功并使用 TLS transport。
-- 不切换 TypeScript 生产入口、Docker/package scripts、SMTP CLI 或 TS nodemailer 行为。
 
 验证命令：
 
@@ -357,7 +351,6 @@
 - 选中 SMTP 配置后生成 6 位 OTP，写入 `email_otps` 的 SHA-256 code hash、10 分钟过期时间，并清空旧 `consumed_at`。
 - 明文 SMTP AUTH LOGIN 发送成功后返回 `200 {"ok":true}`；发送失败或 `secure=1` 不支持时返回 `503 smtp_temporarily_unavailable` 并失效本次 OTP，避免生产路径假成功。
 - 增加本地 TCP SMTP 测试服务器覆盖成功与失败投递边界；测试不连接外部 SMTP 服务。
-- 不迁移 TLS/SMTPS/STARTTLS、SMTP CLI、WebAuthn、Docker/package scripts、生产入口切换或 Ed25519 完成登录。
 - 不删除 TypeScript 后端代码；未迁移的 CLI、WebAuthn、TLS SMTP、Ed25519 verify/authenticate 完成链路仍由 TypeScript 覆盖。
 
 验证命令：
@@ -375,7 +368,6 @@
 - Rust `GET /openapi.json` 不再返回占位 JSON，而是读取配置的 `openapi.yaml` 并解析为 JSON 响应。
 - Rust OpenAPI 解析沿用 TypeScript `parseOpenApiDocument` 的核心合同：有效 YAML 必须解析为对象文档；标量、数组或空文档等非对象结果视为无效 OpenAPI 文档。
 - `GET /openapi.yaml` 和 `GET /openapi.json` 共享同一个配置文件来源，避免 JSON 与 YAML 合同漂移。
-- 不迁移 JWKS/Ed25519 真实签名验签、WebAuthn、真实 SMTP、CLI 命令、Docker/package scripts 或生产入口切换。
 - 不删除 TypeScript 后端代码；OpenAPI SDK 生成与未迁移后端范围仍由 TypeScript 覆盖。
 
 上一轮 PR 的阶段 3/5 之后可验证切片：
@@ -384,7 +376,6 @@
 - Rust 迁移 session 公共 API：`POST /session/refresh`、`POST /session/logout`、`POST /session/:session_id/logout`、`GET /me`。
 - Rust 迁移 `GET /jwks`、`GET /openapi.json` 与 CORS 通用响应/预检行为。
 - Rust `POST /email/start` 仅迁移请求边界和无 SMTP 配置失败行为；真实 SMTP 发送、OTP 邮件投递边界仍保留在 TypeScript 后端，避免实现无法投递却返回成功的认证路径。
-- 不切换生产入口，不删除 TypeScript 后端。WebAuthn、Ed25519、真实 SMTP、CLI 运行入口、Docker runtime 切换、Node SDK 构建入口仍由 TypeScript 覆盖。
 
 剩余 TypeScript 后端范围盘点：
 
@@ -395,7 +386,6 @@
 - token/JWT/JWKS：Rust 已支持 access token Ed25519 真实签名/验签和 JWKS 公钥发布；JWKS 轮换 CLI 仍在 TypeScript。
 - CORS/origin：Rust 迁移 HTTP CORS 通用行为；origin CLI 管理仍在 TypeScript。
 - OpenAPI endpoints：Rust 迁移 yaml/json endpoints；OpenAPI SDK 生成仍使用 Node package scripts。
-- Docker/package scripts：未切换，避免破坏仍依赖 TypeScript CLI/SDK 的发布与构建。
 - 测试：Rust 增加本阶段后端行为测试；既有 TypeScript 测试继续保护未迁移范围。
 
 验证命令：
