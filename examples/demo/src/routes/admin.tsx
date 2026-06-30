@@ -176,7 +176,13 @@ export function AdminRoute() {
                 <Input aria-label="SMTP host" placeholder="SMTP host" value={form.smtp.host} onChange={(event) => updateSmtp('host', event.currentTarget.value)} />
                 <Input aria-label="SMTP port" type="number" value={form.smtp.port} onChange={(event) => updateSmtp('port', Number(event.currentTarget.value))} />
                 <Input aria-label="SMTP username" placeholder="Username" value={form.smtp.username} onChange={(event) => updateSmtp('username', event.currentTarget.value)} />
-                <Input aria-label="SMTP password" placeholder="Password" type="password" value={form.smtp.password} onChange={(event) => updateSmtp('password', event.currentTarget.value)} />
+                <Input
+                  aria-label="SMTP password"
+                  placeholder={settings?.smtp ? 'Leave blank to keep current password' : 'Password'}
+                  type="password"
+                  value={form.smtp.password}
+                  onChange={(event) => updateSmtp('password', event.currentTarget.value)}
+                />
                 <Input aria-label="From email" placeholder="From email" value={form.smtp.from_email} onChange={(event) => updateSmtp('from_email', event.currentTarget.value)} />
                 <Input aria-label="From name" placeholder="From name" value={form.smtp.from_name} onChange={(event) => updateSmtp('from_name', event.currentTarget.value)} />
                 <label className="flex items-center gap-2 text-sm text-slate-700">

@@ -323,7 +323,10 @@ fn upsert_smtp_config(connection: &Connection, input: &SmtpConfigInput) -> Resul
 
     match id {
         Some(id) => update_smtp_config(connection, id, input),
-        None => insert_smtp_config(connection, input),
+        None => {
+            validate_smtp_password(input)?;
+            insert_smtp_config(connection, input)
+        }
     }
 }
 
@@ -354,7 +357,7 @@ fn update_smtp_config(
 ) -> Result<(), SetupError> {
     connection
         .execute(
-            "UPDATE smtp_configs SET host = ?1, port = ?2, username = ?3, password = ?4, from_email = ?5, from_name = ?6, secure = ?7, weight = ?8 WHERE id = ?9",
+            "UPDATE smtp_configs SET host = ?1, port = ?2, username = ?3, password = COALESCE(NULLIF(?4, ''), password), from_email = ?5, from_name = ?6, secure = ?7, weight = ?8 WHERE id = ?9",
             params![
                 input.host,
                 input.port,
@@ -376,10 +379,17 @@ fn validate_smtp_config(input: &SmtpConfigInput) -> Result<(), SetupError> {
     if input.host.trim().is_empty()
         || input.port <= 0
         || input.username.trim().is_empty()
-        || input.password.is_empty()
         || input.from_email.trim().is_empty()
         || input.weight <= 0
     {
+        return Err(SetupError::InvalidRequest);
+    }
+
+    Ok(())
+}
+
+fn validate_smtp_password(input: &SmtpConfigInput) -> Result<(), SetupError> {
+    if input.password.is_empty() {
         return Err(SetupError::InvalidRequest);
     }
 
@@ -502,6 +512,37 @@ mod tests {
             state.smtp.as_ref().expect("smtp exists").host,
             "smtp-2.example.com"
         );
+    }
+
+    #[test]
+    fn admin_setup_keeps_existing_smtp_password_when_update_password_is_blank() {
+        let connection = test_connection("setup-update-blank-password");
+        let mut request = valid_request();
+        apply_admin_config(&connection, &request).expect("initial setup applies");
+        request.smtp.as_mut().expect("smtp exists").password = String::new();
+        request.smtp.as_mut().expect("smtp exists").host = "smtp-2.example.com".to_string();
+
+        apply_admin_config(&connection, &request).expect("setup updates");
+
+        let password: String = connection
+            .query_row(
+                "SELECT password FROM smtp_configs WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("smtp password reads");
+        assert_eq!(password, "secret");
+    }
+
+    #[test]
+    fn admin_setup_rejects_new_smtp_config_without_password() {
+        let connection = test_connection("setup-insert-blank-password");
+        let mut request = valid_request();
+        request.smtp.as_mut().expect("smtp exists").password = String::new();
+
+        let error = apply_admin_config(&connection, &request).expect_err("setup rejects");
+
+        assert_eq!(error, SetupError::InvalidRequest);
     }
 
     #[test]

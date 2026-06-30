@@ -209,8 +209,10 @@ fn build_otp_message(
 
 fn build_smtp_transport(config: &SmtpConfig) -> Result<SmtpTransport, SmtpSendError> {
     let credentials = Credentials::new(config.username.clone(), config.password.clone());
-    let builder = if config.secure {
+    let builder = if config.secure && config.port == 465 {
         SmtpTransport::relay(&config.host)?
+    } else if config.secure {
+        SmtpTransport::starttls_relay(&config.host)?
     } else {
         SmtpTransport::builder_dangerous(&config.host)
     };
@@ -386,13 +388,16 @@ mod tests {
     #[test]
     fn maps_secure_boolean_to_lettre_transport_modes() {
         let plain_config = test_smtp_config(2525, false);
-        let secure_config = test_smtp_config(465, true);
+        let starttls_config = test_smtp_config(587, true);
+        let wrapper_config = test_smtp_config(465, true);
 
         let plain_transport = format!("{:?}", build_smtp_transport(&plain_config).unwrap());
-        let secure_transport = format!("{:?}", build_smtp_transport(&secure_config).unwrap());
+        let starttls_transport = format!("{:?}", build_smtp_transport(&starttls_config).unwrap());
+        let wrapper_transport = format!("{:?}", build_smtp_transport(&wrapper_config).unwrap());
 
         assert!(plain_transport.contains("None"));
-        assert!(secure_transport.contains("Wrapper"));
+        assert!(starttls_transport.contains("Required"));
+        assert!(wrapper_transport.contains("Wrapper"));
     }
 
     fn create_email_start_schema(connection: &Connection) {
