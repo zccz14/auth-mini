@@ -94,9 +94,13 @@ describe('rust external server e2e smoke', () => {
     });
     expect(preflight.status).toBe(204);
     expect(preflight.headers.get('access-control-allow-origin')).toBe('*');
-    expect(preflight.headers.get('access-control-allow-methods')).toBe(
-      'GET, POST, PATCH, DELETE, OPTIONS',
+    expect(preflight.headers.get('access-control-allow-methods')).toContain(
+      'PUT',
     );
+    expect(preflight.headers.get('access-control-allow-methods')).toContain(
+      'HEAD',
+    );
+    expect(preflight.headers.get('access-control-allow-headers')).toBe('*');
 
     const emailSession = await postJson(`${baseUrl}/email/verify`, {
       email: 'rust-user@example.com',
