@@ -12,6 +12,44 @@ export type ErrorResponse = {
     error: string;
 };
 
+export type AdminSetupRequest = {
+    origin: string;
+    smtp: AdminSetupSmtpInput;
+};
+
+export type AdminSetupSmtpInput = {
+    host: string;
+    port: number;
+    username: string;
+    from_email: string;
+    from_name?: string;
+    secure?: boolean;
+    weight?: number;
+};
+
+export type AdminSetupState = {
+    origins: Array<AdminAllowedOrigin>;
+    smtp: AdminSmtpConfigSummary | null;
+};
+
+export type AdminAllowedOrigin = {
+    id: number;
+    origin: string;
+    created_at: string;
+};
+
+export type AdminSmtpConfigSummary = {
+    id: number;
+    host: string;
+    port: number;
+    username: string;
+    from_email: string;
+    from_name: string;
+    secure: boolean;
+    is_active: boolean;
+    weight: number;
+};
+
 export type EmailStartRequest = {
     email: string;
 };
@@ -190,7 +228,85 @@ export type JwksResponse = {
     keys: Array<JwkPublicEd25519>;
 };
 
+export type AdminSetupRequestWritable = {
+    origin: string;
+    smtp: AdminSetupSmtpInputWritable;
+};
+
+export type AdminSetupSmtpInputWritable = {
+    host: string;
+    port: number;
+    username: string;
+    password: string;
+    from_email: string;
+    from_name?: string;
+    secure?: boolean;
+    weight?: number;
+};
+
 export type CredentialId = string;
+
+export type GetAdminSetupData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/setup';
+};
+
+export type GetAdminSetupErrors = {
+    /**
+     * Admin setup is only available from loopback clients
+     */
+    403: ErrorResponse;
+    /**
+     * Database-backed setup is not available
+     */
+    501: ErrorResponse;
+};
+
+export type GetAdminSetupError = GetAdminSetupErrors[keyof GetAdminSetupErrors];
+
+export type GetAdminSetupResponses = {
+    /**
+     * Current admin setup state
+     */
+    200: AdminSetupState;
+};
+
+export type GetAdminSetupResponse = GetAdminSetupResponses[keyof GetAdminSetupResponses];
+
+export type UpdateAdminSetupData = {
+    body: AdminSetupRequestWritable;
+    path?: never;
+    query?: never;
+    url: '/admin/setup';
+};
+
+export type UpdateAdminSetupErrors = {
+    /**
+     * Request body or path parameters do not match the route contract
+     */
+    400: ErrorResponse;
+    /**
+     * Admin setup is only available from loopback clients
+     */
+    403: ErrorResponse;
+    /**
+     * Database-backed setup is not available
+     */
+    501: ErrorResponse;
+};
+
+export type UpdateAdminSetupError = UpdateAdminSetupErrors[keyof UpdateAdminSetupErrors];
+
+export type UpdateAdminSetupResponses = {
+    /**
+     * Updated admin setup state
+     */
+    200: AdminSetupState;
+};
+
+export type UpdateAdminSetupResponse = UpdateAdminSetupResponses[keyof UpdateAdminSetupResponses];
 
 export type StartEmailAuthData = {
     body: EmailStartRequest;

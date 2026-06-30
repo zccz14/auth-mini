@@ -25,7 +25,7 @@ Browser SDK persistence semantics remain browser-only: the maintained browser mo
 
 ## Cross-origin guidance
 
-Browser pages may be hosted on a different origin than the auth server. Store the page origin in the instance with `npx auth-mini origin add <instance> --value <page-origin>` for WebAuthn and related origin checks; HTTP CORS is served separately with `Access-Control-Allow-Origin: *`.
+Browser pages may be hosted on a different origin than the auth server. Store the page origin with the demo setup page or `PUT /admin/setup` for WebAuthn and related origin checks; HTTP CORS is served separately with `Access-Control-Allow-Origin: *`.
 
 Same-origin proxy deployment is still supported if you prefer to front auth-mini through your app origin, but direct cross-origin browser access to the auth-mini API is also supported. Because auth-mini serves wildcard CORS for HTTP routes, downstream apps should decide whether to keep direct access or place their own proxy/gateway controls in front.
 
@@ -36,7 +36,7 @@ This page:
 - page origin: `http://localhost:3000`
 - auth server origin: `http://127.0.0.1:7777`
 
-works when `http://localhost:3000` has been added with `npx auth-mini origin add ./auth-mini.sqlite --value http://localhost:3000` and the browser app initializes the SDK with the auth server origin:
+works when `http://localhost:3000` has been added from the setup page or local admin setup API and the browser app initializes the SDK with the auth server origin:
 
 ```ts
 import { createBrowserSdk } from 'auth-mini/sdk/browser';
@@ -76,7 +76,7 @@ async function signInWithPasskey() {
 ## Operational limits
 
 - The browser SDK requires an explicit auth server origin via `createBrowserSdk(serverBaseUrl)`.
-- Store the browser page origin via the `origin` topic commands for WebAuthn and related origin checks; this is separate from the HTTP CORS policy.
+- Store the browser page origin via the setup page or `PUT /admin/setup` for WebAuthn and related origin checks; this is separate from the HTTP CORS policy.
 - Multiple tabs sharing one session can still race during refresh-token rotation, but the loser tab enters `recovering` and usually converges to the latest shared session state.
 - That convergence only shares session tokens/status; `/me` remains caller-owned and must be fetched explicitly in each tab when needed.
 
@@ -91,9 +91,9 @@ The current publish flow builds the demo with the root-level `demo:build` script
 - Treat `examples/demo/` as the source for the interactive demo and `examples/demo/dist` as the publish artifact.
 - For GitHub Pages, upload `examples/demo/dist` directly rather than a sibling `demo/` + `dist/` artifact layout.
 - The published page should be served from the site root for that artifact, such as `https://<user>.github.io/auth-mini/` for project Pages or `https://your-domain.example/` for a custom domain.
-- `npx auth-mini origin add <instance> --value ...` must use the final **page origin** (`window.location.origin`) for WebAuthn/browser origin checks, not the auth server origin.
+- The stored setup origin must use the final **page origin** (`window.location.origin`) for WebAuthn/browser origin checks, not the auth server origin.
 - If the docs page and auth server live on different origins, keep the page on its static host and append `/#/setup?auth-origin=https://your-auth-origin` so the published demo continues calling `createBrowserSdk(...)` against the auth host.
-- If you attach a custom GitHub Pages domain, publish a matching `CNAME` file in the deployed site root so GitHub serves that domain consistently; then store `https://your-domain.example` with `npx auth-mini origin add <instance> --value https://your-domain.example`.
+- If you attach a custom GitHub Pages domain, publish a matching `CNAME` file in the deployed site root so GitHub serves that domain consistently; then store `https://your-domain.example` from the setup page or local admin setup API.
 
 Example:
 
@@ -106,9 +106,8 @@ Open:
 https://example.github.io/auth-mini/#/setup?auth-origin=https://auth.zccz14.com
 ```
 
-Configure the published docs origin, then start auth-mini with:
+Configure the published docs origin through the setup page or local admin setup API, then start auth-mini with:
 
 ```bash
-npx auth-mini origin add ./auth-mini.sqlite --value https://example.github.io
-npx auth-mini start ./auth-mini.sqlite --issuer https://auth.zccz14.com
+auth-mini --db ./auth-mini.sqlite --issuer https://auth.zccz14.com
 ```

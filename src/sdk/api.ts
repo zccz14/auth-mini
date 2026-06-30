@@ -4,6 +4,7 @@ import {
   createWebauthnRegistrationOptions,
   deleteEd25519Credential,
   deleteWebauthnCredential,
+  getAdminSetup,
   getCurrentUser,
   listEd25519Credentials,
   listJwks,
@@ -12,6 +13,7 @@ import {
   refreshSession,
   startEd25519Authentication,
   startEmailAuth,
+  updateAdminSetup,
   updateEd25519Credential,
   verifyEd25519Authentication,
   verifyEmailAuth,
@@ -45,6 +47,14 @@ export function createApiSdk(options: ApiSdkOptions) {
   });
 
   return {
+    admin: {
+      setup: {
+        get: (request?: Parameters<typeof getAdminSetup>[0]) =>
+          getAdminSetup({ ...(request ?? {}), client }),
+        update: (request: Parameters<typeof updateAdminSetup>[0]) =>
+          updateAdminSetup({ ...request, client }),
+      },
+    },
     email: {
       start: (request: Parameters<typeof startEmailAuth>[0]) =>
         startEmailAuth({ ...request, client }),

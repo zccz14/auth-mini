@@ -22,6 +22,7 @@ use crate::session::{
     mint_session_tokens, parse_refresh_request, refresh_session_tokens,
     require_passkey_management_auth, token_json, SessionError,
 };
+use crate::setup::{apply_admin_setup, parse_admin_setup_request, read_admin_setup, SetupError};
 use crate::webauthn::{
     authentication_options as webauthn_authentication_options,
     authentication_verify as webauthn_authentication_verify,
@@ -51,12 +52,13 @@ pub fn run_server(config: Config) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn handle_connection(mut stream: TcpStream, config: &Config) -> io::Result<()> {
-    let request = read_request(&mut stream)?;
+    let peer_is_loopback = stream.peer_addr()?.ip().is_loopback();
+    let request = read_request(&mut stream, peer_is_loopback)?;
     let response = route_request(&request, config)?;
     stream.write_all(&response.to_http_bytes())
 }
 
-fn read_request(stream: &mut TcpStream) -> io::Result<Request> {
+fn read_request(stream: &mut TcpStream, peer_is_loopback: bool) -> io::Result<Request> {
     let mut reader = BufReader::new(stream);
     let mut request_line = String::new();
     reader.read_line(&mut request_line)?;
@@ -71,6 +73,9 @@ fn read_request(stream: &mut TcpStream) -> io::Result<Request> {
         }
 
         if let Some((name, value)) = line.split_once(':') {
+            if name.eq_ignore_ascii_case("x-auth-mini-peer-loopback") {
+                continue;
+            }
             headers.push((name.trim().to_string(), value.trim().to_string()));
             if name.eq_ignore_ascii_case("content-length") {
                 content_length = value.trim().parse().map_err(|_| {
@@ -85,6 +90,11 @@ fn read_request(stream: &mut TcpStream) -> io::Result<Request> {
     let path = parts.next().unwrap_or_default().to_string();
     let mut body = vec![0; content_length];
     reader.read_exact(&mut body)?;
+
+    headers.push((
+        "x-auth-mini-peer-loopback".to_string(),
+        peer_is_loopback.to_string(),
+    ));
 
     Ok(Request {
         method,
@@ -117,6 +127,14 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
     if request.method == "GET" && request.path == "/openapi.json" {
         let body = read_openapi_json()?;
         return Ok(cors(request, Response::json_value(200, body)));
+    }
+
+    if request.method == "GET" && request.path == "/admin/setup" {
+        return handle_admin_setup_get(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "PUT" && request.path == "/admin/setup" {
+        return handle_admin_setup_put(request, config).map(|response| cors(request, response));
     }
 
     if request.method == "POST" && request.path == "/email/start" {
@@ -203,6 +221,68 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
     }
 
     Ok(cors(request, Response::json_error(404, "not_found")))
+}
+
+fn handle_admin_setup_get(request: &Request, config: &Config) -> io::Result<Response> {
+    let connection = match admin_setup_connection(request, config)? {
+        AdminSetupAccess::Allowed(connection) => connection,
+        AdminSetupAccess::Forbidden => {
+            return Ok(Response::json_error(403, "admin_setup_forbidden"))
+        }
+        AdminSetupAccess::NoDatabase => return Ok(Response::json_error(501, "not_implemented")),
+    };
+
+    match read_admin_setup(&connection) {
+        Ok(state) => Ok(Response::json_value(
+            200,
+            serde_json::to_value(state).map_err(io::Error::other)?,
+        )),
+        Err(SetupError::InvalidRequest) => Ok(Response::json_error(400, "invalid_request")),
+        Err(SetupError::Database) => Ok(Response::json_error(500, "internal_error")),
+    }
+}
+
+fn handle_admin_setup_put(request: &Request, config: &Config) -> io::Result<Response> {
+    let parsed = match parse_admin_setup_request(&request.body) {
+        Ok(parsed) => parsed,
+        Err(SetupError::InvalidRequest) => return Ok(Response::json_error(400, "invalid_request")),
+        Err(SetupError::Database) => return Ok(Response::json_error(500, "internal_error")),
+    };
+    let connection = match admin_setup_connection(request, config)? {
+        AdminSetupAccess::Allowed(connection) => connection,
+        AdminSetupAccess::Forbidden => {
+            return Ok(Response::json_error(403, "admin_setup_forbidden"))
+        }
+        AdminSetupAccess::NoDatabase => return Ok(Response::json_error(501, "not_implemented")),
+    };
+
+    match apply_admin_setup(&connection, &parsed) {
+        Ok(state) => Ok(Response::json_value(
+            200,
+            serde_json::to_value(state).map_err(io::Error::other)?,
+        )),
+        Err(SetupError::InvalidRequest) => Ok(Response::json_error(400, "invalid_request")),
+        Err(SetupError::Database) => Ok(Response::json_error(500, "internal_error")),
+    }
+}
+
+fn admin_setup_connection(request: &Request, config: &Config) -> io::Result<AdminSetupAccess> {
+    if request.header("x-auth-mini-peer-loopback").as_deref() != Some("true") {
+        return Ok(AdminSetupAccess::Forbidden);
+    }
+    let Some(database) = &config.database else {
+        return Ok(AdminSetupAccess::NoDatabase);
+    };
+
+    rusqlite::Connection::open(&database.db_path)
+        .map(AdminSetupAccess::Allowed)
+        .map_err(io::Error::other)
+}
+
+enum AdminSetupAccess {
+    Allowed(rusqlite::Connection),
+    Forbidden,
+    NoDatabase,
 }
 
 fn handle_email_start(request: &Request, config: &Config) -> io::Result<Response> {
@@ -763,6 +843,7 @@ fn reason_phrase(status: u16) -> &'static str {
 mod tests {
     use std::path::PathBuf;
 
+    use crate::db::initialize_runtime_database;
     use rusqlite::Connection;
 
     use super::*;
@@ -776,7 +857,7 @@ mod tests {
                 headers: Vec::new(),
                 body: String::new(),
             },
-            &Config::default(),
+            &no_database_config(),
         )
         .expect("health response builds");
 
@@ -792,7 +873,7 @@ mod tests {
                 headers: Vec::new(),
                 body: String::new(),
             },
-            &Config::default(),
+            &no_database_config(),
         )
         .expect("openapi yaml response builds");
 
@@ -895,7 +976,7 @@ mod tests {
                     headers: Vec::new(),
                     body: body.to_string(),
                 },
-                &Config::default(),
+                &no_database_config(),
             )
             .expect("route response builds");
 
@@ -912,11 +993,72 @@ mod tests {
                 headers: Vec::new(),
                 body: r#"{"email":"user@example.com"}"#.to_string(),
             },
-            &Config::default(),
+            &no_database_config(),
         )
         .expect("email start response builds");
 
         assert_eq!(response, Response::json_error(503, "smtp_not_configured"));
+    }
+
+    #[test]
+    fn admin_setup_put_writes_configuration_and_get_hides_password() {
+        let db_path = test_db_path("http-admin-setup");
+        initialize_runtime_database(&db_path).expect("database initializes");
+        let config = Config {
+            database: Some(crate::DatabaseConfig {
+                db_path,
+                schema_path: PathBuf::from("sql/schema.sql"),
+            }),
+            ..Config::default()
+        };
+        let headers = vec![("x-auth-mini-peer-loopback".to_string(), "true".to_string())];
+
+        let put = route_request(
+            &Request {
+                method: "PUT".to_string(),
+                path: "/admin/setup".to_string(),
+                headers: headers.clone(),
+                body: r#"{"origin":"https://demo.example.com","smtp":{"host":"smtp.example.com","port":587,"username":"mailer","password":"secret","from_email":"noreply@example.com","from_name":"Auth Mini","secure":true,"weight":1}}"#
+                    .to_string(),
+            },
+            &config,
+        )
+        .expect("admin setup put response builds");
+
+        assert_eq!(put.status, 200);
+        assert!(put.body.contains("https://demo.example.com"));
+        assert!(!put.body.contains("secret"));
+
+        let get = route_request(
+            &Request {
+                method: "GET".to_string(),
+                path: "/admin/setup".to_string(),
+                headers,
+                body: String::new(),
+            },
+            &config,
+        )
+        .expect("admin setup get response builds");
+
+        assert_eq!(get.status, 200);
+        assert!(get.body.contains("smtp.example.com"));
+        assert!(!get.body.contains("secret"));
+    }
+
+    #[test]
+    fn admin_setup_rejects_non_loopback_requests() {
+        let response = route_request(
+            &Request {
+                method: "GET".to_string(),
+                path: "/admin/setup".to_string(),
+                headers: Vec::new(),
+                body: String::new(),
+            },
+            &Config::default(),
+        )
+        .expect("admin setup response builds");
+
+        assert_eq!(response, Response::json_error(403, "admin_setup_forbidden"));
     }
 
     #[test]
@@ -928,7 +1070,7 @@ mod tests {
                 headers: Vec::new(),
                 body: r#"{"email":"missing-domain@"}"#.to_string(),
             },
-            &Config::default(),
+            &no_database_config(),
         )
         .expect("email start response builds");
 
@@ -945,7 +1087,7 @@ mod tests {
                 headers: Vec::new(),
                 body: r#"{"email":"user@example.com","code":"123456"}"#.to_string(),
             },
-            &Config::default(),
+            &no_database_config(),
         )
         .expect("email verify response builds");
 
@@ -1342,7 +1484,7 @@ mod tests {
                 body: r#"{"request_id":"00000000-0000-4000-8000-000000000000","signature":"signature"}"#
                     .to_string(),
             },
-            &Config::default(),
+            &no_database_config(),
         )
         .expect("ed25519 verify response builds");
 
@@ -2561,6 +2703,13 @@ mod tests {
                 );",
             )
             .expect("auth schema exists");
+    }
+
+    fn no_database_config() -> Config {
+        Config {
+            database: None,
+            ..Config::default()
+        }
     }
 
     fn register_verify_body() -> String {

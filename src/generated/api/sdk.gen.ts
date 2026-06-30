@@ -2,7 +2,7 @@
 
 import { client } from './client.gen.js';
 import type { Client, Options as Options2, TDataShape } from './client/index.js';
-import type { CreateEd25519CredentialData, CreateEd25519CredentialErrors, CreateEd25519CredentialResponses, CreateWebauthnAuthenticationOptionsData, CreateWebauthnAuthenticationOptionsErrors, CreateWebauthnAuthenticationOptionsResponses, CreateWebauthnRegistrationOptionsData, CreateWebauthnRegistrationOptionsErrors, CreateWebauthnRegistrationOptionsResponses, DeleteEd25519CredentialData, DeleteEd25519CredentialErrors, DeleteEd25519CredentialResponses, DeleteWebauthnCredentialData, DeleteWebauthnCredentialErrors, DeleteWebauthnCredentialResponses, GetCurrentUserData, GetCurrentUserErrors, GetCurrentUserResponses, GetOpenApiJsonData, GetOpenApiJsonResponses, GetOpenApiYamlData, GetOpenApiYamlResponses, ListEd25519CredentialsData, ListEd25519CredentialsErrors, ListEd25519CredentialsResponses, ListJwksData, ListJwksResponses, LogoutCurrentSessionData, LogoutCurrentSessionErrors, LogoutCurrentSessionResponses, LogoutPeerSessionData, LogoutPeerSessionErrors, LogoutPeerSessionResponses, RefreshSessionData, RefreshSessionErrors, RefreshSessionResponses, StartEd25519AuthenticationData, StartEd25519AuthenticationErrors, StartEd25519AuthenticationResponses, StartEmailAuthData, StartEmailAuthErrors, StartEmailAuthResponses, UpdateEd25519CredentialData, UpdateEd25519CredentialErrors, UpdateEd25519CredentialResponses, VerifyEd25519AuthenticationData, VerifyEd25519AuthenticationErrors, VerifyEd25519AuthenticationResponses, VerifyEmailAuthData, VerifyEmailAuthErrors, VerifyEmailAuthResponses, VerifyWebauthnAuthenticationData, VerifyWebauthnAuthenticationErrors, VerifyWebauthnAuthenticationResponses, VerifyWebauthnRegistrationData, VerifyWebauthnRegistrationErrors, VerifyWebauthnRegistrationResponses } from './types.gen.js';
+import type { CreateEd25519CredentialData, CreateEd25519CredentialErrors, CreateEd25519CredentialResponses, CreateWebauthnAuthenticationOptionsData, CreateWebauthnAuthenticationOptionsErrors, CreateWebauthnAuthenticationOptionsResponses, CreateWebauthnRegistrationOptionsData, CreateWebauthnRegistrationOptionsErrors, CreateWebauthnRegistrationOptionsResponses, DeleteEd25519CredentialData, DeleteEd25519CredentialErrors, DeleteEd25519CredentialResponses, DeleteWebauthnCredentialData, DeleteWebauthnCredentialErrors, DeleteWebauthnCredentialResponses, GetAdminSetupData, GetAdminSetupErrors, GetAdminSetupResponses, GetCurrentUserData, GetCurrentUserErrors, GetCurrentUserResponses, GetOpenApiJsonData, GetOpenApiJsonResponses, GetOpenApiYamlData, GetOpenApiYamlResponses, ListEd25519CredentialsData, ListEd25519CredentialsErrors, ListEd25519CredentialsResponses, ListJwksData, ListJwksResponses, LogoutCurrentSessionData, LogoutCurrentSessionErrors, LogoutCurrentSessionResponses, LogoutPeerSessionData, LogoutPeerSessionErrors, LogoutPeerSessionResponses, RefreshSessionData, RefreshSessionErrors, RefreshSessionResponses, StartEd25519AuthenticationData, StartEd25519AuthenticationErrors, StartEd25519AuthenticationResponses, StartEmailAuthData, StartEmailAuthErrors, StartEmailAuthResponses, UpdateAdminSetupData, UpdateAdminSetupErrors, UpdateAdminSetupResponses, UpdateEd25519CredentialData, UpdateEd25519CredentialErrors, UpdateEd25519CredentialResponses, VerifyEd25519AuthenticationData, VerifyEd25519AuthenticationErrors, VerifyEd25519AuthenticationResponses, VerifyEmailAuthData, VerifyEmailAuthErrors, VerifyEmailAuthResponses, VerifyWebauthnAuthenticationData, VerifyWebauthnAuthenticationErrors, VerifyWebauthnAuthenticationResponses, VerifyWebauthnRegistrationData, VerifyWebauthnRegistrationErrors, VerifyWebauthnRegistrationResponses } from './types.gen.js';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -17,6 +17,23 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
      */
     meta?: Record<string, unknown>;
 };
+
+/**
+ * Read local admin setup state
+ */
+export const getAdminSetup = <ThrowOnError extends boolean = false>(options?: Options<GetAdminSetupData, ThrowOnError>) => (options?.client ?? client).get<GetAdminSetupResponses, GetAdminSetupErrors, ThrowOnError>({ url: '/admin/setup', ...options });
+
+/**
+ * Configure local origin and SMTP setup
+ */
+export const updateAdminSetup = <ThrowOnError extends boolean = false>(options: Options<UpdateAdminSetupData, ThrowOnError>) => (options.client ?? client).put<UpdateAdminSetupResponses, UpdateAdminSetupErrors, ThrowOnError>({
+    url: '/admin/setup',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * Start the email OTP flow

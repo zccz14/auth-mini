@@ -5,9 +5,6 @@ import { MemoryRouter } from 'react-router-dom';
 import { AppRouter } from '../app/router';
 import { AUTH_ORIGIN_KEY } from '@/lib/demo-storage';
 
-const hasExactText = (value: string) => (_: string, node: Element | null) =>
-  node?.textContent === value;
-
 describe('AppRouter', () => {
   it('renders top-level nav entries for the app shell', () => {
     render(
@@ -71,38 +68,20 @@ describe('AppRouter', () => {
 
     expect(screen.getByLabelText('Auth server origin')).toBeInTheDocument();
     expect(screen.getByText('Page origin')).toBeInTheDocument();
-    expect(screen.getByText('Startup commands')).toBeInTheDocument();
+    expect(screen.getByLabelText('Allowed page origin')).toHaveValue(
+      'http://localhost:3000',
+    );
+    expect(screen.getByLabelText('SMTP host')).toBeInTheDocument();
     expect(
-      screen.getByText(/only need this page when you want to self-host/i),
+      screen.getByText('auth-mini --issuer https://auth.zccz14.com'),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/official demo backend already works by default/i),
+      screen.getByText(/configure a self-hosted auth-mini instance/i),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        'npx auth-mini origin add ./auth-mini.sqlite --value http://localhost:3000',
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        'npx auth-mini start ./auth-mini.sqlite --issuer https://auth.zccz14.com',
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        hasExactText(
-          "npx auth-mini smtp add ./auth-mini.sqlite  --from-email 'sample@your-domain.com' --from-name 'sample-name' --host 'smtp.sample.com' --port 465 --secure --username 'sample@your-domain.com' --password '<smtp-password>'",
-        ),
-      ),
-    ).toBeInTheDocument();
+    expect(screen.queryByText(/auth-mini origin/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/auth-mini smtp/i)).not.toBeInTheDocument();
     expect(
       screen.queryByText(/npm --prefix examples\/demo run dev/i),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByText(/npx auth-mini start .*--host\s/i),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByText(/npx auth-mini start .*--port\s/i),
     ).not.toBeInTheDocument();
   });
 

@@ -27,11 +27,7 @@ That means your backend usually sees only the access token. It verifies the JWT 
 
 ## Why `/jwks` exists
 
-`/jwks` lets API consumers verify access tokens without sharing auth-mini's private keys and without hitting the auth database for every protected request.
-
-`rotate jwks` promotes `STANDBY` to `CURRENT`, then generates a fresh `STANDBY`. `/jwks` always publishes the `CURRENT` and `STANDBY` keys.
-
-Because the previous `CURRENT` key is not retained after rotation, consumers that refresh JWKS after rotation may be unable to verify still-valid access tokens signed before rotation. Plan rotation timing and token lifetimes accordingly.
+`/jwks` lets API consumers verify access tokens without sharing auth-mini's private keys and without hitting the auth database for every protected request. auth-mini initializes and publishes `CURRENT` and `STANDBY` keys automatically when the database is created.
 
 ## Integration boundary
 

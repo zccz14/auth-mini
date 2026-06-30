@@ -27,34 +27,33 @@ docker run --name auth-mini \
   -p 7777:7777 \
   -v auth-mini-data:/var/lib/auth-mini \
   ghcr.io/zccz14/auth-mini:latest \
-  start /var/lib/auth-mini/auth-mini.sqlite --host 0.0.0.0 --port 7777 --issuer https://auth.zccz14.com
+  --db /var/lib/auth-mini/auth-mini.sqlite --host 0.0.0.0 --port 7777 --issuer https://auth.zccz14.com
 ```
 
 Runtime contract:
 
 - entrypoint: `auth-mini`
-- default command: `start /var/lib/auth-mini/auth-mini.sqlite --host 0.0.0.0 --port 7777 --issuer http://localhost:7777`
+- default command: `--db /var/lib/auth-mini/auth-mini.sqlite --host 0.0.0.0 --port 7777 --issuer http://localhost:7777`
 - port: `7777/tcp`
 - user: non-root uid `10001`
 - database path: `/var/lib/auth-mini/auth-mini.sqlite`
 - persistence: mount `/var/lib/auth-mini`
 
-The default command is for local smoke testing. For deployment, pass an explicit `start ... --issuer <public-origin>` command so JWT issuer, WebAuthn expectations, and SDK usage all match the public auth origin.
+The default command is for local smoke testing. For deployment, pass an explicit `--issuer <public-origin>` command so JWT issuer, WebAuthn expectations, and SDK usage all match the public auth origin.
 
 The Rust binary embeds the database schema and OpenAPI document. The container does not need `schema.sql` or `openapi.yaml` files at runtime.
 
 ## Post-start configuration
 
-After the container is healthy, complete normal instance setup inside the persisted database:
+After the container is healthy, complete normal instance setup through the GUI demo or the local admin setup API. For a local port-forwarded container:
 
 ```bash
-docker run --rm \
-  -v auth-mini-data:/var/lib/auth-mini \
-  ghcr.io/zccz14/auth-mini:latest \
-  origin add /var/lib/auth-mini/auth-mini.sqlite --value https://app.example.com
+curl -X PUT http://localhost:7777/admin/setup \
+  -H 'content-type: application/json' \
+  -d '{"origin":"https://app.example.com","smtp":{"host":"smtp.example.com","port":587,"username":"mailer","password":"secret","from_email":"noreply@example.com","secure":false,"weight":1}}'
 ```
 
-Add SMTP config with `auth-mini smtp add ...` in the same way.
+The admin setup API is accepted only from loopback clients and never returns the SMTP password.
 
 ## Publishing status
 

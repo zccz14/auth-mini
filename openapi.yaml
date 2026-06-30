@@ -8,6 +8,73 @@ servers:
 security:
   - bearerAuth: []
 paths:
+  /admin/setup:
+    get:
+      security: []
+      tags:
+        - admin
+      operationId: getAdminSetup
+      summary: Read local admin setup state
+      responses:
+        '200':
+          description: Current admin setup state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSetupState'
+        '403':
+          description: Admin setup is only available from loopback clients
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: admin_setup_forbidden
+        '501':
+          description: Database-backed setup is not available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: not_implemented
+    put:
+      security: []
+      tags:
+        - admin
+      operationId: updateAdminSetup
+      summary: Configure local origin and SMTP setup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminSetupRequest'
+      responses:
+        '200':
+          description: Updated admin setup state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSetupState'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '403':
+          description: Admin setup is only available from loopback clients
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: admin_setup_forbidden
+        '501':
+          description: Database-backed setup is not available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: not_implemented
   /email/start:
     post:
       security: []
@@ -636,6 +703,118 @@ components:
       properties:
         error:
           type: string
+    AdminSetupRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - origin
+        - smtp
+      properties:
+        origin:
+          type: string
+          format: uri
+        smtp:
+          $ref: '#/components/schemas/AdminSetupSmtpInput'
+    AdminSetupSmtpInput:
+      type: object
+      additionalProperties: false
+      required:
+        - host
+        - port
+        - username
+        - password
+        - from_email
+      properties:
+        host:
+          type: string
+          minLength: 1
+        port:
+          type: integer
+          minimum: 1
+        username:
+          type: string
+          minLength: 1
+        password:
+          type: string
+          minLength: 1
+          writeOnly: true
+        from_email:
+          type: string
+          format: email
+        from_name:
+          type: string
+          default: ''
+        secure:
+          type: boolean
+          default: false
+        weight:
+          type: integer
+          minimum: 1
+          default: 1
+    AdminSetupState:
+      type: object
+      additionalProperties: false
+      required:
+        - origins
+        - smtp
+      properties:
+        origins:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminAllowedOrigin'
+        smtp:
+          oneOf:
+            - $ref: '#/components/schemas/AdminSmtpConfigSummary'
+            - type: 'null'
+    AdminAllowedOrigin:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - origin
+        - created_at
+      properties:
+        id:
+          type: integer
+        origin:
+          type: string
+          format: uri
+        created_at:
+          type: string
+          format: date-time
+    AdminSmtpConfigSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - host
+        - port
+        - username
+        - from_email
+        - from_name
+        - secure
+        - is_active
+        - weight
+      properties:
+        id:
+          type: integer
+        host:
+          type: string
+        port:
+          type: integer
+        username:
+          type: string
+        from_email:
+          type: string
+          format: email
+        from_name:
+          type: string
+        secure:
+          type: boolean
+        is_active:
+          type: boolean
+        weight:
+          type: integer
     EmailStartRequest:
       type: object
       additionalProperties: false
