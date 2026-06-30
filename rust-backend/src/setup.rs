@@ -7,17 +7,10 @@ use crate::ed25519::{create_credential, credential_ids_by_public_key, Credential
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AdminSetupState {
     pub issuer: String,
+    pub rp_id: String,
     pub admin_user_id: Option<String>,
     pub admin_ed25519: Option<AdminEd25519CredentialSummary>,
-    pub origins: Vec<AllowedOrigin>,
     pub smtp: Option<SmtpConfigSummary>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct AllowedOrigin {
-    pub id: i64,
-    pub origin: String,
-    pub created_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -41,7 +34,7 @@ pub struct AdminSetupRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct AdminConfigRequest {
     pub issuer: String,
-    pub origin: String,
+    pub rp_id: String,
     pub smtp: Option<SmtpConfigInput>,
 }
 
@@ -91,16 +84,16 @@ pub fn parse_admin_config_request(body: &str) -> Result<AdminConfigRequest, Setu
 }
 
 pub fn read_admin_setup(connection: &Connection) -> Result<AdminSetupState, SetupError> {
-    let (issuer, admin_user_id) = read_app_meta(connection)?;
+    let (issuer, rp_id, admin_user_id) = read_app_meta(connection)?;
     Ok(AdminSetupState {
         issuer,
+        rp_id,
         admin_ed25519: admin_user_id
             .as_deref()
             .map(|user_id| admin_ed25519_summary(connection, user_id))
             .transpose()?
             .flatten(),
         admin_user_id,
-        origins: list_allowed_origins(connection)?,
         smtp: first_smtp_config(connection)?,
     })
 }
@@ -109,7 +102,7 @@ pub fn apply_admin_setup(
     connection: &Connection,
     request: &AdminSetupRequest,
 ) -> Result<AdminSetupState, SetupError> {
-    if read_app_meta(connection)?.1.is_some() {
+    if read_app_meta(connection)?.2.is_some() {
         return Err(SetupError::AlreadyInitialized);
     }
     upsert_admin_ed25519(connection, &request.admin_ed25519)?;
@@ -121,29 +114,30 @@ pub fn apply_admin_config(
     request: &AdminConfigRequest,
 ) -> Result<AdminSetupState, SetupError> {
     let issuer = normalize_allowed_origin(&request.issuer)?;
-    update_issuer(connection, &issuer)?;
-    upsert_allowed_origin(connection, &request.origin)?;
+    let rp_id = normalize_rp_id(&request.rp_id)?;
+    validate_rp_id_for_issuer(&issuer, &rp_id)?;
+    update_app_config(connection, &issuer, &rp_id)?;
     if let Some(smtp) = &request.smtp {
         upsert_smtp_config(connection, smtp)?;
     }
     read_admin_setup(connection)
 }
 
-fn read_app_meta(connection: &Connection) -> Result<(String, Option<String>), SetupError> {
+fn read_app_meta(connection: &Connection) -> Result<(String, String, Option<String>), SetupError> {
     connection
         .query_row(
-            "SELECT issuer, admin_user_id FROM app_meta WHERE id = 'APP'",
+            "SELECT issuer, rp_id, admin_user_id FROM app_meta WHERE id = 'APP'",
             [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .map_err(|_| SetupError::Database)
 }
 
-fn update_issuer(connection: &Connection, issuer: &str) -> Result<(), SetupError> {
+fn update_app_config(connection: &Connection, issuer: &str, rp_id: &str) -> Result<(), SetupError> {
     connection
         .execute(
-            "UPDATE app_meta SET issuer = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = 'APP'",
-            [issuer],
+            "UPDATE app_meta SET issuer = ?1, rp_id = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = 'APP'",
+            params![issuer, rp_id],
         )
         .map_err(|_| SetupError::Database)?;
 
@@ -173,7 +167,7 @@ fn upsert_admin_ed25519(
 }
 
 fn ensure_admin_user(connection: &Connection) -> Result<String, SetupError> {
-    let (_, admin_user_id) = read_app_meta(connection)?;
+    let (_, _, admin_user_id) = read_app_meta(connection)?;
     if let Some(user_id) = admin_user_id {
         return Ok(user_id);
     }
@@ -267,36 +261,6 @@ fn admin_ed25519_summary(
         )
         .optional()
         .map_err(|_| SetupError::Database)
-}
-
-fn list_allowed_origins(connection: &Connection) -> Result<Vec<AllowedOrigin>, SetupError> {
-    let mut statement = connection
-        .prepare("SELECT id, origin, created_at FROM allowed_origins ORDER BY id ASC")
-        .map_err(|_| SetupError::Database)?;
-    let rows = statement
-        .query_map([], |row| {
-            Ok(AllowedOrigin {
-                id: row.get(0)?,
-                origin: row.get(1)?,
-                created_at: row.get(2)?,
-            })
-        })
-        .map_err(|_| SetupError::Database)?;
-
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|_| SetupError::Database)
-}
-
-fn upsert_allowed_origin(connection: &Connection, input: &str) -> Result<(), SetupError> {
-    let origin = normalize_allowed_origin(input)?;
-    connection
-        .execute(
-            "INSERT OR IGNORE INTO allowed_origins (origin) VALUES (?1)",
-            [origin],
-        )
-        .map_err(|_| SetupError::Database)?;
-
-    Ok(())
 }
 
 fn first_smtp_config(connection: &Connection) -> Result<Option<SmtpConfigSummary>, SetupError> {
@@ -425,6 +389,63 @@ fn normalize_allowed_origin(input: &str) -> Result<String, SetupError> {
     Ok(format!("{}://{}{}", url.scheme(), host, port))
 }
 
+fn normalize_rp_id(input: &str) -> Result<String, SetupError> {
+    let trimmed = input.trim().to_ascii_lowercase();
+    let rp_id = trimmed.trim_end_matches('.');
+
+    if rp_id.is_empty()
+        || rp_id.contains(':')
+        || rp_id.contains('/')
+        || rp_id.contains('@')
+        || rp_id.contains(' ')
+        || rp_id.split('.').any(|label| label.is_empty())
+        || !rp_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'.')
+    {
+        return Err(SetupError::InvalidRequest);
+    }
+
+    Ok(rp_id.to_string())
+}
+
+fn validate_rp_id_for_issuer(issuer: &str, rp_id: &str) -> Result<(), SetupError> {
+    let url = Url::parse(issuer).map_err(|_| SetupError::InvalidRequest)?;
+    let host = format_origin_host(url.host().ok_or(SetupError::InvalidRequest)?);
+
+    if is_rp_id_allowed_for_origin(&host, rp_id) {
+        return Ok(());
+    }
+
+    Err(SetupError::InvalidRequest)
+}
+
+fn is_rp_id_allowed_for_origin(origin_hostname: &str, rp_id: &str) -> bool {
+    if origin_hostname == rp_id {
+        return true;
+    }
+
+    if is_ip_address(origin_hostname)
+        || is_ip_address(rp_id)
+        || origin_hostname == "localhost"
+        || rp_id == "localhost"
+    {
+        return false;
+    }
+
+    origin_hostname.ends_with(&format!(".{rp_id}"))
+}
+
+fn is_ip_address(value: &str) -> bool {
+    value.contains(':') || {
+        let parts = value.split('.').collect::<Vec<_>>();
+        parts.len() == 4
+            && parts
+                .iter()
+                .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+    }
+}
+
 fn format_origin_host(host: Host<&str>) -> String {
     match host {
         Host::Domain(domain) => domain.trim_end_matches('.').to_ascii_lowercase(),
@@ -469,11 +490,11 @@ mod tests {
     use crate::db::initialize_database_from_schema;
 
     #[test]
-    fn admin_setup_writes_origin_and_smtp_without_returning_password() {
+    fn admin_setup_writes_rp_id_and_smtp_without_returning_password() {
         let connection = test_connection("setup-roundtrip");
         let request = AdminConfigRequest {
             issuer: "https://auth.example.com".to_string(),
-            origin: "https://DEMO.example.com".to_string(),
+            rp_id: "EXAMPLE.com.".to_string(),
             smtp: Some(SmtpConfigInput {
                 host: "smtp.example.com".to_string(),
                 port: 587,
@@ -489,7 +510,7 @@ mod tests {
         let state = apply_admin_config(&connection, &request).expect("setup applies");
 
         assert_eq!(state.issuer, "https://auth.example.com");
-        assert_eq!(state.origins[0].origin, "https://demo.example.com");
+        assert_eq!(state.rp_id, "example.com");
         assert_eq!(
             state.smtp.as_ref().expect("smtp exists").host,
             "smtp.example.com"
@@ -546,9 +567,20 @@ mod tests {
     }
 
     #[test]
-    fn admin_setup_rejects_invalid_origin_and_smtp() {
+    fn admin_setup_rejects_invalid_issuer_rp_id_and_smtp() {
         assert_eq!(
             normalize_allowed_origin("ftp://example.com"),
+            Err(SetupError::InvalidRequest)
+        );
+        assert_eq!(
+            apply_admin_config(
+                &test_connection("setup-invalid-rp-id"),
+                &AdminConfigRequest {
+                    issuer: "https://auth.example.com".to_string(),
+                    rp_id: "login.example.com".to_string(),
+                    smtp: None,
+                },
+            ),
             Err(SetupError::InvalidRequest)
         );
         let mut request = valid_request();
@@ -573,6 +605,7 @@ mod tests {
 
         let admin_user_id = state.admin_user_id.expect("admin user id exists");
         assert_eq!(state.issuer, "http://localhost:7777");
+        assert_eq!(state.rp_id, "localhost");
         assert_eq!(
             state.admin_ed25519.expect("admin credential exists").name,
             "Admin key"
@@ -626,7 +659,7 @@ mod tests {
     fn valid_request() -> AdminConfigRequest {
         AdminConfigRequest {
             issuer: "https://auth.example.com".to_string(),
-            origin: "https://demo.example.com".to_string(),
+            rp_id: "auth.example.com".to_string(),
             smtp: Some(SmtpConfigInput {
                 host: "smtp.example.com".to_string(),
                 port: 587,
@@ -651,7 +684,7 @@ mod tests {
         let connection = Connection::open(db_path).expect("database opens");
         connection
             .execute(
-                "INSERT OR IGNORE INTO app_meta (id, issuer) VALUES ('APP', 'http://localhost:7777')",
+                "INSERT OR IGNORE INTO app_meta (id, issuer, rp_id) VALUES ('APP', 'http://localhost:7777', 'localhost')",
                 [],
             )
             .expect("app meta exists");

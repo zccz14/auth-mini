@@ -7,6 +7,7 @@ use crate::jwks::bootstrap_keys;
 
 const SCHEMA_SQL: &str = include_str!("../../sql/schema.sql");
 const DEFAULT_ISSUER: &str = "http://localhost:7777";
+const DEFAULT_RP_ID: &str = "localhost";
 
 pub fn initialize_database(
     db_path: &Path,
@@ -52,6 +53,16 @@ pub(crate) fn read_app_issuer(connection: &Connection) -> rusqlite::Result<Strin
     })
 }
 
+pub(crate) fn read_app_webauthn_config(
+    connection: &Connection,
+) -> rusqlite::Result<(String, String)> {
+    connection.query_row(
+        "SELECT issuer, rp_id FROM app_meta WHERE id = 'APP'",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+}
+
 fn migrate_runtime_schema(connection: &Connection) -> rusqlite::Result<()> {
     // COMPATIBILITY: SQLite files created before app_meta allowed only non-null
     // users.email. Remove after old auth-mini SQLite files no longer need
@@ -64,20 +75,27 @@ fn migrate_runtime_schema(connection: &Connection) -> rusqlite::Result<()> {
         "CREATE TABLE IF NOT EXISTS app_meta (
             id TEXT PRIMARY KEY CHECK (id = 'APP'),
             issuer TEXT NOT NULL,
+            rp_id TEXT NOT NULL DEFAULT 'localhost',
             admin_user_id TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (admin_user_id) REFERENCES users(id) ON DELETE SET NULL
         );",
     )?;
+    if !table_has_column(connection, "app_meta", "rp_id")? {
+        connection.execute(
+            "ALTER TABLE app_meta ADD COLUMN rp_id TEXT NOT NULL DEFAULT 'localhost'",
+            [],
+        )?;
+    }
 
     Ok(())
 }
 
 fn ensure_app_meta(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute(
-        "INSERT OR IGNORE INTO app_meta (id, issuer) VALUES ('APP', ?1)",
-        [DEFAULT_ISSUER],
+        "INSERT OR IGNORE INTO app_meta (id, issuer, rp_id) VALUES ('APP', ?1, ?2)",
+        [DEFAULT_ISSUER, DEFAULT_RP_ID],
     )?;
 
     Ok(())
@@ -91,7 +109,7 @@ fn assert_required_schema(connection: &Connection) -> rusqlite::Result<()> {
         ),
         (
             "app_meta",
-            &["id", "issuer", "admin_user_id", "created_at", "updated_at"][..],
+            &["id", "issuer", "rp_id", "admin_user_id", "created_at", "updated_at"][..],
         ),
         (
             "sessions",
@@ -136,7 +154,6 @@ fn assert_required_schema(connection: &Connection) -> rusqlite::Result<()> {
                 "weight",
             ][..],
         ),
-        ("allowed_origins", &["id", "origin", "created_at"][..]),
         (
             "webauthn_credentials",
             &[

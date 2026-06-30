@@ -10,13 +10,13 @@ use webauthn_rs::prelude::{
     RegisterPublicKeyCredential, Url, Uuid, Webauthn, WebauthnBuilder,
 };
 
+use crate::db::read_app_webauthn_config;
+
 const WEBAUTHN_CHALLENGE_SECONDS: i64 = 300;
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct OptionsRequest {
-    rp_id: String,
-}
+pub(crate) struct OptionsRequest {}
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum RegisterOptionsError {
@@ -120,16 +120,7 @@ struct ResolvedOptionsInput {
 }
 
 pub(crate) fn parse_options_request(body: &str) -> Result<OptionsRequest, serde_json::Error> {
-    let request: OptionsRequest = serde_json::from_str(body)?;
-
-    if request.rp_id.trim().is_empty() {
-        return Err(serde_json::Error::io(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "invalid rp_id",
-        )));
-    }
-
-    Ok(request)
+    serde_json::from_str(body)
 }
 
 pub(crate) fn parse_register_verify_request(
@@ -193,11 +184,10 @@ pub(crate) fn parse_authentication_verify_request(
 pub(crate) fn register_options(
     connection: &Connection,
     user_id: &str,
-    request: &OptionsRequest,
-    origin: &str,
+    _request: &OptionsRequest,
 ) -> Result<Value, RegisterOptionsError> {
     let display_name = user_display_name(connection, user_id)?;
-    let resolved = resolve_options_input(connection, request, origin)
+    let resolved = resolve_options_input(connection)
         .map_err(|_| RegisterOptionsError::WebauthnRegistration)?;
     let request_id = random_uuid(connection).map_err(|_| RegisterOptionsError::Request)?;
     let webauthn = build_webauthn(&resolved.rp_id, &resolved.origin)
@@ -276,10 +266,9 @@ pub(crate) fn register_options(
 
 pub(crate) fn authentication_options(
     connection: &Connection,
-    request: &OptionsRequest,
-    origin: &str,
+    _request: &OptionsRequest,
 ) -> Result<Value, AuthenticationOptionsError> {
-    let resolved = resolve_options_input(connection, request, origin)
+    let resolved = resolve_options_input(connection)
         .map_err(|_| AuthenticationOptionsError::InvalidWebauthnAuthentication)?;
     let request_id =
         random_uuid(connection).map_err(|_| AuthenticationOptionsError::InvalidRequest)?;
@@ -353,23 +342,10 @@ pub(crate) fn register_verify(
     connection: &Connection,
     user_id: &str,
     request: &RegisterVerifyRequest,
-    origin: &str,
 ) -> Result<Value, RegisterVerifyError> {
-    let origin = normalize_allowed_origin(origin)
-        .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)?;
     let challenge = get_valid_register_challenge(connection, &request.request_id)?;
-    let allowed_origins = list_allowed_origins(connection)
-        .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)?;
 
     if challenge.user_id.as_deref() != Some(user_id) {
-        return Err(RegisterVerifyError::InvalidWebauthnRegistration);
-    }
-
-    if challenge.origin != origin {
-        return Err(RegisterVerifyError::InvalidWebauthnRegistration);
-    }
-
-    if !allowed_origins.iter().any(|allowed| allowed == &origin) {
         return Err(RegisterVerifyError::InvalidWebauthnRegistration);
     }
 
@@ -430,21 +406,8 @@ pub(crate) fn register_verify(
 pub(crate) fn authentication_verify(
     connection: &Connection,
     request: &AuthenticationVerifyRequest,
-    origin: &str,
 ) -> Result<AuthenticationVerifyOutcome, AuthenticationVerifyError> {
-    let origin = normalize_allowed_origin(origin)
-        .map_err(|_| AuthenticationVerifyError::InvalidWebauthnAuthentication)?;
     let challenge = get_valid_authentication_challenge(connection, &request.request_id)?;
-    let allowed_origins = list_allowed_origins(connection)
-        .map_err(|_| AuthenticationVerifyError::InvalidWebauthnAuthentication)?;
-
-    if challenge.origin != origin {
-        return Err(AuthenticationVerifyError::InvalidWebauthnAuthentication);
-    }
-
-    if !allowed_origins.iter().any(|allowed| allowed == &origin) {
-        return Err(AuthenticationVerifyError::InvalidWebauthnAuthentication);
-    }
 
     let credential_row =
         get_authentication_credential(connection, &request.credential.id, &challenge.rp_id)?;
@@ -651,45 +614,13 @@ fn get_authentication_credential(
         .ok_or(AuthenticationVerifyError::InvalidWebauthnAuthentication)
 }
 
-fn list_allowed_origins(connection: &Connection) -> Result<Vec<String>, RegisterOptionsError> {
-    let mut statement = connection
-        .prepare("SELECT origin FROM allowed_origins ORDER BY id ASC")
-        .map_err(|_| RegisterOptionsError::WebauthnRegistration)?;
-    let rows = statement
-        .query_map([], |row| row.get::<_, String>(0))
-        .map_err(|_| RegisterOptionsError::WebauthnRegistration)?;
-    let mut origins = Vec::new();
-
-    for row in rows {
-        let origin = row.map_err(|_| RegisterOptionsError::WebauthnRegistration)?;
-        origins.push(
-            normalize_allowed_origin(&origin)
-                .map_err(|_| RegisterOptionsError::WebauthnRegistration)?,
-        );
-    }
-
-    Ok(origins)
-}
-
-fn resolve_options_input(
-    connection: &Connection,
-    request: &OptionsRequest,
-    origin: &str,
-) -> Result<ResolvedOptionsInput, ()> {
-    let origin = normalize_allowed_origin(origin)?;
+fn resolve_options_input(connection: &Connection) -> Result<ResolvedOptionsInput, ()> {
+    let (issuer, rp_id) = read_app_webauthn_config(connection).map_err(|_| ())?;
+    let origin = normalize_allowed_origin(&issuer)?;
     let origin_hostname = origin_hostname(&origin).ok_or(())?;
-    let rp_id = normalize_rp_id(&request.rp_id)?;
-    let allowed_origins = list_allowed_origins(connection).map_err(|_| ())?;
-
-    if !allowed_origins.iter().any(|allowed| allowed == &origin) {
-        return Err(());
-    }
+    let rp_id = normalize_rp_id(&rp_id)?;
 
     if !is_rp_id_allowed_for_origin(&origin_hostname, &rp_id) {
-        return Err(());
-    }
-
-    if !rp_id_covered_by_allowed_origins(&allowed_origins, &rp_id) {
         return Err(());
     }
 
@@ -749,14 +680,6 @@ fn normalize_rp_id(input: &str) -> Result<String, ()> {
     }
 
     Ok(rp_id.to_string())
-}
-
-fn rp_id_covered_by_allowed_origins(allowed_origins: &[String], rp_id: &str) -> bool {
-    allowed_origins.iter().any(|origin| {
-        origin_hostname(origin)
-            .map(|hostname| is_rp_id_allowed_for_origin(&hostname, rp_id))
-            .unwrap_or(false)
-    })
 }
 
 fn is_rp_id_allowed_for_origin(origin_hostname: &str, rp_id: &str) -> bool {
@@ -951,17 +874,9 @@ mod tests {
                 ("user-1", "user@example.com"),
             )
             .expect("user inserts");
-        connection
-            .execute(
-                "INSERT INTO allowed_origins (origin) VALUES (?1)",
-                ["https://app.example.com"],
-            )
-            .expect("origin inserts");
-        let request = OptionsRequest {
-            rp_id: "EXAMPLE.COM.".to_string(),
-        };
+        let request = OptionsRequest {};
 
-        let body = register_options(&connection, "user-1", &request, "https://app.example.com")
+        let body = register_options(&connection, "user-1", &request)
             .expect("options generate");
         let request_id = body["request_id"].as_str().expect("request id");
         let stored: (String, String, String, String, Option<String>) = connection
@@ -1007,18 +922,10 @@ mod tests {
                 ("user-1", "user@example.com"),
             )
             .expect("user inserts");
-        connection
-            .execute(
-                "INSERT INTO allowed_origins (origin) VALUES (?1)",
-                ["https://app.example.com"],
-            )
-            .expect("origin inserts");
-        let request = OptionsRequest {
-            rp_id: "app.example.com".to_string(),
-        };
-        let first = register_options(&connection, "user-1", &request, "https://app.example.com")
+        let request = OptionsRequest {};
+        let first = register_options(&connection, "user-1", &request)
             .expect("first options generate");
-        let second = register_options(&connection, "user-1", &request, "https://app.example.com")
+        let second = register_options(&connection, "user-1", &request)
             .expect("second options generate");
 
         let first_consumed_at: Option<String> = connection
@@ -1041,7 +948,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_register_options_for_sibling_rp_id() {
+    fn rejects_register_options_for_invalid_stored_rp_id() {
         let connection = Connection::open_in_memory().expect("database opens");
         create_register_options_schema(&connection);
         connection
@@ -1051,17 +958,12 @@ mod tests {
             )
             .expect("user inserts");
         connection
-            .execute(
-                "INSERT INTO allowed_origins (origin) VALUES (?1)",
-                ["https://app.example.com"],
-            )
-            .expect("origin inserts");
-        let request = OptionsRequest {
-            rp_id: "login.example.com".to_string(),
-        };
+            .execute("UPDATE app_meta SET rp_id = 'login.example.com'", [])
+            .expect("app meta updates");
+        let request = OptionsRequest {};
 
-        let error = register_options(&connection, "user-1", &request, "https://app.example.com")
-            .expect_err("sibling rp id is rejected");
+        let error = register_options(&connection, "user-1", &request)
+            .expect_err("stored sibling rp id is rejected");
 
         assert_eq!(error, RegisterOptionsError::WebauthnRegistration);
     }
@@ -1076,17 +978,9 @@ mod tests {
                 ["user-1"],
             )
             .expect("user inserts");
-        connection
-            .execute(
-                "INSERT INTO allowed_origins (origin) VALUES (?1)",
-                ["https://app.example.com"],
-            )
-            .expect("origin inserts");
-        let request = OptionsRequest {
-            rp_id: "app.example.com".to_string(),
-        };
+        let request = OptionsRequest {};
 
-        let body = register_options(&connection, "user-1", &request, "https://app.example.com")
+        let body = register_options(&connection, "user-1", &request)
             .expect("options generate");
 
         assert_eq!(body["publicKey"]["user"]["name"], "user-1");
@@ -1097,17 +991,9 @@ mod tests {
     fn creates_authentication_options_and_stores_anonymous_challenge() {
         let connection = Connection::open_in_memory().expect("database opens");
         create_register_options_schema(&connection);
-        connection
-            .execute(
-                "INSERT INTO allowed_origins (origin) VALUES (?1)",
-                ["https://app.example.com"],
-            )
-            .expect("origin inserts");
-        let request = OptionsRequest {
-            rp_id: "EXAMPLE.COM.".to_string(),
-        };
+        let request = OptionsRequest {};
 
-        let body = authentication_options(&connection, &request, "https://app.example.com")
+        let body = authentication_options(&connection, &request)
             .expect("options generate");
         let request_id = body["request_id"].as_str().expect("request id");
         let stored: (String, String, Option<String>, String, String) = connection
@@ -1142,21 +1028,16 @@ mod tests {
     }
 
     #[test]
-    fn rejects_authentication_options_for_unallowlisted_request_origin() {
+    fn rejects_authentication_options_for_invalid_stored_rp_id() {
         let connection = Connection::open_in_memory().expect("database opens");
         create_register_options_schema(&connection);
         connection
-            .execute(
-                "INSERT INTO allowed_origins (origin) VALUES (?1)",
-                ["https://app.example.com"],
-            )
-            .expect("origin inserts");
-        let request = OptionsRequest {
-            rp_id: "example.com".to_string(),
-        };
+            .execute("UPDATE app_meta SET rp_id = 'login.example.com'", [])
+            .expect("app meta updates");
+        let request = OptionsRequest {};
 
-        let error = authentication_options(&connection, &request, "https://evil.example.com")
-            .expect_err("unallowlisted request origin is rejected");
+        let error = authentication_options(&connection, &request)
+            .expect_err("stored sibling rp id is rejected");
 
         assert_eq!(
             error,
@@ -1192,12 +1073,6 @@ mod tests {
         create_webauthn_credentials_schema(&connection);
         connection
             .execute(
-                "INSERT INTO allowed_origins (origin) VALUES (?1)",
-                ["https://app.example.com"],
-            )
-            .expect("origin inserts");
-        connection
-            .execute(
                 "INSERT INTO webauthn_challenges
                  (request_id, type, state_json, user_id, expires_at, rp_id, origin)
                  VALUES (?1, 'register', ?2, ?3, ?4, ?5, ?6)",
@@ -1213,7 +1088,7 @@ mod tests {
             .expect("challenge inserts");
         let request = register_verify_base64_request();
 
-        let error = register_verify(&connection, "user-1", &request, "https://app.example.com")
+        let error = register_verify(&connection, "user-1", &request)
             .expect_err("wrong user is rejected");
 
         assert_eq!(error, RegisterVerifyError::InvalidWebauthnRegistration);
@@ -1224,12 +1099,6 @@ mod tests {
         let connection = Connection::open_in_memory().expect("database opens");
         create_register_options_schema(&connection);
         create_webauthn_credentials_schema(&connection);
-        connection
-            .execute(
-                "INSERT INTO allowed_origins (origin) VALUES (?1)",
-                ["https://app.example.com"],
-            )
-            .expect("origin inserts");
         connection
             .execute(
                 "INSERT INTO webauthn_challenges
@@ -1247,7 +1116,7 @@ mod tests {
             .expect("challenge inserts");
         let request = register_verify_base64_request();
 
-        let error = register_verify(&connection, "user-1", &request, "https://app.example.com")
+        let error = register_verify(&connection, "user-1", &request)
             .expect_err("legacy state is rejected");
         let consumed_at: Option<String> = connection
             .query_row(
@@ -1289,12 +1158,6 @@ mod tests {
         create_webauthn_credentials_schema(&connection);
         connection
             .execute(
-                "INSERT INTO allowed_origins (origin) VALUES (?1)",
-                ["https://app.example.com"],
-            )
-            .expect("origin inserts");
-        connection
-            .execute(
                 "INSERT INTO webauthn_challenges
                  (request_id, type, state_json, user_id, expires_at, rp_id, origin)
                  VALUES (?1, 'authenticate', ?2, NULL, ?3, ?4, ?5)",
@@ -1317,7 +1180,7 @@ mod tests {
             .expect("credential inserts");
         let request = authentication_verify_request();
 
-        let error = authentication_verify(&connection, &request, "https://app.example.com")
+        let error = authentication_verify(&connection, &request)
             .expect_err("legacy state is rejected");
         let stored: (Option<String>, Option<String>) = connection
             .query_row(
@@ -1343,12 +1206,6 @@ mod tests {
         create_webauthn_credentials_schema(&connection);
         connection
             .execute(
-                "INSERT INTO allowed_origins (origin) VALUES (?1)",
-                ["https://app.example.com"],
-            )
-            .expect("origin inserts");
-        connection
-            .execute(
                 "INSERT INTO webauthn_challenges
                  (request_id, type, state_json, user_id, expires_at, rp_id, origin)
                  VALUES (?1, 'authenticate', ?2, NULL, ?3, ?4, ?5)",
@@ -1371,7 +1228,7 @@ mod tests {
             .expect("credential inserts");
         let request = authentication_verify_request();
 
-        let error = authentication_verify(&connection, &request, "https://app.example.com")
+        let error = authentication_verify(&connection, &request)
             .expect_err("rp scoped credential is required");
 
         assert_eq!(
@@ -1389,11 +1246,16 @@ mod tests {
                     email_verified_at TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
-                CREATE TABLE allowed_origins (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    origin TEXT NOT NULL UNIQUE,
-                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                CREATE TABLE app_meta (
+                    id TEXT PRIMARY KEY CHECK (id = 'APP'),
+                    issuer TEXT NOT NULL,
+                    rp_id TEXT NOT NULL,
+                    admin_user_id TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
+                INSERT INTO app_meta (id, issuer, rp_id)
+                VALUES ('APP', 'https://app.example.com', 'example.com');
                 CREATE TABLE webauthn_challenges (
                     request_id TEXT PRIMARY KEY,
                     type TEXT NOT NULL CHECK (type IN ('register', 'authenticate')),

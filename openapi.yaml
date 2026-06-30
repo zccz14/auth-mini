@@ -104,7 +104,7 @@ paths:
       tags:
         - admin
       operationId: updateAdminConfig
-      summary: Update issuer, allowed origin, and SMTP configuration
+      summary: Update issuer, passkey RP ID, and SMTP configuration
       requestBody:
         required: true
         content:
@@ -529,7 +529,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/WebauthnRegistrationOptionsResponse'
         '400':
-          description: Request body or origin/rp_id combination is invalid
+          description: Request body or configured WebAuthn RP ID is invalid
           content:
             application/json:
               schema:
@@ -612,7 +612,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/WebauthnAuthenticationOptionsResponse'
         '400':
-          description: Request body or origin/rp_id combination is invalid
+          description: Request body or configured WebAuthn RP ID is invalid
           content:
             application/json:
               schema:
@@ -816,14 +816,14 @@ components:
       additionalProperties: false
       required:
         - issuer
-        - origin
+        - rp_id
       properties:
         issuer:
           type: string
           format: uri
-        origin:
+        rp_id:
           type: string
-          format: uri
+          minLength: 1
         smtp:
           oneOf:
             - $ref: '#/components/schemas/AdminSetupSmtpInput'
@@ -928,14 +928,16 @@ components:
       additionalProperties: false
       required:
         - issuer
+        - rp_id
         - admin_user_id
         - admin_ed25519
-        - origins
         - smtp
       properties:
         issuer:
           type: string
           format: uri
+        rp_id:
+          type: string
         admin_user_id:
           type:
             - 'string'
@@ -944,30 +946,10 @@ components:
           oneOf:
             - $ref: '#/components/schemas/AdminEd25519CredentialSummary'
             - type: 'null'
-        origins:
-          type: array
-          items:
-            $ref: '#/components/schemas/AdminAllowedOrigin'
         smtp:
           oneOf:
             - $ref: '#/components/schemas/AdminSmtpConfigSummary'
             - type: 'null'
-    AdminAllowedOrigin:
-      type: object
-      additionalProperties: false
-      required:
-        - id
-        - origin
-        - created_at
-      properties:
-        id:
-          type: integer
-        origin:
-          type: string
-          format: uri
-        created_at:
-          type: string
-          format: date-time
     AdminSmtpConfigSummary:
       type: object
       additionalProperties: false
@@ -1263,12 +1245,7 @@ components:
     WebauthnOptionsRequest:
       type: object
       additionalProperties: false
-      required:
-        - rp_id
-      properties:
-        rp_id:
-          type: string
-          minLength: 1
+      properties: {}
     WebauthnRegistrationOptionsResponse:
       type: object
       additionalProperties: false

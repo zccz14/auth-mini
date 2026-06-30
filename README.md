@@ -159,15 +159,15 @@ For deployment, the CLI only accepts the bind host, bind port, and database path
 auth-mini --host 127.0.0.1 --port 7777 --db ./auth-mini.sqlite
 ```
 
-Configure the externally visible issuer, browser page origin, optional admin Ed25519 bootstrap key, and optional SMTP settings from the demo setup screen, or call the loopback-only admin setup API from the machine running auth-mini:
+Initialize the administrator Ed25519 credential from the demo setup screen, or call the loopback-only admin setup API from the machine running auth-mini:
 
 ```bash
 curl -X PUT http://127.0.0.1:7777/admin/setup \
   -H 'content-type: application/json' \
-  -d '{"issuer":"https://auth.your-domain.com","origin":"https://frontend.your-domain.com","admin_ed25519":{"name":"ops laptop","public_key":"<base64url-ed25519-public-key>"},"smtp":{"host":"smtp.sample.com","port":465,"username":"sample@your-domain.com","password":"<smtp-password>","from_email":"sample@your-domain.com","from_name":"sample-name","secure":true,"weight":1}}'
+  -d '{"admin_ed25519":{"name":"ops laptop","public_key":"<base64url-ed25519-public-key>"}}'
 ```
 
-The setup API writes `app_meta`, including the issuer stored at `app_meta.issuer`. It also configures WebAuthn/browser origins, optional SMTP for email OTP, and optional admin Ed25519 bootstrap. SMTP is not required for bootstrap, the SMTP password is never returned, and `admin_ed25519` can create an admin user without an email address for later Ed25519 login. HTTP CORS is served with `Access-Control-Allow-Origin: *`, so downstream apps need to manage that exposure carefully. No need to add backend API origins.
+After admin sign-in, configure the externally visible issuer, passkey RP ID, and optional SMTP settings from the admin configuration page or `/admin/config`. The issuer is stored at `app_meta.issuer`, and passkey registration/login use the single `app_meta.rp_id`; the WebAuthn origin is the Auth Mini server origin derived from the issuer. SMTP is not required for bootstrap, the SMTP password is never returned, and `admin_ed25519` can create an admin user without an email address for later Ed25519 login. HTTP CORS is served with `Access-Control-Allow-Origin: *`, so downstream apps need to manage that exposure carefully.
 
 When the Rust binary DB path is omitted, it uses `~/.auth-mini/default.sqlite3`. Server startup creates the SQLite file, parent directory, `app_meta`, JWKS keys, and schema automatically when missing. The Rust binary prints the SQLite database path it uses to stderr. The Rust binary embeds the database schema and `openapi.yaml`; runtime initialization uses the embedded schema. The Rust runtime has no `--openapi` parameter, and `/openapi.yaml` plus `/openapi.json` do not depend on the current working directory.
 
@@ -220,7 +220,7 @@ async function verifyAccessToken(token) {
 From there, typical integration looks like this:
 
 - start auth-mini with `--host`, `--port`, and `--db` as needed
-- configure issuer, optional SMTP, optional admin Ed25519, and your app/page origin from the demo setup page or `/admin/setup`
+- initialize the admin Ed25519 credential, then configure issuer, passkey RP ID, and optional SMTP from the admin configuration page or `/admin/config`
 - sign in via email OTP and optionally register a passkey
 - send the access token to your backend and verify it with `/jwks`
 

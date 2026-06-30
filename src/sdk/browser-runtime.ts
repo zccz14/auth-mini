@@ -233,7 +233,10 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     storage.removeItem(storageKey);
   }
 
-  function createStateStore(storage: Storage, storageKey: string): SessionStore {
+  function createStateStore(
+    storage: Storage,
+    storageKey: string,
+  ): SessionStore {
     const listeners = new Set<Listener>();
     let state = hydrateState();
 
@@ -286,9 +289,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
       });
     }
 
-    function updatePersisted(
-      next: SessionSnapshot & PersistedSdkState,
-    ) {
+    function updatePersisted(next: SessionSnapshot & PersistedSdkState) {
       const persisted = clonePersisted(next);
       writePersistedSdkState(storage, storageKey, persisted);
       updateState({
@@ -404,9 +405,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
       accessToken: value.access_token,
       refreshToken: value.refresh_token,
       receivedAt: new Date(receivedAtMs).toISOString(),
-      expiresAt: new Date(
-        receivedAtMs + value.expires_in * 1000,
-      ).toISOString(),
+      expiresAt: new Date(receivedAtMs + value.expires_in * 1000).toISOString(),
     };
   }
 
@@ -532,7 +531,9 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
           throw createSdkError('missing_session', 'Missing refresh token');
         }
         if (!snapshot.accessToken || needsRefresh(snapshot, input.now())) {
-          return await fetchMe((await controller.refresh()).accessToken as string);
+          return await fetchMe(
+            (await controller.refresh()).accessToken as string,
+          );
         }
         if (!snapshot.sessionId) {
           throw createSdkError('missing_session', 'Missing session id');
@@ -630,10 +631,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
         return 'none';
       }
 
-      if (
-        shared.accessToken &&
-        !needsRefresh(shared, input.now())
-      ) {
+      if (shared.accessToken && !needsRefresh(shared, input.now())) {
         input.state.setAuthenticated({
           sessionId: shared.sessionId,
           accessToken: shared.accessToken,
@@ -651,8 +649,15 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
 
   function createEmailModule(input: {
     http: {
-      getJson(path: string, options?: Omit<RequestOptions, 'body'>): Promise<unknown>;
-      postJson(path: string, body: unknown, options?: Omit<RequestOptions, 'body'>): Promise<unknown>;
+      getJson(
+        path: string,
+        options?: Omit<RequestOptions, 'body'>,
+      ): Promise<unknown>;
+      postJson(
+        path: string,
+        body: unknown,
+        options?: Omit<RequestOptions, 'body'>,
+      ): Promise<unknown>;
     };
     session: {
       acceptSessionResponse(
@@ -667,7 +672,9 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
           AuthMiniInternal['email']['start']
         >;
       },
-      async verify(payload: Parameters<AuthMiniInternal['email']['verify']>[0]) {
+      async verify(
+        payload: Parameters<AuthMiniInternal['email']['verify']>[0],
+      ) {
         const response = await input.http.postJson('/email/verify', payload);
         return await input.session.acceptSessionResponse(response);
       },
@@ -676,8 +683,15 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
 
   function createWebauthnModule(input: {
     http: {
-      getJson(path: string, options?: Omit<RequestOptions, 'body'>): Promise<unknown>;
-      postJson(path: string, body: unknown, options?: Omit<RequestOptions, 'body'>): Promise<unknown>;
+      getJson(
+        path: string,
+        options?: Omit<RequestOptions, 'body'>,
+      ): Promise<unknown>;
+      postJson(
+        path: string,
+        body: unknown,
+        options?: Omit<RequestOptions, 'body'>,
+      ): Promise<unknown>;
     };
     navigatorCredentials?: NavigatorCredentialsLike;
     now: () => number;
@@ -692,14 +706,12 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     state: SessionStore;
   }) {
     return {
-      async authenticate(
-        payload: Parameters<AuthMiniInternal['passkey']['authenticate']>[0] = {},
-      ) {
+      async authenticate() {
         ensureWebauthnSupport('authenticate');
-        const options = await input.http.postJson(
+        const options = (await input.http.postJson(
           '/webauthn/authenticate/options',
-          createOptionsPayload(payload),
-        ) as AuthenticationOptionsResponse;
+          {},
+        )) as AuthenticationOptionsResponse;
         const credential = await requestCredential(
           'authenticate',
           input.navigatorCredentials?.get,
@@ -718,16 +730,14 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
         );
         return await input.session.acceptSessionResponse(response);
       },
-      async register(
-        payload: Parameters<AuthMiniInternal['passkey']['register']>[0] = {},
-      ) {
+      async register() {
         ensureWebauthnSupport('register');
         const optionsAccessToken = await requireAccessToken();
-        const options = await input.http.postJson(
+        const options = (await input.http.postJson(
           '/webauthn/register/options',
-          createOptionsPayload(payload),
+          {},
           { accessToken: optionsAccessToken },
-        ) as RegistrationOptionsResponse;
+        )) as RegistrationOptionsResponse;
         const credential = await requestCredential(
           'register',
           input.navigatorCredentials?.create,
@@ -738,14 +748,14 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
           },
         );
         const verifyAccessToken = await requireAccessToken();
-        return await input.http.postJson(
+        return (await input.http.postJson(
           '/webauthn/register/verify',
           {
             request_id: options.request_id,
             credential: serializeCredential(credential),
           },
           { accessToken: verifyAccessToken },
-        ) as ReturnType<AuthMiniInternal['passkey']['register']>;
+        )) as ReturnType<AuthMiniInternal['passkey']['register']>;
       },
     };
 
@@ -809,17 +819,6 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
         return (await input.session.refresh()).accessToken;
       }
       return snapshot.accessToken;
-    }
-
-    function createOptionsPayload(
-      payload: Parameters<AuthMiniInternal['passkey']['authenticate']>[0],
-    ) {
-      const rpId =
-        typeof payload?.rpId === 'string' && payload.rpId.length > 0
-          ? payload.rpId
-          : globalThis.location?.hostname;
-
-      return { rp_id: rpId };
     }
   }
 
