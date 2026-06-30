@@ -8,6 +8,7 @@ mod jwks;
 mod openapi;
 mod session;
 mod setup;
+mod web_assets;
 mod webauthn;
 
 pub use config::{Config, DatabaseConfig};

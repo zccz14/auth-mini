@@ -23,6 +23,7 @@ use crate::session::{
     require_passkey_management_auth, token_json, SessionError,
 };
 use crate::setup::{apply_admin_setup, parse_admin_setup_request, read_admin_setup, SetupError};
+use crate::web_assets::{match_web_asset, WebAsset};
 use crate::webauthn::{
     authentication_options as webauthn_authentication_options,
     authentication_verify as webauthn_authentication_verify,
@@ -132,6 +133,12 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
         return Ok(cors(request, Response::json_value(200, body)));
     }
 
+    if request.method == "GET" {
+        if let Some(response) = handle_web_asset(request) {
+            return Ok(response);
+        }
+    }
+
     if request.method == "GET" && request.path == "/admin/setup" {
         return handle_admin_setup_get(request, config).map(|response| cors(request, response));
     }
@@ -224,6 +231,21 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
     }
 
     Ok(cors(request, Response::json_error(404, "not_found")))
+}
+
+fn handle_web_asset(request: &Request) -> Option<Response> {
+    match match_web_asset(&request.path)? {
+        WebAsset::Redirect => Some(Response::redirect(308, "/web/")),
+        WebAsset::Body {
+            content_type,
+            cache_control,
+            body,
+        } => Some(Response::bytes(200, content_type, body.to_vec()).with_header(
+            "cache-control",
+            cache_control,
+        )),
+        WebAsset::MissingAsset => Some(Response::json_error(404, "not_found")),
+    }
 }
 
 fn handle_admin_setup_get(request: &Request, config: &Config) -> io::Result<Response> {
@@ -759,17 +781,25 @@ struct Response {
     status: u16,
     content_type: &'static str,
     headers: Vec<(&'static str, &'static str)>,
-    body: String,
+    body: Vec<u8>,
 }
 
 impl Response {
     fn new(status: u16, content_type: &'static str, body: String) -> Self {
+        Self::bytes(status, content_type, body.into_bytes())
+    }
+
+    fn bytes(status: u16, content_type: &'static str, body: Vec<u8>) -> Self {
         Self {
             status,
             content_type,
             headers: Vec::new(),
             body,
         }
+    }
+
+    fn redirect(status: u16, location: &'static str) -> Self {
+        Self::empty(status).with_header("location", location)
     }
 
     fn empty(status: u16) -> Self {
@@ -805,7 +835,17 @@ impl Response {
             let insert_at = headers.len() - 2;
             headers.insert_str(insert_at, &format!("{name}: {value}\r\n"));
         }
-        [headers.as_bytes(), self.body.as_bytes()].concat()
+        [headers.as_bytes(), &self.body].concat()
+    }
+
+    #[cfg(test)]
+    fn body_text(&self) -> String {
+        String::from_utf8_lossy(&self.body).into_owned()
+    }
+
+    fn with_header(mut self, name: &'static str, value: &'static str) -> Self {
+        self.headers.push((name, value));
+        self
     }
 
     fn with_cors(mut self, include_preflight: bool) -> Self {
@@ -832,6 +872,7 @@ fn reason_phrase(status: u16) -> &'static str {
     match status {
         200 => "OK",
         204 => "No Content",
+        308 => "Permanent Redirect",
         400 => "Bad Request",
         401 => "Unauthorized",
         403 => "Forbidden",
@@ -882,7 +923,7 @@ mod tests {
 
         assert_eq!(response.status, 200);
         assert_eq!(response.content_type, "application/yaml; charset=utf-8");
-        assert!(response.body.contains("title: auth-mini HTTP API"));
+        assert!(response.body_text().contains("title: auth-mini HTTP API"));
     }
 
     #[test]
@@ -898,12 +939,101 @@ mod tests {
         )
         .expect("json response builds");
         let document: serde_json::Value =
-            serde_json::from_str(&response.body).expect("openapi json parses");
+            serde_json::from_str(&response.body_text()).expect("openapi json parses");
 
         assert_eq!(response.status, 200);
         assert_eq!(document["openapi"], "3.1.0");
         assert!(document["paths"].is_object());
         assert!(document["components"].is_object());
+    }
+
+    #[test]
+    fn redirects_web_root_to_trailing_slash() {
+        let response = route_request(
+            &Request {
+                method: "GET".to_string(),
+                path: "/web".to_string(),
+                headers: Vec::new(),
+                body: String::new(),
+            },
+            &no_database_config(),
+        )
+        .expect("web redirect response builds");
+
+        assert_eq!(response.status, 308);
+        assert_eq!(response.headers, vec![("location", "/web/")]);
+    }
+
+    #[test]
+    fn serves_embedded_web_index_without_long_cache() {
+        let response = route_request(
+            &Request {
+                method: "GET".to_string(),
+                path: "/web/?source=test".to_string(),
+                headers: Vec::new(),
+                body: String::new(),
+            },
+            &no_database_config(),
+        )
+        .expect("web index response builds");
+
+        assert_eq!(response.status, 200);
+        assert_eq!(response.content_type, "text/html; charset=utf-8");
+        assert!(response
+            .headers
+            .contains(&("cache-control", "no-cache")));
+        assert!(response.body_text().contains(r#"src="/web/assets/"#));
+        assert!(response.body_text().contains(r#"id="root""#));
+    }
+
+    #[test]
+    fn serves_embedded_web_asset_with_mime_and_immutable_cache() {
+        let response = route_request(
+            &Request {
+                method: "GET".to_string(),
+                path: "/web/assets/index-XS1pIkA7.css?v=1".to_string(),
+                headers: Vec::new(),
+                body: String::new(),
+            },
+            &no_database_config(),
+        )
+        .expect("web asset response builds");
+
+        assert_eq!(response.status, 200);
+        assert_eq!(response.content_type, "text/css; charset=utf-8");
+        assert!(response.headers.contains(&(
+            "cache-control",
+            "public, max-age=31536000, immutable",
+        )));
+        assert!(response.body_text().contains("@tailwind") || response.body_text().contains(":root"));
+    }
+
+    #[test]
+    fn serves_web_index_for_spa_fallback_but_not_missing_assets() {
+        let fallback = route_request(
+            &Request {
+                method: "GET".to_string(),
+                path: "/web/setup".to_string(),
+                headers: Vec::new(),
+                body: String::new(),
+            },
+            &no_database_config(),
+        )
+        .expect("web fallback response builds");
+        let missing_asset = route_request(
+            &Request {
+                method: "GET".to_string(),
+                path: "/web/assets/missing.js".to_string(),
+                headers: Vec::new(),
+                body: String::new(),
+            },
+            &no_database_config(),
+        )
+        .expect("web missing asset response builds");
+
+        assert_eq!(fallback.status, 200);
+        assert!(fallback.body_text().contains(r#"id="root""#));
+        assert_eq!(missing_asset, Response::json_error(404, "not_found"));
     }
 
     #[test]
@@ -1026,9 +1156,9 @@ mod tests {
         .expect("admin setup put response builds");
 
         assert_eq!(put.status, 200);
-        assert!(put.body.contains("https://auth.example.com"));
-        assert!(put.body.contains("https://demo.example.com"));
-        assert!(!put.body.contains("secret"));
+        assert!(put.body_text().contains("https://auth.example.com"));
+        assert!(put.body_text().contains("https://demo.example.com"));
+        assert!(!put.body_text().contains("secret"));
 
         let get = route_request(
             &Request {
@@ -1042,8 +1172,8 @@ mod tests {
         .expect("admin setup get response builds");
 
         assert_eq!(get.status, 200);
-        assert!(get.body.contains("smtp.example.com"));
-        assert!(!get.body.contains("secret"));
+        assert!(get.body_text().contains("smtp.example.com"));
+        assert!(!get.body_text().contains("secret"));
     }
 
     #[test]
@@ -1076,7 +1206,7 @@ mod tests {
         .expect("email start response builds");
 
         assert_eq!(response.status, 400);
-        assert_eq!(response.body, r#"{"error":"invalid_request"}"#);
+        assert_eq!(response.body_text(), r#"{"error":"invalid_request"}"#);
     }
 
     #[test]
@@ -1186,8 +1316,8 @@ mod tests {
             .expect("user count reads");
 
         assert_eq!(response.status, 200);
-        assert!(response.body.contains("access_token"));
-        assert!(response.body.contains("refresh_token"));
+        assert!(response.body_text().contains("access_token"));
+        assert!(response.body_text().contains("refresh_token"));
         assert!(consumed_at.is_some());
         assert_eq!(user_count, 1);
     }
@@ -1225,8 +1355,8 @@ mod tests {
         .expect("refresh response builds");
 
         assert_eq!(response.status, 200);
-        assert!(response.body.contains("access_token"));
-        assert!(!response.body.contains(&pair.refresh_token));
+        assert!(response.body_text().contains("access_token"));
+        assert!(!response.body_text().contains(&pair.refresh_token));
     }
 
     #[test]
@@ -1262,8 +1392,8 @@ mod tests {
         .expect("me response builds");
 
         assert_eq!(response.status, 200);
-        assert!(response.body.contains("user@example.com"));
-        assert!(response.body.contains("active_sessions"));
+        assert!(response.body_text().contains("user@example.com"));
+        assert!(response.body_text().contains("active_sessions"));
     }
 
     #[test]
@@ -1377,7 +1507,7 @@ mod tests {
         )
         .expect("ed25519 credential create response builds");
         let body: serde_json::Value =
-            serde_json::from_str(&response.body).expect("credential response parses");
+            serde_json::from_str(&response.body_text()).expect("credential response parses");
 
         assert_eq!(response.status, 200);
         assert_eq!(body["name"], "Laptop");
@@ -1429,7 +1559,7 @@ mod tests {
         )
         .expect("ed25519 start response builds");
         let body: serde_json::Value =
-            serde_json::from_str(&response.body).expect("start response parses");
+            serde_json::from_str(&response.body_text()).expect("start response parses");
 
         assert_eq!(response.status, 200);
         assert_eq!(body["request_id"].as_str().expect("request id").len(), 36);
@@ -1544,7 +1674,7 @@ mod tests {
         )
         .expect("ed25519 credentials response builds");
         let body: serde_json::Value =
-            serde_json::from_str(&response.body).expect("credentials response parses");
+            serde_json::from_str(&response.body_text()).expect("credentials response parses");
 
         assert_eq!(response.status, 200);
         assert_eq!(body[0]["id"], "credential-1");
@@ -1598,7 +1728,7 @@ mod tests {
         )
         .expect("ed25519 credential update response builds");
         let body: serde_json::Value =
-            serde_json::from_str(&response.body).expect("credential response parses");
+            serde_json::from_str(&response.body_text()).expect("credential response parses");
 
         assert_eq!(response.status, 200);
         assert_eq!(body["id"], "credential-1");
@@ -1900,7 +2030,7 @@ mod tests {
         )
         .expect("webauthn register options response builds");
         let body: serde_json::Value =
-            serde_json::from_str(&response.body).expect("options response parses");
+            serde_json::from_str(&response.body_text()).expect("options response parses");
         let connection = Connection::open(db_path).expect("database opens");
         let stored: (String, String, String) = connection
             .query_row(
@@ -1937,7 +2067,7 @@ mod tests {
         .expect("webauthn register options response builds");
 
         assert_eq!(response.status, 401);
-        assert_eq!(response.body, r#"{"error":"invalid_access_token"}"#);
+        assert_eq!(response.body_text(), r#"{"error":"invalid_access_token"}"#);
     }
 
     #[test]
@@ -1977,7 +2107,7 @@ mod tests {
 
         assert_eq!(response.status, 403);
         assert_eq!(
-            response.body,
+            response.body_text(),
             r#"{"error":"insufficient_authentication_method"}"#
         );
     }
@@ -2050,7 +2180,7 @@ mod tests {
 
         assert_eq!(response.status, 400);
         assert_eq!(
-            response.body,
+            response.body_text(),
             r#"{"error":"invalid_webauthn_registration"}"#
         );
         assert!(consumed_at.is_none());
@@ -2094,7 +2224,7 @@ mod tests {
         .expect("webauthn register verify response builds");
 
         assert_eq!(response.status, 400);
-        assert_eq!(response.body, r#"{"error":"invalid_request"}"#);
+        assert_eq!(response.body_text(), r#"{"error":"invalid_request"}"#);
     }
 
     #[test]
@@ -2111,7 +2241,7 @@ mod tests {
         .expect("webauthn register verify response builds");
 
         assert_eq!(response.status, 401);
-        assert_eq!(response.body, r#"{"error":"invalid_access_token"}"#);
+        assert_eq!(response.body_text(), r#"{"error":"invalid_access_token"}"#);
     }
 
     #[test]
@@ -2151,7 +2281,7 @@ mod tests {
 
         assert_eq!(response.status, 400);
         assert_eq!(
-            response.body,
+            response.body_text(),
             r#"{"error":"invalid_webauthn_registration"}"#
         );
     }
@@ -2192,7 +2322,7 @@ mod tests {
         .expect("webauthn register options response builds");
 
         assert_eq!(response.status, 400);
-        assert_eq!(response.body, r#"{"error":"invalid_request"}"#);
+        assert_eq!(response.body_text(), r#"{"error":"invalid_request"}"#);
     }
 
     #[test]
@@ -2224,7 +2354,7 @@ mod tests {
         )
         .expect("webauthn authentication options response builds");
         let body: serde_json::Value =
-            serde_json::from_str(&response.body).expect("options response parses");
+            serde_json::from_str(&response.body_text()).expect("options response parses");
         let connection = Connection::open(db_path).expect("database opens");
         let stored: (String, Option<String>, String, String) = connection
             .query_row(
@@ -2274,7 +2404,7 @@ mod tests {
 
         assert_eq!(response.status, 400);
         assert_eq!(
-            response.body,
+            response.body_text(),
             r#"{"error":"invalid_webauthn_authentication"}"#
         );
     }
@@ -2348,7 +2478,7 @@ mod tests {
 
         assert_eq!(response.status, 400);
         assert_eq!(
-            response.body,
+            response.body_text(),
             r#"{"error":"invalid_webauthn_authentication"}"#
         );
         assert_eq!(stored, (None, None));
@@ -2368,7 +2498,7 @@ mod tests {
         .expect("webauthn authentication verify response builds");
 
         assert_eq!(response.status, 400);
-        assert_eq!(response.body, r#"{"error":"invalid_request"}"#);
+        assert_eq!(response.body_text(), r#"{"error":"invalid_request"}"#);
     }
 
     #[test]
@@ -2394,7 +2524,7 @@ mod tests {
 
         assert_eq!(response.status, 400);
         assert_eq!(
-            response.body,
+            response.body_text(),
             r#"{"error":"invalid_webauthn_authentication"}"#
         );
     }
@@ -2459,8 +2589,8 @@ mod tests {
         .expect("jwks response builds");
 
         assert_eq!(response.status, 200);
-        assert!(response.body.contains("\"keys\""));
-        assert!(!response.body.contains("\"d\""));
+        assert!(response.body_text().contains("\"keys\""));
+        assert!(!response.body_text().contains("\"d\""));
     }
 
     #[test]
