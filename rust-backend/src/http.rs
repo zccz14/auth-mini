@@ -33,6 +33,9 @@ use crate::webauthn::{
     RegisterVerifyError,
 };
 
+const CORS_ALLOW_METHODS: &str = "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS";
+const CORS_ALLOW_HEADERS: &str = "*";
+
 pub fn run_server(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(database) = &config.database {
         initialize_runtime_database(&database.db_path)?;
@@ -804,14 +807,10 @@ impl Response {
     fn with_cors(mut self, include_preflight: bool) -> Self {
         self.headers.push(("access-control-allow-origin", "*"));
         if include_preflight {
-            self.headers.push((
-                "access-control-allow-methods",
-                "GET, POST, PATCH, DELETE, OPTIONS",
-            ));
-            self.headers.push((
-                "access-control-allow-headers",
-                "Authorization, Content-Type",
-            ));
+            self.headers
+                .push(("access-control-allow-methods", CORS_ALLOW_METHODS));
+            self.headers
+                .push(("access-control-allow-headers", CORS_ALLOW_HEADERS));
         }
         self
     }
@@ -2549,10 +2548,12 @@ mod tests {
         .expect("normal cors builds");
 
         assert_eq!(preflight.status, 204);
-        assert!(preflight.headers.contains(&(
-            "access-control-allow-methods",
-            "GET, POST, PATCH, DELETE, OPTIONS"
-        )));
+        assert!(preflight
+            .headers
+            .contains(&("access-control-allow-methods", CORS_ALLOW_METHODS)));
+        assert!(preflight
+            .headers
+            .contains(&("access-control-allow-headers", CORS_ALLOW_HEADERS)));
         assert!(normal
             .headers
             .contains(&("access-control-allow-origin", "*")));
