@@ -10,7 +10,7 @@ export function StatusBanner() {
       <div>
         <AlertTitle>Demo status</AlertTitle>
         <AlertDescription>
-          {config.configError || `Connected to ${config.authOrigin}`}
+          {config.configError || `Connected to ${config.serverBaseUrl}`}
         </AlertDescription>
       </div>
       <div className="flex items-center gap-2">

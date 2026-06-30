@@ -34,7 +34,7 @@ function browserSdkStorageKey(baseUrl: string): string {
 
 export function persistDemoSession(
   storage: Storage,
-  authOrigin: string,
+  serverBaseUrl: string,
   tokens: DemoSessionTokens,
 ) {
   const receivedAt = new Date().toISOString();
@@ -43,7 +43,7 @@ export function persistDemoSession(
   ).toISOString();
 
   storage.setItem(
-    browserSdkStorageKey(authOrigin),
+    browserSdkStorageKey(serverBaseUrl),
     JSON.stringify({
       sessionId: tokens.session_id,
       accessToken: tokens.access_token,
@@ -54,8 +54,8 @@ export function persistDemoSession(
   );
 }
 
-export function createDemoSdk(authOrigin: string): DemoSdk {
-  const sdk = createBrowserSdk(authOrigin);
+export function createDemoSdk(serverBaseUrl: string): DemoSdk {
+  const sdk = createBrowserSdk(serverBaseUrl);
 
   function isRetryableAuthError(error: unknown): boolean {
     return (
@@ -92,7 +92,7 @@ export function createDemoSdk(authOrigin: string): DemoSdk {
     body: unknown,
     accessToken?: string | null,
   ) {
-    const response = await fetch(new URL(path, authOrigin), {
+    const response = await fetch(new URL(path, serverBaseUrl), {
       method: 'POST',
       headers: {
         accept: 'application/json',

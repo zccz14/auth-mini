@@ -11,15 +11,15 @@ This guide covers higher-level runtime behavior for the browser SDK only.
 
 ## Recommended: module/browser-subpath usage
 
-Import the browser SDK module and construct it with your auth server origin:
+Import the browser SDK module and construct it with your server base URL:
 
 ```ts
 import { createBrowserSdk } from 'auth-mini/sdk/browser';
 
-const sdk = createBrowserSdk('https://auth.zccz14.com');
+const sdk = createBrowserSdk('https://auth.example.com');
 ```
 
-The current `examples/demo/` app follows that module path as a Vite + React bundle. It imports `auth-mini/sdk/browser` at build time, mounts under a `HashRouter`, stays docs-only until you provide `/#/setup?auth-origin=https://your-auth-origin`, then reads `auth-origin` from `window.location.hash` and passes that origin into `createBrowserSdk(serverBaseUrl)`. The published demo now uses the bundled app entrypoint instead of any hand-wired browser bundle path.
+The current `examples/demo/` app follows that module path as a Vite + React bundle. It imports `auth-mini/sdk/browser` at build time, mounts under a `HashRouter`, and the embedded `/web` GUI uses the same Rust server by resolving the relative base URL `..` from `window.location.href` before creating the SDK. The published demo now uses the bundled app entrypoint instead of any hand-wired browser bundle path.
 
 Browser SDK persistence semantics remain browser-only: the maintained browser module path uses browser storage and browser-oriented recovery behavior. The new device SDK does not change those semantics.
 
@@ -34,9 +34,9 @@ Same-origin proxy deployment is still supported if you prefer to front auth-mini
 This page:
 
 - page origin: `http://localhost:3000`
-- auth server origin: `http://127.0.0.1:7777`
+- server base URL: `http://127.0.0.1:7777`
 
-works when `http://localhost:3000` has been added from the setup page or local admin setup API and the browser app initializes the SDK with the auth server origin:
+works when `http://localhost:3000` has been added from the setup page or local admin setup API and the browser app initializes the SDK with that server base URL:
 
 ```ts
 import { createBrowserSdk } from 'auth-mini/sdk/browser';
@@ -59,7 +59,7 @@ If a refresh token is already stored, startup enters `recovering` first and then
 ```ts
 import { createBrowserSdk } from 'auth-mini/sdk/browser';
 
-const sdk = createBrowserSdk('https://auth.zccz14.com');
+const sdk = createBrowserSdk('https://auth.example.com');
 
 async function signIn(email: string, code: string) {
   await sdk.email.start({ email });
@@ -75,7 +75,7 @@ async function signInWithPasskey() {
 
 ## Operational limits
 
-- The browser SDK requires an explicit auth server origin via `createBrowserSdk(serverBaseUrl)`.
+- The browser SDK requires an explicit server base URL via `createBrowserSdk(serverBaseUrl)`.
 - Store the browser page origin via the setup page or `PUT /admin/setup` for WebAuthn and related origin checks; this is separate from the HTTP CORS policy.
 - Multiple tabs sharing one session can still race during refresh-token rotation, but the loser tab enters `recovering` and usually converges to the latest shared session state.
 - That convergence only shares session tokens/status; `/me` remains caller-owned and must be fetched explicitly in each tab when needed.
@@ -84,26 +84,26 @@ async function signInWithPasskey() {
 
 `examples/demo/` is the interactive browser-flow demo source. `docs/` remains the canonical static reference source.
 
-The published demo/docs page does **not** auto-target localhost anymore. It stays in a neutral docs-only state until you provide `/#/setup?auth-origin=https://your-auth-origin`, which becomes the `createBrowserSdk(serverBaseUrl)` value for the playground.
+The embedded `/web` GUI no longer accepts an auth-server-origin override. It always calls the same Rust server that served the GUI by resolving the relative base URL `..`.
 
 The current publish flow builds the demo with the root-level `demo:build` script and deploys `examples/demo/dist` as the static site root.
 
 - Treat `examples/demo/` as the source for the interactive demo and `examples/demo/dist` as the publish artifact.
 - For GitHub Pages, upload `examples/demo/dist` directly rather than a sibling `demo/` + `dist/` artifact layout.
 - The published page should be served from the site root for that artifact, such as `https://<user>.github.io/auth-mini/` for project Pages or `https://your-domain.example/` for a custom domain.
-- The stored setup origin must use the final **page origin** (`window.location.origin`) for WebAuthn/browser origin checks, not the auth server origin.
-- If the docs page and auth server live on different origins, keep the page on its static host and append `/#/setup?auth-origin=https://your-auth-origin` so the published demo continues calling `createBrowserSdk(...)` against the auth host.
+- The stored setup origin must use the final **page origin** (`window.location.origin`) for WebAuthn/browser origin checks, not the server base URL.
+- If a downstream app serves its own frontend separately from auth-mini, that app should pass its chosen server base URL to `createBrowserSdk(...)`; the built-in `/web` GUI is same-server only.
 - If you attach a custom GitHub Pages domain, publish a matching `CNAME` file in the deployed site root so GitHub serves that domain consistently; then store `https://your-domain.example` from the setup page or local admin setup API.
 
 Example:
 
-- published site root: `https://example.github.io/auth-mini`
-- auth server origin: `https://auth.zccz14.com`
+- embedded GUI: `https://auth.example.com/web/`
+- server base URL used by the GUI: `https://auth.example.com/`
 
 Open:
 
 ```text
-https://example.github.io/auth-mini/#/setup?auth-origin=https://auth.zccz14.com
+https://auth.example.com/web/
 ```
 
 Start auth-mini with the local listener and database options:

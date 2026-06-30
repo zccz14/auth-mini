@@ -262,6 +262,8 @@ fn invalid_request_error(message: &str) -> serde_json::Error {
 mod tests {
     use super::*;
     use lettre::transport::stub::StubTransport;
+    use std::net::TcpListener;
+    use std::thread;
 
     #[test]
     fn parses_email_start_request_and_normalizes_email() {
@@ -359,9 +361,17 @@ mod tests {
 
     #[test]
     fn secure_smtp_config_uses_tls_transport_and_does_not_return_fake_success() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("test listener binds");
+        let port = listener
+            .local_addr()
+            .expect("test listener has port")
+            .port();
+        let listener_thread = thread::spawn(move || {
+            let _ = listener.accept();
+        });
         let connection = Connection::open_in_memory().expect("database opens");
         create_email_start_schema(&connection);
-        insert_smtp_config(&connection, 2525, true);
+        insert_smtp_config(&connection, port, true);
         let request = EmailStartRequest {
             email: "user@example.com".to_string(),
         };
@@ -369,6 +379,7 @@ mod tests {
         let error = start_email_auth_with_connection(&connection, &request)
             .expect_err("unsupported secure smtp rejects");
 
+        listener_thread.join().expect("test listener exits");
         assert_eq!(error, EmailStartError::SmtpTemporarilyUnavailable);
     }
 

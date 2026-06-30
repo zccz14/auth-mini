@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 import { createApiSdk } from 'auth-mini/sdk/api';
 import type { AdminSetupState } from 'auth-mini/sdk/api';
 import { FlowCard } from '@/components/app/flow-card';
@@ -22,10 +21,8 @@ function errorMessage(error: unknown) {
 }
 
 export function SetupRoute() {
-  const navigate = useNavigate();
-  const { config, setAuthOrigin } = useDemo();
-  const [draftAuthOrigin, setDraftAuthOrigin] = useState(config.authOrigin);
-  const [issuer, setIssuer] = useState(config.authOrigin);
+  const { config } = useDemo();
+  const [issuer, setIssuer] = useState(config.resolvedServerBaseUrl);
   const [origin, setOrigin] = useState(config.pageOrigin);
   const [adminKeyName, setAdminKeyName] = useState('Admin key');
   const [adminPublicKey, setAdminPublicKey] = useState('');
@@ -42,31 +39,13 @@ export function SetupRoute() {
   const [message, setMessage] = useState('');
   const [setupState, setSetupState] = useState<AdminSetupState | null>(null);
 
-  useEffect(() => {
-    setDraftAuthOrigin(config.authOrigin);
-    setIssuer(config.authOrigin);
-  }, [config.authOrigin]);
-
-  function handleOriginSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    const nextAuthOrigin = draftAuthOrigin.trim();
-    setAuthOrigin(nextAuthOrigin);
-    navigate({
-      pathname: '/setup',
-      search: nextAuthOrigin
-        ? `?auth-origin=${encodeURIComponent(nextAuthOrigin)}`
-        : '',
-    });
-  }
-
   async function handleSetupSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setStatus('saving');
     setMessage('');
 
     try {
-      const api = createApiSdk({ baseUrl: config.authOrigin });
+      const api = createApiSdk({ baseUrl: config.resolvedServerBaseUrl });
       const smtp =
         smtpHost.trim() === ''
           ? undefined
@@ -130,30 +109,9 @@ export function SetupRoute() {
   return (
     <FlowCard
       title="Setup"
-      description="Configure a self-hosted auth-mini instance for this demo."
+      description="Configure app metadata, admin access, allowed page origin, and SMTP for this auth-mini instance."
     >
       <div className="space-y-8">
-        <form className="space-y-4" onSubmit={handleOriginSubmit}>
-          <label className="grid gap-2 text-sm font-medium text-slate-700">
-            <span>Auth server origin</span>
-            <Input
-              aria-label="Auth server origin"
-              value={draftAuthOrigin}
-              onChange={(event) => {
-                setDraftAuthOrigin(event.currentTarget.value);
-              }}
-              placeholder="https://auth.example.com"
-            />
-          </label>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <Button type="submit">Save origin</Button>
-            <span className="text-sm text-slate-500">{config.authOrigin}</span>
-          </div>
-        </form>
-
-        <Separator />
-
         <form className="space-y-5" onSubmit={handleSetupSubmit}>
           <div className="grid gap-4 md:grid-cols-2">
             <label className="grid gap-2 text-sm font-medium text-slate-700 md:col-span-2">
@@ -222,7 +180,9 @@ export function SetupRoute() {
                 type="number"
                 value={smtpPort}
                 onChange={(event) => {
-                  setSmtpPort(event.currentTarget.valueAsNumber || DEFAULT_SMTP_PORT);
+                  setSmtpPort(
+                    event.currentTarget.valueAsNumber || DEFAULT_SMTP_PORT,
+                  );
                 }}
               />
             </label>
@@ -337,17 +297,23 @@ export function SetupRoute() {
             </div>
             {adminSeed ? (
               <div className="space-y-1">
-                <strong className="block text-slate-950">Generated admin seed</strong>
+                <strong className="block text-slate-950">
+                  Generated admin seed
+                </strong>
                 <div className="break-all">{adminSeed}</div>
               </div>
             ) : null}
             <div className="space-y-1">
               <strong className="block text-slate-950">Allowed origins</strong>
-              <div>{setupState.origins.map((item) => item.origin).join(', ')}</div>
+              <div>
+                {setupState.origins.map((item) => item.origin).join(', ')}
+              </div>
             </div>
             <div className="space-y-1">
               <strong className="block text-slate-950">SMTP</strong>
-              <div>{setupState.smtp ? setupState.smtp.host : 'Not configured'}</div>
+              <div>
+                {setupState.smtp ? setupState.smtp.host : 'Not configured'}
+              </div>
             </div>
           </section>
         ) : null}
@@ -356,8 +322,8 @@ export function SetupRoute() {
 
         <section className="space-y-3 text-sm text-slate-600">
           <div className="space-y-1">
-            <strong className="block text-slate-950">Server</strong>
-            <div>auth-mini --host 127.0.0.1 --port 7777 --db ./auth-mini.sqlite</div>
+            <strong className="block text-slate-950">API base</strong>
+            <div>{config.serverBaseUrl}</div>
           </div>
           <div className="space-y-1">
             <strong className="block text-slate-950">Page origin</strong>

@@ -2,7 +2,6 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
-import { AUTH_ORIGIN_KEY } from '@/lib/demo-storage';
 import { AppRouter } from '@/app/router';
 
 type MockSessionState = {
@@ -105,7 +104,10 @@ function authenticatedSession(): MockSessionState {
   };
 }
 
-function activeSession(overrides: Partial<MockActiveSession> & Pick<MockActiveSession, 'id' | 'created_at' | 'expires_at'>): MockActiveSession {
+function activeSession(
+  overrides: Partial<MockActiveSession> &
+    Pick<MockActiveSession, 'id' | 'created_at' | 'expires_at'>,
+): MockActiveSession {
   return {
     auth_method: 'email_otp',
     ip: null,
@@ -164,7 +166,6 @@ describe('SessionRoute', () => {
       receivedAt: null,
       expiresAt: null,
     };
-    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
   });
 
   it('renders the anonymous session snapshot without fetching /me', () => {
@@ -208,7 +209,9 @@ describe('SessionRoute', () => {
     renderRoute();
 
     expect(screen.getByText('Loading current user…')).toBeInTheDocument();
-    expect(await screen.findByText(/"email": "user@example.com"/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/"email": "user@example.com"/),
+    ).toBeInTheDocument();
     expect(screen.getByText('session-current')).toBeInTheDocument();
     expect(screen.getByText('email_otp')).toBeInTheDocument();
     expect(screen.getByText('203.0.113.30')).toBeInTheDocument();
@@ -222,11 +225,15 @@ describe('SessionRoute', () => {
 
   it('shows a route-owned /me load error', async () => {
     sdkMocks.sessionState.current = authenticatedSession();
-    sdkMocks.meFetch.mockRejectedValueOnce(new Error('Unable to load current user.'));
+    sdkMocks.meFetch.mockRejectedValueOnce(
+      new Error('Unable to load current user.'),
+    );
 
     renderRoute();
 
-    expect(await screen.findByText('Unable to load current user.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Unable to load current user.'),
+    ).toBeInTheDocument();
     expect(screen.queryByText('No active sessions.')).not.toBeInTheDocument();
   });
 
@@ -245,7 +252,9 @@ describe('SessionRoute', () => {
     renderRoute();
 
     expect(screen.getByText('Loading current user…')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Clear local auth state' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Clear local auth state' }),
+    );
 
     expect(sdkMocks.logout).toHaveBeenCalledTimes(1);
     expect(screen.getByText(/"status": "anonymous"/)).toBeInTheDocument();
@@ -303,9 +312,12 @@ describe('SessionRoute', () => {
     let resolveLogout: ((response: Response) => void) | undefined;
     vi.stubGlobal(
       'fetch',
-      vi.fn(() => new Promise<Response>((resolve) => {
-        resolveLogout = resolve;
-      })),
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveLogout = resolve;
+          }),
+      ),
     );
 
     renderRoute();
@@ -314,7 +326,9 @@ describe('SessionRoute', () => {
     const buttons = screen.getAllByRole('button', { name: 'Kick' });
     const clickPromise = user.click(buttons[1]!);
 
-    expect(await screen.findByRole('button', { name: 'Kicking...' })).toBeDisabled();
+    expect(
+      await screen.findByRole('button', { name: 'Kicking...' }),
+    ).toBeDisabled();
 
     resolveLogout?.(new Response(null, { status: 204 }));
     await clickPromise;
@@ -348,15 +362,24 @@ describe('SessionRoute', () => {
         ],
       })
       .mockRejectedValueOnce(new Error('Unable to refresh current user data.'));
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response(null, { status: 204 })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(new Response(null, { status: 204 })),
+    );
 
     renderRoute();
 
     await screen.findByText('session-peer');
     await user.click(screen.getAllByRole('button', { name: 'Kick' })[1]!);
 
-    expect(await screen.findByText('Session updated, but current user data could not be refreshed.')).toBeInTheDocument();
-    expect(screen.queryByText('Unable to kick session.')).not.toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        'Session updated, but current user data could not be refreshed.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('Unable to kick session.'),
+    ).not.toBeInTheDocument();
     expect(screen.getByText('session-peer')).toBeInTheDocument();
   });
 
@@ -366,7 +389,9 @@ describe('SessionRoute', () => {
       ...authenticatedSession(),
       accessToken: fakeLegacyAccessToken(),
     };
-    sdkMocks.refresh.mockResolvedValueOnce({ accessToken: fakeAccessToken(['email_otp']) });
+    sdkMocks.refresh.mockResolvedValueOnce({
+      accessToken: fakeAccessToken(['email_otp']),
+    });
     sdkMocks.meFetch
       .mockResolvedValueOnce({
         user_id: 'user-1',
@@ -399,7 +424,9 @@ describe('SessionRoute', () => {
           }),
         ],
       });
-    const fetchMock = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const fetchMock = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetchMock);
 
     renderRoute();
@@ -410,7 +437,9 @@ describe('SessionRoute', () => {
     expect(sdkMocks.refresh).toHaveBeenCalledTimes(1);
     const [, init] = fetchMock.mock.calls[0] ?? [];
     const request = new Request('https://auth.example.com', init);
-    expect(request.headers.get('authorization')).toBe(`Bearer ${fakeAccessToken(['email_otp'])}`);
+    expect(request.headers.get('authorization')).toBe(
+      `Bearer ${fakeAccessToken(['email_otp'])}`,
+    );
     await waitFor(() => {
       expect(screen.queryByText('session-peer')).not.toBeInTheDocument();
     });
@@ -460,16 +489,22 @@ describe('SessionRoute', () => {
     renderRoute();
 
     await screen.findByText('session-peer');
-    const sessionsSection = screen.getByRole('region', { name: 'Active sessions' });
+    const sessionsSection = screen.getByRole('region', {
+      name: 'Active sessions',
+    });
 
     await user.click(screen.getAllByRole('button', { name: 'Kick' })[1]!);
-    expect(await within(sessionsSection).findByText('Unable to kick session.')).toBeInTheDocument();
+    expect(
+      await within(sessionsSection).findByText('Unable to kick session.'),
+    ).toBeInTheDocument();
     expect(sdkMocks.meFetch).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getAllByRole('button', { name: 'Kick' })[1]!);
 
     await waitFor(() => {
-      expect(within(sessionsSection).queryByText('Unable to kick session.')).not.toBeInTheDocument();
+      expect(
+        within(sessionsSection).queryByText('Unable to kick session.'),
+      ).not.toBeInTheDocument();
     });
     await waitFor(() => {
       expect(screen.queryByText('session-peer')).not.toBeInTheDocument();
@@ -478,7 +513,7 @@ describe('SessionRoute', () => {
     expect(sdkMocks.meFetch).toHaveBeenCalledTimes(2);
   });
 
-  it('clears stored auth state and falls back to the hosted default auth origin', async () => {
+  it('clears local auth state and keeps using the embedded server base URL', async () => {
     const user = userEvent.setup();
     sdkMocks.sessionState.current = authenticatedSession();
     sdkMocks.meFetch.mockResolvedValueOnce({
@@ -492,11 +527,14 @@ describe('SessionRoute', () => {
     renderRoute();
 
     await screen.findByText(/"email": "user@example.com"/);
-    await user.click(screen.getByRole('button', { name: 'Clear local auth state' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Clear local auth state' }),
+    );
 
     expect(sdkMocks.logout).toHaveBeenCalledTimes(1);
-    expect(localStorage.getItem(AUTH_ORIGIN_KEY)).toBe('https://auth.zccz14.com');
-    expect(sdkMocks.createDemoSdk).toHaveBeenLastCalledWith('https://auth.zccz14.com');
+    expect(sdkMocks.createDemoSdk).toHaveBeenLastCalledWith(
+      'http://localhost:3000/',
+    );
     expect(screen.getByText(/"status": "anonymous"/)).toBeInTheDocument();
   });
 });

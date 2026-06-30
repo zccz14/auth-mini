@@ -45,7 +45,9 @@ function getCredentialCapability(accessToken: string): CredentialCapability {
   }
 
   const amr = Array.isArray(payload.amr)
-    ? payload.amr.filter((value: unknown): value is string => typeof value === 'string')
+    ? payload.amr.filter(
+        (value: unknown): value is string => typeof value === 'string',
+      )
     : [];
 
   if (amr.length === 0) {
@@ -78,7 +80,9 @@ export function CredentialsRoute() {
   });
   const [passkeyError, setPasskeyError] = useState('');
   const [ed25519Error, setEd25519Error] = useState('');
-  const [accessTokenOverride, setAccessTokenOverride] = useState<string | null>(null);
+  const [accessTokenOverride, setAccessTokenOverride] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     setAccessTokenOverride(null);
@@ -90,59 +94,65 @@ export function CredentialsRoute() {
     session.authenticated &&
     typeof session.accessToken === 'string' &&
     session.accessToken.length > 0;
-  const accessToken = typeof session.accessToken === 'string' ? session.accessToken : '';
+  const accessToken =
+    typeof session.accessToken === 'string' ? session.accessToken : '';
   const effectiveAccessToken = accessTokenOverride ?? accessToken;
   const credentialCapability = authenticated
     ? getCredentialCapability(effectiveAccessToken)
     : 'not-manageable';
   const credentialManageable = credentialCapability === 'manageable';
 
-  const loadMe = useCallback(async (options?: { warningMessage?: string }) => {
-    const requestId = loadMeRequestIdRef.current + 1;
-    loadMeRequestIdRef.current = requestId;
+  const loadMe = useCallback(
+    async (options?: { warningMessage?: string }) => {
+      const requestId = loadMeRequestIdRef.current + 1;
+      loadMeRequestIdRef.current = requestId;
 
-    if (!authenticated || !sdk || config.status !== 'ready') {
-      setMe(null);
-      setMeError('');
-      setMeWarning('');
-      setLoadingMe(false);
-      return;
-    }
-
-    setLoadingMe(true);
-    setMeError('');
-    if (!options?.warningMessage) {
-      setMeWarning('');
-    }
-
-    try {
-      const nextMe = await sdk.me.fetch();
-      if (loadMeRequestIdRef.current !== requestId) {
-        return;
-      }
-
-      setMe(nextMe);
-      setMeWarning('');
-    } catch (cause) {
-      if (loadMeRequestIdRef.current !== requestId) {
-        return;
-      }
-
-      if (options?.warningMessage) {
-        setMeWarning(options.warningMessage);
-        return;
-      }
-
-      setMe(null);
-      setMeError(
-        cause instanceof Error ? cause.message : 'Unable to load current account.',
-      );
-    } finally {
-      if (loadMeRequestIdRef.current === requestId) {
+      if (!authenticated || !sdk || config.status !== 'ready') {
+        setMe(null);
+        setMeError('');
+        setMeWarning('');
         setLoadingMe(false);
+        return;
       }
-    }
-  }, [authenticated, config.status, sdk, session.sessionId]);
+
+      setLoadingMe(true);
+      setMeError('');
+      if (!options?.warningMessage) {
+        setMeWarning('');
+      }
+
+      try {
+        const nextMe = await sdk.me.fetch();
+        if (loadMeRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        setMe(nextMe);
+        setMeWarning('');
+      } catch (cause) {
+        if (loadMeRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        if (options?.warningMessage) {
+          setMeWarning(options.warningMessage);
+          return;
+        }
+
+        setMe(null);
+        setMeError(
+          cause instanceof Error
+            ? cause.message
+            : 'Unable to load current account.',
+        );
+      } finally {
+        if (loadMeRequestIdRef.current === requestId) {
+          setLoadingMe(false);
+        }
+      }
+    },
+    [authenticated, config.status, sdk, session.sessionId],
+  );
 
   useEffect(() => {
     void loadMe();
@@ -210,19 +220,23 @@ export function CredentialsRoute() {
     setError('');
 
     try {
-      const response = await fetch(new URL(input.path, config.authOrigin), {
-        method: 'DELETE',
-        headers: {
-          authorization: `Bearer ${effectiveAccessToken}`,
+      const response = await fetch(
+        new URL(input.path, config.resolvedServerBaseUrl),
+        {
+          method: 'DELETE',
+          headers: {
+            authorization: `Bearer ${effectiveAccessToken}`,
+          },
         },
-      });
+      );
 
       if (!response.ok) {
         throw new Error(`Delete failed with status ${response.status}`);
       }
 
       await loadMe({
-        warningMessage: 'Credential deleted, but current account data could not be refreshed.',
+        warningMessage:
+          'Credential deleted, but current account data could not be refreshed.',
       });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Delete failed');
@@ -245,7 +259,9 @@ export function CredentialsRoute() {
           <p className="text-sm text-slate-600">Loading current account…</p>
         ) : null}
         {meError ? <p className="text-sm text-rose-600">{meError}</p> : null}
-        {meWarning ? <p className="text-sm text-amber-700">{meWarning}</p> : null}
+        {meWarning ? (
+          <p className="text-sm text-amber-700">{meWarning}</p>
+        ) : null}
 
         <section
           aria-labelledby="credentials-email-heading"
@@ -257,7 +273,9 @@ export function CredentialsRoute() {
           >
             Email
           </h2>
-          <p className="text-sm text-slate-600">Managed via email OTP sign-in</p>
+          <p className="text-sm text-slate-600">
+            Managed via email OTP sign-in
+          </p>
           {!authenticated ? (
             <p className="text-sm text-slate-600">
               Sign in to inspect the current account email.
@@ -301,9 +319,13 @@ export function CredentialsRoute() {
           <p className="text-sm text-slate-600">
             Review the passkeys currently bound to this account.
           </p>
-          {passkeyError ? <p className="text-sm text-rose-600">{passkeyError}</p> : null}
+          {passkeyError ? (
+            <p className="text-sm text-rose-600">{passkeyError}</p>
+          ) : null}
           {!authenticated ? (
-            <p className="text-sm text-slate-600">Sign in to inspect current passkeys.</p>
+            <p className="text-sm text-slate-600">
+              Sign in to inspect current passkeys.
+            </p>
           ) : meError ? null : passkeys.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="min-w-full text-left text-sm text-slate-700">
@@ -318,12 +340,17 @@ export function CredentialsRoute() {
                 </thead>
                 <tbody>
                   {passkeys.map((row) => (
-                    <tr key={row.id} className="border-b border-slate-100 last:border-0">
+                    <tr
+                      key={row.id}
+                      className="border-b border-slate-100 last:border-0"
+                    >
                       <td className="py-3 pr-4" title={row.credential_id}>
                         {truncateMiddle(row.credential_id)}
                       </td>
                       <td className="py-3 pr-4">{row.rp_id}</td>
-                      <td className="py-3 pr-4">{row.last_used_at ?? 'Never'}</td>
+                      <td className="py-3 pr-4">
+                        {row.last_used_at ?? 'Never'}
+                      </td>
                       <td className="py-3 pr-4">{row.created_at}</td>
                       <td className="py-3">
                         {credentialManageable ? (
@@ -392,12 +419,17 @@ export function CredentialsRoute() {
                 </thead>
                 <tbody>
                   {ed25519Credentials.map((row) => (
-                    <tr key={row.id} className="border-b border-slate-100 last:border-0">
+                    <tr
+                      key={row.id}
+                      className="border-b border-slate-100 last:border-0"
+                    >
                       <td className="py-3 pr-4">{row.name}</td>
                       <td className="py-3 pr-4" title={row.public_key}>
                         {truncateMiddle(row.public_key)}
                       </td>
-                      <td className="py-3 pr-4">{row.last_used_at ?? 'Never'}</td>
+                      <td className="py-3 pr-4">
+                        {row.last_used_at ?? 'Never'}
+                      </td>
                       <td className="py-3 pr-4">{row.created_at}</td>
                       {credentialManageable ? (
                         <td className="py-3">

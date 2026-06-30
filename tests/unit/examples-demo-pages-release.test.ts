@@ -131,22 +131,20 @@ describe('examples demo Pages release contract', () => {
     );
   });
 
-  it('documents the published demo with hash auth-origin links instead of sdk-origin or /demo/ paths', () => {
+  it('documents the published demo without origin override links or /demo/ paths', () => {
     const readme = readRepoFile('README.md');
     const browserSdkDoc = readRepoFile('docs/integration/browser-sdk.md');
 
-    expect(readme).toContain(
-      '[Live demo](https://auth-mini.zccz14.com/#/setup?auth-origin=https%3A%2F%2Fauth.zccz14.com)',
-    );
+    expect(readme).toContain('[Live demo](https://auth-mini.zccz14.com/web/)');
+    expect(readme).not.toContain('auth-origin=');
     expect(readme).not.toContain('sdk-origin=');
 
-    expect(browserSdkDoc).toContain('`auth-origin`');
+    expect(browserSdkDoc).toContain('relative base URL `..`');
+    expect(browserSdkDoc).not.toContain('auth-origin=');
     expect(browserSdkDoc).not.toContain('sdk-origin=');
     expect(browserSdkDoc).not.toMatch(/import map/i);
     expect(browserSdkDoc).not.toContain('../dist/sdk/browser.js');
-    expect(browserSdkDoc).toContain(
-      '/#/setup?auth-origin=https://auth.zccz14.com',
-    );
+    expect(browserSdkDoc).toContain('https://auth.example.com/web/');
     expect(browserSdkDoc).not.toMatch(/https?:\/\/[^\s)`]+\/demo\/(?:\?|\b)/);
   });
 });

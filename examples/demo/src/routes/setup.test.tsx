@@ -3,39 +3,47 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { DemoProvider } from '@/app/providers/demo-provider';
-import { AUTH_ORIGIN_KEY } from '@/lib/demo-storage';
 import { SetupRoute } from './setup';
 
 const apiMocks = vi.hoisted(() => ({
+  createApiSdk: vi.fn(),
   update: vi.fn(),
 }));
 
 vi.mock('auth-mini/sdk/api', () => ({
-  createApiSdk: vi.fn(() => ({
-    admin: {
-      setup: {
-        update: apiMocks.update,
-      },
-    },
-  })),
+  createApiSdk: apiMocks.createApiSdk,
 }));
 
-const DEFAULT_AUTH_ORIGIN = 'https://auth.zccz14.com';
+apiMocks.createApiSdk.mockImplementation(() => ({
+  admin: {
+    setup: {
+      update: apiMocks.update,
+    },
+  },
+}));
+
+const DEFAULT_SERVER_BASE_URL = 'https://demo.example.com/';
 
 describe('SetupRoute', () => {
   beforeEach(() => {
-    window.localStorage.removeItem(AUTH_ORIGIN_KEY);
+    apiMocks.createApiSdk.mockClear();
     apiMocks.update.mockReset();
   });
 
   it('renders setup controls without smtp or origin CLI commands', () => {
     const { container } = renderSetupRoute();
 
-    expect(screen.getByLabelText('Auth server origin')).toBeInTheDocument();
-    expect(screen.getByLabelText('Issuer')).toHaveValue(DEFAULT_AUTH_ORIGIN);
+    expect(
+      screen.queryByLabelText('Auth server origin'),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Issuer')).toHaveValue(
+      DEFAULT_SERVER_BASE_URL,
+    );
     expect(screen.getByLabelText('Allowed page origin')).toHaveValue(
       'https://demo.example.com',
     );
+    expect(screen.getByText('API base')).toBeInTheDocument();
+    expect(screen.getByText('..')).toBeInTheDocument();
     expect(screen.getByLabelText('SMTP host')).toBeInTheDocument();
     expect(container.querySelectorAll('code')).toHaveLength(0);
     expect(screen.queryByText(/auth-mini smtp/i)).not.toBeInTheDocument();
@@ -46,7 +54,7 @@ describe('SetupRoute', () => {
   it('submits admin setup through the API', async () => {
     apiMocks.update.mockResolvedValueOnce({
       data: {
-        issuer: DEFAULT_AUTH_ORIGIN,
+        issuer: DEFAULT_SERVER_BASE_URL,
         admin_user_id: 'admin-1',
         admin_ed25519: {
           id: '00000000-0000-4000-8000-000000000000',
@@ -92,7 +100,7 @@ describe('SetupRoute', () => {
     await waitFor(() => {
       expect(apiMocks.update).toHaveBeenCalledWith({
         body: {
-          issuer: DEFAULT_AUTH_ORIGIN,
+          issuer: DEFAULT_SERVER_BASE_URL,
           origin: 'https://demo.example.com',
           admin_ed25519: {
             name: 'Admin key',
@@ -112,8 +120,14 @@ describe('SetupRoute', () => {
         throwOnError: true,
       });
     });
+    expect(apiMocks.createApiSdk).toHaveBeenCalledWith({
+      baseUrl: DEFAULT_SERVER_BASE_URL,
+    });
     expect(screen.getByText('Setup saved')).toBeInTheDocument();
-    expect(screen.getAllByText(DEFAULT_AUTH_ORIGIN)).toHaveLength(2);
+    expect(screen.getByLabelText('Issuer')).toHaveValue(
+      DEFAULT_SERVER_BASE_URL,
+    );
+    expect(screen.getByText(DEFAULT_SERVER_BASE_URL)).toBeInTheDocument();
     expect(screen.getByText('Admin key')).toBeInTheDocument();
     expect(screen.getByText('smtp.example.com')).toBeInTheDocument();
     expect(screen.queryByText('secret')).not.toBeInTheDocument();
@@ -122,7 +136,7 @@ describe('SetupRoute', () => {
   it('submits setup without smtp when smtp host is blank', async () => {
     apiMocks.update.mockResolvedValueOnce({
       data: {
-        issuer: DEFAULT_AUTH_ORIGIN,
+        issuer: DEFAULT_SERVER_BASE_URL,
         admin_user_id: null,
         admin_ed25519: null,
         origins: [
@@ -143,7 +157,7 @@ describe('SetupRoute', () => {
     await waitFor(() => {
       expect(apiMocks.update).toHaveBeenCalledWith({
         body: {
-          issuer: DEFAULT_AUTH_ORIGIN,
+          issuer: DEFAULT_SERVER_BASE_URL,
           origin: 'https://demo.example.com',
           admin_ed25519: undefined,
           smtp: undefined,
@@ -161,6 +175,7 @@ function renderSetupRoute() {
       <DemoProvider
         initialLocation={{
           hash: '#/setup',
+          href: 'https://demo.example.com/web/#/setup',
           search: '',
           origin: 'https://demo.example.com',
         }}

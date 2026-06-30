@@ -2,7 +2,6 @@ import React from 'react';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AUTH_ORIGIN_KEY } from '@/lib/demo-storage';
 import { DemoProvider, useDemo } from './demo-provider';
 
 type DemoSessionSnapshot = {
@@ -75,6 +74,8 @@ vi.mock('auth-mini/sdk/browser', () => ({
   createBrowserSdk: sdkMocks.createBrowserSdk,
 }));
 
+const EMBEDDED_SERVER_BASE_URL = 'https://demo.example.com/';
+
 function Probe() {
   const demo = useDemo();
   return (
@@ -122,11 +123,12 @@ describe('DemoProvider', () => {
     };
   });
 
-  it('defaults the app to the hosted auth origin when no override is present', () => {
+  it('uses the parent path of the embedded web app as the SDK base URL', () => {
     render(
       <DemoProvider
         initialLocation={{
           hash: '#/setup',
+          href: 'https://demo.example.com/web/#/setup',
           search: '',
           origin: 'https://demo.example.com',
         }}
@@ -139,32 +141,11 @@ describe('DemoProvider', () => {
     expect(screen.getByTestId('session-status')).toHaveTextContent('anonymous');
     expect(screen.getByTestId('has-user')).toHaveTextContent('no');
     expect(sdkMocks.createBrowserSdk).toHaveBeenCalledWith(
-      'https://auth.zccz14.com',
+      EMBEDDED_SERVER_BASE_URL,
     );
-  });
-
-  it('keeps the app waiting when the hash contains an empty auth-origin', () => {
-    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
-
-    render(
-      <DemoProvider
-        initialLocation={{
-          hash: '#/setup?auth-origin=',
-          search: '',
-          origin: 'https://demo.example.com',
-        }}
-      >
-        <Probe />
-      </DemoProvider>,
-    );
-
-    expect(screen.getByTestId('config-status')).toHaveTextContent('waiting');
-    expect(screen.getByTestId('session-status')).toHaveTextContent('anonymous');
-    expect(sdkMocks.createBrowserSdk).not.toHaveBeenCalled();
   });
 
   it('exposes sdk session state and reacts to session changes', () => {
-    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
     sdkMocks.sessionState.current = {
       status: 'authenticated',
       authenticated: true,
@@ -179,6 +160,7 @@ describe('DemoProvider', () => {
       <DemoProvider
         initialLocation={{
           hash: '#/',
+          href: 'https://demo.example.com/web/#/',
           search: '',
           origin: 'https://demo.example.com',
         }}
@@ -193,7 +175,7 @@ describe('DemoProvider', () => {
     );
     expect(screen.getByTestId('has-user')).toHaveTextContent('no');
     expect(sdkMocks.createBrowserSdk).toHaveBeenCalledWith(
-      'https://auth.example.com',
+      EMBEDDED_SERVER_BASE_URL,
     );
     expect(sdkMocks.onChange).toHaveBeenCalledTimes(1);
 
@@ -217,7 +199,6 @@ describe('DemoProvider', () => {
 
   it('adopts persisted session tokens by reattaching an authenticated sdk without exposing user', async () => {
     const user = userEvent.setup();
-    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
     sdkMocks.sdkStates.push(
       {
         status: 'anonymous',
@@ -243,6 +224,7 @@ describe('DemoProvider', () => {
       <DemoProvider
         initialLocation={{
           hash: '#/',
+          href: 'https://demo.example.com/web/#/',
           search: '',
           origin: 'https://demo.example.com',
         }}
@@ -251,7 +233,9 @@ describe('DemoProvider', () => {
       </DemoProvider>,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Adopt demo session' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Adopt demo session' }),
+    );
 
     expect(sdkMocks.createBrowserSdk).toHaveBeenCalledTimes(2);
     expect(screen.getByTestId('session-status')).toHaveTextContent(
@@ -260,7 +244,7 @@ describe('DemoProvider', () => {
     expect(screen.getByTestId('has-user')).toHaveTextContent('no');
     expect(
       JSON.parse(
-        localStorage.getItem('auth-mini.sdk:https://auth.example.com/') ?? '',
+        localStorage.getItem('auth-mini.sdk:https://demo.example.com/') ?? '',
       ),
     ).toEqual(
       expect.objectContaining({
@@ -272,13 +256,12 @@ describe('DemoProvider', () => {
   });
 
   it('creates the sdk from effect lifecycle and cleans subscriptions under StrictMode replay', () => {
-    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
-
     render(
       <React.StrictMode>
         <DemoProvider
           initialLocation={{
             hash: '#/',
+            href: 'https://demo.example.com/web/#/',
             search: '',
             origin: 'https://demo.example.com',
           }}
@@ -293,7 +276,7 @@ describe('DemoProvider', () => {
     expect(screen.getByTestId('config-status')).toHaveTextContent('ready');
   });
 
-  it('falls back to the hosted auth origin when localStorage access throws', () => {
+  it('keeps the app ready when localStorage access throws', () => {
     const localStorageDescriptor = Object.getOwnPropertyDescriptor(
       window,
       'localStorage',
@@ -311,6 +294,7 @@ describe('DemoProvider', () => {
         <DemoProvider
           initialLocation={{
             hash: '#/',
+            href: 'https://demo.example.com/web/#/',
             search: '',
             origin: 'https://demo.example.com',
           }}
@@ -321,7 +305,7 @@ describe('DemoProvider', () => {
 
       expect(screen.getByTestId('config-status')).toHaveTextContent('ready');
       expect(sdkMocks.createBrowserSdk).toHaveBeenCalledWith(
-        'https://auth.zccz14.com',
+        EMBEDDED_SERVER_BASE_URL,
       );
     } finally {
       if (localStorageDescriptor) {
@@ -330,37 +314,8 @@ describe('DemoProvider', () => {
     }
   });
 
-  it.each([
-    'not a url',
-    'ftp://auth.example.com',
-    'https://auth.example.com/path',
-    'https://auth.example.com?foo=bar',
-    'https://auth.example.com#fragment',
-  ])(
-    'does not create the sdk when persisted auth origin is invalid: %s',
-    (authOrigin) => {
-      localStorage.setItem(AUTH_ORIGIN_KEY, authOrigin);
-
-      render(
-        <DemoProvider
-          initialLocation={{
-            hash: '#/',
-            search: '',
-            origin: 'https://demo.example.com',
-          }}
-        >
-          <Probe />
-        </DemoProvider>,
-      );
-
-      expect(screen.getByTestId('config-status')).toHaveTextContent('waiting');
-      expect(sdkMocks.createBrowserSdk).not.toHaveBeenCalled();
-    },
-  );
-
-  it('clears persisted auth origin when local auth state is cleared', async () => {
+  it('clears local auth state through the current SDK', async () => {
     const user = userEvent.setup();
-    localStorage.setItem(AUTH_ORIGIN_KEY, 'https://auth.example.com');
     sdkMocks.sessionState.current = {
       status: 'authenticated',
       authenticated: true,
@@ -375,6 +330,7 @@ describe('DemoProvider', () => {
       <DemoProvider
         initialLocation={{
           hash: '#/session',
+          href: 'https://demo.example.com/web/#/session',
           search: '',
           origin: 'https://demo.example.com',
         }}
@@ -390,47 +346,8 @@ describe('DemoProvider', () => {
     expect(sdkMocks.logout).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('config-status')).toHaveTextContent('ready');
     expect(screen.getByTestId('session-status')).toHaveTextContent('anonymous');
-    expect(localStorage.getItem(AUTH_ORIGIN_KEY)).toBe(
-      'https://auth.zccz14.com',
-    );
     expect(sdkMocks.createBrowserSdk).toHaveBeenLastCalledWith(
-      'https://auth.zccz14.com',
+      EMBEDDED_SERVER_BASE_URL,
     );
-  });
-
-  it('clears hash auth-origin and falls back to the hosted origin', async () => {
-    const user = userEvent.setup();
-
-    window.history.replaceState(
-      {},
-      '',
-      '/#/session?auth-origin=https%3A%2F%2Fauth.example.com',
-    );
-
-    sdkMocks.sessionState.current = {
-      status: 'authenticated',
-      authenticated: true,
-      sessionId: 'session-1',
-      accessToken: 'access-token',
-      refreshToken: 'refresh-token',
-      receivedAt: '2026-04-11T00:00:00.000Z',
-      expiresAt: '2026-04-11T01:00:00.000Z',
-    };
-
-    render(
-      <DemoProvider>
-        <Probe />
-      </DemoProvider>,
-    );
-
-    await user.click(
-      screen.getByRole('button', { name: 'Clear local auth state' }),
-    );
-
-    expect(screen.getByTestId('config-status')).toHaveTextContent('ready');
-    expect(sdkMocks.createBrowserSdk).toHaveBeenLastCalledWith(
-      'https://auth.zccz14.com',
-    );
-    expect(window.location.hash).toBe('#/session');
   });
 });
