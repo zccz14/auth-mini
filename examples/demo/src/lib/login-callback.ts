@@ -3,7 +3,7 @@ import type { DemoSessionTokens } from '@/lib/demo-sdk';
 export type LoginRequest =
   | {
       status: 'ready';
-      redirectUri: string;
+      redirectUri: string | null;
       state: string | null;
     }
   | {
@@ -22,14 +22,24 @@ export type LoginCallbackTokens =
     }
   | DemoSessionTokens;
 
-export function parseLoginRequest(search: string): LoginRequest {
-  const params = new URLSearchParams(search);
-  const redirectUri = params.get('redirect_uri')?.trim() ?? '';
+export function parseLoginRequest(
+  routeSearch: string,
+  documentSearch = '',
+): LoginRequest {
+  const params = new URLSearchParams(routeSearch);
+  const documentParams = new URLSearchParams(documentSearch);
+  const redirectUri = (
+    params.get('redirect_uri') ??
+    documentParams.get('redirect_uri') ??
+    ''
+  ).trim();
+  const state = params.get('state') ?? documentParams.get('state');
 
   if (!redirectUri) {
     return {
-      status: 'invalid',
-      error: 'redirect_uri is required.',
+      status: 'ready',
+      redirectUri: null,
+      state,
     };
   }
 
@@ -53,8 +63,28 @@ export function parseLoginRequest(search: string): LoginRequest {
   return {
     status: 'ready',
     redirectUri: parsed.toString(),
-    state: params.get('state'),
+    state,
   };
+}
+
+export function toDemoSessionTokens(
+  tokens: LoginCallbackTokens,
+): DemoSessionTokens {
+  if ('accessToken' in tokens) {
+    if (!tokens.accessToken) {
+      throw new Error('Login did not return an access token.');
+    }
+
+    return {
+      session_id: tokens.sessionId,
+      access_token: tokens.accessToken,
+      refresh_token: tokens.refreshToken,
+      expires_in: expiresInFromTokenDates(tokens.expiresAt, tokens.receivedAt),
+      token_type: 'Bearer',
+    };
+  }
+
+  return tokens;
 }
 
 export function buildLoginCallbackUrl({

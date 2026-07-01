@@ -1,6 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { useLocation } from 'react-router-dom';
-import type { SessionResult } from 'auth-mini/sdk/browser';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useDemo } from '@/app/providers/demo-provider';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -10,6 +9,7 @@ import {
   buildLoginCallbackUrl,
   parseLoginRequest,
   sendLoginCallback,
+  toDemoSessionTokens,
   type LoginCallbackTokens,
 } from '@/lib/login-callback';
 import {
@@ -23,8 +23,9 @@ type PendingAction = 'email-start' | 'email-verify' | 'passkey' | 'ed25519';
 
 export function LoginRoute() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { adoptDemoSession, config, sdk } = useDemo();
-  const request = parseLoginRequest(location.search);
+  const request = parseLoginRequest(location.search, window.location.search);
   const [method, setMethod] = useState<LoginMethod>('email');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
@@ -121,14 +122,20 @@ export function LoginRoute() {
         request_id: challenge.request_id,
         signature,
       });
-      await adoptDemoSession(tokens);
-      completeLogin(tokens);
+      await completeLogin(tokens);
     });
   }
 
-  function completeLogin(tokens: SessionResult | LoginCallbackTokens) {
+  async function completeLogin(tokens: LoginCallbackTokens) {
     if (request.status !== 'ready') {
       setError(request.error);
+      return;
+    }
+
+    if (!request.redirectUri) {
+      await adoptDemoSession(toDemoSessionTokens(tokens));
+      setMessage('Signed in.');
+      navigate('/');
       return;
     }
 
