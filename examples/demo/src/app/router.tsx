@@ -12,10 +12,10 @@ export function AppRouter() {
   return (
     <DemoProvider>
       <Routes>
+        <Route path="/login" element={<LoginRoute />} />
         <Route element={<AppShell />}>
           <Route path="/" element={<HomeRoute />} />
           <Route path="/initialize" element={<SetupRoute />} />
-          <Route path="/login" element={<LoginRoute />} />
           <Route path="/admin" element={<AdminRoute />} />
           <Route path="/credentials" element={<CredentialsRoute />} />
           <Route path="/sessions" element={<SessionRoute />} />
