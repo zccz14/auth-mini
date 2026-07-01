@@ -35,6 +35,37 @@ function createWebauthnSdkForTest(
   });
 }
 
+function receiverSensitiveNavigatorCredentials(): NavigatorCredentialsLike {
+  const credentials = {
+    async create(
+      this: NavigatorCredentialsLike,
+      options?: Parameters<NonNullable<NavigatorCredentialsLike['create']>>[0],
+    ) {
+      if (this !== credentials) {
+        throw new TypeError('Illegal invocation');
+      }
+
+      return fakeNavigatorCredentials().create(
+        options as CredentialCreationOptions,
+      );
+    },
+    async get(
+      this: NavigatorCredentialsLike,
+      options?: Parameters<NonNullable<NavigatorCredentialsLike['get']>>[0],
+    ) {
+      if (this !== credentials) {
+        throw new TypeError('Illegal invocation');
+      }
+
+      return fakeNavigatorCredentials().get(
+        options as CredentialRequestOptions,
+      );
+    },
+  };
+
+  return credentials;
+}
+
 describe('sdk webauthn flows', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -112,6 +143,23 @@ describe('sdk webauthn flows', () => {
           signature: 'ISIjJA',
           userHandle: 'JSYnKA',
         },
+      },
+    });
+  });
+
+  it('calls passkey authenticate with navigator.credentials as receiver', async () => {
+    const fetch = createWebauthnRequestRecorder();
+    const sdk = createWebauthnSdkForTest({
+      fetch,
+      navigatorCredentials: receiverSensitiveNavigatorCredentials(),
+    });
+
+    await expect(sdk.passkey.authenticate()).resolves.toMatchObject({
+      accessToken: 'access-authenticated',
+    });
+    expect(readJsonBody(fetch, '/webauthn/authenticate/verify')).toMatchObject({
+      credential: {
+        id: 'authenticate-credential',
       },
     });
   });
@@ -208,6 +256,22 @@ describe('sdk webauthn flows', () => {
           attestationObject: 'CQoLDA',
           transports: ['internal'],
         },
+      },
+    });
+  });
+
+  it('calls passkey register with navigator.credentials as receiver', async () => {
+    const fetch = createWebauthnRequestRecorder();
+    const sdk = createWebauthnSdkForTest({
+      fetch,
+      storage: fakeAuthenticatedStorage(),
+      navigatorCredentials: receiverSensitiveNavigatorCredentials(),
+    });
+
+    await expect(sdk.passkey.register()).resolves.toEqual({ ok: true });
+    expect(readJsonBody(fetch, '/webauthn/register/verify')).toMatchObject({
+      credential: {
+        id: 'register-credential',
       },
     });
   });

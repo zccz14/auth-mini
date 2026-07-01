@@ -714,7 +714,8 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
         )) as AuthenticationOptionsResponse;
         const credential = await requestCredential(
           'authenticate',
-          input.navigatorCredentials?.get,
+          input.navigatorCredentials,
+          'get',
           {
             publicKey: decodeAuthenticationOptions(
               options.publicKey,
@@ -740,7 +741,8 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
         )) as RegistrationOptionsResponse;
         const credential = await requestCredential(
           'register',
-          input.navigatorCredentials?.create,
+          input.navigatorCredentials,
+          'create',
           {
             publicKey: decodeRegistrationOptions(
               options.publicKey,
@@ -774,17 +776,22 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
 
     async function requestCredential<T extends CredentialOptions>(
       mode: 'authenticate' | 'register',
-      invoke: ((options?: T) => Promise<unknown>) | undefined,
+      credentials: NavigatorCredentialsLike | undefined,
+      method: 'create' | 'get',
       options: T,
     ): Promise<WebauthnPublicKeyCredential> {
-      if (!invoke) {
+      const invoke = credentials?.[method];
+      if (!credentials || !invoke) {
         throw createSdkError(
           'webauthn_unsupported',
           'WebAuthn is unavailable in this browser',
         );
       }
       try {
-        const credential = await invoke(options);
+        const credential =
+          method === 'create'
+            ? await credentials.create!(options as CredentialCreationOptions)
+            : await credentials.get!(options as CredentialRequestOptions);
         if (!credential) {
           throw createSdkError(
             'webauthn_cancelled',
