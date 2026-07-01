@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { AdminRoute } from './admin';
 import { CredentialsRoute } from './credentials';
@@ -17,7 +18,12 @@ const sdk = {
   email: { start: vi.fn(), verify: vi.fn() },
   me: { fetch: vi.fn() },
   passkey: { authenticate: vi.fn(), register: vi.fn() },
-  session: { getState: vi.fn(), logout: vi.fn(), onChange: vi.fn(), refresh: vi.fn() },
+  session: {
+    getState: vi.fn(),
+    logout: vi.fn(),
+    onChange: vi.fn(),
+    refresh: vi.fn(),
+  },
 };
 
 vi.mock('@/app/providers/demo-provider', () => ({
@@ -47,14 +53,28 @@ describe('formal GUI routes', () => {
   it('renders the dedicated initialization page', () => {
     render(<SetupRoute />);
 
-    expect(screen.getByRole('heading', { name: 'Initialize auth-mini' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Generate ED25519 key' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Initialize auth-mini' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Generate ED25519 key' }),
+    ).toBeInTheDocument();
   });
 
   it('renders the dedicated login page with all sign-in methods', () => {
-    render(<LoginRoute />);
+    render(
+      <MemoryRouter
+        initialEntries={[
+          '/login?redirect_uri=https%3A%2F%2Fapp.example.com%2Fcallback',
+        ]}
+      >
+        <LoginRoute />
+      </MemoryRouter>,
+    );
 
-    expect(screen.getByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Sign in' }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Email' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Passkey' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'ED25519' })).toBeInTheDocument();
@@ -71,7 +91,9 @@ describe('formal GUI routes', () => {
 
     render(<HomeRoute />);
 
-    expect(screen.getByRole('heading', { name: 'Account' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Account' }),
+    ).toBeInTheDocument();
   });
 
   it('renders the merged credential management page', () => {
@@ -85,9 +107,15 @@ describe('formal GUI routes', () => {
 
     render(<CredentialsRoute />);
 
-    expect(screen.getByRole('heading', { name: 'Credentials' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Passkeys' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'ED25519' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Credentials' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Passkeys' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'ED25519' }),
+    ).toBeInTheDocument();
   });
 
   it('renders the administrator page', async () => {
@@ -103,6 +131,8 @@ describe('formal GUI routes', () => {
     render(<AdminRoute />);
 
     expect(screen.getByRole('heading', { name: 'Admin' })).toBeInTheDocument();
-    expect(await screen.findByRole('heading', { name: 'Users' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Users' }),
+    ).toBeInTheDocument();
   });
 });
