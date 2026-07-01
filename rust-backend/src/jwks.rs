@@ -29,17 +29,40 @@ pub(crate) fn sign_access_token(
     bootstrap_keys(connection)?;
     let key = current_key(connection)?;
     let iat = Utc::now().timestamp();
+    let auth_admin = is_admin_user(connection, user_id)?;
     let payload = json!({
         "sub": user_id,
         "sid": session_id,
         "iss": issuer,
         "amr": [auth_method],
+        "auth_admin": auth_admin,
         "typ": "access",
         "iat": iat,
         "exp": (Utc::now() + Duration::seconds(ACCESS_TOKEN_SECONDS)).timestamp(),
     });
 
     sign_json(&payload, &key)
+}
+
+fn is_admin_user(connection: &Connection, user_id: &str) -> rusqlite::Result<bool> {
+    let admin_user_id = match connection
+        .query_row(
+            "SELECT admin_user_id FROM app_meta WHERE id = 'APP'",
+            [],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional()
+    {
+        Ok(value) => value.flatten(),
+        Err(rusqlite::Error::SqliteFailure(_, Some(message)))
+            if message.contains("no such table: app_meta") =>
+        {
+            None
+        }
+        Err(error) => return Err(error),
+    };
+
+    Ok(admin_user_id.as_deref() == Some(user_id))
 }
 
 pub(crate) fn verify_access_token(connection: &Connection, token: &str) -> rusqlite::Result<Value> {

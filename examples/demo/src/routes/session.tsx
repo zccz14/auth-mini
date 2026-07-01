@@ -44,7 +44,9 @@ function getSessionCapability(accessToken: string): SessionCapability {
   }
 
   const amr = Array.isArray(payload.amr)
-    ? payload.amr.filter((value: unknown): value is string => typeof value === 'string')
+    ? payload.amr.filter(
+        (value: unknown): value is string => typeof value === 'string',
+      )
     : [];
 
   if (amr.length === 0) {
@@ -83,52 +85,57 @@ export function SessionRoute() {
   const [tableError, setTableError] = useState('');
   const rows = me?.active_sessions ?? [];
 
-  const loadMe = useCallback(async (options?: { warningMessage?: string }) => {
-    const requestId = loadMeRequestIdRef.current + 1;
-    loadMeRequestIdRef.current = requestId;
+  const loadMe = useCallback(
+    async (options?: { warningMessage?: string }) => {
+      const requestId = loadMeRequestIdRef.current + 1;
+      loadMeRequestIdRef.current = requestId;
 
-    if (!sdk || config.status !== 'ready' || !session.authenticated) {
-      setMe(null);
-      setMeError('');
-      setMeWarning('');
-      setLoadingMe(false);
-      return;
-    }
-
-    setLoadingMe(true);
-    setMeError('');
-    if (!options?.warningMessage) {
-      setMeWarning('');
-    }
-
-    try {
-      const nextMe = await sdk.me.fetch();
-      if (loadMeRequestIdRef.current !== requestId) {
-        return;
-      }
-
-      setMe(nextMe);
-      setMeWarning('');
-    } catch (cause) {
-      if (loadMeRequestIdRef.current !== requestId) {
-        return;
-      }
-
-      if (options?.warningMessage) {
-        setMeWarning(options.warningMessage);
-        return;
-      }
-
-      setMe(null);
-      setMeError(
-        cause instanceof Error ? cause.message : 'Unable to load current user.',
-      );
-    } finally {
-      if (loadMeRequestIdRef.current === requestId) {
+      if (!sdk || config.status !== 'ready' || !session.authenticated) {
+        setMe(null);
+        setMeError('');
+        setMeWarning('');
         setLoadingMe(false);
+        return;
       }
-    }
-  }, [config.status, sdk, session.authenticated, session.sessionId]);
+
+      setLoadingMe(true);
+      setMeError('');
+      if (!options?.warningMessage) {
+        setMeWarning('');
+      }
+
+      try {
+        const nextMe = await sdk.me.fetch();
+        if (loadMeRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        setMe(nextMe);
+        setMeWarning('');
+      } catch (cause) {
+        if (loadMeRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        if (options?.warningMessage) {
+          setMeWarning(options.warningMessage);
+          return;
+        }
+
+        setMe(null);
+        setMeError(
+          cause instanceof Error
+            ? cause.message
+            : 'Unable to load current user.',
+        );
+      } finally {
+        if (loadMeRequestIdRef.current === requestId) {
+          setLoadingMe(false);
+        }
+      }
+    },
+    [config.status, sdk, session.authenticated, session.sessionId],
+  );
 
   useEffect(() => {
     void loadMe();
@@ -163,7 +170,7 @@ export function SessionRoute() {
       }
 
       const response = await fetch(
-        new URL(`/session/${sessionId}/logout`, config.authOrigin),
+        new URL(`/session/${sessionId}/logout`, config.resolvedServerBaseUrl),
         {
           method: 'POST',
           headers: { authorization: `Bearer ${accessToken}` },
@@ -175,7 +182,8 @@ export function SessionRoute() {
       }
 
       await loadMe({
-        warningMessage: 'Session updated, but current user data could not be refreshed.',
+        warningMessage:
+          'Session updated, but current user data could not be refreshed.',
       });
       setTableError('');
     } catch {
@@ -193,8 +201,8 @@ export function SessionRoute() {
       <div className="space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="max-w-2xl text-sm text-slate-600">
-            The session page owns its own authenticated profile fetch so refreshes
-            stay local to this route.
+            The session page owns its own authenticated profile fetch so
+            refreshes stay local to this route.
           </p>
           <Button onClick={() => void clearLocalAuthState()}>
             Clear local auth state
@@ -213,22 +221,30 @@ export function SessionRoute() {
           <p className="text-sm text-slate-600">Loading current user…</p>
         ) : null}
         {meError ? <p className="text-sm text-rose-600">{meError}</p> : null}
-        {meWarning ? <p className="text-sm text-amber-700">{meWarning}</p> : null}
+        {meWarning ? (
+          <p className="text-sm text-amber-700">{meWarning}</p>
+        ) : null}
 
         <section
           aria-labelledby="active-sessions-heading"
           className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4"
         >
           <div className="space-y-1">
-            <h3 id="active-sessions-heading" className="text-base font-semibold text-slate-950">
+            <h3
+              id="active-sessions-heading"
+              className="text-base font-semibold text-slate-950"
+            >
               Active sessions
             </h3>
             <p className="text-sm text-slate-600">
-              Review every active session in the current snapshot and kick peers as needed.
+              Review every active session in the current snapshot and kick peers
+              as needed.
             </p>
           </div>
 
-          {tableError ? <p className="text-sm text-rose-600">Unable to kick session.</p> : null}
+          {tableError ? (
+            <p className="text-sm text-rose-600">Unable to kick session.</p>
+          ) : null}
 
           {!session.authenticated ? (
             <p className="text-sm text-slate-600">No active sessions.</p>
@@ -253,7 +269,10 @@ export function SessionRoute() {
                     const isPending = pendingSessionId === activeSession.id;
 
                     return (
-                      <tr key={activeSession.id} className="border-b border-slate-200 last:border-b-0">
+                      <tr
+                        key={activeSession.id}
+                        className="border-b border-slate-200 last:border-b-0"
+                      >
                         <td className="px-3 py-2 font-mono text-xs text-slate-950">
                           {activeSession.id}
                         </td>

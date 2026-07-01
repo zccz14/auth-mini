@@ -5,7 +5,7 @@ auth-mini uses discoverable credentials for passkey login. Users sign in with em
 ## Registration flow
 
 1. Sign in with email OTP.
-2. Call `POST /webauthn/register/options` while authenticated with `{ "rp_id": "example.com" }`.
+2. Call `POST /webauthn/register/options` while authenticated with `{}`.
 3. Pass `publicKey` into `navigator.credentials.create()`.
 4. Send `{ request_id, credential }` to `POST /webauthn/register/verify`.
 
@@ -37,7 +37,7 @@ Registration options require discoverable credentials:
 
 ## Authentication flow
 
-1. Call `POST /webauthn/authenticate/options` with `{ "rp_id": "example.com" }`.
+1. Call `POST /webauthn/authenticate/options` with `{}`.
 2. Pass `publicKey` into `navigator.credentials.get()`.
 3. Send `{ request_id, credential }` to `POST /webauthn/authenticate/verify`.
 
@@ -57,7 +57,7 @@ Authentication options are username-less and intentionally omit `allowCredential
 
 ## `rp_id` constraints
 
-`rp_id` cannot be arbitrary. It must satisfy normal WebAuthn browser/server rules relative to the page hostname: typically the same host or a parent domain, while `localhost` and IP-based setups generally require an exact match. If your browser page is on a different allowed origin, that page origin must still be explicitly stored in auth-mini with the `origin` CLI commands.
+`rp_id` is configured once in `app_meta` through the administrator configuration API or GUI. Passkey registration and login always run on the Auth Mini server page, so WebAuthn origin is derived from the configured issuer and clients do not choose an origin or RP ID per request. The configured `rp_id` must satisfy normal WebAuthn rules relative to the issuer hostname: typically the same host or a parent domain, while `localhost` and IP-based setups generally require an exact match.
 
 ## Discoverable credentials
 

@@ -34,31 +34,34 @@ The Rust binary embeds the database schema, `openapi.yaml`, and the GUI demo sta
 
 The Rust binary prints one `auth-mini SQLite database: <path>` line to stderr when a database is configured.
 
-The old npm/oclif commands and Rust management subcommands have been removed. Configure app metadata through the GUI demo or the local admin setup API.
+The old npm/oclif commands and Rust management subcommands have been removed. Initialize the admin credential through the local setup API, then configure app metadata through the authenticated admin configuration API or GUI.
 
-## Stored browser origins
+## Passkey RP configuration
 
-Manage the externally visible issuer and browser page origins for WebAuthn and related origin checks with the GUI demo setup page or loopback-only `PUT /admin/setup`. This writes app metadata stored in `app_meta`, including `app_meta.issuer`; it does not control HTTP CORS, and auth-mini serves `Access-Control-Allow-Origin: *` on CORS responses.
+Initialize the admin Ed25519 credential with loopback-only `PUT /admin/setup`, then manage the externally visible issuer and passkey RP ID with the admin configuration page or authenticated `PUT /admin/config`. These values are stored in `app_meta` as `app_meta.issuer` and `app_meta.rp_id`. Passkey ceremonies run on the Auth Mini server page, so WebAuthn origin is derived from the issuer; this does not control HTTP CORS, and auth-mini serves `Access-Control-Allow-Origin: *` on CORS responses.
 
 ```bash
 curl -X PUT http://127.0.0.1:7777/admin/setup \
   -H 'content-type: application/json' \
-  -d '{"issuer":"https://auth.example.com","origin":"https://app.example.com","admin_ed25519":{"name":"ops laptop","public_key":"<base64url-ed25519-public-key>"}}'
+  -d '{"admin_ed25519":{"name":"ops laptop","public_key":"<base64url-ed25519-public-key>"}}'
 ```
 
-The optional `admin_ed25519` value can create an admin user without an email address. Use that key for later Ed25519 admin login.
+The required `admin_ed25519` value creates an admin user without an email address. Use that key for later Ed25519 admin login.
 
 ## SMTP configuration
 
-Manage SMTP with the same setup API when email OTP is needed. SMTP is optional, and admin Ed25519 bootstrap does not depend on SMTP. The response returns an SMTP summary and never returns the stored password:
+Manage SMTP with the authenticated admin configuration API when email OTP is needed. SMTP is optional, and admin Ed25519 bootstrap does not depend on SMTP. The response returns an SMTP summary and never returns the stored password:
 
 ```bash
-curl http://127.0.0.1:7777/admin/setup
+curl -X PUT http://127.0.0.1:7777/admin/config \\
+  -H 'authorization: Bearer <admin-access-token>' \\
+  -H 'content-type: application/json' \\
+  -d '{"issuer":"https://auth.example.com","rp_id":"auth.example.com","smtp":{"host":"smtp.example.com","port":587,"username":"mailer","password":"secret","from_email":"noreply@example.com","from_name":"Auth Mini","secure":false,"weight":1}}'
 ```
 
 ## Starting the server
 
-The CLI controls only the local listener and database path. The externally visible issuer used by clients, JWT verifiers, and WebAuthn flows is app metadata set through `/admin/setup`.
+The CLI controls only the local listener and database path. The externally visible issuer used by clients, JWT verifiers, and WebAuthn flows is app metadata set through `/admin/config`.
 
 ```bash
 auth-mini \

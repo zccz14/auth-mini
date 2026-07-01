@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createDeviceSdk } from '../../src/sdk/device.js';
 import {
+  deriveDevicePrivateKey,
+  deriveDevicePublicKey,
+} from '../../src/sdk/device-auth.js';
+import {
   countLogoutCalls,
   createDevicePrivateKeySeed,
   jsonResponse,
@@ -58,7 +62,6 @@ describe('device module sdk', () => {
 
     const sdk = createDeviceSdk({
       serverBaseUrl: 'https://sdk.example.test:9443/auth/base',
-      credentialId: '550e8400-e29b-41d4-a716-446655440000',
       privateKeySeed: createDevicePrivateKeySeed(),
       fetch,
       now: () => Date.parse('2026-04-12T00:00:00.000Z'),
@@ -110,10 +113,13 @@ describe('device module sdk', () => {
       throw new Error(`Unhandled path: ${url.pathname}`);
     });
 
+    const privateKeySeed = createDevicePrivateKeySeed();
+    const expectedPublicKey = deriveDevicePublicKey(
+      deriveDevicePrivateKey(privateKeySeed),
+    );
     const sdk = createDeviceSdk({
       serverBaseUrl: 'https://auth.example.com',
-      credentialId: '550e8400-e29b-41d4-a716-446655440000',
-      privateKeySeed: createDevicePrivateKeySeed(),
+      privateKeySeed,
       fetch,
       now: () => Date.parse('2026-04-12T00:00:00.000Z'),
     });
@@ -123,7 +129,7 @@ describe('device module sdk', () => {
     expect(sdk.session.getState()).not.toHaveProperty('me');
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(readJsonBody(fetch, '/ed25519/start')).toEqual({
-      credential_id: '550e8400-e29b-41d4-a716-446655440000',
+      public_key: expectedPublicKey,
     });
   });
 
@@ -131,7 +137,6 @@ describe('device module sdk', () => {
     expect(() =>
       createDeviceSdk({
         serverBaseUrl: 'https://auth.example.com',
-        credentialId: '550e8400-e29b-41d4-a716-446655440000',
         privateKeySeed: 'not/base64url+',
         fetch: vi.fn(),
       }),
@@ -144,7 +149,6 @@ describe('device module sdk', () => {
     expect(() =>
       createDeviceSdk({
         serverBaseUrl: 'https://auth.example.com',
-        credentialId: '550e8400-e29b-41d4-a716-446655440000',
         privateKeySeed: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQB',
         fetch: vi.fn(),
       }),
@@ -157,7 +161,6 @@ describe('device module sdk', () => {
     expect(() =>
       createDeviceSdk({
         serverBaseUrl: 'https://auth.example.com',
-        credentialId: '550e8400-e29b-41d4-a716-446655440000',
         privateKeySeed: Buffer.alloc(31, 1).toString('base64url'),
         fetch: vi.fn(),
       }),
@@ -176,7 +179,6 @@ describe('device module sdk', () => {
 
     const sdk = createDeviceSdk({
       serverBaseUrl: 'https://auth.example.com',
-      credentialId: '550e8400-e29b-41d4-a716-446655440000',
       privateKeySeed: createDevicePrivateKeySeed(),
       fetch: vi
         .fn()
@@ -207,7 +209,6 @@ describe('device module sdk', () => {
   it('dispose is idempotent, clears local state, and blocks session-dependent APIs', async () => {
     const sdk = createDeviceSdk({
       serverBaseUrl: 'https://auth.example.com',
-      credentialId: '550e8400-e29b-41d4-a716-446655440000',
       privateKeySeed: createDevicePrivateKeySeed(),
       fetch: vi.fn(async (input: URL | RequestInfo) => {
         const url = input instanceof URL ? input : new URL(String(input));
@@ -301,7 +302,6 @@ describe('device module sdk', () => {
 
     const sdk = createDeviceSdk({
       serverBaseUrl: 'https://auth.example.com',
-      credentialId: '550e8400-e29b-41d4-a716-446655440000',
       privateKeySeed: createDevicePrivateKeySeed(),
       fetch,
       now: () => Date.parse('2026-04-12T00:30:00.000Z'),
@@ -365,7 +365,6 @@ describe('device module sdk', () => {
 
     const sdk = createDeviceSdk({
       serverBaseUrl: 'https://auth.example.com',
-      credentialId: '550e8400-e29b-41d4-a716-446655440000',
       privateKeySeed: createDevicePrivateKeySeed(),
       fetch,
     });

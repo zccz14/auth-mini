@@ -1,11 +1,10 @@
 import { Route, Routes } from 'react-router-dom';
 import { AppShell } from '@/components/app/app-shell';
 import { DemoProvider } from '@/app/providers/demo-provider';
+import { AdminRoute } from '@/routes/admin';
 import { CredentialsRoute } from '@/routes/credentials';
-import { EmailRoute } from '@/routes/email';
-import { Ed25519Route } from '@/routes/ed25519';
 import { HomeRoute } from '@/routes/home';
-import { PasskeyRoute } from '@/routes/passkey';
+import { LoginRoute } from '@/routes/login';
 import { SessionRoute } from '@/routes/session';
 import { SetupRoute } from '@/routes/setup';
 
@@ -15,12 +14,11 @@ export function AppRouter() {
       <Routes>
         <Route element={<AppShell />}>
           <Route path="/" element={<HomeRoute />} />
-          <Route path="/setup" element={<SetupRoute />} />
-          <Route path="/email" element={<EmailRoute />} />
-          <Route path="/ed25519" element={<Ed25519Route />} />
-          <Route path="/passkey" element={<PasskeyRoute />} />
+          <Route path="/initialize" element={<SetupRoute />} />
+          <Route path="/login" element={<LoginRoute />} />
+          <Route path="/admin" element={<AdminRoute />} />
           <Route path="/credentials" element={<CredentialsRoute />} />
-          <Route path="/session" element={<SessionRoute />} />
+          <Route path="/sessions" element={<SessionRoute />} />
         </Route>
       </Routes>
     </DemoProvider>

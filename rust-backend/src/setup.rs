@@ -2,22 +2,15 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use url::{Host, Url};
 
-use crate::ed25519::{create_credential, CredentialCreateRequest};
+use crate::ed25519::{create_credential, credential_ids_by_public_key, CredentialCreateRequest};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AdminSetupState {
     pub issuer: String,
+    pub rp_id: String,
     pub admin_user_id: Option<String>,
     pub admin_ed25519: Option<AdminEd25519CredentialSummary>,
-    pub origins: Vec<AllowedOrigin>,
     pub smtp: Option<SmtpConfigSummary>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct AllowedOrigin {
-    pub id: i64,
-    pub origin: String,
-    pub created_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -35,9 +28,13 @@ pub struct SmtpConfigSummary {
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct AdminSetupRequest {
+    pub admin_ed25519: AdminEd25519Input,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct AdminConfigRequest {
     pub issuer: String,
-    pub origin: String,
-    pub admin_ed25519: Option<AdminEd25519Input>,
+    pub rp_id: String,
     pub smtp: Option<SmtpConfigInput>,
 }
 
@@ -73,6 +70,7 @@ pub struct SmtpConfigInput {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SetupError {
+    AlreadyInitialized,
     InvalidRequest,
     Database,
 }
@@ -81,17 +79,21 @@ pub fn parse_admin_setup_request(body: &str) -> Result<AdminSetupRequest, SetupE
     serde_json::from_str(body).map_err(|_| SetupError::InvalidRequest)
 }
 
+pub fn parse_admin_config_request(body: &str) -> Result<AdminConfigRequest, SetupError> {
+    serde_json::from_str(body).map_err(|_| SetupError::InvalidRequest)
+}
+
 pub fn read_admin_setup(connection: &Connection) -> Result<AdminSetupState, SetupError> {
-    let (issuer, admin_user_id) = read_app_meta(connection)?;
+    let (issuer, rp_id, admin_user_id) = read_app_meta(connection)?;
     Ok(AdminSetupState {
         issuer,
+        rp_id,
         admin_ed25519: admin_user_id
             .as_deref()
             .map(|user_id| admin_ed25519_summary(connection, user_id))
             .transpose()?
             .flatten(),
         admin_user_id,
-        origins: list_allowed_origins(connection)?,
         smtp: first_smtp_config(connection)?,
     })
 }
@@ -100,33 +102,42 @@ pub fn apply_admin_setup(
     connection: &Connection,
     request: &AdminSetupRequest,
 ) -> Result<AdminSetupState, SetupError> {
+    if read_app_meta(connection)?.2.is_some() {
+        return Err(SetupError::AlreadyInitialized);
+    }
+    upsert_admin_ed25519(connection, &request.admin_ed25519)?;
+    read_admin_setup(connection)
+}
+
+pub fn apply_admin_config(
+    connection: &Connection,
+    request: &AdminConfigRequest,
+) -> Result<AdminSetupState, SetupError> {
     let issuer = normalize_allowed_origin(&request.issuer)?;
-    update_issuer(connection, &issuer)?;
-    upsert_allowed_origin(connection, &request.origin)?;
+    let rp_id = normalize_rp_id(&request.rp_id)?;
+    validate_rp_id_for_issuer(&issuer, &rp_id)?;
+    update_app_config(connection, &issuer, &rp_id)?;
     if let Some(smtp) = &request.smtp {
         upsert_smtp_config(connection, smtp)?;
-    }
-    if let Some(admin_ed25519) = &request.admin_ed25519 {
-        upsert_admin_ed25519(connection, admin_ed25519)?;
     }
     read_admin_setup(connection)
 }
 
-fn read_app_meta(connection: &Connection) -> Result<(String, Option<String>), SetupError> {
+fn read_app_meta(connection: &Connection) -> Result<(String, String, Option<String>), SetupError> {
     connection
         .query_row(
-            "SELECT issuer, admin_user_id FROM app_meta WHERE id = 'APP'",
+            "SELECT issuer, rp_id, admin_user_id FROM app_meta WHERE id = 'APP'",
             [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .map_err(|_| SetupError::Database)
 }
 
-fn update_issuer(connection: &Connection, issuer: &str) -> Result<(), SetupError> {
+fn update_app_config(connection: &Connection, issuer: &str, rp_id: &str) -> Result<(), SetupError> {
     connection
         .execute(
-            "UPDATE app_meta SET issuer = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = 'APP'",
-            [issuer],
+            "UPDATE app_meta SET issuer = ?1, rp_id = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = 'APP'",
+            params![issuer, rp_id],
         )
         .map_err(|_| SetupError::Database)?;
 
@@ -149,13 +160,14 @@ fn upsert_admin_ed25519(
     match existing_id {
         Some(id) => update_admin_ed25519_name(connection, &id, &input.name),
         None => create_credential(connection, &user_id, &request)
+            .map_err(|_| SetupError::Database)?
             .map(|_| ())
-            .map_err(|_| SetupError::Database),
+            .ok_or(SetupError::InvalidRequest),
     }
 }
 
 fn ensure_admin_user(connection: &Connection) -> Result<String, SetupError> {
-    let (_, admin_user_id) = read_app_meta(connection)?;
+    let (_, _, admin_user_id) = read_app_meta(connection)?;
     if let Some(user_id) = admin_user_id {
         return Ok(user_id);
     }
@@ -191,14 +203,26 @@ fn existing_admin_ed25519_id(
     user_id: &str,
     public_key: &str,
 ) -> Result<Option<String>, SetupError> {
-    connection
+    let credential_ids =
+        credential_ids_by_public_key(connection, public_key).map_err(|_| SetupError::Database)?;
+    let [credential_id] = credential_ids.as_slice() else {
+        if credential_ids.is_empty() {
+            return Ok(None);
+        }
+        return Err(SetupError::InvalidRequest);
+    };
+    let owner_id: String = connection
         .query_row(
-            "SELECT id FROM ed25519_credentials WHERE user_id = ?1 AND public_key = ?2 LIMIT 1",
-            params![user_id, public_key],
+            "SELECT user_id FROM ed25519_credentials WHERE id = ?1 LIMIT 1",
+            [&credential_id],
             |row| row.get(0),
         )
-        .optional()
-        .map_err(|_| SetupError::Database)
+        .map_err(|_| SetupError::Database)?;
+    if owner_id == user_id {
+        return Ok(Some(credential_id.clone()));
+    }
+
+    Err(SetupError::InvalidRequest)
 }
 
 fn update_admin_ed25519_name(
@@ -239,36 +263,6 @@ fn admin_ed25519_summary(
         .map_err(|_| SetupError::Database)
 }
 
-fn list_allowed_origins(connection: &Connection) -> Result<Vec<AllowedOrigin>, SetupError> {
-    let mut statement = connection
-        .prepare("SELECT id, origin, created_at FROM allowed_origins ORDER BY id ASC")
-        .map_err(|_| SetupError::Database)?;
-    let rows = statement
-        .query_map([], |row| {
-            Ok(AllowedOrigin {
-                id: row.get(0)?,
-                origin: row.get(1)?,
-                created_at: row.get(2)?,
-            })
-        })
-        .map_err(|_| SetupError::Database)?;
-
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|_| SetupError::Database)
-}
-
-fn upsert_allowed_origin(connection: &Connection, input: &str) -> Result<(), SetupError> {
-    let origin = normalize_allowed_origin(input)?;
-    connection
-        .execute(
-            "INSERT OR IGNORE INTO allowed_origins (origin) VALUES (?1)",
-            [origin],
-        )
-        .map_err(|_| SetupError::Database)?;
-
-    Ok(())
-}
-
 fn first_smtp_config(connection: &Connection) -> Result<Option<SmtpConfigSummary>, SetupError> {
     connection
         .query_row(
@@ -293,7 +287,10 @@ fn upsert_smtp_config(connection: &Connection, input: &SmtpConfigInput) -> Resul
 
     match id {
         Some(id) => update_smtp_config(connection, id, input),
-        None => insert_smtp_config(connection, input),
+        None => {
+            validate_smtp_password(input)?;
+            insert_smtp_config(connection, input)
+        }
     }
 }
 
@@ -324,7 +321,7 @@ fn update_smtp_config(
 ) -> Result<(), SetupError> {
     connection
         .execute(
-            "UPDATE smtp_configs SET host = ?1, port = ?2, username = ?3, password = ?4, from_email = ?5, from_name = ?6, secure = ?7, weight = ?8 WHERE id = ?9",
+            "UPDATE smtp_configs SET host = ?1, port = ?2, username = ?3, password = COALESCE(NULLIF(?4, ''), password), from_email = ?5, from_name = ?6, secure = ?7, weight = ?8 WHERE id = ?9",
             params![
                 input.host,
                 input.port,
@@ -346,10 +343,17 @@ fn validate_smtp_config(input: &SmtpConfigInput) -> Result<(), SetupError> {
     if input.host.trim().is_empty()
         || input.port <= 0
         || input.username.trim().is_empty()
-        || input.password.is_empty()
         || input.from_email.trim().is_empty()
         || input.weight <= 0
     {
+        return Err(SetupError::InvalidRequest);
+    }
+
+    Ok(())
+}
+
+fn validate_smtp_password(input: &SmtpConfigInput) -> Result<(), SetupError> {
+    if input.password.is_empty() {
         return Err(SetupError::InvalidRequest);
     }
 
@@ -383,6 +387,63 @@ fn normalize_allowed_origin(input: &str) -> Result<String, SetupError> {
         .map(|port| format!(":{port}"))
         .unwrap_or_default();
     Ok(format!("{}://{}{}", url.scheme(), host, port))
+}
+
+fn normalize_rp_id(input: &str) -> Result<String, SetupError> {
+    let trimmed = input.trim().to_ascii_lowercase();
+    let rp_id = trimmed.trim_end_matches('.');
+
+    if rp_id.is_empty()
+        || rp_id.contains(':')
+        || rp_id.contains('/')
+        || rp_id.contains('@')
+        || rp_id.contains(' ')
+        || rp_id.split('.').any(|label| label.is_empty())
+        || !rp_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'.')
+    {
+        return Err(SetupError::InvalidRequest);
+    }
+
+    Ok(rp_id.to_string())
+}
+
+fn validate_rp_id_for_issuer(issuer: &str, rp_id: &str) -> Result<(), SetupError> {
+    let url = Url::parse(issuer).map_err(|_| SetupError::InvalidRequest)?;
+    let host = format_origin_host(url.host().ok_or(SetupError::InvalidRequest)?);
+
+    if is_rp_id_allowed_for_origin(&host, rp_id) {
+        return Ok(());
+    }
+
+    Err(SetupError::InvalidRequest)
+}
+
+fn is_rp_id_allowed_for_origin(origin_hostname: &str, rp_id: &str) -> bool {
+    if origin_hostname == rp_id {
+        return true;
+    }
+
+    if is_ip_address(origin_hostname)
+        || is_ip_address(rp_id)
+        || origin_hostname == "localhost"
+        || rp_id == "localhost"
+    {
+        return false;
+    }
+
+    origin_hostname.ends_with(&format!(".{rp_id}"))
+}
+
+fn is_ip_address(value: &str) -> bool {
+    value.contains(':') || {
+        let parts = value.split('.').collect::<Vec<_>>();
+        parts.len() == 4
+            && parts
+                .iter()
+                .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+    }
 }
 
 fn format_origin_host(host: Host<&str>) -> String {
@@ -429,12 +490,11 @@ mod tests {
     use crate::db::initialize_database_from_schema;
 
     #[test]
-    fn admin_setup_writes_origin_and_smtp_without_returning_password() {
+    fn admin_setup_writes_rp_id_and_smtp_without_returning_password() {
         let connection = test_connection("setup-roundtrip");
-        let request = AdminSetupRequest {
+        let request = AdminConfigRequest {
             issuer: "https://auth.example.com".to_string(),
-            origin: "https://DEMO.example.com".to_string(),
-            admin_ed25519: None,
+            rp_id: "EXAMPLE.com.".to_string(),
             smtp: Some(SmtpConfigInput {
                 host: "smtp.example.com".to_string(),
                 port: 587,
@@ -447,10 +507,10 @@ mod tests {
             }),
         };
 
-        let state = apply_admin_setup(&connection, &request).expect("setup applies");
+        let state = apply_admin_config(&connection, &request).expect("setup applies");
 
         assert_eq!(state.issuer, "https://auth.example.com");
-        assert_eq!(state.origins[0].origin, "https://demo.example.com");
+        assert_eq!(state.rp_id, "example.com");
         assert_eq!(
             state.smtp.as_ref().expect("smtp exists").host,
             "smtp.example.com"
@@ -463,10 +523,10 @@ mod tests {
     fn admin_setup_updates_existing_smtp_config() {
         let connection = test_connection("setup-update");
         let mut request = valid_request();
-        apply_admin_setup(&connection, &request).expect("initial setup applies");
+        apply_admin_config(&connection, &request).expect("initial setup applies");
         request.smtp.as_mut().expect("smtp exists").host = "smtp-2.example.com".to_string();
 
-        let state = apply_admin_setup(&connection, &request).expect("setup updates");
+        let state = apply_admin_config(&connection, &request).expect("setup updates");
 
         assert_eq!(state.smtp.as_ref().expect("smtp exists").id, 1);
         assert_eq!(
@@ -476,9 +536,51 @@ mod tests {
     }
 
     #[test]
-    fn admin_setup_rejects_invalid_origin_and_smtp() {
+    fn admin_setup_keeps_existing_smtp_password_when_update_password_is_blank() {
+        let connection = test_connection("setup-update-blank-password");
+        let mut request = valid_request();
+        apply_admin_config(&connection, &request).expect("initial setup applies");
+        request.smtp.as_mut().expect("smtp exists").password = String::new();
+        request.smtp.as_mut().expect("smtp exists").host = "smtp-2.example.com".to_string();
+
+        apply_admin_config(&connection, &request).expect("setup updates");
+
+        let password: String = connection
+            .query_row(
+                "SELECT password FROM smtp_configs WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("smtp password reads");
+        assert_eq!(password, "secret");
+    }
+
+    #[test]
+    fn admin_setup_rejects_new_smtp_config_without_password() {
+        let connection = test_connection("setup-insert-blank-password");
+        let mut request = valid_request();
+        request.smtp.as_mut().expect("smtp exists").password = String::new();
+
+        let error = apply_admin_config(&connection, &request).expect_err("setup rejects");
+
+        assert_eq!(error, SetupError::InvalidRequest);
+    }
+
+    #[test]
+    fn admin_setup_rejects_invalid_issuer_rp_id_and_smtp() {
         assert_eq!(
             normalize_allowed_origin("ftp://example.com"),
+            Err(SetupError::InvalidRequest)
+        );
+        assert_eq!(
+            apply_admin_config(
+                &test_connection("setup-invalid-rp-id"),
+                &AdminConfigRequest {
+                    issuer: "https://auth.example.com".to_string(),
+                    rp_id: "login.example.com".to_string(),
+                    smtp: None,
+                },
+            ),
             Err(SetupError::InvalidRequest)
         );
         let mut request = valid_request();
@@ -493,19 +595,17 @@ mod tests {
     fn admin_setup_creates_admin_ed25519_without_smtp_or_email() {
         let connection = test_connection("setup-admin-ed25519");
         let request = AdminSetupRequest {
-            issuer: "https://auth.example.com".to_string(),
-            origin: "https://demo.example.com".to_string(),
-            admin_ed25519: Some(AdminEd25519Input {
+            admin_ed25519: AdminEd25519Input {
                 name: "Admin key".to_string(),
                 public_key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_string(),
-            }),
-            smtp: None,
+            },
         };
 
         let state = apply_admin_setup(&connection, &request).expect("setup applies");
 
         let admin_user_id = state.admin_user_id.expect("admin user id exists");
-        assert_eq!(state.issuer, "https://auth.example.com");
+        assert_eq!(state.issuer, "http://localhost:7777");
+        assert_eq!(state.rp_id, "localhost");
         assert_eq!(
             state.admin_ed25519.expect("admin credential exists").name,
             "Admin key"
@@ -521,11 +621,45 @@ mod tests {
         assert_eq!(state.smtp, None);
     }
 
-    fn valid_request() -> AdminSetupRequest {
-        AdminSetupRequest {
+    #[test]
+    fn admin_setup_rejects_ed25519_public_key_owned_by_another_user() {
+        let connection = test_connection("setup-admin-ed25519-duplicate");
+        connection
+            .execute(
+                "INSERT INTO users (id, email) VALUES (?1, ?2)",
+                ("user-1", "user@example.com"),
+            )
+            .expect("user inserts");
+        connection
+            .execute(
+                "INSERT INTO ed25519_credentials
+                 (id, user_id, name, public_key, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                (
+                    "credential-1",
+                    "user-1",
+                    "Existing",
+                    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                    "2026-01-01T00:00:00.000Z",
+                ),
+            )
+            .expect("credential inserts");
+        let request = AdminSetupRequest {
+            admin_ed25519: AdminEd25519Input {
+                name: "Admin key".to_string(),
+                public_key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_string(),
+            },
+        };
+
+        let error = apply_admin_setup(&connection, &request).expect_err("setup rejects duplicate");
+
+        assert_eq!(error, SetupError::InvalidRequest);
+    }
+
+    fn valid_request() -> AdminConfigRequest {
+        AdminConfigRequest {
             issuer: "https://auth.example.com".to_string(),
-            origin: "https://demo.example.com".to_string(),
-            admin_ed25519: None,
+            rp_id: "auth.example.com".to_string(),
             smtp: Some(SmtpConfigInput {
                 host: "smtp.example.com".to_string(),
                 port: 587,
@@ -550,7 +684,7 @@ mod tests {
         let connection = Connection::open(db_path).expect("database opens");
         connection
             .execute(
-                "INSERT OR IGNORE INTO app_meta (id, issuer) VALUES ('APP', 'http://localhost:7777')",
+                "INSERT OR IGNORE INTO app_meta (id, issuer, rp_id) VALUES ('APP', 'http://localhost:7777', 'localhost')",
                 [],
             )
             .expect("app meta exists");

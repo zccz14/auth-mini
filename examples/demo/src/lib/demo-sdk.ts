@@ -2,7 +2,7 @@ import { createBrowserSdk } from 'auth-mini/sdk/browser';
 
 type DemoEd25519Api = {
   register(input: { name: string; public_key: string }): Promise<unknown>;
-  start(input: { credential_id: string }): Promise<{
+  start(input: { public_key: string }): Promise<{
     request_id: string;
     challenge: string;
   }>;
@@ -12,7 +12,56 @@ type DemoEd25519Api = {
   }): Promise<DemoSessionTokens>;
 };
 
+export type AdminSetupState = {
+  issuer: string;
+  rp_id: string;
+  admin_user_id: string | null;
+  admin_ed25519: unknown | null;
+  smtp: null | {
+    id: number;
+    host: string;
+    port: number;
+    username: string;
+    from_email: string;
+    from_name: string;
+    secure: boolean;
+    is_active: boolean;
+    weight: number;
+  };
+};
+
+export type AdminConfigInput = {
+  issuer: string;
+  rp_id: string;
+  smtp: null | {
+    host: string;
+    port: number;
+    username: string;
+    password: string;
+    from_email: string;
+    from_name: string;
+    secure: boolean;
+    weight: number;
+  };
+};
+
+type AdminApi = {
+  setup: {
+    fetch(): Promise<AdminSetupState>;
+    initialize(input: {
+      admin_ed25519: { name: string; public_key: string };
+    }): Promise<AdminSetupState>;
+  };
+  config: {
+    fetch(): Promise<AdminSetupState>;
+    save(input: AdminConfigInput): Promise<AdminSetupState>;
+  };
+  users(): Promise<{ users: Array<Record<string, unknown>> }>;
+  databaseUrl(): string;
+};
+
 export type DemoSdk = ReturnType<typeof createBrowserSdk> & {
+  admin: AdminApi;
   ed25519: DemoEd25519Api;
 };
 
@@ -34,7 +83,7 @@ function browserSdkStorageKey(baseUrl: string): string {
 
 export function persistDemoSession(
   storage: Storage,
-  authOrigin: string,
+  serverBaseUrl: string,
   tokens: DemoSessionTokens,
 ) {
   const receivedAt = new Date().toISOString();
@@ -43,7 +92,7 @@ export function persistDemoSession(
   ).toISOString();
 
   storage.setItem(
-    browserSdkStorageKey(authOrigin),
+    browserSdkStorageKey(serverBaseUrl),
     JSON.stringify({
       sessionId: tokens.session_id,
       accessToken: tokens.access_token,
@@ -54,8 +103,8 @@ export function persistDemoSession(
   );
 }
 
-export function createDemoSdk(authOrigin: string): DemoSdk {
-  const sdk = createBrowserSdk(authOrigin);
+export function createDemoSdk(serverBaseUrl: string): DemoSdk {
+  const sdk = createBrowserSdk(serverBaseUrl);
 
   function isRetryableAuthError(error: unknown): boolean {
     return (
@@ -92,7 +141,7 @@ export function createDemoSdk(authOrigin: string): DemoSdk {
     body: unknown,
     accessToken?: string | null,
   ) {
-    const response = await fetch(new URL(path, authOrigin), {
+    const response = await fetch(new URL(path, serverBaseUrl), {
       method: 'POST',
       headers: {
         accept: 'application/json',
@@ -114,8 +163,79 @@ export function createDemoSdk(authOrigin: string): DemoSdk {
     return payload as T;
   }
 
+  async function getJson<T>(path: string, accessToken?: string | null) {
+    const response = await fetch(new URL(path, serverBaseUrl), {
+      headers: {
+        accept: 'application/json',
+        ...(accessToken ? { authorization: 'Bearer ' + accessToken } : {}),
+      },
+    });
+    const payload = (await response.json()) as T | { error?: string };
+    if (!response.ok) {
+      throw { status: response.status, ...payload };
+    }
+
+    return payload as T;
+  }
+
+  async function putJson<T>(
+    path: string,
+    body: unknown,
+    accessToken?: string | null,
+  ) {
+    const response = await fetch(new URL(path, serverBaseUrl), {
+      method: 'PUT',
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+        ...(accessToken ? { authorization: 'Bearer ' + accessToken } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+    const payload = (await response.json()) as T | { error?: string };
+    if (!response.ok) {
+      throw { status: response.status, ...payload };
+    }
+
+    return payload as T;
+  }
+
   return {
     ...sdk,
+    admin: {
+      setup: {
+        fetch() {
+          return getJson<AdminSetupState>('/admin/setup');
+        },
+        initialize(input) {
+          return putJson<AdminSetupState>('/admin/setup', input);
+        },
+      },
+      config: {
+        async fetch() {
+          return getJson<AdminSetupState>(
+            '/admin/config',
+            await requireAccessToken(),
+          );
+        },
+        async save(input) {
+          return putJson<AdminSetupState>(
+            '/admin/config',
+            input,
+            await requireAccessToken(),
+          );
+        },
+      },
+      async users() {
+        return getJson<{ users: Array<Record<string, unknown>> }>(
+          '/admin/users',
+          await requireAccessToken(),
+        );
+      },
+      databaseUrl() {
+        return new URL('/admin/database', serverBaseUrl).toString();
+      },
+    },
     ed25519: {
       async register(input: { name: string; public_key: string }) {
         const requestBody = {
@@ -144,7 +264,7 @@ export function createDemoSdk(authOrigin: string): DemoSdk {
           );
         }
       },
-      start(input: { credential_id: string }) {
+      start(input: { public_key: string }) {
         return postJson<{ request_id: string; challenge: string }>(
           '/ed25519/start',
           input,

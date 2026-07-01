@@ -1,3 +1,4 @@
+use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 
@@ -19,10 +20,13 @@ use crate::jwks::list_public_keys;
 use crate::openapi::{read_openapi_json, read_openapi_yaml};
 use crate::session::{
     authenticate_access_token, current_user_response, logout_peer_session, logout_session,
-    mint_session_tokens, parse_refresh_request, refresh_session_tokens,
+    mint_session_tokens, parse_refresh_request, refresh_session_tokens, require_admin_auth,
     require_passkey_management_auth, token_json, SessionError,
 };
-use crate::setup::{apply_admin_setup, parse_admin_setup_request, read_admin_setup, SetupError};
+use crate::setup::{
+    apply_admin_config, apply_admin_setup, parse_admin_config_request, parse_admin_setup_request,
+    read_admin_setup, SetupError,
+};
 use crate::web_assets::{match_web_asset, WebAsset};
 use crate::webauthn::{
     authentication_options as webauthn_authentication_options,
@@ -133,18 +137,34 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
         return Ok(cors(request, Response::json_value(200, body)));
     }
 
-    if request.method == "GET" {
-        if let Some(response) = handle_web_asset(request) {
-            return Ok(response);
-        }
-    }
-
     if request.method == "GET" && request.path == "/admin/setup" {
         return handle_admin_setup_get(request, config).map(|response| cors(request, response));
     }
 
     if request.method == "PUT" && request.path == "/admin/setup" {
         return handle_admin_setup_put(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "GET" && request.path == "/admin/config" {
+        return handle_admin_config_get(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "PUT" && request.path == "/admin/config" {
+        return handle_admin_config_put(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "GET" && request.path == "/admin/users" {
+        return handle_admin_users(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "GET" && request.path == "/admin/database" {
+        return handle_admin_database(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "GET" {
+        if let Some(response) = handle_web_asset(request) {
+            return Ok(response);
+        }
     }
 
     if request.method == "POST" && request.path == "/email/start" {
@@ -240,10 +260,9 @@ fn handle_web_asset(request: &Request) -> Option<Response> {
             content_type,
             cache_control,
             body,
-        } => Some(Response::bytes(200, content_type, body.to_vec()).with_header(
-            "cache-control",
-            cache_control,
-        )),
+        } => Some(
+            Response::bytes(200, content_type, body).with_header("cache-control", cache_control),
+        ),
         WebAsset::MissingAsset => Some(Response::json_error(404, "not_found")),
     }
 }
@@ -262,6 +281,7 @@ fn handle_admin_setup_get(request: &Request, config: &Config) -> io::Result<Resp
             200,
             serde_json::to_value(state).map_err(io::Error::other)?,
         )),
+        Err(SetupError::AlreadyInitialized) => Ok(Response::json_error(409, "already_initialized")),
         Err(SetupError::InvalidRequest) => Ok(Response::json_error(400, "invalid_request")),
         Err(SetupError::Database) => Ok(Response::json_error(500, "internal_error")),
     }
@@ -270,6 +290,9 @@ fn handle_admin_setup_get(request: &Request, config: &Config) -> io::Result<Resp
 fn handle_admin_setup_put(request: &Request, config: &Config) -> io::Result<Response> {
     let parsed = match parse_admin_setup_request(&request.body) {
         Ok(parsed) => parsed,
+        Err(SetupError::AlreadyInitialized) => {
+            return Ok(Response::json_error(409, "already_initialized"))
+        }
         Err(SetupError::InvalidRequest) => return Ok(Response::json_error(400, "invalid_request")),
         Err(SetupError::Database) => return Ok(Response::json_error(500, "internal_error")),
     };
@@ -286,9 +309,128 @@ fn handle_admin_setup_put(request: &Request, config: &Config) -> io::Result<Resp
             200,
             serde_json::to_value(state).map_err(io::Error::other)?,
         )),
+        Err(SetupError::AlreadyInitialized) => Ok(Response::json_error(409, "already_initialized")),
         Err(SetupError::InvalidRequest) => Ok(Response::json_error(400, "invalid_request")),
         Err(SetupError::Database) => Ok(Response::json_error(500, "internal_error")),
     }
+}
+
+fn handle_admin_config_get(request: &Request, config: &Config) -> io::Result<Response> {
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    if require_admin_auth(&connection, &auth).is_err() {
+        return Ok(Response::json_error(403, "admin_required"));
+    }
+
+    match read_admin_setup(&connection) {
+        Ok(state) => Ok(Response::json_value(
+            200,
+            serde_json::to_value(state).map_err(io::Error::other)?,
+        )),
+        Err(_) => Ok(Response::json_error(500, "internal_error")),
+    }
+}
+
+fn handle_admin_config_put(request: &Request, config: &Config) -> io::Result<Response> {
+    let parsed = match parse_admin_config_request(&request.body) {
+        Ok(parsed) => parsed,
+        Err(_) => return Ok(Response::json_error(400, "invalid_request")),
+    };
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    if require_admin_auth(&connection, &auth).is_err() {
+        return Ok(Response::json_error(403, "admin_required"));
+    }
+
+    match apply_admin_config(&connection, &parsed) {
+        Ok(state) => Ok(Response::json_value(
+            200,
+            serde_json::to_value(state).map_err(io::Error::other)?,
+        )),
+        Err(SetupError::InvalidRequest) => Ok(Response::json_error(400, "invalid_request")),
+        Err(_) => Ok(Response::json_error(500, "internal_error")),
+    }
+}
+
+fn handle_admin_users(request: &Request, config: &Config) -> io::Result<Response> {
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    if require_admin_auth(&connection, &auth).is_err() {
+        return Ok(Response::json_error(403, "admin_required"));
+    }
+
+    let mut statement = connection
+        .prepare(
+            "SELECT
+                users.id,
+                users.email,
+                users.email_verified_at,
+                users.created_at,
+                COUNT(DISTINCT sessions.id),
+                COUNT(DISTINCT webauthn_credentials.credential_id),
+                COUNT(DISTINCT ed25519_credentials.id)
+             FROM users
+             LEFT JOIN sessions ON sessions.user_id = users.id AND sessions.expires_at > CURRENT_TIMESTAMP
+             LEFT JOIN webauthn_credentials ON webauthn_credentials.user_id = users.id
+             LEFT JOIN ed25519_credentials ON ed25519_credentials.user_id = users.id
+             GROUP BY users.id
+             ORDER BY users.created_at DESC, users.id ASC",
+        )
+        .map_err(io::Error::other)?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok(serde_json::json!({
+                "id": row.get::<_, String>(0)?,
+                "email": row.get::<_, Option<String>>(1)?,
+                "email_verified_at": row.get::<_, Option<String>>(2)?,
+                "created_at": row.get::<_, String>(3)?,
+                "active_session_count": row.get::<_, i64>(4)?,
+                "passkey_count": row.get::<_, i64>(5)?,
+                "ed25519_count": row.get::<_, i64>(6)?,
+            }))
+        })
+        .map_err(io::Error::other)?;
+    let users = rows
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(io::Error::other)?;
+
+    Ok(Response::json_value(
+        200,
+        serde_json::json!({ "users": users }),
+    ))
+}
+
+fn handle_admin_database(request: &Request, config: &Config) -> io::Result<Response> {
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    if require_admin_auth(&connection, &auth).is_err() {
+        return Ok(Response::json_error(403, "admin_required"));
+    }
+    if config.database.is_none() {
+        return Ok(Response::json_error(501, "not_implemented"));
+    }
+    let export_path = std::env::temp_dir().join(format!(
+        "auth-mini-export-{}-{}.sqlite",
+        std::process::id(),
+        auth.session_id
+    ));
+    let _ = fs::remove_file(&export_path);
+    connection
+        .execute(
+            "VACUUM INTO ?1",
+            [export_path
+                .to_str()
+                .ok_or_else(|| io::Error::other("invalid export path"))?],
+        )
+        .map_err(io::Error::other)?;
+    let bytes = fs::read(&export_path).map_err(io::Error::other)?;
+    fs::remove_file(export_path).map_err(io::Error::other)?;
+
+    Ok(Response::bytes(200, "application/octet-stream", bytes))
 }
 
 fn admin_setup_connection(request: &Request, config: &Config) -> io::Result<AdminSetupAccess> {
@@ -443,6 +585,9 @@ fn handle_ed25519_credential_create(request: &Request, config: &Config) -> io::R
     }
     let body =
         create_ed25519_credential(&connection, &auth.user_id, &parsed).map_err(io::Error::other)?;
+    let Some(body) = body else {
+        return Ok(Response::json_error(400, "invalid_ed25519_credential"));
+    };
 
     Ok(Response::json_value(200, body))
 }
@@ -527,11 +672,8 @@ fn handle_webauthn_register_options(request: &Request, config: &Config) -> io::R
         Ok(parsed) => parsed,
         Err(_) => return Ok(Response::json_error(400, "invalid_request")),
     };
-    let Some(origin) = options_request_origin(request) else {
-        return Ok(Response::json_error(400, "invalid_webauthn_registration"));
-    };
 
-    match webauthn_register_options(&connection, &auth.user_id, &parsed, &origin) {
+    match webauthn_register_options(&connection, &auth.user_id, &parsed) {
         Ok(body) => Ok(Response::json_value(200, body)),
         Err(RegisterOptionsError::Request) => Ok(Response::json_error(400, "invalid_request")),
         Err(RegisterOptionsError::WebauthnRegistration) => {
@@ -557,11 +699,8 @@ fn handle_webauthn_register_verify(request: &Request, config: &Config) -> io::Re
         Ok(parsed) => parsed,
         Err(_) => return Ok(Response::json_error(400, "invalid_request")),
     };
-    let Some(origin) = options_request_origin(request) else {
-        return Ok(Response::json_error(400, "invalid_webauthn_registration"));
-    };
 
-    match webauthn_register_verify(&connection, &auth.user_id, &parsed, &origin) {
+    match webauthn_register_verify(&connection, &auth.user_id, &parsed) {
         Ok(body) => Ok(Response::json_value(200, body)),
         Err(RegisterVerifyError::InvalidWebauthnRegistration) => {
             Ok(Response::json_error(400, "invalid_webauthn_registration"))
@@ -580,12 +719,9 @@ fn handle_webauthn_authentication_options(
     let Some(database) = &config.database else {
         return Ok(Response::json_error(501, "not_implemented"));
     };
-    let Some(origin) = options_request_origin(request) else {
-        return Ok(Response::json_error(400, "invalid_webauthn_authentication"));
-    };
     let connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
 
-    match webauthn_authentication_options(&connection, &parsed, &origin) {
+    match webauthn_authentication_options(&connection, &parsed) {
         Ok(body) => Ok(Response::json_value(200, body)),
         Err(AuthenticationOptionsError::InvalidRequest) => {
             Ok(Response::json_error(400, "invalid_request"))
@@ -607,12 +743,9 @@ fn handle_webauthn_authentication_verify(
     let Some(database) = &config.database else {
         return Ok(Response::json_error(501, "not_implemented"));
     };
-    let Some(origin) = options_request_origin(request) else {
-        return Ok(Response::json_error(400, "invalid_webauthn_authentication"));
-    };
     let connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
 
-    match webauthn_authentication_verify(&connection, &parsed, &origin) {
+    match webauthn_authentication_verify(&connection, &parsed) {
         Ok(outcome) => {
             let issuer = read_app_issuer(&connection).map_err(io::Error::other)?;
             let pair = mint_session_tokens(
@@ -720,23 +853,6 @@ fn bearer_token(request: &Request) -> Option<String> {
     request
         .header("Authorization")
         .and_then(|header| header.strip_prefix("Bearer ").map(str::to_string))
-}
-
-fn options_request_origin(request: &Request) -> Option<String> {
-    if let Some(origin) = request.header("Origin") {
-        return Some(origin);
-    }
-
-    if request.path.starts_with("http://") || request.path.starts_with("https://") {
-        let (scheme, rest) = request.path.split_once("://")?;
-        let host = rest.split('/').next()?;
-
-        if !host.is_empty() {
-            return Some(format!("{scheme}://{host}"));
-        }
-    }
-
-    request.header("Host").map(|host| format!("http://{host}"))
 }
 
 fn ed25519_credential_id(request: &Request) -> Option<&str> {
@@ -979,19 +1095,32 @@ mod tests {
 
         assert_eq!(response.status, 200);
         assert_eq!(response.content_type, "text/html; charset=utf-8");
-        assert!(response
-            .headers
-            .contains(&("cache-control", "no-cache")));
+        assert!(response.headers.contains(&("cache-control", "no-cache")));
         assert!(response.body_text().contains(r#"src="/web/assets/"#));
         assert!(response.body_text().contains(r#"id="root""#));
     }
 
     #[test]
     fn serves_embedded_web_asset_with_mime_and_immutable_cache() {
+        let index = route_request(
+            &Request {
+                method: "GET".to_string(),
+                path: "/web/".to_string(),
+                headers: Vec::new(),
+                body: String::new(),
+            },
+            &no_database_config(),
+        )
+        .expect("web index response builds");
+        let index_body = index.body_text();
+        let asset_path = index_body
+            .split('"')
+            .find(|part| part.starts_with("/web/assets/") && part.ends_with(".css"))
+            .expect("index references css asset");
         let response = route_request(
             &Request {
                 method: "GET".to_string(),
-                path: "/web/assets/index-XS1pIkA7.css?v=1".to_string(),
+                path: format!("{asset_path}?v=1"),
                 headers: Vec::new(),
                 body: String::new(),
             },
@@ -1001,11 +1130,12 @@ mod tests {
 
         assert_eq!(response.status, 200);
         assert_eq!(response.content_type, "text/css; charset=utf-8");
-        assert!(response.headers.contains(&(
-            "cache-control",
-            "public, max-age=31536000, immutable",
-        )));
-        assert!(response.body_text().contains("@tailwind") || response.body_text().contains(":root"));
+        assert!(response
+            .headers
+            .contains(&("cache-control", "public, max-age=31536000, immutable",)));
+        assert!(
+            response.body_text().contains("@tailwind") || response.body_text().contains(":root")
+        );
     }
 
     #[test]
@@ -1056,7 +1186,7 @@ mod tests {
             (
                 "POST",
                 "/ed25519/start",
-                r#"{"credential_id":"00000000-0000-4000-8000-000000000000"}"#,
+                r#"{"public_key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#,
             ),
             (
                 "POST",
@@ -1078,7 +1208,7 @@ mod tests {
             (
                 "POST",
                 "/webauthn/register/options",
-                r#"{"rp_id":"example.com"}"#,
+                r#"{}"#,
             ),
             (
                 "POST",
@@ -1088,7 +1218,7 @@ mod tests {
             (
                 "POST",
                 "/webauthn/authenticate/options",
-                r#"{"rp_id":"example.com"}"#,
+                r#"{}"#,
             ),
             (
                 "POST",
@@ -1134,7 +1264,7 @@ mod tests {
     }
 
     #[test]
-    fn admin_setup_put_writes_configuration_and_get_hides_password() {
+    fn admin_setup_put_creates_admin_user_and_key() {
         let db_path = test_db_path("http-admin-setup");
         initialize_runtime_database(&db_path).expect("database initializes");
         let config = Config {
@@ -1148,7 +1278,7 @@ mod tests {
                 method: "PUT".to_string(),
                 path: "/admin/setup".to_string(),
                 headers: headers.clone(),
-                body: r#"{"issuer":"https://auth.example.com","origin":"https://demo.example.com","smtp":{"host":"smtp.example.com","port":587,"username":"mailer","password":"secret","from_email":"noreply@example.com","from_name":"Auth Mini","secure":true,"weight":1}}"#
+                body: r#"{"admin_ed25519":{"name":"Admin key","public_key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}}"#
                     .to_string(),
             },
             &config,
@@ -1156,9 +1286,8 @@ mod tests {
         .expect("admin setup put response builds");
 
         assert_eq!(put.status, 200);
-        assert!(put.body_text().contains("https://auth.example.com"));
-        assert!(put.body_text().contains("https://demo.example.com"));
-        assert!(!put.body_text().contains("secret"));
+        assert!(put.body_text().contains("admin_user_id"));
+        assert!(put.body_text().contains("Admin key"));
 
         let get = route_request(
             &Request {
@@ -1172,8 +1301,7 @@ mod tests {
         .expect("admin setup get response builds");
 
         assert_eq!(get.status, 200);
-        assert!(get.body_text().contains("smtp.example.com"));
-        assert!(!get.body_text().contains("secret"));
+        assert!(get.body_text().contains("admin_ed25519"));
     }
 
     #[test]
@@ -1247,6 +1375,7 @@ mod tests {
                 CREATE TABLE app_meta (
                     id TEXT PRIMARY KEY CHECK (id = 'APP'),
                     issuer TEXT NOT NULL,
+                    rp_id TEXT NOT NULL DEFAULT 'localhost',
                     admin_user_id TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -1519,6 +1648,59 @@ mod tests {
     }
 
     #[test]
+    fn rejects_duplicate_ed25519_public_key_over_http_boundary() {
+        let db_path = test_db_path("http-ed25519-credential-create-duplicate");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserted");
+        connection
+            .execute(
+                "INSERT INTO ed25519_credentials
+                 (id, user_id, name, public_key, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                (
+                    "credential-1",
+                    "user-1",
+                    "Existing",
+                    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                    "2026-01-01T00:00:00.000Z",
+                ),
+            )
+            .expect("credential inserted");
+        let pair = mint_session_tokens(&connection, "user-1", "email_otp", "auth-mini", None, None)
+            .expect("session minted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/ed25519/credentials".to_string(),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", pair.access_token),
+                )],
+                body: r#"{"name":"Duplicate","public_key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#
+                    .to_string(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig { db_path }),
+                ..Config::default()
+            },
+        )
+        .expect("ed25519 credential create response builds");
+
+        assert_eq!(
+            response,
+            Response::json_error(400, "invalid_ed25519_credential")
+        );
+    }
+
+    #[test]
     fn starts_ed25519_authentication_over_http_boundary() {
         let db_path = test_db_path("http-ed25519-start");
         let connection = Connection::open(&db_path).expect("database opens");
@@ -1538,7 +1720,7 @@ mod tests {
                     "00000000-0000-4000-8000-000000000000",
                     "user-1",
                     "Laptop",
-                    "public-key",
+                    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
                     "2026-01-01T00:00:00.000Z",
                 ),
             )
@@ -1550,7 +1732,7 @@ mod tests {
                 method: "POST".to_string(),
                 path: "/ed25519/start".to_string(),
                 headers: Vec::new(),
-                body: r#"{"credential_id":"00000000-0000-4000-8000-000000000000"}"#.to_string(),
+                body: r#"{"public_key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#.to_string(),
             },
             &Config {
                 database: Some(crate::DatabaseConfig { db_path }),
@@ -1578,7 +1760,7 @@ mod tests {
                 method: "POST".to_string(),
                 path: "/ed25519/start".to_string(),
                 headers: Vec::new(),
-                body: r#"{"credential_id":"00000000-0000-4000-8000-000000000000"}"#.to_string(),
+                body: r#"{"public_key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#.to_string(),
             },
             &Config {
                 database: Some(crate::DatabaseConfig { db_path }),
@@ -1998,12 +2180,6 @@ mod tests {
                 ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
             )
             .expect("user inserted");
-        connection
-            .execute(
-                "INSERT INTO allowed_origins (origin) VALUES (?1)",
-                ["https://app.example.com"],
-            )
-            .expect("origin inserted");
         let pair = mint_session_tokens(&connection, "user-1", "email_otp", "auth-mini", None, None)
             .expect("session minted");
         drop(connection);
@@ -2017,9 +2193,8 @@ mod tests {
                         "Authorization".to_string(),
                         format!("Bearer {}", pair.access_token),
                     ),
-                    ("Origin".to_string(), "https://app.example.com".to_string()),
                 ],
-                body: r#"{"rp_id":"EXAMPLE.COM."}"#.to_string(),
+                body: r#"{}"#.to_string(),
             },
             &Config {
                 database: Some(crate::DatabaseConfig {
@@ -2059,8 +2234,8 @@ mod tests {
             &Request {
                 method: "POST".to_string(),
                 path: "/webauthn/register/options".to_string(),
-                headers: vec![("Origin".to_string(), "https://app.example.com".to_string())],
-                body: r#"{"rp_id":"app.example.com"}"#.to_string(),
+                headers: vec![],
+                body: r#"{}"#.to_string(),
             },
             &Config::default(),
         )
@@ -2094,9 +2269,8 @@ mod tests {
                         "Authorization".to_string(),
                         format!("Bearer {}", pair.access_token),
                     ),
-                    ("Origin".to_string(), "https://app.example.com".to_string()),
                 ],
-                body: r#"{"rp_id":"app.example.com"}"#.to_string(),
+                body: r#"{}"#.to_string(),
             },
             &Config {
                 database: Some(crate::DatabaseConfig { db_path }),
@@ -2125,12 +2299,6 @@ mod tests {
             .expect("user inserted");
         connection
             .execute(
-                "INSERT INTO allowed_origins (origin) VALUES (?1)",
-                ["https://app.example.com"],
-            )
-            .expect("origin inserted");
-        connection
-            .execute(
                 "INSERT INTO webauthn_challenges
                  (request_id, type, state_json, user_id, expires_at, rp_id, origin)
                  VALUES (?1, 'register', ?2, ?3, ?4, ?5, ?6)",
@@ -2157,7 +2325,6 @@ mod tests {
                         "Authorization".to_string(),
                         format!("Bearer {}", pair.access_token),
                     ),
-                    ("Origin".to_string(), "https://app.example.com".to_string()),
                 ],
                 body: register_verify_body(),
             },
@@ -2210,7 +2377,6 @@ mod tests {
                         "Authorization".to_string(),
                         format!("Bearer {}", pair.access_token),
                     ),
-                    ("Origin".to_string(), "https://app.example.com".to_string()),
                 ],
                 body: r#"{"request_id":"00000000-0000-4000-8000-000000000000","credential":{"id":"credential-id","rawId":"raw-id","type":"public-key","response":{"clientDataJSON":"client-data","attestationObject":"attestation"}},"extra":true}"#.to_string(),
             },
@@ -2233,7 +2399,7 @@ mod tests {
             &Request {
                 method: "POST".to_string(),
                 path: "/webauthn/register/verify".to_string(),
-                headers: vec![("Origin".to_string(), "https://app.example.com".to_string())],
+                headers: vec![],
                 body: register_verify_body(),
             },
             &Config::default(),
@@ -2268,7 +2434,6 @@ mod tests {
                         "Authorization".to_string(),
                         format!("Bearer {}", pair.access_token),
                     ),
-                    ("Origin".to_string(), "https://app.example.com".to_string()),
                 ],
                 body: register_verify_body(),
             },
@@ -2310,9 +2475,8 @@ mod tests {
                         "Authorization".to_string(),
                         format!("Bearer {}", pair.access_token),
                     ),
-                    ("Origin".to_string(), "https://app.example.com".to_string()),
                 ],
-                body: r#"{"rp_id":"app.example.com","extra":true}"#.to_string(),
+                body: r#"{"extra":true}"#.to_string(),
             },
             &Config {
                 database: Some(crate::DatabaseConfig { db_path }),
@@ -2330,20 +2494,14 @@ mod tests {
         let db_path = test_db_path("http-webauthn-authentication-options");
         let connection = Connection::open(&db_path).expect("database opens");
         create_auth_schema(&connection);
-        connection
-            .execute(
-                "INSERT INTO allowed_origins (origin) VALUES (?1)",
-                ["https://app.example.com"],
-            )
-            .expect("origin inserted");
         drop(connection);
 
         let response = route_request(
             &Request {
                 method: "POST".to_string(),
                 path: "/webauthn/authenticate/options".to_string(),
-                headers: vec![("Origin".to_string(), "https://app.example.com".to_string())],
-                body: r#"{"rp_id":"EXAMPLE.COM."}"#.to_string(),
+                headers: vec![],
+                body: r#"{}"#.to_string(),
             },
             &Config {
                 database: Some(crate::DatabaseConfig {
@@ -2376,24 +2534,21 @@ mod tests {
     }
 
     #[test]
-    fn rejects_webauthn_authentication_options_unallowlisted_origin() {
+    fn rejects_webauthn_authentication_options_for_invalid_stored_rp_id() {
         let db_path = test_db_path("http-webauthn-authentication-options-bad-origin");
         let connection = Connection::open(&db_path).expect("database opens");
         create_auth_schema(&connection);
         connection
-            .execute(
-                "INSERT INTO allowed_origins (origin) VALUES (?1)",
-                ["https://app.example.com"],
-            )
-            .expect("origin inserted");
+            .execute("UPDATE app_meta SET rp_id = 'login.example.com'", [])
+            .expect("app meta updates");
         drop(connection);
 
         let response = route_request(
             &Request {
                 method: "POST".to_string(),
                 path: "/webauthn/authenticate/options".to_string(),
-                headers: vec![("Origin".to_string(), "https://evil.example.com".to_string())],
-                body: r#"{"rp_id":"example.com"}"#.to_string(),
+                headers: vec![],
+                body: r#"{}"#.to_string(),
             },
             &Config {
                 database: Some(crate::DatabaseConfig { db_path }),
@@ -2414,12 +2569,6 @@ mod tests {
         let db_path = test_db_path("http-webauthn-authentication-verify-legacy-state");
         let connection = Connection::open(&db_path).expect("database opens");
         create_auth_schema(&connection);
-        connection
-            .execute(
-                "INSERT INTO allowed_origins (origin) VALUES (?1)",
-                ["https://app.example.com"],
-            )
-            .expect("origin inserted");
         connection
             .execute(
                 "INSERT INTO webauthn_challenges
@@ -2454,7 +2603,7 @@ mod tests {
             &Request {
                 method: "POST".to_string(),
                 path: "/webauthn/authenticate/verify".to_string(),
-                headers: vec![("Origin".to_string(), "https://app.example.com".to_string())],
+                headers: vec![],
                 body: authentication_verify_body(),
             },
             &Config {
@@ -2490,7 +2639,7 @@ mod tests {
             &Request {
                 method: "POST".to_string(),
                 path: "/webauthn/authenticate/verify".to_string(),
-                headers: vec![("Origin".to_string(), "https://app.example.com".to_string())],
+                headers: vec![],
                 body: r#"{"request_id":"00000000-0000-4000-8000-000000000000","credential":{"id":"credential-id","rawId":"raw-id","type":"public-key","response":{"clientDataJSON":"client-data","authenticatorData":"auth-data","signature":"signature"}},"extra":true}"#.to_string(),
             },
             &Config::default(),
@@ -2512,7 +2661,7 @@ mod tests {
             &Request {
                 method: "POST".to_string(),
                 path: "/webauthn/authenticate/verify".to_string(),
-                headers: vec![("Origin".to_string(), "https://app.example.com".to_string())],
+                headers: vec![],
                 body: authentication_verify_body(),
             },
             &Config {
@@ -2730,6 +2879,7 @@ mod tests {
                 CREATE TABLE app_meta (
                     id TEXT PRIMARY KEY CHECK (id = 'APP'),
                     issuer TEXT NOT NULL,
+                    rp_id TEXT NOT NULL,
                     admin_user_id TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -2760,11 +2910,6 @@ mod tests {
                     consumed_at TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
-                CREATE TABLE allowed_origins (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    origin TEXT NOT NULL UNIQUE,
-                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-                );
                 CREATE TABLE ed25519_credentials (
                     id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL,
@@ -2785,7 +2930,7 @@ mod tests {
             .expect("auth schema exists");
         connection
             .execute(
-                "INSERT OR IGNORE INTO app_meta (id, issuer) VALUES ('APP', 'auth-mini')",
+                "INSERT OR IGNORE INTO app_meta (id, issuer, rp_id) VALUES ('APP', 'https://app.example.com', 'example.com')",
                 [],
             )
             .expect("app meta exists");

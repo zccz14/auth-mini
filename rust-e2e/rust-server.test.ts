@@ -13,9 +13,6 @@ import { hashValue } from '../src/shared/crypto.js';
 const repoRoot = resolve(import.meta.dirname, '..');
 const binaryPath = resolve(repoRoot, 'rust-backend/target/debug/auth-mini');
 const tempRoot = resolve(repoRoot, '.tmp/rust-e2e');
-const webauthnOrigin = 'https://app.example.com';
-const webauthnRpId = 'app.example.com';
-
 let server: ChildProcessWithoutNullStreams | null = null;
 let serverStderr = '';
 
@@ -24,7 +21,7 @@ afterEach(async () => {
   await rm(tempRoot, { recursive: true, force: true });
 });
 
-describe('rust external server e2e smoke', () => {
+describe.sequential('rust external server e2e smoke', () => {
   it('initializes the default DB path under the process home', async () => {
     expect(existsSync(binaryPath)).toBe(true);
 
@@ -54,6 +51,8 @@ describe('rust external server e2e smoke', () => {
     const dbPath = resolve(tempRoot, 'auth-mini-rust-e2e.sqlite');
     const port = await getFreePort();
     const baseUrl = `http://127.0.0.1:${port}`;
+    const webauthnOrigin = `http://localhost:${port}`;
+    const webauthnRpId = 'localhost';
     server = startServer(dbPath, port);
     await waitForHealthz(baseUrl);
     const adminKey = createTestEd25519Keypair('admin');
@@ -80,8 +79,6 @@ describe('rust external server e2e smoke', () => {
     );
 
     const setup = await putJson(`${baseUrl}/admin/setup`, {
-      issuer: baseUrl,
-      origin: webauthnOrigin,
       admin_ed25519: {
         name: 'Rust E2E admin',
         public_key: adminKey.publicKey,
@@ -90,13 +87,12 @@ describe('rust external server e2e smoke', () => {
     expect(setup.status).toBe(200);
     const setupState = await setup.json();
     expect(setupState).toMatchObject({
-      issuer: baseUrl,
       admin_user_id: expect.any(String),
       admin_ed25519: expect.objectContaining({
         name: 'Rust E2E admin',
         public_key: adminKey.publicKey,
       }),
-      origins: [expect.objectContaining({ origin: webauthnOrigin })],
+      rp_id: 'localhost',
       smtp: null,
     });
     seedOtp(dbPath, 'rust-user@example.com', '123456');
@@ -112,7 +108,7 @@ describe('rust external server e2e smoke', () => {
     });
 
     const adminStartResponse = await postJson(`${baseUrl}/ed25519/start`, {
-      credential_id: setupState.admin_ed25519.id,
+      public_key: setupState.admin_ed25519.public_key,
     });
     expect(adminStartResponse.status).toBe(200);
     const adminChallenge = (await adminStartResponse.json()) as {
@@ -125,6 +121,20 @@ describe('rust external server e2e smoke', () => {
     });
     expect(adminVerifyResponse.status).toBe(200);
     const adminTokens = (await adminVerifyResponse.json()) as TokenResponse;
+    const adminConfig = await putJson(
+      `${baseUrl}/admin/config`,
+      {
+        issuer: webauthnOrigin,
+        rp_id: webauthnRpId,
+        smtp: null,
+      },
+      adminTokens.access_token,
+    );
+    expect(adminConfig.status).toBe(200);
+    expect(await adminConfig.json()).toMatchObject({
+      issuer: webauthnOrigin,
+      rp_id: webauthnRpId,
+    });
     const adminMe = await fetch(`${baseUrl}/me`, {
       headers: bearerHeaders(adminTokens.access_token),
     });
@@ -132,6 +142,7 @@ describe('rust external server e2e smoke', () => {
     expect(await adminMe.json()).toMatchObject({
       user_id: setupState.admin_user_id,
       email: null,
+      auth_admin: true,
       active_sessions: expect.arrayContaining([
         expect.objectContaining({ auth_method: 'ed25519' }),
       ]),
@@ -177,17 +188,20 @@ describe('rust external server e2e smoke', () => {
       active_sessions: [expect.objectContaining({ auth_method: 'email_otp' })],
     });
 
-    const deviceKey = createTestEd25519Keypair('default');
+    const deviceKey = createTestEd25519Keypair('alternate');
     const credentialResponse = await postJson(
       `${baseUrl}/ed25519/credentials`,
       { name: 'Rust E2E device', public_key: deviceKey.publicKey },
       emailTokens.access_token,
     );
     expect(credentialResponse.status).toBe(200);
-    const credential = (await credentialResponse.json()) as { id: string };
+    const credential = (await credentialResponse.json()) as {
+      id: string;
+      public_key: string;
+    };
 
     const startResponse = await postJson(`${baseUrl}/ed25519/start`, {
-      credential_id: credential.id,
+      public_key: credential.public_key,
     });
     expect(startResponse.status).toBe(200);
     const challenge = (await startResponse.json()) as {
@@ -222,7 +236,7 @@ describe('rust external server e2e smoke', () => {
     const passkey = createTestPasskey('rust-e2e-webauthn');
     const registerOptionsResponse = await postJson(
       `${baseUrl}/webauthn/register/options`,
-      { rp_id: webauthnRpId },
+      {},
       emailTokens.access_token,
       webauthnOrigin,
     );
@@ -261,7 +275,7 @@ describe('rust external server e2e smoke', () => {
 
     const authOptionsResponse = await postJson(
       `${baseUrl}/webauthn/authenticate/options`,
-      { rp_id: webauthnRpId },
+      {},
       undefined,
       webauthnOrigin,
     );
@@ -445,11 +459,12 @@ async function postJson(
   });
 }
 
-async function putJson(url: string, body: unknown) {
+async function putJson(url: string, body: unknown, accessToken?: string) {
   return fetch(url, {
     method: 'PUT',
     headers: {
       'content-type': 'application/json',
+      ...(accessToken ? bearerHeaders(accessToken) : {}),
     },
     body: JSON.stringify(body),
   });

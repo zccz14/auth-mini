@@ -20,7 +20,7 @@ pub(crate) struct CredentialUpdateRequest {
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StartAuthenticationRequest {
-    pub(crate) credential_id: String,
+    pub(crate) public_key: String,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
@@ -88,7 +88,7 @@ pub(crate) fn parse_start_authentication_request(
 ) -> Result<StartAuthenticationRequest, serde_json::Error> {
     let request: StartAuthenticationRequest = serde_json::from_str(body)?;
 
-    if is_uuid_like(&request.credential_id) {
+    if base64url_decoded_len(&request.public_key) == Some(32) {
         return Ok(request);
     }
 
@@ -111,7 +111,11 @@ pub(crate) fn create_credential(
     connection: &Connection,
     user_id: &str,
     request: &CredentialCreateRequest,
-) -> rusqlite::Result<Value> {
+) -> rusqlite::Result<Option<Value>> {
+    if !credential_ids_by_public_key(connection, &request.public_key)?.is_empty() {
+        return Ok(None);
+    }
+
     let credential_id = random_uuid(connection)?;
     let created_at = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
 
@@ -127,9 +131,7 @@ pub(crate) fn create_credential(
         ],
     )?;
 
-    credential_response(connection, &credential_id, user_id).map(|credential| {
-        credential.expect("inserted credential must be readable in the same connection")
-    })
+    credential_response(connection, &credential_id, user_id)
 }
 
 pub(crate) fn list_credentials(connection: &Connection, user_id: &str) -> rusqlite::Result<Value> {
@@ -182,7 +184,8 @@ pub(crate) fn start_authentication(
     connection: &Connection,
     request: &StartAuthenticationRequest,
 ) -> rusqlite::Result<Option<Value>> {
-    let Some(credential_id) = existing_credential_id(connection, &request.credential_id)? else {
+    let credential_ids = credential_ids_by_public_key(connection, &request.public_key)?;
+    let [credential_id] = credential_ids.as_slice() else {
         return Ok(None);
     };
 
@@ -282,17 +285,15 @@ fn credential_response(
         .optional()
 }
 
-fn existing_credential_id(
+pub(crate) fn credential_ids_by_public_key(
     connection: &Connection,
-    credential_id: &str,
-) -> rusqlite::Result<Option<String>> {
-    connection
-        .query_row(
-            "SELECT id FROM ed25519_credentials WHERE id = ?1 LIMIT 1",
-            [credential_id],
-            |row| row.get(0),
-        )
-        .optional()
+    public_key: &str,
+) -> rusqlite::Result<Vec<String>> {
+    let mut statement =
+        connection.prepare("SELECT id FROM ed25519_credentials WHERE public_key = ?1 LIMIT 2")?;
+    let rows = statement.query_map([public_key], |row| row.get(0))?;
+
+    rows.collect()
 }
 
 fn valid_challenge(
@@ -562,16 +563,16 @@ mod tests {
     #[test]
     fn parses_start_authentication_request_contract() {
         let request = parse_start_authentication_request(
-            r#"{"credential_id":"00000000-0000-4000-8000-000000000000"}"#,
+            r#"{"public_key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#,
         )
         .expect("request parses");
 
         assert_eq!(
-            request.credential_id,
-            "00000000-0000-4000-8000-000000000000"
+            request.public_key,
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
         );
-        parse_start_authentication_request(r#"{"credential_id":"not-a-uuid"}"#)
-            .expect_err("malformed credential id rejects");
+        parse_start_authentication_request(r#"{"public_key":"not-a-valid-ed25519-public-key"}"#)
+            .expect_err("malformed public key rejects");
     }
 
     #[test]
@@ -621,7 +622,8 @@ mod tests {
                 public_key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_string(),
             },
         )
-        .expect("credential creates");
+        .expect("credential creates")
+        .expect("credential is new");
 
         assert_eq!(credential["name"], "Laptop");
         assert_eq!(
@@ -636,6 +638,92 @@ mod tests {
                 .len(),
             24
         );
+    }
+
+    #[test]
+    fn create_rejects_duplicate_public_key() {
+        let connection = Connection::open_in_memory().expect("database opens");
+        connection
+            .execute_batch(
+                "CREATE TABLE ed25519_credentials (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    public_key TEXT NOT NULL,
+                    last_used_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );",
+            )
+            .expect("schema exists");
+        connection
+            .execute(
+                "INSERT INTO ed25519_credentials
+                 (id, user_id, name, public_key, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                (
+                    "credential-1",
+                    "user-1",
+                    "Laptop",
+                    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                    "2026-01-01T00:00:00.000Z",
+                ),
+            )
+            .expect("credential inserts");
+
+        let credential = create_credential(
+            &connection,
+            "user-2",
+            &CredentialCreateRequest {
+                name: "Second copy".to_string(),
+                public_key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_string(),
+            },
+        )
+        .expect("duplicate check completes");
+
+        assert!(credential.is_none());
+    }
+
+    #[test]
+    fn start_authentication_rejects_ambiguous_duplicate_public_key() {
+        let connection = Connection::open_in_memory().expect("database opens");
+        connection
+            .execute_batch(
+                "CREATE TABLE ed25519_credentials (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    public_key TEXT NOT NULL,
+                    last_used_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );",
+            )
+            .expect("schema exists");
+        for credential_id in ["credential-1", "credential-2"] {
+            connection
+                .execute(
+                    "INSERT INTO ed25519_credentials
+                     (id, user_id, name, public_key, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    (
+                        credential_id,
+                        "user-1",
+                        "Duplicate",
+                        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                        "2026-01-01T00:00:00.000Z",
+                    ),
+                )
+                .expect("credential inserts");
+        }
+
+        let challenge = start_authentication(
+            &connection,
+            &StartAuthenticationRequest {
+                public_key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_string(),
+            },
+        )
+        .expect("challenge start attempts");
+
+        assert!(challenge.is_none());
     }
 
     #[test]
@@ -833,7 +921,7 @@ mod tests {
                     "00000000-0000-4000-8000-000000000000",
                     "user-1",
                     "Laptop",
-                    "public-key",
+                    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
                     "2026-01-01T00:00:00.000Z",
                 ),
             )
@@ -842,7 +930,7 @@ mod tests {
         let challenge = start_authentication(
             &connection,
             &StartAuthenticationRequest {
-                credential_id: "00000000-0000-4000-8000-000000000000".to_string(),
+                public_key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_string(),
             },
         )
         .expect("challenge starts")
@@ -883,7 +971,7 @@ mod tests {
         let challenge = start_authentication(
             &connection,
             &StartAuthenticationRequest {
-                credential_id: "00000000-0000-4000-8000-000000000000".to_string(),
+                public_key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_string(),
             },
         )
         .expect("challenge start attempts");

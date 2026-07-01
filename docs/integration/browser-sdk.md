@@ -11,32 +11,36 @@ This guide covers higher-level runtime behavior for the browser SDK only.
 
 ## Recommended: module/browser-subpath usage
 
-Import the browser SDK module and construct it with your auth server origin:
+Import the browser SDK module and construct it with your server base URL:
 
 ```ts
 import { createBrowserSdk } from 'auth-mini/sdk/browser';
 
-const sdk = createBrowserSdk('https://auth.zccz14.com');
+const sdk = createBrowserSdk('https://auth.example.com');
 ```
 
-The current `examples/demo/` app follows that module path as a Vite + React bundle. It imports `auth-mini/sdk/browser` at build time, mounts under a `HashRouter`, stays docs-only until you provide `/#/setup?auth-origin=https://your-auth-origin`, then reads `auth-origin` from `window.location.hash` and passes that origin into `createBrowserSdk(serverBaseUrl)`. The published demo now uses the bundled app entrypoint instead of any hand-wired browser bundle path.
+The current `examples/demo/` app follows that module path as a Vite + React bundle. It imports `auth-mini/sdk/browser` at build time, mounts under a `HashRouter`, and the embedded `/web` GUI uses the same Rust server by resolving the relative base URL `..` from `window.location.href` before creating the SDK. The published demo now uses the bundled app entrypoint instead of any hand-wired browser bundle path.
 
 Browser SDK persistence semantics remain browser-only: the maintained browser module path uses browser storage and browser-oriented recovery behavior. The new device SDK does not change those semantics.
 
-## Cross-origin guidance
+## Redirect sign-in guidance
 
-Browser pages may be hosted on a different origin than the auth server. Store the page origin with the demo setup page or loopback-only `PUT /admin/setup` for WebAuthn and related origin checks; HTTP CORS is served separately with `Access-Control-Allow-Origin: *`.
+Passkey registration and sign-in are completed on the Auth Mini server page. Downstream apps should send users to the Auth Mini instance for browser auth and then consume the returned session or token result, similar to a "Sign in with Auth Mini" flow. WebAuthn origin is derived from the configured issuer; clients do not configure a separate business-app page origin.
 
-Same-origin proxy deployment is still supported if you prefer to front auth-mini through your app origin, but direct cross-origin browser access to the auth-mini API is also supported. Because auth-mini serves wildcard CORS for HTTP routes, downstream apps should decide whether to keep direct access or place their own proxy/gateway controls in front.
+For the redirect URL contract, callback fragment fields, and business App responsibilities, see [业务 App 跳转登录接入](./login-redirect.md).
+
+HTTP CORS remains separate from WebAuthn origin policy. Auth Mini serves wildcard CORS for API routes, so downstream apps should decide whether direct API access or a proxy/gateway is appropriate for their deployment.
 
 ### Localhost example
 
-This page:
+The embedded GUI page and server share one origin:
 
-- page origin: `http://localhost:3000`
-- auth server origin: `http://127.0.0.1:7777`
+- page URL: `http://127.0.0.1:7777/web/`
+- server base URL: `http://127.0.0.1:7777`
+- issuer: `http://127.0.0.1:7777`
+- rp_id: `127.0.0.1`
 
-works when `http://localhost:3000` has been added from the setup page or local admin setup API and the browser app initializes the SDK with the auth server origin:
+A separate business app should redirect to that Auth Mini page for passkey sign-in instead of running the passkey ceremony on its own origin:
 
 ```ts
 import { createBrowserSdk } from 'auth-mini/sdk/browser';
@@ -59,7 +63,7 @@ If a refresh token is already stored, startup enters `recovering` first and then
 ```ts
 import { createBrowserSdk } from 'auth-mini/sdk/browser';
 
-const sdk = createBrowserSdk('https://auth.zccz14.com');
+const sdk = createBrowserSdk('https://auth.example.com');
 
 async function signIn(email: string, code: string) {
   await sdk.email.start({ email });
@@ -75,8 +79,8 @@ async function signInWithPasskey() {
 
 ## Operational limits
 
-- The browser SDK requires an explicit auth server origin via `createBrowserSdk(serverBaseUrl)`.
-- Store the browser page origin via the setup page or `PUT /admin/setup` for WebAuthn and related origin checks; this is separate from the HTTP CORS policy.
+- The browser SDK requires an explicit server base URL via `createBrowserSdk(serverBaseUrl)`.
+- Configure the issuer and passkey RP ID on the Auth Mini instance; passkey requests use that server-side configuration.
 - Multiple tabs sharing one session can still race during refresh-token rotation, but the loser tab enters `recovering` and usually converges to the latest shared session state.
 - That convergence only shares session tokens/status; `/me` remains caller-owned and must be fetched explicitly in each tab when needed.
 
@@ -84,26 +88,26 @@ async function signInWithPasskey() {
 
 `examples/demo/` is the interactive browser-flow demo source. `docs/` remains the canonical static reference source.
 
-The published demo/docs page does **not** auto-target localhost anymore. It stays in a neutral docs-only state until you provide `/#/setup?auth-origin=https://your-auth-origin`, which becomes the `createBrowserSdk(serverBaseUrl)` value for the playground.
+The embedded `/web` GUI no longer accepts an auth-server-origin override. It always calls the same Rust server that served the GUI by resolving the relative base URL `..`.
 
 The current publish flow builds the demo with the root-level `demo:build` script and deploys `examples/demo/dist` as the static site root.
 
 - Treat `examples/demo/` as the source for the interactive demo and `examples/demo/dist` as the publish artifact.
 - For GitHub Pages, upload `examples/demo/dist` directly rather than a sibling `demo/` + `dist/` artifact layout.
 - The published page should be served from the site root for that artifact, such as `https://<user>.github.io/auth-mini/` for project Pages or `https://your-domain.example/` for a custom domain.
-- The stored setup origin must use the final **page origin** (`window.location.origin`) for WebAuthn/browser origin checks, not the auth server origin.
-- If the docs page and auth server live on different origins, keep the page on its static host and append `/#/setup?auth-origin=https://your-auth-origin` so the published demo continues calling `createBrowserSdk(...)` against the auth host.
-- If you attach a custom GitHub Pages domain, publish a matching `CNAME` file in the deployed site root so GitHub serves that domain consistently; then store `https://your-domain.example` from the setup page or local admin setup API.
+- Configure the issuer to the final Auth Mini server origin and set `rp_id` to that host or a valid parent domain.
+- If a downstream app serves its own frontend separately from auth-mini, it should redirect users to the Auth Mini page for browser sign-in; the built-in `/web` GUI is same-server only.
+- If you attach a custom GitHub Pages domain for docs, publish a matching `CNAME` file in the deployed site root so GitHub serves that domain consistently.
 
 Example:
 
-- published site root: `https://example.github.io/auth-mini`
-- auth server origin: `https://auth.zccz14.com`
+- embedded GUI: `https://auth.example.com/web/`
+- server base URL used by the GUI: `https://auth.example.com/`
 
 Open:
 
 ```text
-https://example.github.io/auth-mini/#/setup?auth-origin=https://auth.zccz14.com
+https://auth.example.com/web/
 ```
 
 Start auth-mini with the local listener and database options:
@@ -112,4 +116,4 @@ Start auth-mini with the local listener and database options:
 auth-mini --host 127.0.0.1 --port 7777 --db ./auth-mini.sqlite
 ```
 
-Then configure the externally visible issuer and published docs origin through the setup page or local admin setup API. The setup API writes `app_meta`, including `app_meta.issuer`; SMTP is optional, and admin Ed25519 bootstrap does not require SMTP.
+Then configure the externally visible issuer and passkey RP ID through the admin configuration page or API. The setup API initializes the admin Ed25519 credential; SMTP is optional, and admin Ed25519 bootstrap does not require SMTP.

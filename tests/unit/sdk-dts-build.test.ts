@@ -60,7 +60,9 @@ describe('sdk d.ts build artifact', () => {
       buildScriptSource.indexOf('tsc -p tsconfig.build.json --declaration'),
     );
     expect(buildScriptSource.match(/await runCommand\(/g)).toHaveLength(3);
-    expect(buildScriptSource).toContain('await runCommand(generateApiCommand);');
+    expect(buildScriptSource).toContain(
+      'await runCommand(generateApiCommand);',
+    );
     expect(buildScriptSource).toContain('await runCommand(buildCommand);');
     expect(buildScriptSource).toContain('const child = spawn(watchCommand, {');
     expect(testRunnerSource).toContain(
@@ -167,7 +169,6 @@ describe('sdk d.ts build artifact', () => {
       'export type EmailVerifyInput = GeneratedEmailVerifyInput;',
     );
     expect(sharedTypes).toContain('export type EmailStartResponse = {');
-    expect(sharedTypes).toContain('export type PasskeyOptionsInput = {');
     expect(sharedTypes).toContain(
       'export type WebauthnVerifyResponse = Record<string, unknown>;',
     );

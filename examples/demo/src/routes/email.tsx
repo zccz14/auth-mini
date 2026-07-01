@@ -74,7 +74,7 @@ export function EmailRoute() {
 
         <form className="space-y-3" onSubmit={handleStart}>
           <div className="text-sm text-slate-600">
-            Request an OTP email using the configured auth origin.
+            Request an OTP email using the current auth-mini server.
           </div>
           <Button
             type="submit"
