@@ -9,7 +9,7 @@ export default defineConfig({
   base: '/web/',
   plugins: [react()],
   build: {
-    outDir: '../../rust-backend/web',
+    outDir: '../rust-backend/web',
     emptyOutDir: true,
   },
   resolve: {

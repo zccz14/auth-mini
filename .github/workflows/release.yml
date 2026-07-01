@@ -61,6 +61,9 @@ jobs:
         with:
           node-version: 24.x
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            ui-web/package-lock.json
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -71,7 +74,7 @@ jobs:
         run: npm ci
 
       - name: Install demo dependencies
-        run: npm --prefix examples/demo ci
+        run: npm --prefix ui-web ci
 
       - name: Build embedded web assets
         run: npm run demo:build:web

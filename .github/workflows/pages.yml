@@ -32,12 +32,15 @@ jobs:
         with:
           node-version: '24'
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            ui-web/package-lock.json
 
       - name: Install root dependencies
         run: npm ci
 
-      - name: Install examples/demo dependencies
-        run: npm --prefix examples/demo ci
+      - name: Install ui-web dependencies
+        run: npm --prefix ui-web ci
 
       - name: Build demo release artifact
         run: npm run demo:build
@@ -48,7 +51,7 @@ jobs:
       - name: Upload demo artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: examples/demo/dist
+          path: ui-web/dist
 
       - name: Deploy to GitHub Pages
         id: deployment

@@ -1,5 +1,5 @@
 {
-  "name": "auth-mini-examples-demo",
+  "name": "auth-mini-ui-web",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -15,7 +15,7 @@
     "@noble/ed25519": "^3.0.0",
     "@radix-ui/react-separator": "^1.1.7",
     "@radix-ui/react-tabs": "^1.1.13",
-    "auth-mini": "file:../..",
+    "auth-mini": "file:..",
     "clsx": "^2.1.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

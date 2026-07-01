@@ -27,13 +27,13 @@ jobs:
           cache: npm
           cache-dependency-path: |
             package-lock.json
-            examples/demo/package-lock.json
+            ui-web/package-lock.json
 
       - name: Install root dependencies
         run: npm ci
 
-      - name: Install examples/demo dependencies
-        run: npm --prefix examples/demo ci
+      - name: Install ui-web dependencies
+        run: npm --prefix ui-web ci
 
       - name: Build demo
         run: npm run demo:build
@@ -42,4 +42,4 @@ jobs:
         run: npm run demo:typecheck
 
       - name: Test demo
-        run: npm --prefix examples/demo test
+        run: npm --prefix ui-web test

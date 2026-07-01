@@ -19,7 +19,7 @@ import { createBrowserSdk } from 'auth-mini/sdk/browser';
 const sdk = createBrowserSdk('https://auth.example.com');
 ```
 
-The current `examples/demo/` app follows that module path as a Vite + React bundle. It imports `auth-mini/sdk/browser` at build time, mounts under a `HashRouter`, and the embedded `/web` GUI uses the same Rust server by resolving the relative base URL `..` from `window.location.href` before creating the SDK. The published demo now uses the bundled app entrypoint instead of any hand-wired browser bundle path.
+The current `ui-web/` app follows that module path as a Vite + React bundle. It imports `auth-mini/sdk/browser` at build time, mounts under a `HashRouter`, and the embedded `/web` GUI uses the same Rust server by resolving the relative base URL `..` from `window.location.href` before creating the SDK. The published demo now uses the bundled app entrypoint instead of any hand-wired browser bundle path.
 
 Browser SDK persistence semantics remain browser-only: the maintained browser module path uses browser storage and browser-oriented recovery behavior. The new device SDK does not change those semantics.
 
@@ -86,14 +86,14 @@ async function signInWithPasskey() {
 
 ## Demo and publishing guidance
 
-`examples/demo/` is the interactive browser-flow demo source. `docs/` remains the canonical static reference source.
+`ui-web/` is the interactive browser-flow demo source. `docs/` remains the canonical static reference source.
 
 The embedded `/web` GUI no longer accepts an auth-server-origin override. It always calls the same Rust server that served the GUI by resolving the relative base URL `..`.
 
-The current publish flow builds the demo with the root-level `demo:build` script and deploys `examples/demo/dist` as the static site root.
+The current publish flow builds the demo with the root-level `demo:build` script and deploys `ui-web/dist` as the static site root.
 
-- Treat `examples/demo/` as the source for the interactive demo and `examples/demo/dist` as the publish artifact.
-- For GitHub Pages, upload `examples/demo/dist` directly rather than a sibling `demo/` + `dist/` artifact layout.
+- Treat `ui-web/` as the source for the interactive demo and `ui-web/dist` as the publish artifact.
+- For GitHub Pages, upload `ui-web/dist` directly rather than a sibling `demo/` + `dist/` artifact layout.
 - The published page should be served from the site root for that artifact, such as `https://<user>.github.io/auth-mini/` for project Pages or `https://your-domain.example/` for a custom domain.
 - Configure the issuer to the final Auth Mini server origin and set `rp_id` to that host or a valid parent domain.
 - If a downstream app serves its own frontend separately from auth-mini, it should redirect users to the Auth Mini page for browser sign-in; the built-in `/web` GUI is same-server only.
