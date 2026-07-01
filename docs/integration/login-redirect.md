@@ -7,9 +7,9 @@
 ## 核心流程
 
 1. 业务 App 生成一次性 `state`，并记录到自己的会话存储中。
-2. 业务 App 构造 Auth Mini 登录 URL，把回调地址放到 `redirect_uri`。
+2. 业务 App 构造 Auth Mini 登录 URL，把回调地址放到可选的 `redirect_uri`。
 3. 用户在 Auth Mini 登录页完成邮箱 OTP、Passkey 或 ED25519 登录。
-4. Auth Mini 登录成功后创建会话 token，并跳回 `redirect_uri`。
+4. Auth Mini 登录成功后创建会话 token；如果传了 `redirect_uri`，跳回业务 App，否则进入 Auth Mini 自己的登录后页面。
 5. 业务 App 的回调页读取 URL fragment 中的 token 参数，校验 `state`，保存会话状态。
 6. 业务 App 清理地址栏中的 token 参数，然后进入原本的业务页面。
 
@@ -23,7 +23,7 @@ https://auth.example.com/web/#/login?redirect_uri=https%3A%2F%2Fapp.example.com%
 
 参数：
 
-- `redirect_uri`：必填。登录完成后要回到的业务 App 地址。应使用 `http:` 或 `https:` URL。
+- `redirect_uri`：可选。传入时，登录完成后回到的业务 App 地址；不传时，登录完成后进入 Auth Mini 自己的页面。传入值应使用 `http:` 或 `https:` URL。
 - `state`：推荐。业务 App 生成的随机值，用来防止回调被串用或伪造。
 
 业务 App 示例：
@@ -41,6 +41,12 @@ window.location.assign(
 );
 ```
 
+Auth Mini 的登录页是 hash router 页面，推荐把 `redirect_uri` 放在 `#/login` 后面。为了兼容已有入口，也支持把同样的 query 放在 hash 前面，例如：
+
+```text
+https://auth.example.com/web/?redirect_uri=https%3A%2F%2Fapp.example.com%2Fauth%2Fcallback&state=state-123#/login
+```
+
 生产环境还应在 Auth Mini 登录页或网关层校验 `redirect_uri` allowlist，避免任意站点拿到登录结果。
 
 ## 登录完成后的回调
@@ -48,7 +54,7 @@ window.location.assign(
 Auth Mini 登录成功后，把结果放进 `redirect_uri` 的 URL fragment：
 
 ```text
-https://app.example.com/auth/callback#access_token=...&token_type=Bearer&session_id=...&expires_at=...&state=state-123
+https://app.example.com/auth/callback#access_token=...&token_type=Bearer&session_id=...&refresh_token=...&expires_in=...&expires_at=...&state=state-123
 ```
 
 回调参数：
@@ -56,6 +62,8 @@ https://app.example.com/auth/callback#access_token=...&token_type=Bearer&session
 - `access_token`：短期 JWT access token。
 - `token_type`：通常是 `Bearer`。
 - `session_id`：Auth Mini 会话 ID，用来标识这次登录创建的 Auth Mini session。仅有 `session_id` 不能刷新 access token；刷新还需要 refresh token 或业务 App 自己的后端会话。
+- `refresh_token`：刷新 access token 时使用的 refresh token。
+- `expires_in`：access token 剩余有效秒数。
 - `expires_at`：access token 过期时间，ISO 字符串。
 - `state`：原样带回业务 App，用来和本地保存的 `state` 对比。
 
@@ -63,7 +71,7 @@ https://app.example.com/auth/callback#access_token=...&token_type=Bearer&session
 
 1. 从 `window.location.hash` 解析参数。
 2. 对比回调里的 `state` 和本地保存的 `state`。
-3. 保存 `access_token`、`token_type`、`session_id` 和过期时间，或调用自己的后端换成业务会话。
+3. 保存 `access_token`、`token_type`、`session_id`、`refresh_token` 和过期信息，或调用自己的后端换成业务会话。
 4. 使用 `history.replaceState` 清理地址栏中的 token 参数。
 5. 跳转到业务 App 原本要进入的页面。
 
@@ -81,9 +89,17 @@ if (!expectedState || returnedState !== expectedState) {
 const accessToken = params.get('access_token');
 const tokenType = params.get('token_type');
 const sessionId = params.get('session_id');
+const refreshToken = params.get('refresh_token');
+const expiresIn = params.get('expires_in');
 const expiresAt = params.get('expires_at');
 
-if (!accessToken || tokenType !== 'Bearer' || !sessionId) {
+if (
+  !accessToken ||
+  tokenType !== 'Bearer' ||
+  !sessionId ||
+  !refreshToken ||
+  !expiresIn
+) {
   throw new Error('Invalid Auth Mini login callback');
 }
 
@@ -91,7 +107,14 @@ sessionStorage.removeItem('auth-mini.login.state');
 
 sessionStorage.setItem(
   'auth-mini.session',
-  JSON.stringify({ accessToken, tokenType, sessionId, expiresAt }),
+  JSON.stringify({
+    accessToken,
+    tokenType,
+    sessionId,
+    refreshToken,
+    expiresIn,
+    expiresAt,
+  }),
 );
 
 window.history.replaceState(null, '', '/auth/callback');
@@ -109,7 +132,7 @@ https://app.example.com/#/auth/callback?next=%2Fdashboard
 Auth Mini 回跳时应保留原来的 hash route，并把 token 参数追加到这个 route 的 query 中：
 
 ```text
-https://app.example.com/#/auth/callback?next=%2Fdashboard&access_token=...&token_type=Bearer&session_id=...&expires_at=...&state=state-123
+https://app.example.com/#/auth/callback?next=%2Fdashboard&access_token=...&token_type=Bearer&session_id=...&refresh_token=...&expires_in=...&expires_at=...&state=state-123
 ```
 
 这种情况下，业务 App 不应把整个 `location.hash.slice(1)` 当成 `URLSearchParams`。应先按自己的路由解析 `#/auth/callback?...`，再从该路由的 query 中取 token 参数。
@@ -136,7 +159,7 @@ Authorization: Bearer <access_token>
 
 ## 安全边界
 
-- `redirect_uri` 只应允许 `http:` 或 `https:`。
+- 传入 `redirect_uri` 时，只应允许 `http:` 或 `https:`。
 - 生产环境必须限制允许回跳的业务 App 地址。
 - `state` 应是一次性随机值，回调校验成功后立即删除。
 - token 不要放在 query string；query string 更容易出现在服务端日志、代理日志和分析系统中。

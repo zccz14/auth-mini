@@ -1,17 +1,56 @@
 import { describe, expect, it, vi } from 'vitest';
-import { buildLoginCallbackUrl, parseLoginRequest } from '@/lib/login-callback';
+import {
+  buildLoginCallbackUrl,
+  parseLoginRequest,
+  toDemoSessionTokens,
+} from '@/lib/login-callback';
 
 describe('login callback helpers', () => {
-  it('requires an http or https redirect_uri', () => {
+  it('treats redirect_uri as optional', () => {
     expect(parseLoginRequest('')).toEqual({
-      status: 'invalid',
-      error: 'redirect_uri is required.',
+      status: 'ready',
+      redirectUri: null,
+      state: null,
     });
+  });
+
+  it('requires redirect_uri to be http or https when provided', () => {
     expect(
       parseLoginRequest('?redirect_uri=auth-mini%3A%2F%2Fcallback'),
     ).toEqual({
       status: 'invalid',
       error: 'redirect_uri must be a valid http or https URL.',
+    });
+  });
+
+  it('uses document query parameters when hash route search has no redirect_uri', () => {
+    expect(
+      parseLoginRequest(
+        '',
+        '?redirect_uri=https%3A%2F%2Fapp.example.com%2Fcallback&state=state-1',
+      ),
+    ).toEqual({
+      status: 'ready',
+      redirectUri: 'https://app.example.com/callback',
+      state: 'state-1',
+    });
+  });
+
+  it('converts browser session results for local demo login', () => {
+    expect(
+      toDemoSessionTokens({
+        sessionId: 'session-1',
+        accessToken: 'jwt-1',
+        refreshToken: 'refresh-1',
+        receivedAt: '2026-06-30T00:00:00.000Z',
+        expiresAt: '2026-06-30T01:00:00.000Z',
+      }),
+    ).toEqual({
+      session_id: 'session-1',
+      access_token: 'jwt-1',
+      refresh_token: 'refresh-1',
+      expires_in: 3600,
+      token_type: 'Bearer',
     });
   });
 
