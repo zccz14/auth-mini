@@ -226,7 +226,7 @@ From there, typical integration looks like this:
 
 ## Docs and next steps
 
-`docs/` is the canonical static reference source. `examples/demo/` is the current interactive demo source and Pages publish target, while the deployed live demo remains the easiest way to try the browser flows end-to-end.
+`docs/` is the canonical static reference source. `ui-web/` is the current interactive demo source and Pages publish target, while the deployed live demo remains the easiest way to try the browser flows end-to-end.
 
 - Device SDK integration: [docs/integration/device-sdk.md](docs/integration/device-sdk.md)
 - Browser SDK integration: [docs/integration/browser-sdk.md](docs/integration/browser-sdk.md)

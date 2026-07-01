@@ -6,17 +6,17 @@ function readRepoFile(path: string) {
   return readFileSync(resolve(process.cwd(), path), 'utf8');
 }
 
-describe('examples demo Pages release contract', () => {
+describe('ui-web Pages release contract', () => {
   it('keeps demo:build as the root-first release entrypoint', () => {
     const packageJson = JSON.parse(readRepoFile('package.json')) as {
       scripts?: Record<string, string>;
     };
 
     expect(packageJson.scripts?.['demo:build']).toBe(
-      'npm run build && npm --prefix examples/demo run build',
+      'npm run build && npm --prefix ui-web run build',
     );
     expect(packageJson.scripts?.['demo:build:web']).toBe(
-      'npm run build && npm --prefix examples/demo run build:web && node scripts/build-web-assets-archive.mjs',
+      'npm run build && npm --prefix ui-web run build:web && node scripts/build-web-assets-archive.mjs',
     );
   });
 
@@ -29,8 +29,9 @@ describe('examples demo Pages release contract', () => {
     const buildJob = workflow.slice(buildJobStart);
     const expectedSequence = [
       'uses: actions/setup-node@v4',
+      'ui-web/package-lock.json',
       'run: npm ci',
-      'run: npm --prefix examples/demo ci',
+      'run: npm --prefix ui-web ci',
       'run: npm run demo:build:web',
       'cargo build --manifest-path rust-backend/Cargo.toml --release',
     ];
@@ -47,7 +48,7 @@ describe('examples demo Pages release contract', () => {
     }
   });
 
-  it('builds Pages from the root entrypoint and uploads examples/demo/dist', () => {
+  it('builds Pages from the root entrypoint and uploads ui-web/dist', () => {
     const workflow = readRepoFile('.github/workflows/pages.yml');
     const deployJobStart = workflow.indexOf('jobs:\n  deploy:');
 
@@ -56,9 +57,9 @@ describe('examples demo Pages release contract', () => {
     const deployJob = workflow.slice(deployJobStart);
     const expectedSequence = [
       'run: npm ci',
-      'run: npm --prefix examples/demo ci',
+      'run: npm --prefix ui-web ci',
       'run: npm run demo:build',
-      'path: examples/demo/dist',
+      'path: ui-web/dist',
     ];
     const sequenceIndexes = expectedSequence.map((snippet) =>
       deployJob.indexOf(snippet),
@@ -92,21 +93,23 @@ describe('examples demo Pages release contract', () => {
     expect(deployJob).toContain('uses: actions/setup-node@v4');
     expect(deployJob).toContain("node-version: '24'");
     expect(deployJob).toContain('cache: npm');
+    expect(deployJob).toContain('package-lock.json');
+    expect(deployJob).toContain('ui-web/package-lock.json');
     expect(deployJob).toContain('run: npm ci');
-    expect(deployJob).toContain('run: npm --prefix examples/demo ci');
+    expect(deployJob).toContain('run: npm --prefix ui-web ci');
     expect(deployJob).toContain('run: npm run demo:build');
     expect(uploadArtifactStep).toContain('uses: actions/upload-pages-artifact');
-    expect(uploadArtifactStep).toContain('path: examples/demo/dist');
+    expect(uploadArtifactStep).toContain('path: ui-web/dist');
     expect(uploadArtifactStep).not.toContain(['path', 'demo'].join(': '));
   });
 
   it('keeps the demo Vite build on relative asset paths for project Pages', () => {
-    const viteConfig = readRepoFile('examples/demo/vite.config.ts');
+    const viteConfig = readRepoFile('ui-web/vite.config.ts');
 
     expect(viteConfig).toMatch(/base:\s*['"]\.\/?['"]/);
   });
 
-  it('documents docs as canonical and examples/demo as the live Pages source', () => {
+  it('documents docs as canonical and ui-web as the live Pages source', () => {
     const readme = readRepoFile('README.md');
     const docsSectionStart = readme.indexOf('## Docs and next steps');
 
@@ -124,11 +127,9 @@ describe('examples demo Pages release contract', () => {
       /`docs\/`[\s\S]*canonical static reference source/i,
     );
     expect(docsSection).toMatch(
-      /`examples\/demo\/`[\s\S]*current interactive demo source/i,
+      /`ui-web\/`[\s\S]*current interactive demo source/i,
     );
-    expect(docsSection).toMatch(
-      /`examples\/demo\/`[\s\S]*Pages publish target/i,
-    );
+    expect(docsSection).toMatch(/`ui-web\/`[\s\S]*Pages publish target/i);
   });
 
   it('documents the published demo without origin override links or /demo/ paths', () => {

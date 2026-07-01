@@ -19,12 +19,12 @@ Rust 后端已经在 `/web` 内嵌并服务 React GUI。这个 GUI 与 Rust API 
 
 1. 不改变 `createBrowserSdk(serverBaseUrl)` API；应用代码仍可显式传入自己的 server base URL。
 2. 不删除后端 `app_meta.issuer`、Admin setup API 或 Setup 页面里的 Issuer 字段。
-3. 不改变 Pages 构建入口和独立 `examples/demo/dist` 发布结构。
+3. 不改变 Pages 构建入口和独立 `ui-web/dist` 发布结构。
 4. 不新增跨 origin GUI 配置兼容路径。
 
 ## 行为
 
-- `examples/demo` 的配置层只产出 `serverBaseUrl: '..'` 和 `resolvedServerBaseUrl`。
+- `ui-web` 的配置层只产出 `serverBaseUrl: '..'` 和 `resolvedServerBaseUrl`。
 - `resolvedServerBaseUrl` 使用 `new URL('..', window.location.href).toString()` 计算。
 - `/web/#/setup` 这类页面会解析到当前 Rust server 根路径，例如 `https://auth.example.com/`。
 - Setup 页面将 `resolvedServerBaseUrl` 作为默认 Issuer 和 Admin setup API base URL。
@@ -35,6 +35,6 @@ Rust 后端已经在 `/web` 内嵌并服务 React GUI。这个 GUI 与 Rust API 
 1. demo unit tests 覆盖配置层、Provider、Setup、Router、Email/Passkey/Session/Credentials 等受影响页面。
 2. `npm run demo:typecheck` 通过。
 3. `npm run demo:build:web` 通过并刷新 `rust-backend/web`。
-4. `tests/unit/examples-demo-pages-release.test.ts` 覆盖文档不再包含 origin override 链接。
+4. `tests/unit/ui-web-pages-release.test.ts` 覆盖文档不再包含 origin override 链接。
 5. Rust web assets 测试通过，且 `rust-backend/src/web_assets.rs` 引用新的 bundle hash。
 6. `rust-backend/web` bundle 不再包含 `Auth server origin`、`auth-origin` 或旧 hosted auth origin 常量。
