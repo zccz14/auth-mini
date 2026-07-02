@@ -1,6 +1,6 @@
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{IpAddr, TcpListener, TcpStream};
 
 use crate::config::Config;
 use crate::db::{initialize_runtime_database, read_app_issuer};
@@ -60,13 +60,13 @@ pub fn run_server(config: Config) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn handle_connection(mut stream: TcpStream, config: &Config) -> io::Result<()> {
-    let peer_is_loopback = stream.peer_addr()?.ip().is_loopback();
-    let request = read_request(&mut stream, peer_is_loopback)?;
+    let peer_ip = stream.peer_addr()?.ip();
+    let request = read_request(&mut stream, peer_ip)?;
     let response = route_request(&request, config)?;
     stream.write_all(&response.to_http_bytes())
 }
 
-fn read_request(stream: &mut TcpStream, peer_is_loopback: bool) -> io::Result<Request> {
+fn read_request(stream: &mut TcpStream, peer_ip: IpAddr) -> io::Result<Request> {
     let mut reader = BufReader::new(stream);
     let mut request_line = String::new();
     reader.read_line(&mut request_line)?;
@@ -81,7 +81,9 @@ fn read_request(stream: &mut TcpStream, peer_is_loopback: bool) -> io::Result<Re
         }
 
         if let Some((name, value)) = line.split_once(':') {
-            if name.eq_ignore_ascii_case("x-auth-mini-peer-loopback") {
+            if name.eq_ignore_ascii_case("x-auth-mini-peer-loopback")
+                || name.eq_ignore_ascii_case("x-auth-mini-peer-ip")
+            {
                 continue;
             }
             headers.push((name.trim().to_string(), value.trim().to_string()));
@@ -101,7 +103,11 @@ fn read_request(stream: &mut TcpStream, peer_is_loopback: bool) -> io::Result<Re
 
     headers.push((
         "x-auth-mini-peer-loopback".to_string(),
-        peer_is_loopback.to_string(),
+        peer_ip.is_loopback().to_string(),
+    ));
+    headers.push((
+        "x-auth-mini-peer-ip".to_string(),
+        peer_ip.to_string(),
     ));
 
     Ok(Request {
@@ -494,7 +500,7 @@ fn handle_email_verify(request: &Request, config: &Config) -> io::Result<Respons
                 &user_id,
                 "email_otp",
                 &issuer,
-                None,
+                request.client_ip().as_deref(),
                 request.header("User-Agent").as_deref(),
             )
             .map_err(io::Error::other)?;
@@ -753,7 +759,7 @@ fn handle_webauthn_authentication_verify(
                 &outcome.user_id,
                 "webauthn",
                 &issuer,
-                None,
+                request.client_ip().as_deref(),
                 request.header("User-Agent").as_deref(),
             )
             .map_err(io::Error::other)?;
@@ -798,7 +804,7 @@ fn handle_ed25519_verify(request: &Request, config: &Config) -> io::Result<Respo
         &mut connection,
         &parsed,
         &issuer,
-        None,
+        request.client_ip().as_deref(),
         request.header("User-Agent").as_deref(),
     ) {
         Ok(pair) => Ok(Response::json_value(200, token_json(pair))),
@@ -890,6 +896,39 @@ impl Request {
             .find(|(key, _)| key.eq_ignore_ascii_case(name))
             .map(|(_, value)| value.clone())
     }
+
+    fn client_ip(&self) -> Option<String> {
+        if self.header("x-auth-mini-peer-loopback").as_deref() == Some("true") {
+            if let Some(ip) = self.proxy_client_ip() {
+                return Some(ip);
+            }
+        }
+
+        self.header("x-auth-mini-peer-ip")
+    }
+
+    fn proxy_client_ip(&self) -> Option<String> {
+        self.header("CF-Connecting-IP")
+            .or_else(|| self.header("True-Client-IP"))
+            .and_then(|value| single_ip(&value))
+            .or_else(|| {
+                self.header("X-Forwarded-For")
+                    .and_then(|value| first_forwarded_ip(&value))
+            })
+    }
+}
+
+fn single_ip(value: &str) -> Option<String> {
+    value.trim().parse::<IpAddr>().ok().map(|ip| ip.to_string())
+}
+
+fn first_forwarded_ip(value: &str) -> Option<String> {
+    value
+        .split(',')
+        .next()
+        .map(str::trim)
+        .and_then(|candidate| candidate.parse::<IpAddr>().ok())
+        .map(|ip| ip.to_string())
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1007,6 +1046,74 @@ mod tests {
     use rusqlite::Connection;
 
     use super::*;
+
+    #[test]
+    fn client_ip_uses_direct_peer_ip() {
+        let request = Request {
+            method: "POST".to_string(),
+            path: "/email/verify".to_string(),
+            headers: vec![(
+                "x-auth-mini-peer-ip".to_string(),
+                "198.51.100.20".to_string(),
+            )],
+            body: String::new(),
+        };
+
+        assert_eq!(request.client_ip().as_deref(), Some("198.51.100.20"));
+    }
+
+    #[test]
+    fn client_ip_prefers_cloudflare_connecting_ip_from_loopback_peer() {
+        let request = Request {
+            method: "POST".to_string(),
+            path: "/email/verify".to_string(),
+            headers: vec![
+                ("x-auth-mini-peer-loopback".to_string(), "true".to_string()),
+                ("x-auth-mini-peer-ip".to_string(), "127.0.0.1".to_string()),
+                ("CF-Connecting-IP".to_string(), "203.0.113.44".to_string()),
+                ("X-Forwarded-For".to_string(), "198.51.100.10".to_string()),
+            ],
+            body: String::new(),
+        };
+
+        assert_eq!(request.client_ip().as_deref(), Some("203.0.113.44"));
+    }
+
+    #[test]
+    fn client_ip_uses_forwarded_for_from_loopback_peer() {
+        let request = Request {
+            method: "POST".to_string(),
+            path: "/email/verify".to_string(),
+            headers: vec![
+                ("x-auth-mini-peer-loopback".to_string(), "true".to_string()),
+                ("x-auth-mini-peer-ip".to_string(), "127.0.0.1".to_string()),
+                (
+                    "X-Forwarded-For".to_string(),
+                    "203.0.113.45, 198.51.100.10".to_string(),
+                ),
+            ],
+            body: String::new(),
+        };
+
+        assert_eq!(request.client_ip().as_deref(), Some("203.0.113.45"));
+    }
+
+    #[test]
+    fn client_ip_falls_back_to_peer_when_proxy_headers_are_invalid() {
+        let request = Request {
+            method: "POST".to_string(),
+            path: "/email/verify".to_string(),
+            headers: vec![
+                ("x-auth-mini-peer-loopback".to_string(), "true".to_string()),
+                ("x-auth-mini-peer-ip".to_string(), "127.0.0.1".to_string()),
+                ("CF-Connecting-IP".to_string(), "unknown".to_string()),
+                ("X-Forwarded-For".to_string(), "unknown".to_string()),
+            ],
+            body: String::new(),
+        };
+
+        assert_eq!(request.client_ip().as_deref(), Some("127.0.0.1"));
+    }
 
     #[test]
     fn serves_health_response() {
@@ -1416,7 +1523,13 @@ mod tests {
             &Request {
                 method: "POST".to_string(),
                 path: "/email/verify".to_string(),
-                headers: vec![("User-Agent".to_string(), "EmailAgent/1.0".to_string())],
+                headers: vec![
+                    ("User-Agent".to_string(), "EmailAgent/1.0".to_string()),
+                    (
+                        "x-auth-mini-peer-ip".to_string(),
+                        "198.51.100.20".to_string(),
+                    ),
+                ],
                 body: r#"{"email":"user@example.com","code":"123456"}"#.to_string(),
             },
             &Config {
@@ -1443,12 +1556,21 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("user count reads");
+        let session_context: (Option<String>, Option<String>) = connection
+            .query_row(
+                "SELECT ip, user_agent FROM sessions LIMIT 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("session context reads");
 
         assert_eq!(response.status, 200);
         assert!(response.body_text().contains("access_token"));
         assert!(response.body_text().contains("refresh_token"));
         assert!(consumed_at.is_some());
         assert_eq!(user_count, 1);
+        assert_eq!(session_context.0.as_deref(), Some("198.51.100.20"));
+        assert_eq!(session_context.1.as_deref(), Some("EmailAgent/1.0"));
     }
 
     #[test]
