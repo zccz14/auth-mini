@@ -45,6 +45,15 @@ export type AdminConfigInput = {
   };
 };
 
+export type AdminJwkSlot = {
+  slot: 'CURRENT' | 'STANDBY';
+  public_jwk: Record<string, unknown>;
+};
+
+export type AdminJwksResponse = {
+  keys: AdminJwkSlot[];
+};
+
 type AdminApi = {
   setup: {
     fetch(): Promise<AdminSetupState>;
@@ -55,6 +64,10 @@ type AdminApi = {
   config: {
     fetch(): Promise<AdminSetupState>;
     save(input: AdminConfigInput): Promise<AdminSetupState>;
+  };
+  jwks: {
+    list(): Promise<AdminJwksResponse>;
+    rotate(): Promise<AdminJwksResponse>;
   };
   users(): Promise<{ users: Array<Record<string, unknown>> }>;
   databaseUrl(): string;
@@ -222,6 +235,21 @@ export function createDemoSdk(serverBaseUrl: string): DemoSdk {
           return putJson<AdminSetupState>(
             '/admin/config',
             input,
+            await requireAccessToken(),
+          );
+        },
+      },
+      jwks: {
+        async list() {
+          return getJson<AdminJwksResponse>(
+            '/admin/jwks',
+            await requireAccessToken(),
+          );
+        },
+        async rotate() {
+          return postJson<AdminJwksResponse>(
+            '/admin/jwks/rotate',
+            {},
             await requireAccessToken(),
           );
         },

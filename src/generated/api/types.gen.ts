@@ -258,6 +258,18 @@ export type JwksResponse = {
     keys: Array<JwkPublicEd25519>;
 };
 
+export type AdminJwkSlot = {
+    slot: 'CURRENT' | 'STANDBY';
+    public_jwk: JwkPublicEd25519;
+};
+
+export type AdminJwksResponse = {
+    keys: [
+        AdminJwkSlot,
+        AdminJwkSlot
+    ];
+};
+
 export type AdminConfigRequestWritable = {
     issuer: string;
     rp_id: string;
@@ -437,6 +449,64 @@ export type ListAdminUsersResponses = {
 };
 
 export type ListAdminUsersResponse = ListAdminUsersResponses[keyof ListAdminUsersResponses];
+
+export type ListAdminJwksData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/jwks';
+};
+
+export type ListAdminJwksErrors = {
+    /**
+     * Missing, malformed, expired, or revoked access token
+     */
+    401: ErrorResponse;
+    /**
+     * Access token is valid but does not belong to the configured administrator
+     */
+    403: ErrorResponse;
+};
+
+export type ListAdminJwksError = ListAdminJwksErrors[keyof ListAdminJwksErrors];
+
+export type ListAdminJwksResponses = {
+    /**
+     * Public CURRENT and STANDBY JWK slots
+     */
+    200: AdminJwksResponse;
+};
+
+export type ListAdminJwksResponse = ListAdminJwksResponses[keyof ListAdminJwksResponses];
+
+export type RotateAdminJwksData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/jwks/rotate';
+};
+
+export type RotateAdminJwksErrors = {
+    /**
+     * Missing, malformed, expired, or revoked access token
+     */
+    401: ErrorResponse;
+    /**
+     * Access token is valid but does not belong to the configured administrator
+     */
+    403: ErrorResponse;
+};
+
+export type RotateAdminJwksError = RotateAdminJwksErrors[keyof RotateAdminJwksErrors];
+
+export type RotateAdminJwksResponses = {
+    /**
+     * Updated public CURRENT and STANDBY JWK slots
+     */
+    200: AdminJwksResponse;
+};
+
+export type RotateAdminJwksResponse = RotateAdminJwksResponses[keyof RotateAdminJwksResponses];
 
 export type ExportAdminDatabaseData = {
     body?: never;

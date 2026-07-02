@@ -6,11 +6,13 @@ import {
   deleteWebauthnCredential,
   getAdminSetup,
   getCurrentUser,
+  listAdminJwks,
   listEd25519Credentials,
   listJwks,
   logoutCurrentSession,
   logoutPeerSession,
   refreshSession,
+  rotateAdminJwks,
   startEd25519Authentication,
   startEmailAuth,
   updateAdminSetup,
@@ -53,6 +55,12 @@ export function createApiSdk(options: ApiSdkOptions) {
           getAdminSetup({ ...(request ?? {}), client }),
         update: (request: Parameters<typeof updateAdminSetup>[0]) =>
           updateAdminSetup({ ...request, client }),
+      },
+      jwks: {
+        list: (request?: Parameters<typeof listAdminJwks>[0]) =>
+          listAdminJwks({ ...(request ?? {}), client }),
+        rotate: (request?: Parameters<typeof rotateAdminJwks>[0]) =>
+          rotateAdminJwks({ ...(request ?? {}), client }),
       },
     },
     email: {

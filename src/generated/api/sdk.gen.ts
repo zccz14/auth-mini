@@ -2,7 +2,7 @@
 
 import { client } from './client.gen.js';
 import type { Client, Options as Options2, TDataShape } from './client/index.js';
-import type { CreateEd25519CredentialData, CreateEd25519CredentialErrors, CreateEd25519CredentialResponses, CreateWebauthnAuthenticationOptionsData, CreateWebauthnAuthenticationOptionsErrors, CreateWebauthnAuthenticationOptionsResponses, CreateWebauthnRegistrationOptionsData, CreateWebauthnRegistrationOptionsErrors, CreateWebauthnRegistrationOptionsResponses, DeleteEd25519CredentialData, DeleteEd25519CredentialErrors, DeleteEd25519CredentialResponses, DeleteWebauthnCredentialData, DeleteWebauthnCredentialErrors, DeleteWebauthnCredentialResponses, ExportAdminDatabaseData, ExportAdminDatabaseErrors, ExportAdminDatabaseResponses, GetAdminConfigData, GetAdminConfigErrors, GetAdminConfigResponses, GetAdminSetupData, GetAdminSetupErrors, GetAdminSetupResponses, GetCurrentUserData, GetCurrentUserErrors, GetCurrentUserResponses, GetOpenApiJsonData, GetOpenApiJsonResponses, GetOpenApiYamlData, GetOpenApiYamlResponses, ListAdminUsersData, ListAdminUsersErrors, ListAdminUsersResponses, ListEd25519CredentialsData, ListEd25519CredentialsErrors, ListEd25519CredentialsResponses, ListJwksData, ListJwksResponses, LogoutCurrentSessionData, LogoutCurrentSessionErrors, LogoutCurrentSessionResponses, LogoutPeerSessionData, LogoutPeerSessionErrors, LogoutPeerSessionResponses, RefreshSessionData, RefreshSessionErrors, RefreshSessionResponses, StartEd25519AuthenticationData, StartEd25519AuthenticationErrors, StartEd25519AuthenticationResponses, StartEmailAuthData, StartEmailAuthErrors, StartEmailAuthResponses, UpdateAdminConfigData, UpdateAdminConfigErrors, UpdateAdminConfigResponses, UpdateAdminSetupData, UpdateAdminSetupErrors, UpdateAdminSetupResponses, UpdateEd25519CredentialData, UpdateEd25519CredentialErrors, UpdateEd25519CredentialResponses, VerifyEd25519AuthenticationData, VerifyEd25519AuthenticationErrors, VerifyEd25519AuthenticationResponses, VerifyEmailAuthData, VerifyEmailAuthErrors, VerifyEmailAuthResponses, VerifyWebauthnAuthenticationData, VerifyWebauthnAuthenticationErrors, VerifyWebauthnAuthenticationResponses, VerifyWebauthnRegistrationData, VerifyWebauthnRegistrationErrors, VerifyWebauthnRegistrationResponses } from './types.gen.js';
+import type { CreateEd25519CredentialData, CreateEd25519CredentialErrors, CreateEd25519CredentialResponses, CreateWebauthnAuthenticationOptionsData, CreateWebauthnAuthenticationOptionsErrors, CreateWebauthnAuthenticationOptionsResponses, CreateWebauthnRegistrationOptionsData, CreateWebauthnRegistrationOptionsErrors, CreateWebauthnRegistrationOptionsResponses, DeleteEd25519CredentialData, DeleteEd25519CredentialErrors, DeleteEd25519CredentialResponses, DeleteWebauthnCredentialData, DeleteWebauthnCredentialErrors, DeleteWebauthnCredentialResponses, ExportAdminDatabaseData, ExportAdminDatabaseErrors, ExportAdminDatabaseResponses, GetAdminConfigData, GetAdminConfigErrors, GetAdminConfigResponses, GetAdminSetupData, GetAdminSetupErrors, GetAdminSetupResponses, GetCurrentUserData, GetCurrentUserErrors, GetCurrentUserResponses, GetOpenApiJsonData, GetOpenApiJsonResponses, GetOpenApiYamlData, GetOpenApiYamlResponses, ListAdminJwksData, ListAdminJwksErrors, ListAdminJwksResponses, ListAdminUsersData, ListAdminUsersErrors, ListAdminUsersResponses, ListEd25519CredentialsData, ListEd25519CredentialsErrors, ListEd25519CredentialsResponses, ListJwksData, ListJwksResponses, LogoutCurrentSessionData, LogoutCurrentSessionErrors, LogoutCurrentSessionResponses, LogoutPeerSessionData, LogoutPeerSessionErrors, LogoutPeerSessionResponses, RefreshSessionData, RefreshSessionErrors, RefreshSessionResponses, RotateAdminJwksData, RotateAdminJwksErrors, RotateAdminJwksResponses, StartEd25519AuthenticationData, StartEd25519AuthenticationErrors, StartEd25519AuthenticationResponses, StartEmailAuthData, StartEmailAuthErrors, StartEmailAuthResponses, UpdateAdminConfigData, UpdateAdminConfigErrors, UpdateAdminConfigResponses, UpdateAdminSetupData, UpdateAdminSetupErrors, UpdateAdminSetupResponses, UpdateEd25519CredentialData, UpdateEd25519CredentialErrors, UpdateEd25519CredentialResponses, VerifyEd25519AuthenticationData, VerifyEd25519AuthenticationErrors, VerifyEd25519AuthenticationResponses, VerifyEmailAuthData, VerifyEmailAuthErrors, VerifyEmailAuthResponses, VerifyWebauthnAuthenticationData, VerifyWebauthnAuthenticationErrors, VerifyWebauthnAuthenticationResponses, VerifyWebauthnRegistrationData, VerifyWebauthnRegistrationErrors, VerifyWebauthnRegistrationResponses } from './types.gen.js';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -63,6 +63,24 @@ export const updateAdminConfig = <ThrowOnError extends boolean = false>(options:
 export const listAdminUsers = <ThrowOnError extends boolean = false>(options?: Options<ListAdminUsersData, ThrowOnError>) => (options?.client ?? client).get<ListAdminUsersResponses, ListAdminUsersErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/admin/users',
+    ...options
+});
+
+/**
+ * List administrator JWK slots
+ */
+export const listAdminJwks = <ThrowOnError extends boolean = false>(options?: Options<ListAdminJwksData, ThrowOnError>) => (options?.client ?? client).get<ListAdminJwksResponses, ListAdminJwksErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/admin/jwks',
+    ...options
+});
+
+/**
+ * Promote STANDBY to CURRENT and create a fresh STANDBY JWK
+ */
+export const rotateAdminJwks = <ThrowOnError extends boolean = false>(options?: Options<RotateAdminJwksData, ThrowOnError>) => (options?.client ?? client).post<RotateAdminJwksResponses, RotateAdminJwksErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/admin/jwks/rotate',
     ...options
 });
 

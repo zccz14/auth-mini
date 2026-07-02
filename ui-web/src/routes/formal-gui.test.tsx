@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { AdminRoute } from './admin';
@@ -10,6 +11,7 @@ const sdk = {
   admin: {
     config: { fetch: vi.fn(), save: vi.fn() },
     databaseUrl: () => 'https://auth.example.com/admin/database',
+    jwks: { list: vi.fn(), rotate: vi.fn() },
     setup: { fetch: vi.fn(), initialize: vi.fn() },
     users: vi.fn(),
   },
@@ -113,7 +115,20 @@ describe('formal GUI routes', () => {
       rp_id: 'auth.example.com',
       smtp: null,
     });
+    sdk.admin.jwks.list.mockResolvedValue({
+      keys: [
+        { slot: 'CURRENT', public_jwk: { kid: 'current-kid', kty: 'OKP' } },
+        { slot: 'STANDBY', public_jwk: { kid: 'standby-kid', kty: 'OKP' } },
+      ],
+    });
+    sdk.admin.jwks.rotate.mockResolvedValue({
+      keys: [
+        { slot: 'CURRENT', public_jwk: { kid: 'standby-kid', kty: 'OKP' } },
+        { slot: 'STANDBY', public_jwk: { kid: 'fresh-standby-kid', kty: 'OKP' } },
+      ],
+    });
     sdk.admin.users.mockResolvedValue({ users: [] });
+    const user = userEvent.setup();
 
     render(<AdminRoute />);
 
@@ -121,5 +136,16 @@ describe('formal GUI routes', () => {
     expect(
       await screen.findByRole('heading', { name: 'Users' }),
     ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'JWKs' })).toBeInTheDocument();
+    expect(screen.getByText('CURRENT')).toBeInTheDocument();
+    expect(screen.getByText('STANDBY')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'JWK Rotate' }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'JWK Rotate' }));
+
+    expect(sdk.admin.jwks.rotate).toHaveBeenCalledOnce();
+    expect(await screen.findByText(/fresh-standby-kid/)).toBeInTheDocument();
   });
 });
