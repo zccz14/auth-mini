@@ -19,6 +19,55 @@ pub(crate) fn list_public_keys(connection: &Connection) -> rusqlite::Result<Valu
     Ok(json!({ "keys": keys }))
 }
 
+pub(crate) fn list_admin_keys(connection: &Connection) -> rusqlite::Result<Value> {
+    bootstrap_keys(connection)?;
+    let mut statement = connection.prepare(
+        "SELECT id, public_jwk FROM jwks_keys
+         ORDER BY CASE id WHEN 'CURRENT' THEN 0 WHEN 'STANDBY' THEN 1 END",
+    )?;
+    let rows = statement.query_map([], |row| {
+        let public_jwk = row.get::<_, String>(1)?;
+
+        Ok(json!({
+            "slot": row.get::<_, String>(0)?,
+            "public_jwk": serde_json::from_str::<Value>(&public_jwk).map_err(to_sql_error)?,
+        }))
+    })?;
+    let keys = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+
+    Ok(json!({ "keys": keys }))
+}
+
+pub(crate) fn rotate_keys(connection: &mut Connection) -> rusqlite::Result<Value> {
+    bootstrap_keys(connection)?;
+    let standby = stored_key_by_slot(connection, "STANDBY")?;
+    let new_standby = generated_key(connection)?;
+    let transaction = connection.transaction()?;
+
+    transaction.execute("DELETE FROM jwks_keys WHERE id = 'CURRENT'", [])?;
+    transaction.execute(
+        "UPDATE jwks_keys SET id = 'CURRENT' WHERE id = 'STANDBY'",
+        [],
+    )?;
+    transaction.execute(
+        "INSERT INTO jwks_keys (id, kid, alg, public_jwk, private_jwk)
+         VALUES ('STANDBY', ?1, 'EdDSA', ?2, ?3)",
+        params![
+            new_standby.kid,
+            new_standby.public_jwk.to_string(),
+            new_standby.private_jwk.to_string()
+        ],
+    )?;
+    transaction.commit()?;
+
+    Ok(json!({
+        "keys": [
+            { "slot": "CURRENT", "public_jwk": serde_json::from_str::<Value>(&standby.public_jwk).map_err(to_sql_error)? },
+            { "slot": "STANDBY", "public_jwk": new_standby.public_jwk },
+        ],
+    }))
+}
+
 pub(crate) fn sign_access_token(
     connection: &Connection,
     user_id: &str,
@@ -102,6 +151,29 @@ pub(crate) fn bootstrap_keys(connection: &Connection) -> rusqlite::Result<()> {
 }
 
 fn insert_key_if_missing(connection: &Connection, slot: &str) -> rusqlite::Result<()> {
+    let key = generated_key(connection)?;
+
+    connection.execute(
+        "INSERT OR IGNORE INTO jwks_keys (id, kid, alg, public_jwk, private_jwk)
+         VALUES (?1, ?2, 'EdDSA', ?3, ?4)",
+        params![
+            slot,
+            key.kid,
+            key.public_jwk.to_string(),
+            key.private_jwk.to_string()
+        ],
+    )?;
+
+    Ok(())
+}
+
+struct GeneratedKey {
+    kid: String,
+    public_jwk: Value,
+    private_jwk: Value,
+}
+
+fn generated_key(connection: &Connection) -> rusqlite::Result<GeneratedKey> {
     let kid = random_uuid(connection)?;
     let secret = random_secret(connection)?;
     let signing_key = signing_key_from_secret(&secret)?;
@@ -124,13 +196,11 @@ fn insert_key_if_missing(connection: &Connection, slot: &str) -> rusqlite::Resul
         "d": secret,
     });
 
-    connection.execute(
-        "INSERT OR IGNORE INTO jwks_keys (id, kid, alg, public_jwk, private_jwk)
-         VALUES (?1, ?2, 'EdDSA', ?3, ?4)",
-        params![slot, kid, public_jwk.to_string(), private_jwk.to_string()],
-    )?;
-
-    Ok(())
+    Ok(GeneratedKey {
+        kid,
+        public_jwk,
+        private_jwk,
+    })
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -141,9 +211,13 @@ struct StoredSigningKey {
 }
 
 fn current_key(connection: &Connection) -> rusqlite::Result<StoredSigningKey> {
+    stored_key_by_slot(connection, "CURRENT")
+}
+
+fn stored_key_by_slot(connection: &Connection, slot: &str) -> rusqlite::Result<StoredSigningKey> {
     connection.query_row(
-        "SELECT kid, public_jwk, private_jwk FROM jwks_keys WHERE id = 'CURRENT' LIMIT 1",
-        [],
+        "SELECT kid, public_jwk, private_jwk FROM jwks_keys WHERE id = ?1 LIMIT 1",
+        [slot],
         |row| {
             Ok(StoredSigningKey {
                 kid: row.get(0)?,
@@ -357,6 +431,40 @@ mod tests {
         assert_eq!(keys.len(), 2);
         assert_eq!(keys[0].get("alg").and_then(Value::as_str), Some("EdDSA"));
         assert!(keys[0].get("d").is_none());
+    }
+
+    #[test]
+    fn lists_admin_jwk_slots_without_private_material() {
+        let connection = jwks_connection();
+
+        let body = list_admin_keys(&connection).expect("admin keys list");
+        let keys = body
+            .get("keys")
+            .and_then(Value::as_array)
+            .expect("keys array");
+
+        assert_eq!(keys.len(), 2);
+        assert_eq!(keys[0].get("slot").and_then(Value::as_str), Some("CURRENT"));
+        assert_eq!(keys[1].get("slot").and_then(Value::as_str), Some("STANDBY"));
+        assert!(keys[0]["public_jwk"].get("d").is_none());
+        assert!(keys[1]["public_jwk"].get("d").is_none());
+    }
+
+    #[test]
+    fn rotate_promotes_standby_and_creates_fresh_standby() {
+        let mut connection = jwks_connection();
+        bootstrap_keys(&connection).expect("keys bootstrap");
+        let original_current = stored_key_by_slot(&connection, "CURRENT").expect("current exists");
+        let original_standby = stored_key_by_slot(&connection, "STANDBY").expect("standby exists");
+
+        let body = rotate_keys(&mut connection).expect("keys rotate");
+        let next_current = stored_key_by_slot(&connection, "CURRENT").expect("current exists");
+        let next_standby = stored_key_by_slot(&connection, "STANDBY").expect("standby exists");
+
+        assert_eq!(next_current.kid, original_standby.kid);
+        assert_ne!(next_current.kid, original_current.kid);
+        assert_ne!(next_standby.kid, original_standby.kid);
+        assert!(!body.to_string().contains("\"d\""));
     }
 
     #[test]

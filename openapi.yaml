@@ -141,6 +141,40 @@ paths:
           $ref: '#/components/responses/InvalidAccessToken'
         '403':
           $ref: '#/components/responses/AdminRequired'
+  /admin/jwks:
+    get:
+      tags:
+        - admin
+      operationId: listAdminJwks
+      summary: List administrator JWK slots
+      responses:
+        '200':
+          description: Public CURRENT and STANDBY JWK slots
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminJwksResponse'
+        '401':
+          $ref: '#/components/responses/InvalidAccessToken'
+        '403':
+          $ref: '#/components/responses/AdminRequired'
+  /admin/jwks/rotate:
+    post:
+      tags:
+        - admin
+      operationId: rotateAdminJwks
+      summary: Promote STANDBY to CURRENT and create a fresh STANDBY JWK
+      responses:
+        '200':
+          description: Updated public CURRENT and STANDBY JWK slots
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminJwksResponse'
+        '401':
+          $ref: '#/components/responses/InvalidAccessToken'
+        '403':
+          $ref: '#/components/responses/AdminRequired'
   /admin/database:
     get:
       tags:
@@ -1498,3 +1532,29 @@ components:
           minItems: 2
           items:
             $ref: '#/components/schemas/JwkPublicEd25519'
+    AdminJwkSlot:
+      type: object
+      additionalProperties: false
+      required:
+        - slot
+        - public_jwk
+      properties:
+        slot:
+          type: string
+          enum:
+            - CURRENT
+            - STANDBY
+        public_jwk:
+          $ref: '#/components/schemas/JwkPublicEd25519'
+    AdminJwksResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - keys
+      properties:
+        keys:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            $ref: '#/components/schemas/AdminJwkSlot'

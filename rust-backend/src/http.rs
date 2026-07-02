@@ -16,7 +16,7 @@ use crate::email_start::{parse_email_start_request, start_email_auth, EmailStart
 use crate::email_verify::{
     consume_email_verify_otp, parse_email_verify_request, EmailVerifyOutcome,
 };
-use crate::jwks::list_public_keys;
+use crate::jwks::{list_admin_keys, list_public_keys, rotate_keys};
 use crate::openapi::{read_openapi_json, read_openapi_yaml};
 use crate::session::{
     authenticate_access_token, current_user_response, logout_peer_session, logout_session,
@@ -161,6 +161,14 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
 
     if request.method == "GET" && request.path == "/admin/users" {
         return handle_admin_users(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "GET" && request.path == "/admin/jwks" {
+        return handle_admin_jwks(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "POST" && request.path == "/admin/jwks/rotate" {
+        return handle_admin_jwks_rotate(request, config).map(|response| cors(request, response));
     }
 
     if request.method == "GET" && request.path == "/admin/database" {
@@ -407,6 +415,32 @@ fn handle_admin_users(request: &Request, config: &Config) -> io::Result<Response
         200,
         serde_json::json!({ "users": users }),
     ))
+}
+
+fn handle_admin_jwks(request: &Request, config: &Config) -> io::Result<Response> {
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    if require_admin_auth(&connection, &auth).is_err() {
+        return Ok(Response::json_error(403, "admin_required"));
+    }
+
+    list_admin_keys(&connection)
+        .map(|body| Response::json_value(200, body))
+        .map_err(io::Error::other)
+}
+
+fn handle_admin_jwks_rotate(request: &Request, config: &Config) -> io::Result<Response> {
+    let Some((mut connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    if require_admin_auth(&connection, &auth).is_err() {
+        return Ok(Response::json_error(403, "admin_required"));
+    }
+
+    rotate_keys(&mut connection)
+        .map(|body| Response::json_value(200, body))
+        .map_err(io::Error::other)
 }
 
 fn handle_admin_database(request: &Request, config: &Config) -> io::Result<Response> {
@@ -2861,6 +2895,148 @@ mod tests {
 
         assert_eq!(response.status, 200);
         assert!(response.body_text().contains("\"keys\""));
+        assert!(!response.body_text().contains("\"d\""));
+    }
+
+    #[test]
+    fn serves_admin_jwk_slots_with_admin_auth() {
+        let db_path = test_db_path("http-admin-jwks");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        let pair = mint_session_tokens(
+            &connection,
+            "admin-user",
+            "email_otp",
+            "auth-mini",
+            None,
+            None,
+        )
+        .expect("session tokens mint");
+        connection
+            .execute(
+                "UPDATE app_meta SET admin_user_id = 'admin-user' WHERE id = 'APP'",
+                [],
+            )
+            .expect("admin user configured");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "GET".to_string(),
+                path: "/admin/jwks".to_string(),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", pair.access_token),
+                )],
+                body: String::new(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig { db_path }),
+                ..Config::default()
+            },
+        )
+        .expect("admin jwks response builds");
+
+        assert_eq!(response.status, 200);
+        assert!(response.body_text().contains("\"slot\":\"CURRENT\""));
+        assert!(response.body_text().contains("\"slot\":\"STANDBY\""));
+        assert!(!response.body_text().contains("\"d\""));
+    }
+
+    #[test]
+    fn admin_jwk_rotate_requires_admin_auth() {
+        let db_path = test_db_path("http-admin-jwks-auth");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        let pair = mint_session_tokens(&connection, "user-1", "email_otp", "auth-mini", None, None)
+            .expect("session tokens mint");
+        connection
+            .execute(
+                "UPDATE app_meta SET admin_user_id = 'admin-user' WHERE id = 'APP'",
+                [],
+            )
+            .expect("admin user configured");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/admin/jwks/rotate".to_string(),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", pair.access_token),
+                )],
+                body: String::new(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig { db_path }),
+                ..Config::default()
+            },
+        )
+        .expect("admin jwks rotate response builds");
+
+        assert_eq!(response, Response::json_error(403, "admin_required"));
+    }
+
+    #[test]
+    fn rotates_admin_jwks_over_http_boundary() {
+        let db_path = test_db_path("http-admin-jwks-rotate");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        let pair = mint_session_tokens(
+            &connection,
+            "admin-user",
+            "email_otp",
+            "auth-mini",
+            None,
+            None,
+        )
+        .expect("session tokens mint");
+        connection
+            .execute(
+                "UPDATE app_meta SET admin_user_id = 'admin-user' WHERE id = 'APP'",
+                [],
+            )
+            .expect("admin user configured");
+        crate::jwks::bootstrap_keys(&connection).expect("keys bootstrap");
+        let standby_kid: String = connection
+            .query_row(
+                "SELECT kid FROM jwks_keys WHERE id = 'STANDBY'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("standby kid reads");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/admin/jwks/rotate".to_string(),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", pair.access_token),
+                )],
+                body: String::new(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path: db_path.clone(),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("admin jwks rotate response builds");
+        let connection = Connection::open(&db_path).expect("database opens");
+        let current_kid: String = connection
+            .query_row(
+                "SELECT kid FROM jwks_keys WHERE id = 'CURRENT'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("current kid reads");
+
+        assert_eq!(response.status, 200);
+        assert_eq!(current_kid, standby_kid);
         assert!(!response.body_text().contains("\"d\""));
     }
 
