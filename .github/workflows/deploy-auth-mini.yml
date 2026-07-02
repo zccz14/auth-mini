@@ -1,0 +1,225 @@
+name: Deploy auth-mini to EC2
+
+on:
+  workflow_run:
+    workflows:
+      - Release Rust binaries
+    branches:
+      - main
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: GitHub release tag to deploy
+        required: false
+        default: latest
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-auth-mini
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy auth-mini
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || 'latest' }}
+      AWS_REGION: ${{ secrets.AUTH_MINI_AWS_REGION }}
+      EC2_INSTANCE_ID: ${{ secrets.AUTH_MINI_EC2_INSTANCE_ID }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AUTH_MINI_AWS_REGION }}
+
+      - name: Send deployment command
+        id: send-command
+        run: |
+          set -euo pipefail
+
+          cat > remote-deploy.sh <<'REMOTE_SCRIPT'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          service_name="auth-mini.service"
+          install_path="/usr/local/bin/auth-mini"
+          release_tag="${RELEASE_TAG:-latest}"
+          archive_name="auth-mini-linux-x86_64.tar.gz"
+          release_base_url="https://github.com/zccz14/auth-mini/releases/download/${release_tag}"
+          work_dir="$(mktemp -d)"
+          backup_path=""
+
+          cleanup() {
+            rm -rf "${work_dir}"
+          }
+          trap cleanup EXIT
+
+          cd "${work_dir}"
+
+          curl --fail --location --show-error --silent --output "${archive_name}" "${release_base_url}/${archive_name}"
+          curl --fail --location --show-error --silent --output "${archive_name}.sha256" "${release_base_url}/${archive_name}.sha256"
+          sha256sum --check "${archive_name}.sha256"
+
+          tar -xzf "${archive_name}"
+          test -x auth-mini
+
+          new_sha="$(sha256sum auth-mini | awk '{print $1}')"
+          current_sha=""
+          if test -x "${install_path}"; then
+            current_sha="$(sha256sum "${install_path}" | awk '{print $1}')"
+          fi
+
+          if test "${new_sha}" = "${current_sha}"; then
+            echo "auth-mini is already at ${release_tag}; skipping restart."
+            exit 0
+          fi
+
+          timestamp="$(date -u +%Y%m%d%H%M%S)"
+          if test -x "${install_path}"; then
+            backup_path="${install_path}.bak.${timestamp}"
+            cp "${install_path}" "${backup_path}"
+          fi
+
+          install -m 0755 auth-mini "${install_path}"
+          systemctl restart "${service_name}"
+
+          wait_for_health() {
+            local url="$1"
+            local attempts="$2"
+            local delay_seconds="$3"
+
+            for attempt in $(seq 1 "${attempts}"); do
+              if curl --fail --silent --show-error --output /dev/null "${url}"; then
+                return 0
+              fi
+              echo "Waiting for ${url} (${attempt}/${attempts})"
+              sleep "${delay_seconds}"
+            done
+
+            return 1
+          }
+
+          verify_endpoint() {
+            curl --fail --silent --show-error --output /dev/null "$1"
+          }
+
+          verify_deployment() {
+            wait_for_health "http://127.0.0.1:7777/openapi.yaml" 30 2
+            verify_endpoint "http://127.0.0.1:7777/openapi.json"
+            verify_endpoint "http://127.0.0.1:7777/web/"
+          }
+
+          rollback_previous_binary() {
+            echo "New auth-mini failed verification; restoring previous binary."
+            if test -n "${backup_path}"; then
+              install -m 0755 "${backup_path}" "${install_path}"
+              systemctl restart "${service_name}"
+              wait_for_health "http://127.0.0.1:7777/openapi.yaml" 30 2
+            fi
+            exit 1
+          }
+
+          if ! verify_deployment; then
+            rollback_previous_binary
+          fi
+
+          echo "auth-mini ${release_tag} deployed successfully."
+          REMOTE_SCRIPT
+
+          python3 - <<'PY' > ssm-parameters.json
+          import json
+          import os
+          import shlex
+
+          with open("remote-deploy.sh", encoding="utf-8") as script_file:
+              script = script_file.read()
+
+          release_tag = os.environ["RELEASE_TAG"]
+          command = f"export RELEASE_TAG={shlex.quote(release_tag)}\n{script}"
+          print(json.dumps({"commands": [command], "executionTimeout": ["900"]}))
+          PY
+
+          command_id="$(
+            aws ssm send-command \
+              --document-name AWS-RunShellScript \
+              --instance-ids "${EC2_INSTANCE_ID}" \
+              --comment "Deploy auth-mini ${RELEASE_TAG}" \
+              --parameters file://ssm-parameters.json \
+              --query 'Command.CommandId' \
+              --output text
+          )"
+
+          echo "command-id=${command_id}" >> "${GITHUB_OUTPUT}"
+          echo "Sent SSM command ${command_id}"
+
+      - name: Wait for deployment and print logs
+        run: |
+          set -euo pipefail
+
+          command_id="${{ steps.send-command.outputs.command-id }}"
+
+          set +e
+          aws ssm wait command-executed \
+            --command-id "${command_id}" \
+            --instance-id "${EC2_INSTANCE_ID}"
+          wait_status="$?"
+          set -e
+
+          invocation_json="$(
+            aws ssm get-command-invocation \
+              --command-id "${command_id}" \
+              --instance-id "${EC2_INSTANCE_ID}" \
+              --output json
+          )"
+
+          echo "::group::SSM stdout"
+          INVOCATION_JSON="${invocation_json}" python3 - <<'PY'
+          import json
+          import os
+
+          print(json.loads(os.environ["INVOCATION_JSON"]).get("StandardOutputContent") or "")
+          PY
+          echo "::endgroup::"
+
+          echo "::group::SSM stderr"
+          INVOCATION_JSON="${invocation_json}" python3 - <<'PY'
+          import json
+          import os
+
+          print(json.loads(os.environ["INVOCATION_JSON"]).get("StandardErrorContent") or "")
+          PY
+          echo "::endgroup::"
+
+          status="$(INVOCATION_JSON="${invocation_json}" python3 - <<'PY'
+          import json
+          import os
+
+          print(json.loads(os.environ["INVOCATION_JSON"])["Status"])
+          PY
+          )"
+          response_code="$(INVOCATION_JSON="${invocation_json}" python3 - <<'PY'
+          import json
+          import os
+
+          print(json.loads(os.environ["INVOCATION_JSON"])["ResponseCode"])
+          PY
+          )"
+
+          echo "SSM status: ${status}"
+          echo "SSM response code: ${response_code}"
+
+          if test "${wait_status}" -ne 0 || test "${status}" != "Success"; then
+            exit 1
+          fi
