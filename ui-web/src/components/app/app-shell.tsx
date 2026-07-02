@@ -1,14 +1,7 @@
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
 import { useDemo } from '@/app/providers/demo-provider';
-
-const links = [
-  ['/', 'Home'],
-  ['/credentials', 'Credentials'],
-  ['/sessions', 'Sessions'],
-] as const;
 
 function decodeBase64Url(value: string) {
   const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
@@ -22,7 +15,9 @@ function accessTokenHasAdmin(accessToken: string | null) {
   }
 
   try {
-    const payload = JSON.parse(decodeBase64Url(accessToken.split('.')[1] ?? ''));
+    const payload = JSON.parse(
+      decodeBase64Url(accessToken.split('.')[1] ?? ''),
+    );
     return payload.auth_admin === true;
   } catch {
     return false;
@@ -30,7 +25,7 @@ function accessTokenHasAdmin(accessToken: string | null) {
 }
 
 export function AppShell() {
-  const { clearLocalAuthState, config, session, setupError, setupLoading, setupState } =
+  const { clearLocalAuthState, session, setupError, setupLoading, setupState } =
     useDemo();
   const location = useLocation();
   const initialized = Boolean(setupState?.admin_user_id);
@@ -69,28 +64,9 @@ export function AppShell() {
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-6 py-4">
           <div className="flex items-center gap-3">
             <div className="text-base font-semibold">auth-mini</div>
-            <Badge className={setupError ? 'bg-rose-100 text-rose-700' : ''}>
-              {setupError || config.status}
-            </Badge>
-            <Badge>{config.serverBaseUrl}</Badge>
           </div>
           {authenticated ? (
             <nav className="flex flex-wrap items-center gap-2">
-              {links.map(([to, label]) => (
-                <NavLink
-                  key={to}
-                  to={to}
-                  className={({ isActive }) =>
-                    cn(
-                      'rounded-md px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-950',
-                      isActive &&
-                        'bg-slate-900 text-white hover:bg-slate-900 hover:text-white',
-                    )
-                  }
-                >
-                  {label}
-                </NavLink>
-              ))}
               {admin ? (
                 <NavLink
                   to="/admin"

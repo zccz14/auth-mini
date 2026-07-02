@@ -2,7 +2,6 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { AdminRoute } from './admin';
-import { CredentialsRoute } from './credentials';
 import { HomeRoute } from './home';
 import { LoginRoute } from './login';
 import { SetupRoute } from './setup';
@@ -80,7 +79,7 @@ describe('formal GUI routes', () => {
     expect(screen.getByRole('tab', { name: 'ED25519' })).toBeInTheDocument();
   });
 
-  it('renders the user account home page', () => {
+  it('renders the home page with credential and session management', async () => {
     sdk.me.fetch.mockResolvedValue({
       active_sessions: [],
       ed25519_credentials: [],
@@ -91,30 +90,18 @@ describe('formal GUI routes', () => {
 
     render(<HomeRoute />);
 
+    expect(screen.getByRole('heading', { name: 'Email' })).toBeInTheDocument();
     expect(
-      screen.getByRole('heading', { name: 'Account' }),
-    ).toBeInTheDocument();
-  });
-
-  it('renders the merged credential management page', () => {
-    sdk.me.fetch.mockResolvedValue({
-      active_sessions: [],
-      ed25519_credentials: [],
-      email: 'user@example.com',
-      user_id: 'user-1',
-      webauthn_credentials: [],
-    });
-
-    render(<CredentialsRoute />);
-
-    expect(
-      screen.getByRole('heading', { name: 'Credentials' }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('heading', { name: 'Passkeys' }),
+      screen.getByRole('heading', { name: 'PassKey' }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole('heading', { name: 'ED25519' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Active Sessions' }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText('Verified email is active.'),
     ).toBeInTheDocument();
   });
 
