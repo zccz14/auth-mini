@@ -4,7 +4,13 @@ import { useDemo } from '@/app/providers/demo-provider';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSlot,
+} from '@/components/ui/input-otp';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { REGEXP_ONLY_DIGITS } from 'input-otp';
 import {
   buildLoginCallbackUrl,
   parseLoginRequest,
@@ -241,13 +247,24 @@ export function LoginRoute() {
                 <form className="space-y-3" onSubmit={handleEmailVerify}>
                   <label className="grid gap-2 text-sm font-medium text-slate-700">
                     <span>One-time code</span>
-                    <Input
+                    <InputOTP
                       aria-label="One-time code"
                       autoComplete="one-time-code"
+                      maxLength={6}
+                      pattern={REGEXP_ONLY_DIGITS}
+                      pushPasswordManagerStrategy="none"
                       value={code}
-                      onChange={(event) => setCode(event.currentTarget.value)}
-                      placeholder="123456"
-                    />
+                      onChange={setCode}
+                    >
+                      <InputOTPGroup>
+                        <InputOTPSlot index={0} />
+                        <InputOTPSlot index={1} />
+                        <InputOTPSlot index={2} />
+                        <InputOTPSlot index={3} />
+                        <InputOTPSlot index={4} />
+                        <InputOTPSlot index={5} />
+                      </InputOTPGroup>
+                    </InputOTP>
                   </label>
                   <Button
                     className="w-full"

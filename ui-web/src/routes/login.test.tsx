@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import { act } from 'react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -105,6 +106,27 @@ async function expectButtonEnabled(name: string) {
   return button;
 }
 
+const INPUT_OTP_SELECTION_SYNC_DELAY_MS = 60;
+
+async function typeOneTimeCode(
+  user: ReturnType<typeof userEvent.setup>,
+  value: string,
+) {
+  const input = screen.getByLabelText('One-time code');
+  await user.type(input, value);
+  await waitFor(() => {
+    expect(input).toHaveValue(value);
+    expect(input).toHaveAttribute('data-input-otp-mss', '6');
+    expect(input).toHaveAttribute('data-input-otp-mse', '6');
+  });
+  // input-otp schedules a final uncancelled 50ms selection sync after typing.
+  await act(async () => {
+    await new Promise((resolve) =>
+      setTimeout(resolve, INPUT_OTP_SELECTION_SYNC_DELAY_MS),
+    );
+  });
+}
+
 describe('LoginRoute', () => {
   beforeEach(() => {
     window.history.pushState({}, '', '/');
@@ -181,7 +203,7 @@ describe('LoginRoute', () => {
       await screen.findByText('Check your email for the one-time code.'),
     ).toBeInTheDocument();
 
-    await user.type(screen.getByLabelText('One-time code'), '123456');
+    await typeOneTimeCode(user, '123456');
     await user.click(await expectButtonEnabled('Verify and continue'));
 
     expect(sdkMocks.emailVerify).toHaveBeenCalledWith({
@@ -213,7 +235,7 @@ describe('LoginRoute', () => {
 
     await user.type(screen.getByLabelText('Email address'), 'user@example.com');
     await user.click(await expectButtonEnabled('Send email code'));
-    await user.type(screen.getByLabelText('One-time code'), '123456');
+    await typeOneTimeCode(user, '123456');
     await user.click(await expectButtonEnabled('Verify and continue'));
 
     expect(sdkMocks.sendLoginCallback).toHaveBeenCalledWith(
@@ -317,7 +339,7 @@ describe('LoginRoute', () => {
 
     await user.type(screen.getByLabelText('Email address'), 'user@example.com');
     await user.click(await expectButtonEnabled('Send email code'));
-    await user.type(screen.getByLabelText('One-time code'), '123456');
+    await typeOneTimeCode(user, '123456');
     await user.click(await expectButtonEnabled('Verify and continue'));
 
     expect(sdkMocks.persistDemoSession).toHaveBeenCalledWith(

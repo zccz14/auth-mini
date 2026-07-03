@@ -17,6 +17,7 @@
     "@radix-ui/react-tabs": "^1.1.13",
     "auth-mini": "file:..",
     "clsx": "^2.1.1",
+    "input-otp": "^1.4.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.9.2",
