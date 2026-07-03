@@ -32,9 +32,11 @@ const sdkMocks = vi.hoisted(() => {
   const passkeyAuthenticate = vi.fn();
   const ed25519Start = vi.fn();
   const ed25519Verify = vi.fn();
+  const setupFetch = vi.fn();
 
   return {
     createDemoSdk: vi.fn(() => ({
+      admin: { setup: { fetch: setupFetch } },
       email: { start: emailStart, verify: emailVerify },
       ed25519: {
         register: vi.fn(),
@@ -56,6 +58,7 @@ const sdkMocks = vi.hoisted(() => {
     passkeyAuthenticate,
     ed25519Start,
     ed25519Verify,
+    setupFetch,
     persistDemoSession: vi.fn(),
     sendLoginCallback: vi.fn(),
     sessionState,
@@ -97,7 +100,7 @@ function renderLogin(path = loginPath()) {
 }
 
 async function expectButtonEnabled(name: string) {
-  const button = screen.getByRole('button', { name });
+  const button = await screen.findByRole('button', { name });
   await waitFor(() => expect(button).toBeEnabled());
   return button;
 }
@@ -112,7 +115,30 @@ describe('LoginRoute', () => {
     sdkMocks.passkeyAuthenticate.mockReset();
     sdkMocks.ed25519Start.mockReset();
     sdkMocks.ed25519Verify.mockReset();
+    sdkMocks.setupFetch.mockReset();
+    sdkMocks.setupFetch.mockResolvedValue({
+      admin_ed25519: null,
+      admin_user_id: 'admin-user',
+      issuer: 'https://auth.example.com',
+      rp_id: 'auth.example.com',
+      smtp: null,
+    });
     sdkMocks.persistDemoSession.mockReset();
+    sdkMocks.persistDemoSession.mockImplementation(
+      (_storage, _baseUrl, tokens) => {
+        sdkMocks.sessionState.current = {
+          status: 'authenticated',
+          authenticated: true,
+          sessionId: tokens.session_id,
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token,
+          receivedAt: new Date(Date.now()).toISOString(),
+          expiresAt: new Date(
+            Date.now() + tokens.expires_in * 1000,
+          ).toISOString(),
+        };
+      },
+    );
     sdkMocks.sendLoginCallback.mockReset();
     sdkMocks.sessionState.current = {
       status: 'anonymous',
@@ -125,11 +151,11 @@ describe('LoginRoute', () => {
     };
   });
 
-  it('renders as a popup login page outside the demo shell', () => {
+  it('renders as a popup login page outside the demo shell', async () => {
     renderLogin();
 
     expect(
-      screen.getByRole('heading', { name: 'Sign in' }),
+      await screen.findByRole('heading', { name: 'Sign in' }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole('link', { name: 'Home' }),
@@ -207,13 +233,32 @@ describe('LoginRoute', () => {
 
     renderLogin();
 
-    await user.click(screen.getByRole('tab', { name: 'Passkey' }));
-    await user.click(await expectButtonEnabled('Sign in with passkey'));
+    await user.click(await expectButtonEnabled('Sign In with PassKey'));
 
     expect(sdkMocks.passkeyAuthenticate).toHaveBeenCalledTimes(1);
     expect(sdkMocks.sendLoginCallback).toHaveBeenCalledWith(
       'https://app.example.com/callback#access_token=jwt-passkey&token_type=Bearer&session_id=session-passkey&refresh_token=refresh-passkey&expires_in=3600&expires_at=2026-06-30T01%3A00%3A00.000Z&state=state-1',
     );
+  });
+
+  it('hides passkey sign-in when rp_id is not configured', async () => {
+    sdkMocks.setupFetch.mockResolvedValueOnce({
+      admin_ed25519: null,
+      admin_user_id: 'admin-user',
+      issuer: 'https://auth.example.com',
+      rp_id: '',
+      smtp: null,
+    });
+
+    renderLogin();
+
+    await waitFor(() =>
+      expect(sdkMocks.setupFetch).toHaveBeenCalled(),
+    );
+
+    expect(
+      screen.queryByRole('button', { name: 'Sign In with PassKey' }),
+    ).not.toBeInTheDocument();
   });
 
   it('redirects with a JWT after ED25519 authentication succeeds', async () => {

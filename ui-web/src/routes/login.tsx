@@ -18,13 +18,13 @@ import {
   validateBase64Url32,
 } from '@/lib/demo-ed25519';
 
-type LoginMethod = 'email' | 'passkey' | 'ed25519';
+type LoginMethod = 'email' | 'ed25519';
 type PendingAction = 'email-start' | 'email-verify' | 'passkey' | 'ed25519';
 
 export function LoginRoute() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { adoptDemoSession, config, sdk } = useDemo();
+  const { adoptDemoSession, config, sdk, setupState } = useDemo();
   const request = parseLoginRequest(location.search, window.location.search);
   const [method, setMethod] = useState<LoginMethod>('email');
   const [email, setEmail] = useState('');
@@ -37,6 +37,7 @@ export function LoginRoute() {
   const [error, setError] = useState('');
 
   const setupReady = config.status === 'ready' && Boolean(sdk);
+  const passkeyConfigured = Boolean(setupState?.rp_id);
   const seedError = seed.trim() === '' ? '' : validateBase64Url32(seed);
   const canStartEmail =
     setupReady &&
@@ -54,6 +55,11 @@ export function LoginRoute() {
     request.status === 'ready' &&
     seed.trim() !== '' &&
     seedError === '' &&
+    pendingAction === null;
+  const canUsePasskey =
+    setupReady &&
+    request.status === 'ready' &&
+    passkeyConfigured &&
     pendingAction === null;
 
   async function handleEmailStart(event: FormEvent<HTMLFormElement>) {
@@ -93,7 +99,7 @@ export function LoginRoute() {
   }
 
   async function handlePasskey() {
-    if (!sdk || request.status !== 'ready' || pendingAction !== null) {
+    if (!sdk || !canUsePasskey) {
       return;
     }
 
@@ -190,13 +196,22 @@ export function LoginRoute() {
               </Alert>
             ) : null}
 
+            {passkeyConfigured ? (
+              <Button
+                className="w-full"
+                disabled={!canUsePasskey}
+                onClick={() => void handlePasskey()}
+              >
+                Sign In with PassKey
+              </Button>
+            ) : null}
+
             <Tabs
               value={method}
               onValueChange={(value) => setMethod(value as LoginMethod)}
             >
-              <TabsList className="grid h-auto w-full grid-cols-3">
+              <TabsList className="grid h-auto w-full grid-cols-2">
                 <TabsTrigger value="email">Email</TabsTrigger>
-                <TabsTrigger value="passkey">Passkey</TabsTrigger>
                 <TabsTrigger value="ed25519">ED25519</TabsTrigger>
               </TabsList>
 
@@ -244,25 +259,6 @@ export function LoginRoute() {
                       : 'Verify and continue'}
                   </Button>
                 </form>
-              </TabsContent>
-
-              <TabsContent value="passkey" className="space-y-4">
-                <p className="text-sm leading-6 text-slate-600">
-                  Use a passkey already registered with this auth server.
-                </p>
-                <Button
-                  className="w-full"
-                  disabled={
-                    !setupReady ||
-                    request.status !== 'ready' ||
-                    pendingAction !== null
-                  }
-                  onClick={() => void handlePasskey()}
-                >
-                  {pendingAction === 'passkey'
-                    ? 'Signing in...'
-                    : 'Sign in with passkey'}
-                </Button>
               </TabsContent>
 
               <TabsContent value="ed25519" className="space-y-4">

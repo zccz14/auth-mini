@@ -46,7 +46,13 @@ vi.mock('@/app/providers/demo-provider', () => ({
     },
     setupError: '',
     setupLoading: false,
-    setupState: { admin_user_id: 'admin-user' },
+    setupState: {
+      admin_ed25519: null,
+      admin_user_id: 'admin-user',
+      issuer: 'https://auth.example.com',
+      rp_id: 'auth.example.com',
+      smtp: null,
+    },
   }),
 }));
 
@@ -77,7 +83,16 @@ describe('formal GUI routes', () => {
       screen.getByRole('heading', { name: 'Sign in' }),
     ).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Email' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Passkey' })).toBeInTheDocument();
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'Email',
+      'ED25519',
+    ]);
+    expect(
+      screen.queryByRole('tab', { name: 'PassKey' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Sign In with PassKey' }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'ED25519' })).toBeInTheDocument();
   });
 
