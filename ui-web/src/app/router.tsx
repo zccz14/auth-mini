@@ -1,4 +1,4 @@
-import { Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from '@/components/app/app-shell';
 import { DemoProvider } from '@/app/providers/demo-provider';
 import { AdminRoute } from '@/routes/admin';
@@ -16,6 +16,7 @@ export function AppRouter() {
           <Route path="/initialize" element={<SetupRoute />} />
           <Route path="/admin" element={<AdminRoute />} />
         </Route>
+        <Route path="*" element={<Navigate replace to="/" />} />
       </Routes>
     </DemoProvider>
   );
