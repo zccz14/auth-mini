@@ -1,7 +1,9 @@
+import type { ReactNode } from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
+import { AppRouter } from '@/app/router';
 import { AdminRoute } from './admin';
 import { HomeRoute } from './home';
 import { LoginRoute } from './login';
@@ -28,6 +30,7 @@ const sdk = {
 };
 
 vi.mock('@/app/providers/demo-provider', () => ({
+  DemoProvider: ({ children }: { children: ReactNode }) => children,
   useDemo: () => ({
     adoptDemoSession: vi.fn(),
     clearLocalAuthState: vi.fn(),
@@ -55,6 +58,16 @@ vi.mock('@/app/providers/demo-provider', () => ({
     },
   }),
 }));
+
+function LocationProbe() {
+  const location = useLocation();
+
+  return (
+    <output aria-label="Current location">
+      {location.pathname + location.search + location.hash}
+    </output>
+  );
+}
 
 describe('formal GUI routes', () => {
   it('renders the dedicated initialization page', () => {
@@ -162,5 +175,27 @@ describe('formal GUI routes', () => {
 
     expect(sdk.admin.jwks.rotate).toHaveBeenCalledOnce();
     expect(await screen.findByText(/fresh-standby-kid/)).toBeInTheDocument();
+  });
+
+  it('redirects unknown pages to the default page', async () => {
+    sdk.me.fetch.mockResolvedValue({
+      active_sessions: [],
+      ed25519_credentials: [],
+      email: 'user@example.com',
+      user_id: 'user-1',
+      webauthn_credentials: [],
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/missing/page?next=%2Fadmin#setup']}>
+        <AppRouter />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByRole('heading', { name: 'Email' }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Current location')).toHaveTextContent('/');
   });
 });
