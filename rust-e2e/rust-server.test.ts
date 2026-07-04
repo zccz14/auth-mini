@@ -13,6 +13,8 @@ import { hashValue } from '../src/shared/crypto.js';
 const repoRoot = resolve(import.meta.dirname, '..');
 const binaryPath = resolve(repoRoot, 'rust-backend/target/debug/auth-mini');
 const tempRoot = resolve(repoRoot, '.tmp/rust-e2e');
+const brandName = 'Rust E2E Auth';
+const brandBackgroundImage = 'https://cdn.example.com/rust-e2e-login.jpg';
 let server: ChildProcessWithoutNullStreams | null = null;
 let serverStderr = '';
 
@@ -124,6 +126,8 @@ describe.sequential('rust external server e2e smoke', () => {
     const adminConfig = await putJson(
       `${baseUrl}/admin/config`,
       {
+        brand_name: brandName,
+        brand_background_image: brandBackgroundImage,
         issuer: webauthnOrigin,
         rp_id: webauthnRpId,
         smtp: null,
@@ -132,6 +136,8 @@ describe.sequential('rust external server e2e smoke', () => {
     );
     expect(adminConfig.status).toBe(200);
     expect(await adminConfig.json()).toMatchObject({
+      brand_name: brandName,
+      brand_background_image: brandBackgroundImage,
       issuer: webauthnOrigin,
       rp_id: webauthnRpId,
     });
@@ -245,7 +251,7 @@ describe.sequential('rust external server e2e smoke', () => {
       (await registerOptionsResponse.json()) as WebauthnOptionsResponse;
     expect(registerOptions.publicKey).toMatchObject({
       challenge: expect.any(String),
-      rp: { id: webauthnRpId, name: 'auth-mini' },
+      rp: { id: webauthnRpId, name: brandName },
     });
 
     const registerVerifyResponse = await postJson(
