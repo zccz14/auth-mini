@@ -141,6 +141,8 @@ describe('LoginRoute', () => {
     sdkMocks.setupFetch.mockResolvedValue({
       admin_ed25519: null,
       admin_user_id: 'admin-user',
+      brand_background_image: '',
+      brand_name: 'auth-mini',
       issuer: 'https://auth.example.com',
       rp_id: 'auth.example.com',
       smtp: null,
@@ -182,6 +184,25 @@ describe('LoginRoute', () => {
     expect(
       screen.queryByRole('link', { name: 'Home' }),
     ).not.toBeInTheDocument();
+  });
+
+  it('renders configured brand name and login background image', async () => {
+    sdkMocks.setupFetch.mockResolvedValueOnce({
+      admin_ed25519: null,
+      admin_user_id: 'admin-user',
+      brand_background_image: 'https://cdn.example.com/login.jpg',
+      brand_name: 'Example Auth',
+      issuer: 'https://auth.example.com',
+      rp_id: 'auth.example.com',
+      smtp: null,
+    });
+
+    renderLogin();
+
+    expect(await screen.findByText('Example Auth')).toBeInTheDocument();
+    expect(screen.getByRole('main')).toHaveStyle({
+      backgroundImage: 'url("https://cdn.example.com/login.jpg")',
+    });
   });
 
   it('redirects with a JWT after email verification succeeds', async () => {

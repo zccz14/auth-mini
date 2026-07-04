@@ -8,6 +8,8 @@ use crate::ed25519::{create_credential, credential_ids_by_public_key, Credential
 pub struct AdminSetupState {
     pub issuer: String,
     pub rp_id: String,
+    pub brand_name: String,
+    pub brand_background_image: String,
     pub admin_user_id: Option<String>,
     pub admin_ed25519: Option<AdminEd25519CredentialSummary>,
     pub smtp: Option<SmtpConfigSummary>,
@@ -35,6 +37,8 @@ pub struct AdminSetupRequest {
 pub struct AdminConfigRequest {
     pub issuer: String,
     pub rp_id: String,
+    pub brand_name: String,
+    pub brand_background_image: String,
     pub smtp: Option<SmtpConfigInput>,
 }
 
@@ -84,10 +88,13 @@ pub fn parse_admin_config_request(body: &str) -> Result<AdminConfigRequest, Setu
 }
 
 pub fn read_admin_setup(connection: &Connection) -> Result<AdminSetupState, SetupError> {
-    let (issuer, rp_id, admin_user_id) = read_app_meta(connection)?;
+    let (issuer, rp_id, brand_name, brand_background_image, admin_user_id) =
+        read_app_meta(connection)?;
     Ok(AdminSetupState {
         issuer,
         rp_id,
+        brand_name,
+        brand_background_image,
         admin_ed25519: admin_user_id
             .as_deref()
             .map(|user_id| admin_ed25519_summary(connection, user_id))
@@ -102,7 +109,7 @@ pub fn apply_admin_setup(
     connection: &Connection,
     request: &AdminSetupRequest,
 ) -> Result<AdminSetupState, SetupError> {
-    if read_app_meta(connection)?.2.is_some() {
+    if read_app_meta(connection)?.4.is_some() {
         return Err(SetupError::AlreadyInitialized);
     }
     upsert_admin_ed25519(connection, &request.admin_ed25519)?;
@@ -115,29 +122,45 @@ pub fn apply_admin_config(
 ) -> Result<AdminSetupState, SetupError> {
     let issuer = normalize_allowed_origin(&request.issuer)?;
     let rp_id = normalize_rp_id(&request.rp_id)?;
+    let brand_name = normalize_brand_name(&request.brand_name)?;
+    let brand_background_image = request.brand_background_image.trim();
     validate_rp_id_for_issuer(&issuer, &rp_id)?;
-    update_app_config(connection, &issuer, &rp_id)?;
+    update_app_config(
+        connection,
+        &issuer,
+        &rp_id,
+        &brand_name,
+        brand_background_image,
+    )?;
     if let Some(smtp) = &request.smtp {
         upsert_smtp_config(connection, smtp)?;
     }
     read_admin_setup(connection)
 }
 
-fn read_app_meta(connection: &Connection) -> Result<(String, String, Option<String>), SetupError> {
+fn read_app_meta(
+    connection: &Connection,
+) -> Result<(String, String, String, String, Option<String>), SetupError> {
     connection
         .query_row(
-            "SELECT issuer, rp_id, admin_user_id FROM app_meta WHERE id = 'APP'",
+            "SELECT issuer, rp_id, brand_name, brand_background_image, admin_user_id FROM app_meta WHERE id = 'APP'",
             [],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
         )
         .map_err(|_| SetupError::Database)
 }
 
-fn update_app_config(connection: &Connection, issuer: &str, rp_id: &str) -> Result<(), SetupError> {
+fn update_app_config(
+    connection: &Connection,
+    issuer: &str,
+    rp_id: &str,
+    brand_name: &str,
+    brand_background_image: &str,
+) -> Result<(), SetupError> {
     connection
         .execute(
-            "UPDATE app_meta SET issuer = ?1, rp_id = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = 'APP'",
-            params![issuer, rp_id],
+            "UPDATE app_meta SET issuer = ?1, rp_id = ?2, brand_name = ?3, brand_background_image = ?4, updated_at = CURRENT_TIMESTAMP WHERE id = 'APP'",
+            params![issuer, rp_id, brand_name, brand_background_image],
         )
         .map_err(|_| SetupError::Database)?;
 
@@ -167,7 +190,7 @@ fn upsert_admin_ed25519(
 }
 
 fn ensure_admin_user(connection: &Connection) -> Result<String, SetupError> {
-    let (_, _, admin_user_id) = read_app_meta(connection)?;
+    let (_, _, _, _, admin_user_id) = read_app_meta(connection)?;
     if let Some(user_id) = admin_user_id {
         return Ok(user_id);
     }
@@ -420,6 +443,15 @@ fn validate_rp_id_for_issuer(issuer: &str, rp_id: &str) -> Result<(), SetupError
     Err(SetupError::InvalidRequest)
 }
 
+fn normalize_brand_name(input: &str) -> Result<String, SetupError> {
+    let brand_name = input.trim();
+    if brand_name.is_empty() {
+        return Err(SetupError::InvalidRequest);
+    }
+
+    Ok(brand_name.to_string())
+}
+
 fn is_rp_id_allowed_for_origin(origin_hostname: &str, rp_id: &str) -> bool {
     if origin_hostname == rp_id {
         return true;
@@ -495,6 +527,8 @@ mod tests {
         let request = AdminConfigRequest {
             issuer: "https://auth.example.com".to_string(),
             rp_id: "EXAMPLE.com.".to_string(),
+            brand_name: "Example Login".to_string(),
+            brand_background_image: "https://cdn.example.com/login.jpg".to_string(),
             smtp: Some(SmtpConfigInput {
                 host: "smtp.example.com".to_string(),
                 port: 587,
@@ -511,6 +545,11 @@ mod tests {
 
         assert_eq!(state.issuer, "https://auth.example.com");
         assert_eq!(state.rp_id, "example.com");
+        assert_eq!(state.brand_name, "Example Login");
+        assert_eq!(
+            state.brand_background_image,
+            "https://cdn.example.com/login.jpg"
+        );
         assert_eq!(
             state.smtp.as_ref().expect("smtp exists").host,
             "smtp.example.com"
@@ -578,6 +617,8 @@ mod tests {
                 &AdminConfigRequest {
                     issuer: "https://auth.example.com".to_string(),
                     rp_id: "login.example.com".to_string(),
+                    brand_name: "Example Login".to_string(),
+                    brand_background_image: String::new(),
                     smtp: None,
                 },
             ),
@@ -606,6 +647,8 @@ mod tests {
         let admin_user_id = state.admin_user_id.expect("admin user id exists");
         assert_eq!(state.issuer, "http://localhost:7777");
         assert_eq!(state.rp_id, "localhost");
+        assert_eq!(state.brand_name, "auth-mini");
+        assert_eq!(state.brand_background_image, "");
         assert_eq!(
             state.admin_ed25519.expect("admin credential exists").name,
             "Admin key"
@@ -660,6 +703,8 @@ mod tests {
         AdminConfigRequest {
             issuer: "https://auth.example.com".to_string(),
             rp_id: "auth.example.com".to_string(),
+            brand_name: "Example Login".to_string(),
+            brand_background_image: String::new(),
             smtp: Some(SmtpConfigInput {
                 host: "smtp.example.com".to_string(),
                 port: 587,

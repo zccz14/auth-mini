@@ -851,6 +851,8 @@ components:
       required:
         - issuer
         - rp_id
+        - brand_name
+        - brand_background_image
       properties:
         issuer:
           type: string
@@ -858,6 +860,11 @@ components:
         rp_id:
           type: string
           minLength: 1
+        brand_name:
+          type: string
+          minLength: 1
+        brand_background_image:
+          type: string
         smtp:
           oneOf:
             - $ref: '#/components/schemas/AdminSetupSmtpInput'
@@ -963,6 +970,8 @@ components:
       required:
         - issuer
         - rp_id
+        - brand_name
+        - brand_background_image
         - admin_user_id
         - admin_ed25519
         - smtp
@@ -971,6 +980,10 @@ components:
           type: string
           format: uri
         rp_id:
+          type: string
+        brand_name:
+          type: string
+        brand_background_image:
           type: string
         admin_user_id:
           type:

@@ -105,10 +105,7 @@ fn read_request(stream: &mut TcpStream, peer_ip: IpAddr) -> io::Result<Request> 
         "x-auth-mini-peer-loopback".to_string(),
         peer_ip.is_loopback().to_string(),
     ));
-    headers.push((
-        "x-auth-mini-peer-ip".to_string(),
-        peer_ip.to_string(),
-    ));
+    headers.push(("x-auth-mini-peer-ip".to_string(), peer_ip.to_string()));
 
     Ok(Request {
         method,
@@ -1346,21 +1343,13 @@ mod tests {
                 r#"{"name":"Laptop"}"#,
             ),
             ("DELETE", "/ed25519/credentials/credential-1", ""),
-            (
-                "POST",
-                "/webauthn/register/options",
-                r#"{}"#,
-            ),
+            ("POST", "/webauthn/register/options", r#"{}"#),
             (
                 "POST",
                 "/webauthn/register/verify",
                 r#"{"request_id":"00000000-0000-4000-8000-000000000000","credential":{"id":"credential","rawId":"credential","type":"public-key","response":{"clientDataJSON":"client","attestationObject":"attestation"}}}"#,
             ),
-            (
-                "POST",
-                "/webauthn/authenticate/options",
-                r#"{}"#,
-            ),
+            ("POST", "/webauthn/authenticate/options", r#"{}"#),
             (
                 "POST",
                 "/webauthn/authenticate/verify",
@@ -1591,11 +1580,9 @@ mod tests {
             )
             .expect("user count reads");
         let session_context: (Option<String>, Option<String>) = connection
-            .query_row(
-                "SELECT ip, user_agent FROM sessions LIMIT 1",
-                [],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
+            .query_row("SELECT ip, user_agent FROM sessions LIMIT 1", [], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
             .expect("session context reads");
 
         assert_eq!(response.status, 200);
@@ -2344,12 +2331,10 @@ mod tests {
             &Request {
                 method: "POST".to_string(),
                 path: "/webauthn/register/options".to_string(),
-                headers: vec![
-                    (
-                        "Authorization".to_string(),
-                        format!("Bearer {}", pair.access_token),
-                    ),
-                ],
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", pair.access_token),
+                )],
                 body: r#"{}"#.to_string(),
             },
             &Config {
@@ -2363,11 +2348,11 @@ mod tests {
         let body: serde_json::Value =
             serde_json::from_str(&response.body_text()).expect("options response parses");
         let connection = Connection::open(db_path).expect("database opens");
-        let stored: (String, String, String) = connection
+        let stored: (String, String, String, String) = connection
             .query_row(
-                "SELECT type, rp_id, origin FROM webauthn_challenges WHERE request_id = ?1",
+                "SELECT type, rp_id, rp_name, origin FROM webauthn_challenges WHERE request_id = ?1",
                 [body["request_id"].as_str().expect("request id")],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .expect("challenge reads");
 
@@ -2379,6 +2364,7 @@ mod tests {
             (
                 "register".to_string(),
                 "example.com".to_string(),
+                "auth-mini".to_string(),
                 "https://app.example.com".to_string()
             )
         );
@@ -2420,12 +2406,10 @@ mod tests {
             &Request {
                 method: "POST".to_string(),
                 path: "/webauthn/register/options".to_string(),
-                headers: vec![
-                    (
-                        "Authorization".to_string(),
-                        format!("Bearer {}", pair.access_token),
-                    ),
-                ],
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", pair.access_token),
+                )],
                 body: r#"{}"#.to_string(),
             },
             &Config {
@@ -2476,12 +2460,10 @@ mod tests {
             &Request {
                 method: "POST".to_string(),
                 path: "/webauthn/register/verify".to_string(),
-                headers: vec![
-                    (
-                        "Authorization".to_string(),
-                        format!("Bearer {}", pair.access_token),
-                    ),
-                ],
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", pair.access_token),
+                )],
                 body: register_verify_body(),
             },
             &Config {
@@ -2585,12 +2567,10 @@ mod tests {
             &Request {
                 method: "POST".to_string(),
                 path: "/webauthn/register/verify".to_string(),
-                headers: vec![
-                    (
-                        "Authorization".to_string(),
-                        format!("Bearer {}", pair.access_token),
-                    ),
-                ],
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", pair.access_token),
+                )],
                 body: register_verify_body(),
             },
             &Config {
@@ -2626,12 +2606,10 @@ mod tests {
             &Request {
                 method: "POST".to_string(),
                 path: "/webauthn/register/options".to_string(),
-                headers: vec![
-                    (
-                        "Authorization".to_string(),
-                        format!("Bearer {}", pair.access_token),
-                    ),
-                ],
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", pair.access_token),
+                )],
                 body: r#"{"extra":true}"#.to_string(),
             },
             &Config {
@@ -2670,11 +2648,11 @@ mod tests {
         let body: serde_json::Value =
             serde_json::from_str(&response.body_text()).expect("options response parses");
         let connection = Connection::open(db_path).expect("database opens");
-        let stored: (String, Option<String>, String, String) = connection
+        let stored: (String, Option<String>, String, String, String) = connection
             .query_row(
-                "SELECT type, user_id, rp_id, origin FROM webauthn_challenges WHERE request_id = ?1",
+                "SELECT type, user_id, rp_id, rp_name, origin FROM webauthn_challenges WHERE request_id = ?1",
                 [body["request_id"].as_str().expect("request id")],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
             )
             .expect("challenge reads");
 
@@ -2686,7 +2664,8 @@ mod tests {
         assert_eq!(stored.0, "authenticate");
         assert_eq!(stored.1, None);
         assert_eq!(stored.2, "example.com");
-        assert_eq!(stored.3, "https://app.example.com");
+        assert_eq!(stored.3, "auth-mini");
+        assert_eq!(stored.4, "https://app.example.com");
     }
 
     #[test]
@@ -3178,6 +3157,8 @@ mod tests {
                     id TEXT PRIMARY KEY CHECK (id = 'APP'),
                     issuer TEXT NOT NULL,
                     rp_id TEXT NOT NULL,
+                    brand_name TEXT NOT NULL DEFAULT 'auth-mini',
+                    brand_background_image TEXT NOT NULL DEFAULT '',
                     admin_user_id TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -3204,6 +3185,7 @@ mod tests {
                     user_id TEXT,
                     expires_at TEXT NOT NULL,
                     rp_id TEXT NOT NULL,
+                    rp_name TEXT NOT NULL DEFAULT 'auth-mini',
                     origin TEXT NOT NULL,
                     consumed_at TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP

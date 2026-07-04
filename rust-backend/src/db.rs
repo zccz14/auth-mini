@@ -55,11 +55,11 @@ pub(crate) fn read_app_issuer(connection: &Connection) -> rusqlite::Result<Strin
 
 pub(crate) fn read_app_webauthn_config(
     connection: &Connection,
-) -> rusqlite::Result<(String, String)> {
+) -> rusqlite::Result<(String, String, String)> {
     connection.query_row(
-        "SELECT issuer, rp_id FROM app_meta WHERE id = 'APP'",
+        "SELECT issuer, rp_id, brand_name FROM app_meta WHERE id = 'APP'",
         [],
-        |row| Ok((row.get(0)?, row.get(1)?)),
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
     )
 }
 
@@ -76,6 +76,8 @@ fn migrate_runtime_schema(connection: &Connection) -> rusqlite::Result<()> {
             id TEXT PRIMARY KEY CHECK (id = 'APP'),
             issuer TEXT NOT NULL,
             rp_id TEXT NOT NULL DEFAULT 'localhost',
+            brand_name TEXT NOT NULL DEFAULT 'auth-mini',
+            brand_background_image TEXT NOT NULL DEFAULT '',
             admin_user_id TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -85,6 +87,24 @@ fn migrate_runtime_schema(connection: &Connection) -> rusqlite::Result<()> {
     if !table_has_column(connection, "app_meta", "rp_id")? {
         connection.execute(
             "ALTER TABLE app_meta ADD COLUMN rp_id TEXT NOT NULL DEFAULT 'localhost'",
+            [],
+        )?;
+    }
+    if !table_has_column(connection, "app_meta", "brand_name")? {
+        connection.execute(
+            "ALTER TABLE app_meta ADD COLUMN brand_name TEXT NOT NULL DEFAULT 'auth-mini'",
+            [],
+        )?;
+    }
+    if !table_has_column(connection, "app_meta", "brand_background_image")? {
+        connection.execute(
+            "ALTER TABLE app_meta ADD COLUMN brand_background_image TEXT NOT NULL DEFAULT ''",
+            [],
+        )?;
+    }
+    if !table_has_column(connection, "webauthn_challenges", "rp_name")? {
+        connection.execute(
+            "ALTER TABLE webauthn_challenges ADD COLUMN rp_name TEXT NOT NULL DEFAULT 'auth-mini'",
             [],
         )?;
     }
@@ -109,7 +129,16 @@ fn assert_required_schema(connection: &Connection) -> rusqlite::Result<()> {
         ),
         (
             "app_meta",
-            &["id", "issuer", "rp_id", "admin_user_id", "created_at", "updated_at"][..],
+            &[
+                "id",
+                "issuer",
+                "rp_id",
+                "brand_name",
+                "brand_background_image",
+                "admin_user_id",
+                "created_at",
+                "updated_at",
+            ][..],
         ),
         (
             "sessions",
@@ -174,6 +203,7 @@ fn assert_required_schema(connection: &Connection) -> rusqlite::Result<()> {
                 "user_id",
                 "expires_at",
                 "rp_id",
+                "rp_name",
                 "origin",
                 "consumed_at",
                 "created_at",
