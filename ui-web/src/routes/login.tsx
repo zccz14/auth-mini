@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type CSSProperties, type FormEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useDemo } from '@/app/providers/demo-provider';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -67,6 +67,11 @@ export function LoginRoute() {
     request.status === 'ready' &&
     passkeyConfigured &&
     pendingAction === null;
+  const brandName = setupState?.brand_name ?? 'auth-mini';
+  const brandBackgroundImage = setupState?.brand_background_image ?? '';
+  const loginBackgroundStyle: CSSProperties | undefined = brandBackgroundImage
+    ? { backgroundImage: `url("${brandBackgroundImage}")` }
+    : undefined;
 
   async function handleEmailStart(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -176,11 +181,14 @@ export function LoginRoute() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-6 text-slate-950 sm:px-6">
+    <main
+      className="min-h-screen bg-slate-50 bg-cover bg-center px-4 py-6 text-slate-950 sm:px-6"
+      style={loginBackgroundStyle}
+    >
       <section className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-xl flex-col justify-center">
         <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="space-y-2">
-            <p className="text-sm font-medium text-slate-500">auth-mini</p>
+            <p className="text-sm font-medium text-slate-500">{brandName}</p>
             <h1 className="text-2xl font-semibold text-slate-950">Sign in</h1>
             <p className="text-sm leading-6 text-slate-600">
               Continue to the application that opened this window.

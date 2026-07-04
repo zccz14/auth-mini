@@ -23,6 +23,8 @@ export function AdminRoute() {
   const [form, setForm] = useState<AdminConfigInput>({
     issuer: '',
     rp_id: '',
+    brand_name: 'auth-mini',
+    brand_background_image: '',
     smtp: null,
   });
   const [pending, setPending] = useState<string | null>(null);
@@ -41,6 +43,8 @@ export function AdminRoute() {
     setForm({
       issuer: nextSettings.issuer,
       rp_id: nextSettings.rp_id,
+      brand_name: nextSettings.brand_name,
+      brand_background_image: nextSettings.brand_background_image,
       smtp: nextSettings.smtp
         ? {
             host: nextSettings.smtp.host,
@@ -176,7 +180,7 @@ export function AdminRoute() {
         <CardHeader>
           <CardTitle>Configuration</CardTitle>
           <CardDescription>
-            Issuer, passkey RP ID, and SMTP delivery.
+            Issuer, passkey RP ID, branding, and SMTP delivery.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -195,6 +199,25 @@ export function AdminRoute() {
               value={form.rp_id}
               onChange={(event) =>
                 setForm({ ...form, rp_id: event.currentTarget.value })
+              }
+            />
+            <Input
+              aria-label="Brand name"
+              placeholder="auth-mini"
+              value={form.brand_name}
+              onChange={(event) =>
+                setForm({ ...form, brand_name: event.currentTarget.value })
+              }
+            />
+            <Input
+              aria-label="Brand background image"
+              placeholder="https://cdn.example.com/login-background.jpg"
+              value={form.brand_background_image}
+              onChange={(event) =>
+                setForm({
+                  ...form,
+                  brand_background_image: event.currentTarget.value,
+                })
               }
             />
             <label className="flex items-center gap-2 text-sm text-slate-700">

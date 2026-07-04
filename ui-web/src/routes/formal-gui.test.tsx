@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
@@ -52,6 +52,8 @@ vi.mock('@/app/providers/demo-provider', () => ({
     setupState: {
       admin_ed25519: null,
       admin_user_id: 'admin-user',
+      brand_background_image: '',
+      brand_name: 'auth-mini',
       issuer: 'https://auth.example.com',
       rp_id: 'auth.example.com',
       smtp: null,
@@ -139,6 +141,8 @@ describe('formal GUI routes', () => {
     sdk.admin.config.fetch.mockResolvedValue({
       admin_ed25519: null,
       admin_user_id: 'admin-user',
+      brand_background_image: '',
+      brand_name: 'auth-mini',
       issuer: 'https://auth.example.com',
       rp_id: 'auth.example.com',
       smtp: null,
@@ -155,6 +159,15 @@ describe('formal GUI routes', () => {
         { slot: 'STANDBY', public_jwk: { kid: 'fresh-standby-kid', kty: 'OKP' } },
       ],
     });
+    sdk.admin.config.save.mockResolvedValue({
+      admin_ed25519: null,
+      admin_user_id: 'admin-user',
+      brand_background_image: 'https://cdn.example.com/login.jpg',
+      brand_name: 'Example Auth',
+      issuer: 'https://auth.example.com',
+      rp_id: 'auth.example.com',
+      smtp: null,
+    });
     sdk.admin.users.mockResolvedValue({ users: [] });
     const user = userEvent.setup();
 
@@ -170,6 +183,25 @@ describe('formal GUI routes', () => {
     expect(
       screen.getByRole('button', { name: 'JWK Rotate' }),
     ).toBeInTheDocument();
+    expect(screen.getByLabelText('Brand name')).toHaveValue('auth-mini');
+
+    await user.clear(screen.getByLabelText('Brand name'));
+    await user.type(screen.getByLabelText('Brand name'), 'Example Auth');
+    await user.type(
+      screen.getByLabelText('Brand background image'),
+      'https://cdn.example.com/login.jpg',
+    );
+    await user.click(screen.getByRole('button', { name: 'Save configuration' }));
+
+    await waitFor(() =>
+      expect(sdk.admin.config.save).toHaveBeenCalledWith({
+        issuer: 'https://auth.example.com',
+        rp_id: 'auth.example.com',
+        brand_name: 'Example Auth',
+        brand_background_image: 'https://cdn.example.com/login.jpg',
+        smtp: null,
+      }),
+    );
 
     await user.click(screen.getByRole('button', { name: 'JWK Rotate' }));
 

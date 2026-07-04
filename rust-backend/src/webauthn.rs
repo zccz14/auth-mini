@@ -117,6 +117,7 @@ pub(crate) struct AuthenticationVerifyOutcome {
 struct ResolvedOptionsInput {
     origin: String,
     rp_id: String,
+    rp_name: String,
 }
 
 pub(crate) fn parse_options_request(body: &str) -> Result<OptionsRequest, serde_json::Error> {
@@ -190,7 +191,7 @@ pub(crate) fn register_options(
     let resolved = resolve_options_input(connection)
         .map_err(|_| RegisterOptionsError::WebauthnRegistration)?;
     let request_id = random_uuid(connection).map_err(|_| RegisterOptionsError::Request)?;
-    let webauthn = build_webauthn(&resolved.rp_id, &resolved.origin)
+    let webauthn = build_webauthn(&resolved.rp_id, &resolved.origin, &resolved.rp_name)
         .map_err(|_| RegisterOptionsError::WebauthnRegistration)?;
     let (options, state) = webauthn
         .start_passkey_registration(
@@ -238,14 +239,15 @@ pub(crate) fn register_options(
     connection
         .execute(
             "INSERT INTO webauthn_challenges
-             (request_id, type, state_json, user_id, expires_at, rp_id, origin)
-             VALUES (?1, 'register', ?2, ?3, ?4, ?5, ?6)",
+             (request_id, type, state_json, user_id, expires_at, rp_id, rp_name, origin)
+             VALUES (?1, 'register', ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 request_id,
                 state_json,
                 user_id,
                 expires_at,
                 resolved.rp_id,
+                resolved.rp_name,
                 resolved.origin
             ],
         )
@@ -272,7 +274,7 @@ pub(crate) fn authentication_options(
         .map_err(|_| AuthenticationOptionsError::InvalidWebauthnAuthentication)?;
     let request_id =
         random_uuid(connection).map_err(|_| AuthenticationOptionsError::InvalidRequest)?;
-    let webauthn = build_webauthn(&resolved.rp_id, &resolved.origin)
+    let webauthn = build_webauthn(&resolved.rp_id, &resolved.origin, &resolved.rp_name)
         .map_err(|_| AuthenticationOptionsError::InvalidWebauthnAuthentication)?;
     let (options, state) = webauthn
         .start_discoverable_authentication()
@@ -291,13 +293,14 @@ pub(crate) fn authentication_options(
     connection
         .execute(
             "INSERT INTO webauthn_challenges
-             (request_id, type, state_json, user_id, expires_at, rp_id, origin)
-             VALUES (?1, 'authenticate', ?2, NULL, ?3, ?4, ?5)",
+             (request_id, type, state_json, user_id, expires_at, rp_id, rp_name, origin)
+             VALUES (?1, 'authenticate', ?2, NULL, ?3, ?4, ?5, ?6)",
             params![
                 request_id,
                 state_json,
                 expires_at,
                 resolved.rp_id,
+                resolved.rp_name,
                 resolved.origin
             ],
         )
@@ -314,12 +317,12 @@ pub(crate) fn authentication_options(
     }))
 }
 
-fn build_webauthn(rp_id: &str, origin: &str) -> Result<Webauthn, ()> {
+fn build_webauthn(rp_id: &str, origin: &str, rp_name: &str) -> Result<Webauthn, ()> {
     let origin = Url::parse(origin).map_err(|_| ())?;
 
     WebauthnBuilder::new(rp_id, &origin)
         .map_err(|_| ())?
-        .rp_name("auth-mini")
+        .rp_name(rp_name)
         .timeout(Duration::from_secs(WEBAUTHN_CHALLENGE_SECONDS as u64))
         .build()
         .map_err(|_| ())
@@ -356,7 +359,7 @@ pub(crate) fn register_verify(
             .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)?,
     )
     .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)?;
-    let webauthn = build_webauthn(&challenge.rp_id, &challenge.origin)
+    let webauthn = build_webauthn(&challenge.rp_id, &challenge.origin, &challenge.rp_name)
         .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)?;
     let passkey = webauthn
         .finish_passkey_registration(&credential, &state)
@@ -418,7 +421,7 @@ pub(crate) fn authentication_verify(
             .map_err(|_| AuthenticationVerifyError::InvalidWebauthnAuthentication)?,
     )
     .map_err(|_| AuthenticationVerifyError::InvalidWebauthnAuthentication)?;
-    let webauthn = build_webauthn(&challenge.rp_id, &challenge.origin)
+    let webauthn = build_webauthn(&challenge.rp_id, &challenge.origin, &challenge.rp_name)
         .map_err(|_| AuthenticationVerifyError::InvalidWebauthnAuthentication)?;
     let mut passkey: Passkey = serde_json::from_str(&credential_row.passkey_json)
         .map_err(|_| AuthenticationVerifyError::InvalidWebauthnAuthentication)?;
@@ -511,6 +514,7 @@ struct RegisterChallengePrecheckRow {
     state_json: String,
     expires_at: String,
     rp_id: String,
+    rp_name: String,
     origin: String,
 }
 
@@ -518,6 +522,7 @@ struct AuthenticationChallengePrecheckRow {
     state_json: String,
     expires_at: String,
     rp_id: String,
+    rp_name: String,
     origin: String,
 }
 
@@ -532,7 +537,7 @@ fn get_valid_register_challenge(
 ) -> Result<RegisterChallengePrecheckRow, RegisterVerifyError> {
     let challenge = connection
         .query_row(
-            "SELECT user_id, state_json, expires_at, rp_id, origin
+            "SELECT user_id, state_json, expires_at, rp_id, rp_name, origin
              FROM webauthn_challenges
              WHERE request_id = ?1 AND type = 'register' AND consumed_at IS NULL
              LIMIT 1",
@@ -543,7 +548,8 @@ fn get_valid_register_challenge(
                     state_json: row.get(1)?,
                     expires_at: row.get(2)?,
                     rp_id: row.get(3)?,
-                    origin: row.get(4)?,
+                    rp_name: row.get(4)?,
+                    origin: row.get(5)?,
                 })
             },
         )
@@ -566,7 +572,7 @@ fn get_valid_authentication_challenge(
 ) -> Result<AuthenticationChallengePrecheckRow, AuthenticationVerifyError> {
     let challenge = connection
         .query_row(
-            "SELECT state_json, expires_at, rp_id, origin
+            "SELECT state_json, expires_at, rp_id, rp_name, origin
              FROM webauthn_challenges
              WHERE request_id = ?1 AND type = 'authenticate' AND consumed_at IS NULL
              LIMIT 1",
@@ -576,7 +582,8 @@ fn get_valid_authentication_challenge(
                     state_json: row.get(0)?,
                     expires_at: row.get(1)?,
                     rp_id: row.get(2)?,
-                    origin: row.get(3)?,
+                    rp_name: row.get(3)?,
+                    origin: row.get(4)?,
                 })
             },
         )
@@ -615,16 +622,30 @@ fn get_authentication_credential(
 }
 
 fn resolve_options_input(connection: &Connection) -> Result<ResolvedOptionsInput, ()> {
-    let (issuer, rp_id) = read_app_webauthn_config(connection).map_err(|_| ())?;
+    let (issuer, rp_id, rp_name) = read_app_webauthn_config(connection).map_err(|_| ())?;
     let origin = normalize_allowed_origin(&issuer)?;
     let origin_hostname = origin_hostname(&origin).ok_or(())?;
     let rp_id = normalize_rp_id(&rp_id)?;
+    let rp_name = normalize_rp_name(&rp_name)?;
 
     if !is_rp_id_allowed_for_origin(&origin_hostname, &rp_id) {
         return Err(());
     }
 
-    Ok(ResolvedOptionsInput { origin, rp_id })
+    Ok(ResolvedOptionsInput {
+        origin,
+        rp_id,
+        rp_name,
+    })
+}
+
+fn normalize_rp_name(input: &str) -> Result<String, ()> {
+    let rp_name = input.trim();
+    if rp_name.is_empty() {
+        return Err(());
+    }
+
+    Ok(rp_name.to_string())
 }
 
 fn normalize_allowed_origin(input: &str) -> Result<String, ()> {
@@ -876,14 +897,13 @@ mod tests {
             .expect("user inserts");
         let request = OptionsRequest {};
 
-        let body = register_options(&connection, "user-1", &request)
-            .expect("options generate");
+        let body = register_options(&connection, "user-1", &request).expect("options generate");
         let request_id = body["request_id"].as_str().expect("request id");
-        let stored: (String, String, String, String, Option<String>) = connection
+        let stored: (String, String, String, String, String, Option<String>) = connection
             .query_row(
-                "SELECT type, state_json, rp_id, origin, consumed_at FROM webauthn_challenges WHERE request_id = ?1",
+                "SELECT type, state_json, rp_id, rp_name, origin, consumed_at FROM webauthn_challenges WHERE request_id = ?1",
                 [request_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
             )
             .expect("challenge reads");
         let restored_state: PasskeyRegistration =
@@ -908,8 +928,29 @@ mod tests {
         );
         assert_eq!(stored.0, "register");
         assert_eq!(stored.2, "example.com");
-        assert_eq!(stored.3, "https://app.example.com");
-        assert_eq!(stored.4, None);
+        assert_eq!(stored.3, "auth-mini");
+        assert_eq!(stored.4, "https://app.example.com");
+        assert_eq!(stored.5, None);
+    }
+
+    #[test]
+    fn register_options_uses_configured_rp_name() {
+        let connection = Connection::open_in_memory().expect("database opens");
+        create_register_options_schema(&connection);
+        connection
+            .execute("UPDATE app_meta SET brand_name = 'Example Auth'", [])
+            .expect("app meta updates");
+        connection
+            .execute(
+                "INSERT INTO users (id, email) VALUES (?1, ?2)",
+                ("user-1", "user@example.com"),
+            )
+            .expect("user inserts");
+        let request = OptionsRequest {};
+
+        let body = register_options(&connection, "user-1", &request).expect("options generate");
+
+        assert_eq!(body["publicKey"]["rp"]["name"], "Example Auth");
     }
 
     #[test]
@@ -923,10 +964,10 @@ mod tests {
             )
             .expect("user inserts");
         let request = OptionsRequest {};
-        let first = register_options(&connection, "user-1", &request)
-            .expect("first options generate");
-        let second = register_options(&connection, "user-1", &request)
-            .expect("second options generate");
+        let first =
+            register_options(&connection, "user-1", &request).expect("first options generate");
+        let second =
+            register_options(&connection, "user-1", &request).expect("second options generate");
 
         let first_consumed_at: Option<String> = connection
             .query_row(
@@ -980,8 +1021,7 @@ mod tests {
             .expect("user inserts");
         let request = OptionsRequest {};
 
-        let body = register_options(&connection, "user-1", &request)
-            .expect("options generate");
+        let body = register_options(&connection, "user-1", &request).expect("options generate");
 
         assert_eq!(body["publicKey"]["user"]["name"], "user-1");
         assert_eq!(body["publicKey"]["user"]["displayName"], "user-1");
@@ -993,14 +1033,13 @@ mod tests {
         create_register_options_schema(&connection);
         let request = OptionsRequest {};
 
-        let body = authentication_options(&connection, &request)
-            .expect("options generate");
+        let body = authentication_options(&connection, &request).expect("options generate");
         let request_id = body["request_id"].as_str().expect("request id");
-        let stored: (String, String, Option<String>, String, String) = connection
+        let stored: (String, String, Option<String>, String, String, String) = connection
             .query_row(
-                "SELECT type, state_json, user_id, rp_id, origin FROM webauthn_challenges WHERE request_id = ?1",
+                "SELECT type, state_json, user_id, rp_id, rp_name, origin FROM webauthn_challenges WHERE request_id = ?1",
                 [request_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
             )
             .expect("challenge reads");
         let restored_state: DiscoverableAuthentication =
@@ -1024,7 +1063,8 @@ mod tests {
         assert_eq!(stored.0, "authenticate");
         assert_eq!(stored.2, None);
         assert_eq!(stored.3, "example.com");
-        assert_eq!(stored.4, "https://app.example.com");
+        assert_eq!(stored.4, "auth-mini");
+        assert_eq!(stored.5, "https://app.example.com");
     }
 
     #[test]
@@ -1088,8 +1128,8 @@ mod tests {
             .expect("challenge inserts");
         let request = register_verify_base64_request();
 
-        let error = register_verify(&connection, "user-1", &request)
-            .expect_err("wrong user is rejected");
+        let error =
+            register_verify(&connection, "user-1", &request).expect_err("wrong user is rejected");
 
         assert_eq!(error, RegisterVerifyError::InvalidWebauthnRegistration);
     }
@@ -1116,8 +1156,8 @@ mod tests {
             .expect("challenge inserts");
         let request = register_verify_base64_request();
 
-        let error = register_verify(&connection, "user-1", &request)
-            .expect_err("legacy state is rejected");
+        let error =
+            register_verify(&connection, "user-1", &request).expect_err("legacy state is rejected");
         let consumed_at: Option<String> = connection
             .query_row(
                 "SELECT consumed_at FROM webauthn_challenges WHERE request_id = ?1",
@@ -1180,8 +1220,8 @@ mod tests {
             .expect("credential inserts");
         let request = authentication_verify_request();
 
-        let error = authentication_verify(&connection, &request)
-            .expect_err("legacy state is rejected");
+        let error =
+            authentication_verify(&connection, &request).expect_err("legacy state is rejected");
         let stored: (Option<String>, Option<String>) = connection
             .query_row(
                 "SELECT c.consumed_at, p.last_used_at
@@ -1250,12 +1290,13 @@ mod tests {
                     id TEXT PRIMARY KEY CHECK (id = 'APP'),
                     issuer TEXT NOT NULL,
                     rp_id TEXT NOT NULL,
+                    brand_name TEXT NOT NULL DEFAULT 'auth-mini',
                     admin_user_id TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
-                INSERT INTO app_meta (id, issuer, rp_id)
-                VALUES ('APP', 'https://app.example.com', 'example.com');
+                INSERT INTO app_meta (id, issuer, rp_id, brand_name)
+                VALUES ('APP', 'https://app.example.com', 'example.com', 'auth-mini');
                 CREATE TABLE webauthn_challenges (
                     request_id TEXT PRIMARY KEY,
                     type TEXT NOT NULL CHECK (type IN ('register', 'authenticate')),
@@ -1263,6 +1304,7 @@ mod tests {
                     user_id TEXT,
                     expires_at TEXT NOT NULL,
                     rp_id TEXT NOT NULL,
+                    rp_name TEXT NOT NULL DEFAULT 'auth-mini',
                     origin TEXT NOT NULL,
                     consumed_at TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP

@@ -19,6 +19,8 @@ export type AdminSetupRequest = {
 export type AdminConfigRequest = {
     issuer: string;
     rp_id: string;
+    brand_name: string;
+    brand_background_image: string;
     smtp?: AdminSetupSmtpInput | null;
 };
 
@@ -54,6 +56,8 @@ export type AdminUserSummary = {
 export type AdminSetupState = {
     issuer: string;
     rp_id: string;
+    brand_name: string;
+    brand_background_image: string;
     admin_user_id: string | null;
     admin_ed25519: AdminEd25519CredentialSummary | null;
     smtp: AdminSmtpConfigSummary | null;
@@ -273,6 +277,8 @@ export type AdminJwksResponse = {
 export type AdminConfigRequestWritable = {
     issuer: string;
     rp_id: string;
+    brand_name: string;
+    brand_background_image: string;
     smtp?: AdminSetupSmtpInputWritable | null;
 };
 
