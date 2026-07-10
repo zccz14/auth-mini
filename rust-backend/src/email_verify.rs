@@ -22,9 +22,11 @@ pub(crate) enum EmailVerifyOutcome {
 pub(crate) fn parse_email_verify_request(
     body: &str,
 ) -> Result<EmailVerifyRequest, serde_json::Error> {
-    let request: EmailVerifyRequest = serde_json::from_str(body)?;
+    let mut request: EmailVerifyRequest = serde_json::from_str(body)?;
+    let email = request.email.trim().to_lowercase();
 
-    if is_email_address(&request.email) && is_six_digit_code(&request.code) {
+    if is_email_address(&email) && is_six_digit_code(&request.code) {
+        request.email = email;
         return Ok(request);
     }
 
@@ -155,8 +157,9 @@ mod tests {
 
     #[test]
     fn parses_email_verify_request_boundary() {
-        let request = parse_email_verify_request(r#"{"email":"user@example.com","code":"123456"}"#)
-            .expect("valid request parses");
+        let request =
+            parse_email_verify_request(r#"{"email":" User@Example.COM ","code":"123456"}"#)
+                .expect("valid request parses");
 
         assert_eq!(request.email, "user@example.com");
         assert_eq!(request.code, "123456");
@@ -175,8 +178,8 @@ mod tests {
     }
 
     #[test]
-    fn consumes_matching_email_otp() {
-        let connection = test_connection("consumes-matching-email-otp");
+    fn consumes_lowercase_stored_otp_for_mixed_case_padded_email() {
+        let connection = test_connection("consumes-normalized-email-otp");
         insert_email_otp(
             &connection,
             "user@example.com",
@@ -184,8 +187,9 @@ mod tests {
             "2026-01-01T00:00:00.000Z",
             None,
         );
-        let request = parse_email_verify_request(r#"{"email":"user@example.com","code":"123456"}"#)
-            .expect("request parses");
+        let request =
+            parse_email_verify_request(r#"{"email":" User@Example.COM ","code":"123456"}"#)
+                .expect("request parses");
 
         let outcome =
             consume_email_verify_otp_with_now(&connection, &request, "2025-01-01T00:00:00.000Z")
