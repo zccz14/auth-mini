@@ -137,6 +137,70 @@ describe('openapi contract', () => {
       },
     });
   });
+
+  it('locks the discoverable passkey registration wire contract', async () => {
+    const document = await readOpenApiContract();
+    const creationOptions =
+      document.components?.schemas?.PublicKeyCredentialCreationOptionsJson;
+    const authenticatorSelection = creationOptions?.properties
+      ?.authenticatorSelection as OpenApiSchema | undefined;
+    const extensions = creationOptions?.properties?.extensions as
+      | OpenApiSchema
+      | undefined;
+    const registrationCredential =
+      document.components?.schemas?.RegistrationCredentialJson;
+    const clientExtensionResults = registrationCredential?.properties
+      ?.clientExtensionResults as OpenApiSchema | undefined;
+    const credProps = clientExtensionResults?.properties?.credProps as
+      | OpenApiSchema
+      | undefined;
+
+    expect(creationOptions?.required).toEqual(
+      expect.arrayContaining(['authenticatorSelection', 'extensions']),
+    );
+    expect(authenticatorSelection).toMatchObject({
+      additionalProperties: false,
+      required: ['residentKey', 'requireResidentKey', 'userVerification'],
+      properties: {
+        residentKey: { type: 'string', const: 'required' },
+        requireResidentKey: { type: 'boolean', const: true },
+        userVerification: { type: 'string', const: 'required' },
+      },
+    });
+    expect(extensions).toEqual({
+      type: 'object',
+      additionalProperties: false,
+      required: ['credProps'],
+      properties: {
+        credProps: { type: 'boolean', const: true },
+      },
+    });
+    expect(registrationCredential?.required).toContain(
+      'clientExtensionResults',
+    );
+    expect(clientExtensionResults).toMatchObject({
+      type: 'object',
+      additionalProperties: true,
+      required: ['credProps'],
+    });
+    expect(clientExtensionResults?.description).toContain('unsigned');
+    expect(credProps).toMatchObject({
+      type: 'object',
+      additionalProperties: true,
+      required: ['rk'],
+      properties: {
+        rk: { type: 'boolean', const: true },
+      },
+    });
+    expect(
+      operationAt(document.paths['/webauthn/register/verify'], 'post')
+        .responses,
+    ).not.toHaveProperty('409');
+    expect(
+      document.components?.schemas?.PublicKeyCredentialRequestOptionsJson
+        ?.properties,
+    ).not.toHaveProperty('allowCredentials');
+  });
 });
 
 async function readOpenApiContract() {
@@ -152,17 +216,20 @@ type OpenApiDocument = {
   openapi?: string;
   components?: {
     parameters?: Record<string, unknown>;
-    schemas?: Record<
-      string,
-      {
-        properties?: Record<string, unknown>;
-        required?: string[];
-      }
-    >;
+    schemas?: Record<string, OpenApiSchema>;
   };
   servers?: Array<{ url?: string }>;
   security?: Array<Record<string, unknown>>;
   paths: Record<string, Record<string, OpenApiOperation>>;
+};
+
+type OpenApiSchema = {
+  type?: unknown;
+  const?: unknown;
+  description?: string;
+  additionalProperties?: unknown;
+  properties?: Record<string, unknown>;
+  required?: string[];
 };
 
 type OpenApiOperation = {

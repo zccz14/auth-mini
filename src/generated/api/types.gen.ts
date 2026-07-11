@@ -194,8 +194,12 @@ export type PublicKeyCredentialCreationOptionsJson = {
     }>;
     timeout: number;
     authenticatorSelection: {
-        residentKey: string;
-        userVerification: string;
+        residentKey: 'required';
+        requireResidentKey: true;
+        userVerification: 'required';
+    };
+    extensions: {
+        credProps: true;
     };
     [key: string]: unknown;
 };
@@ -213,7 +217,14 @@ export type RegistrationCredentialJson = {
     rawId: string;
     type: 'public-key';
     authenticatorAttachment?: string;
-    clientExtensionResults?: {
+    /**
+     * Client-reported, unsigned registration extension output. auth-mini requires credProps.rk=true as a protocol policy signal; it is not cryptographic proof that the authenticator stored a resident key.
+     */
+    clientExtensionResults: {
+        credProps: {
+            rk: true;
+            [key: string]: unknown;
+        };
         [key: string]: unknown;
     };
     response: {
@@ -951,7 +962,7 @@ export type VerifyWebauthnRegistrationData = {
 
 export type VerifyWebauthnRegistrationErrors = {
     /**
-     * Request body or ceremony verification failed
+     * Request body, ceremony verification, or credential storage failed
      */
     400: ErrorResponse;
     /**
@@ -962,10 +973,6 @@ export type VerifyWebauthnRegistrationErrors = {
      * Access token is valid but the session auth method is not allowed for this route
      */
     403: ErrorResponse;
-    /**
-     * Credential id already belongs to another stored credential
-     */
-    409: ErrorResponse;
 };
 
 export type VerifyWebauthnRegistrationError = VerifyWebauthnRegistrationErrors[keyof VerifyWebauthnRegistrationErrors];

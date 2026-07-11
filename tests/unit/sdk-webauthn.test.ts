@@ -231,15 +231,28 @@ describe('sdk webauthn flows', () => {
 
   it('registers a passkey and serializes the browser credential', async () => {
     const fetch = createWebauthnRequestRecorder();
+    const fakeCredentials = fakeNavigatorCredentials();
+    let browserPublicKey: PublicKeyCredentialCreationOptions | undefined;
     const sdk = createWebauthnSdkForTest({
       fetch,
       storage: fakeAuthenticatedStorage(),
-      navigatorCredentials: fakeNavigatorCredentials(),
+      navigatorCredentials: {
+        async create(options?: CredentialCreationOptions) {
+          browserPublicKey = options?.publicKey;
+          return fakeCredentials.create(options);
+        },
+      },
     });
 
     const result = await sdk.webauthn.register();
 
     expect(result).toEqual({ ok: true });
+    expect(browserPublicKey?.authenticatorSelection).toEqual({
+      residentKey: 'required',
+      requireResidentKey: true,
+      userVerification: 'required',
+    });
+    expect(browserPublicKey?.extensions).toEqual({ credProps: true });
     expect(readJsonBody(fetch, '/webauthn/register/verify')).toEqual({
       request_id: 'request-register',
       credential: {

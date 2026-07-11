@@ -193,7 +193,7 @@ pub(crate) fn register_options(
     let request_id = random_uuid(connection).map_err(|_| RegisterOptionsError::Request)?;
     let webauthn = build_webauthn(&resolved.rp_id, &resolved.origin, &resolved.rp_name)
         .map_err(|_| RegisterOptionsError::WebauthnRegistration)?;
-    let (options, state) = webauthn
+    let (mut options, state) = webauthn
         .start_passkey_registration(
             user_webauthn_id(user_id),
             &display_name,
@@ -201,9 +201,20 @@ pub(crate) fn register_options(
             None,
         )
         .map_err(|_| RegisterOptionsError::Request)?;
+    let authenticator_selection = options
+        .public_key
+        .authenticator_selection
+        .as_mut()
+        .ok_or(RegisterOptionsError::Request)?;
+    // webauthn-rs 0.5.5 keeps resident=false and broader extension requests in server state;
+    // only this outbound projection is narrowed, so dependency upgrades require a fresh audit.
+    authenticator_selection.require_resident_key = true;
+    options.public_key.extensions = None;
     let state_json = serde_json::to_string(&state).map_err(|_| RegisterOptionsError::Request)?;
-    let public_key =
-        serde_json::to_value(options.public_key).map_err(|_| RegisterOptionsError::Request)?;
+    let public_key = project_registration_public_key(
+        serde_json::to_value(options.public_key).map_err(|_| RegisterOptionsError::Request)?,
+        &resolved.rp_id,
+    )?;
     let challenge = public_key
         .get("challenge")
         .cloned()
@@ -222,6 +233,10 @@ pub(crate) fn register_options(
         .ok_or(RegisterOptionsError::Request)?;
     let authenticator_selection = public_key
         .get("authenticatorSelection")
+        .cloned()
+        .ok_or(RegisterOptionsError::Request)?;
+    let extensions = public_key
+        .get("extensions")
         .cloned()
         .ok_or(RegisterOptionsError::Request)?;
     let expires_at = (Utc::now() + ChronoDuration::seconds(WEBAUTHN_CHALLENGE_SECONDS))
@@ -261,9 +276,69 @@ pub(crate) fn register_options(
             "user": user,
             "pubKeyCredParams": pub_key_cred_params,
             "timeout": 300000,
-            "authenticatorSelection": authenticator_selection
+            "authenticatorSelection": authenticator_selection,
+            "extensions": extensions
         }
     }))
+}
+
+fn project_registration_public_key(
+    mut public_key: Value,
+    expected_rp_id: &str,
+) -> Result<Value, RegisterOptionsError> {
+    let public_key_object = public_key
+        .as_object_mut()
+        .ok_or(RegisterOptionsError::Request)?;
+    let rp = public_key_object
+        .get("rp")
+        .and_then(Value::as_object)
+        .ok_or(RegisterOptionsError::Request)?;
+
+    if rp.get("id").and_then(Value::as_str) != Some(expected_rp_id)
+        || public_key_object.contains_key("extensions")
+    {
+        return Err(RegisterOptionsError::Request);
+    }
+
+    {
+        let authenticator_selection = public_key_object
+            .get_mut("authenticatorSelection")
+            .and_then(Value::as_object_mut)
+            .ok_or(RegisterOptionsError::Request)?;
+
+        if authenticator_selection.get("requireResidentKey") != Some(&Value::Bool(true)) {
+            return Err(RegisterOptionsError::Request);
+        }
+
+        authenticator_selection.insert(
+            "residentKey".to_string(),
+            Value::String("required".to_string()),
+        );
+    }
+
+    public_key_object.insert("extensions".to_string(), json!({ "credProps": true }));
+
+    let extensions = public_key_object
+        .get("extensions")
+        .and_then(Value::as_object)
+        .ok_or(RegisterOptionsError::Request)?;
+    let authenticator_selection = public_key_object
+        .get("authenticatorSelection")
+        .and_then(Value::as_object)
+        .ok_or(RegisterOptionsError::Request)?;
+
+    if extensions.len() != 1
+        || extensions.get("credProps") != Some(&Value::Bool(true))
+        || authenticator_selection
+            .get("residentKey")
+            .and_then(Value::as_str)
+            != Some("required")
+        || authenticator_selection.get("requireResidentKey") != Some(&Value::Bool(true))
+    {
+        return Err(RegisterOptionsError::Request);
+    }
+
+    Ok(public_key)
 }
 
 pub(crate) fn authentication_options(
@@ -352,6 +427,10 @@ pub(crate) fn register_verify(
         return Err(RegisterVerifyError::InvalidWebauthnRegistration);
     }
 
+    if !reports_discoverable_credential(request.credential.client_extension_results.as_ref()) {
+        return Err(RegisterVerifyError::InvalidWebauthnRegistration);
+    }
+
     let state: PasskeyRegistration = serde_json::from_str(&challenge.state_json)
         .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)?;
     let credential: RegisterPublicKeyCredential = serde_json::from_value(
@@ -404,6 +483,15 @@ pub(crate) fn register_verify(
         .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)?;
 
     Ok(json!({ "ok": true }))
+}
+
+fn reports_discoverable_credential(client_extension_results: Option<&Value>) -> bool {
+    client_extension_results
+        .and_then(Value::as_object)
+        .and_then(|results| results.get("credProps"))
+        .and_then(Value::as_object)
+        .and_then(|cred_props| cred_props.get("rk"))
+        == Some(&Value::Bool(true))
 }
 
 pub(crate) fn authentication_verify(
@@ -883,6 +971,17 @@ mod tests {
             serde_json::from_str::<Value>(&state_json).expect("json parses"),
             serde_json::from_str::<Value>(&restored_json).expect("json parses")
         );
+        let state_value = serde_json::from_str::<Value>(&state_json).expect("state json parses");
+        assert_eq!(state_value["rs"]["require_resident_key"], false);
+        assert_eq!(
+            state_value["rs"]["extensions"],
+            json!({
+                "credentialProtectionPolicy": "userVerificationRequired",
+                "enforceCredentialProtectionPolicy": false,
+                "uvm": true,
+                "credProps": true
+            })
+        );
     }
 
     #[test]
@@ -917,6 +1016,18 @@ mod tests {
             expected_user_handle("user-1")
         );
         assert_eq!(body["publicKey"]["pubKeyCredParams"][0]["alg"], -7);
+        assert_eq!(
+            body["publicKey"]["authenticatorSelection"],
+            json!({
+                "residentKey": "required",
+                "requireResidentKey": true,
+                "userVerification": "required"
+            })
+        );
+        assert_eq!(
+            body["publicKey"]["extensions"],
+            json!({ "credProps": true })
+        );
         assert_ne!(
             stored.1,
             json!({ "challenge": body["publicKey"]["challenge"] }).to_string()
@@ -1094,6 +1205,73 @@ mod tests {
 
         assert_eq!(parsed.request_id, "00000000-0000-4000-8000-000000000000");
         assert_eq!(parsed.credential.id, "credential-id");
+    }
+
+    #[test]
+    fn registration_options_projection_fails_closed_on_unexpected_shapes() {
+        let valid = json!({
+            "rp": { "id": "example.com", "name": "auth-mini" },
+            "authenticatorSelection": {
+                "residentKey": "discouraged",
+                "requireResidentKey": true,
+                "userVerification": "required"
+            }
+        });
+        let projected = project_registration_public_key(valid.clone(), "example.com")
+            .expect("expected shape projects");
+
+        assert_eq!(
+            projected["authenticatorSelection"]["residentKey"],
+            "required"
+        );
+        assert_eq!(projected["extensions"], json!({ "credProps": true }));
+        assert!(project_registration_public_key(
+            json!({
+                "rp": { "id": "other.example.com" },
+                "authenticatorSelection": { "requireResidentKey": true }
+            }),
+            "example.com"
+        )
+        .is_err());
+        assert!(project_registration_public_key(
+            json!({
+                "rp": { "id": "example.com" },
+                "authenticatorSelection": { "requireResidentKey": false }
+            }),
+            "example.com"
+        )
+        .is_err());
+        assert!(project_registration_public_key(
+            json!({
+                "rp": { "id": "example.com" },
+                "authenticatorSelection": { "requireResidentKey": true },
+                "extensions": { "credProps": true, "uvm": true }
+            }),
+            "example.com"
+        )
+        .is_err());
+        assert!(project_registration_public_key(json!([]), "example.com").is_err());
+    }
+
+    #[test]
+    fn accepts_only_boolean_true_discoverable_credential_report() {
+        assert!(reports_discoverable_credential(Some(&json!({
+            "credProps": { "rk": true }
+        }))));
+
+        for rejected in [
+            None,
+            Some(json!({})),
+            Some(json!({ "credProps": {} })),
+            Some(json!({ "credProps": { "rk": false } })),
+            Some(json!({ "credProps": { "rk": null } })),
+            Some(json!({ "credProps": { "rk": "true" } })),
+            Some(json!({ "credProps": { "rk": 1 } })),
+            Some(json!({ "credProps": true })),
+            Some(json!([])),
+        ] {
+            assert!(!reports_discoverable_credential(rejected.as_ref()));
+        }
     }
 
     #[test]
@@ -1330,7 +1508,7 @@ mod tests {
 
     fn register_verify_base64_request() -> RegisterVerifyRequest {
         parse_register_verify_request(
-            r#"{"request_id":"00000000-0000-4000-8000-000000000000","credential":{"id":"YQ","rawId":"YQ","type":"public-key","response":{"clientDataJSON":"YQ","attestationObject":"YQ"}}}"#,
+            r#"{"request_id":"00000000-0000-4000-8000-000000000000","credential":{"id":"YQ","rawId":"YQ","type":"public-key","clientExtensionResults":{"credProps":{"rk":true}},"response":{"clientDataJSON":"YQ","attestationObject":"YQ"}}}"#,
         )
         .expect("request parses")
     }

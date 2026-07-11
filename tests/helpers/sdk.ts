@@ -423,6 +423,14 @@ export function createWebauthnRequestRecorder() {
             },
           ],
           timeout: 300000,
+          authenticatorSelection: {
+            residentKey: 'required',
+            requireResidentKey: true,
+            userVerification: 'required',
+          },
+          extensions: {
+            credProps: true,
+          },
           excludeCredentials: [
             {
               id: 'ERITFA',

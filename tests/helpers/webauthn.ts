@@ -54,6 +54,12 @@ type CreateTestPasskeyInput =
       algorithm?: TestPasskeyAlgorithm;
     };
 
+type RegistrationCredentialInput = {
+  credPropsRk?: boolean | 'omit';
+  omitClientExtensionResults?: boolean;
+  additionalClientExtensionResults?: Record<string, unknown>;
+};
+
 export function createTestPasskey(
   input: CreateTestPasskeyInput = 'default-passkey',
 ) {
@@ -77,6 +83,7 @@ export function createTestPasskey(
     createRegistrationCredential(
       options: RegistrationOptions,
       origin: string,
+      input: RegistrationCredentialInput = {},
     ): RegistrationCredential {
       const clientDataJSON = toClientDataJSON({
         type: 'webauthn.create',
@@ -106,12 +113,21 @@ export function createTestPasskey(
           ['authData', authData],
         ]),
       );
+      const clientExtensionResults: Record<string, unknown> = {
+        ...input.additionalClientExtensionResults,
+      };
+
+      if (input.credPropsRk !== 'omit') {
+        clientExtensionResults.credProps = {
+          rk: input.credPropsRk ?? true,
+        };
+      }
 
       return {
         id: encodeBase64Url(credentialId),
         rawId: encodeBase64Url(credentialId),
         type: 'public-key',
-        clientExtensionResults: {},
+        ...(input.omitClientExtensionResults ? {} : { clientExtensionResults }),
         response: {
           clientDataJSON: encodeBase64Url(clientDataJSON),
           attestationObject: encodeBase64Url(attestationObject),
