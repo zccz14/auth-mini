@@ -16,7 +16,8 @@
 - Server verification strictly requires the unsigned client report `credProps.rk=true` in addition to complete WebAuthn verification.
 - Existing credentials remain untouched across successful, rejected, and duplicate registrations.
 - Automated change verification and security review passed.
-- The task remains active because Firefox/Bitwarden chooser interoperability has not been exercised in a suitable graphical test environment and blocks merge/release.
+- The acorn public contract check and operator Firefox/Bitwarden registration and username-less login validation passed; the change is ready for merge/release.
+- The task remains active only until the upstream PR reaches a terminal state and repository cleanup completes.
 
 ## Reusable Decisions
 

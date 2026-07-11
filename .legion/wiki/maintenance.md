@@ -2,8 +2,9 @@
 
 ## Firefox and Bitwarden Interoperability Gate
 
-- **Status**: open, blocks merge/release
-- **Required evidence**: target OS, Firefox and Bitwarden versions; configured RP ID/origin; required registration options; real `credProps.rk=true`; username-less chooser listing; successful login; unchanged existing credential rows.
+- **Status**: satisfied on 2026-07-11; no longer blocks merge/release
+- **Evidence**: acorn served the new public OpenAPI contract and the operator confirmed successful Firefox/Bitwarden registration, username-less discovery, and login on the deployed `b4f6cf7` build.
+- **Evidence limit**: exact browser/extension/OS versions and screenshots were not supplied; credential preservation remains covered by the automated row-snapshot tests.
 - **Constraint**: do not replace this evidence with Node or virtual-authenticator tests and do not relax the strict `rk=true` contract if the target combination fails.
 - **Source**: [change review EXTERNAL-01](../tasks/fix-passkey-discoverable-contract/docs/review-change.md#external-release-gate)
 

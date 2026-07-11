@@ -1,7 +1,7 @@
 # RFC：修复 Passkey Discoverable Credential 契约
 
 > **Profile**：RFC Heavy / High Risk  
-> **Status**：Revised — 待 `review-rfc` re-review  
+> **Status**：Approved — `review-rfc` PASS
 > **Created / Updated**：2026-07-11  
 > **Design source of truth**：本文；任务边界以 `../plan.md` 为准
 

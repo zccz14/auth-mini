@@ -10,12 +10,12 @@
 
 ## 验收标准
 
-- [ ] 注册响应使用配置的 RP ID，并返回 residentKey=required、requireResidentKey=true、extensions.credProps=true。
-- [ ] 无用户名登录继续使用同一 rpId 且省略 allowCredentials，新注册凭据可由 Firefox/Bitwarden 发现并登录。
-- [ ] 注册 verify 仅接受 clientExtensionResults.credProps.rk=true，false 或缺失均拒绝且不持久化新凭据。
-- [ ] 回归测试覆盖真实注册参数、严格 discoverable 验证、成功登录及失败注册保留既有凭据。
-- [ ] OpenAPI 与文档准确描述实际行为和 credProps 未签名限制。
-- [ ] 现有凭据不被自动删除、迁移或改写；新凭据验证前后均只允许显式管理。
+- [x] 注册响应使用配置的 RP ID，并返回 residentKey=required、requireResidentKey=true、extensions.credProps=true。
+- [x] 无用户名登录继续使用同一 rpId 且省略 allowCredentials，新注册凭据可由 Firefox/Bitwarden 发现并登录。
+- [x] 注册 verify 仅接受 clientExtensionResults.credProps.rk=true，false 或缺失均拒绝且不持久化新凭据。
+- [x] 回归测试覆盖真实注册参数、严格 discoverable 验证、成功登录及失败注册保留既有凭据。
+- [x] OpenAPI 与文档准确描述实际行为和 credProps 未签名限制。
+- [x] 现有凭据不被自动删除、迁移或改写；新凭据验证前后均只允许显式管理。
 
 ## 假设 / 约束 / 风险
 
