@@ -11,7 +11,7 @@
 
 ### 🟡 进行中
 
-- 更新并推送最终证据，向上游 Thrimbda/auth-mini:main 创建中文 PR，启用 auto-merge 并跟踪终态。
+- 更新并推送最终证据，向上游 zccz14/auth-mini:main 创建中文 PR，启用 auto-merge 并跟踪终态。
 
 ### ⚠️ 阻塞/待定
 
@@ -58,7 +58,7 @@
 **注意事项：**
 
 - EXTERNAL-01 SATISFIED，review-change 允许 merge/release。
-- PR base 为 Thrimbda/auth-mini:main，body 全中文。
+- PR base 为 zccz14/auth-mini:main，head 为 Thrimbda feature branch，body 全中文。
 
 ---
 

@@ -1,6 +1,6 @@
 # Research：Passkey Discoverable Credential 现状
 
-> **范围**：只读调查；依据 2026-07-11 worktree 与本机 Cargo registry 中锁定依赖源码。  
+> **范围**：只读调查；依据 2026-07-11 worktree 与本机 Cargo registry 中锁定依赖源码。
 > **契约来源**：`../plan.md`、`../tasks.md`。下文将静态源码可证事实与仍待实机确认项分开。
 
 ## 1. 问题复述

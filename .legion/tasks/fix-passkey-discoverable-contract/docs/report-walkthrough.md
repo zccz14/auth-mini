@@ -1,11 +1,11 @@
 # Passkey Discoverable Credential 修复 Walkthrough
 
-> **Mode：implementation**  
+> **Mode：implementation**
 > 本文只整理已有实现、验证、部署静态核对与 operator attestation；不补设计或生产实现。
 
 ## 1. 交付结论
 
-- **上游目标**：`Thrimbda/auth-mini:main`
+- **上游目标**：`zccz14/auth-mini:main`
 - **推荐 PR 标题**：`fix(webauthn): 统一 Passkey discoverable credential 契约`
 - **自动化 change verification**：PASS
 - **`review-change`**：PASS，无 blocking code finding
@@ -121,7 +121,7 @@ Rust/Node e2e 使用 Node `crypto` 生成有效 packed attestation 与 assertion
 
 ## 9. Review 与发布结论
 
-`review-change` 最终结论为 **PASS**，无 blocking finding。自动化、acorn 公网 contract 与 operator browser attestation 三层证据均通过；EXTERNAL-01 已满足，允许向 `Thrimbda/auth-mini:main` merge，并允许随后自动 release/deploy。详见 [test-report](test-report.md#L3-L13) 与 [review-change](review-change.md#L33-L69)。
+`review-change` 最终结论为 **PASS**，无 blocking finding。自动化、acorn 公网 contract 与 operator browser attestation 三层证据均通过；EXTERNAL-01 已满足，允许向 `zccz14/auth-mini:main` merge，并允许随后自动 release/deploy。详见 [test-report](test-report.md#L3-L13) 与 [review-change](review-change.md#L33-L69)。
 
 保留的非阻塞 residual：SDK 单测尚未直接执行原生 `getClientExtensionResults()` 分支；browser/operator 版本元数据缺失；`credProps.rk` 固有 unsigned；部署制品与本地产物 hash 不同且未证明 reproducible build。
 

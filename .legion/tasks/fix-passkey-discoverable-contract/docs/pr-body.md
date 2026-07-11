@@ -2,7 +2,7 @@
 
 这会造成“注册成功但无法登录”的错误承诺，直接破坏现有 Passkey 登录主路径，因此必须让注册与登录共享同一 discoverable credential 契约。
 
-**合并目标：** `Thrimbda/auth-mini:main`
+**合并目标：** `zccz14/auth-mini:main`（head：`Thrimbda:legion/fix-passkey-discoverable-contract-webauthn`）
 
 ## 变更内容
 
@@ -56,7 +56,7 @@ Rust/Node e2e 通过 Node `crypto` 生成有效 attestation/assertion，但 help
 
 该证据是用户操作方确认，不是本代理直接执行的 GUI 记录；未提供具体浏览器/扩展/OS 版本、截图、HAR 或 Network export，因此不补写这些信息。Node helper 与用户真实 chooser 证据边界保持分离。
 
-**EXTERNAL-01：SATISFIED。** 自动化、评审、acorn 公网 contract 与用户 Firefox/Bitwarden 实机确认均通过，允许 merge 到 `Thrimbda/auth-mini:main`，也允许随后自动 release/deploy。
+**EXTERNAL-01：SATISFIED。** 自动化、评审、acorn 公网 contract 与用户 Firefox/Bitwarden 实机确认均通过，允许 merge 到 `zccz14/auth-mini:main`，也允许随后自动 release/deploy。
 
 ## 兼容性与 API 注意事项
 
