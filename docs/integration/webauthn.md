@@ -29,11 +29,37 @@ Registration options require discoverable credentials:
     "timeout": 300000,
     "authenticatorSelection": {
       "residentKey": "required",
-      "userVerification": "preferred"
+      "requireResidentKey": true,
+      "userVerification": "required"
+    },
+    "extensions": {
+      "credProps": true
     }
   }
 }
 ```
+
+Send the browser's registration extension result with the credential:
+
+```json
+{
+  "request_id": "<uuid>",
+  "credential": {
+    "id": "<base64url>",
+    "rawId": "<base64url>",
+    "type": "public-key",
+    "clientExtensionResults": {
+      "credProps": { "rk": true }
+    },
+    "response": {
+      "clientDataJSON": "<base64url>",
+      "attestationObject": "<base64url>"
+    }
+  }
+}
+```
+
+auth-mini accepts registration only when `clientExtensionResults.credProps.rk` is the JSON boolean `true` and the complete WebAuthn ceremony is valid. A missing value, `false`, `null`, or a value of another type returns `400 invalid_webauthn_registration`. The challenge remains unconsumed and no credential is written.
 
 ## Authentication flow
 
@@ -55,6 +81,8 @@ Authentication options are username-less and intentionally omit `allowCredential
 }
 ```
 
+Registration and authentication use the same configured RP ID. Because authentication does not supply `allowCredentials`, the browser or authenticator must discover the credential for that RP.
+
 ## `rp_id` constraints
 
 `rp_id` is configured once in `app_meta` through the administrator configuration API or GUI. Passkey registration and login always run on the Auth Mini server page, so WebAuthn origin is derived from the configured issuer and clients do not choose an origin or RP ID per request. The configured `rp_id` must satisfy normal WebAuthn rules relative to the issuer hostname: typically the same host or a parent domain, while `localhost` and IP-based setups generally require an exact match.
@@ -63,6 +91,10 @@ Authentication options are username-less and intentionally omit `allowCredential
 
 Discoverable credentials are what make auth-mini's passkey flow truly username-less. The browser or OS can offer available passkeys first, so the user does not need to type an identifier before authentication.
 
+`credProps.rk` is an unsigned client report that page JavaScript can modify. It enforces auth-mini's registration protocol policy but is not cryptographic proof of authenticator storage. The Rust WebAuthn library normalizes an accepted report as `Unsigned(CredProps)` inside the new credential's `passkey_json`; auth-mini does not store the raw extension payload separately or copy it into a trusted column.
+
+Existing credentials are never migrated, replaced, or deleted by registration. An older non-discoverable credential remains available for explicit management but may not appear in username-less authentication because auth-mini does not provide an `allowCredentials` fallback. Registering a duplicate credential ID returns the same generic `400 invalid_webauthn_registration` response and leaves the existing credential unchanged.
+
 ## Challenge behavior
 
 - Generating a new registration challenge invalidates the previous unused registration challenge for the same signed-in user.
@@ -70,6 +102,6 @@ Discoverable credentials are what make auth-mini's passkey flow truly username-l
 
 ## Library and algorithm note
 
-WebAuthn registration and authentication verification use `@simplewebauthn/server`.
+The Rust backend uses the high-level `webauthn-rs` 0.5.5 passkey registration and discoverable-authentication APIs. Registration requests user verification as `required`; authentication currently requests `preferred`.
 
 auth-mini intentionally limits advertised registration algorithms to `-7` (ES256) and `-257` (RS256), because those are the algorithms explicitly covered by the integration test suite.

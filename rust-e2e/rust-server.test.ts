@@ -248,11 +248,22 @@ describe.sequential('rust external server e2e smoke', () => {
     );
     expect(registerOptionsResponse.status).toBe(200);
     const registerOptions =
-      (await registerOptionsResponse.json()) as WebauthnOptionsResponse;
+      (await registerOptionsResponse.json()) as WebauthnRegistrationOptionsResponse;
     expect(registerOptions.publicKey).toMatchObject({
       challenge: expect.any(String),
       rp: { id: webauthnRpId, name: brandName },
+      authenticatorSelection: {
+        residentKey: 'required',
+        requireResidentKey: true,
+        userVerification: 'required',
+      },
     });
+    expect(registerOptions.publicKey.extensions).toEqual({ credProps: true });
+    expect(Object.keys(registerOptions.publicKey.extensions)).toEqual([
+      'credProps',
+    ]);
+
+    const rawExtensionSentinel = 'raw-extension-must-not-be-persisted';
 
     const registerVerifyResponse = await postJson(
       `${baseUrl}/webauthn/register/verify`,
@@ -261,6 +272,11 @@ describe.sequential('rust external server e2e smoke', () => {
         credential: passkey.createRegistrationCredential(
           registerOptions.publicKey,
           webauthnOrigin,
+          {
+            additionalClientExtensionResults: {
+              authMiniRawExtensionSentinel: rawExtensionSentinel,
+            },
+          },
         ),
       },
       emailTokens.access_token,
@@ -278,6 +294,153 @@ describe.sequential('rust external server e2e smoke', () => {
       rp_id: webauthnRpId,
       last_used_at: null,
     });
+    const firstCredentialSnapshot = getWebauthnCredentialRow(
+      dbPath,
+      passkey.credentialId,
+    );
+    expect(firstCredentialSnapshot).toBeDefined();
+    if (!firstCredentialSnapshot) {
+      throw new Error('registered credential row was not stored');
+    }
+    expect(
+      hasNormalizedUnsignedCredProps(
+        JSON.parse(firstCredentialSnapshot.passkey_json),
+      ),
+    ).toBe(true);
+    expect(firstCredentialSnapshot.passkey_json).not.toContain(
+      rawExtensionSentinel,
+    );
+
+    const falseReportPasskey = createTestPasskey('rust-e2e-rk-false');
+    const falseReportOptions = await requestRegistrationOptions(
+      baseUrl,
+      emailTokens.access_token,
+      webauthnOrigin,
+    );
+    const falseReportResponse = await postJson(
+      `${baseUrl}/webauthn/register/verify`,
+      {
+        request_id: falseReportOptions.request_id,
+        credential: falseReportPasskey.createRegistrationCredential(
+          falseReportOptions.publicKey,
+          webauthnOrigin,
+          { credPropsRk: false },
+        ),
+      },
+      emailTokens.access_token,
+      webauthnOrigin,
+    );
+    expect(falseReportResponse.status).toBe(400);
+    expect(await falseReportResponse.json()).toEqual({
+      error: 'invalid_webauthn_registration',
+    });
+    expect(
+      getWebauthnChallengeConsumedAt(dbPath, falseReportOptions.request_id),
+    ).toBeNull();
+    expect(
+      getWebauthnCredentialRow(dbPath, falseReportPasskey.credentialId),
+    ).toBeUndefined();
+    expect(getWebauthnCredentialRow(dbPath, passkey.credentialId)).toEqual(
+      firstCredentialSnapshot,
+    );
+
+    const missingReportPasskey = createTestPasskey('rust-e2e-rk-missing');
+    const missingReportOptions = await requestRegistrationOptions(
+      baseUrl,
+      emailTokens.access_token,
+      webauthnOrigin,
+    );
+    const missingReportResponse = await postJson(
+      `${baseUrl}/webauthn/register/verify`,
+      {
+        request_id: missingReportOptions.request_id,
+        credential: missingReportPasskey.createRegistrationCredential(
+          missingReportOptions.publicKey,
+          webauthnOrigin,
+          { omitClientExtensionResults: true },
+        ),
+      },
+      emailTokens.access_token,
+      webauthnOrigin,
+    );
+    expect(missingReportResponse.status).toBe(400);
+    expect(await missingReportResponse.json()).toEqual({
+      error: 'invalid_webauthn_registration',
+    });
+    expect(
+      getWebauthnChallengeConsumedAt(dbPath, missingReportOptions.request_id),
+    ).toBeNull();
+    expect(
+      getWebauthnCredentialRow(dbPath, missingReportPasskey.credentialId),
+    ).toBeUndefined();
+    expect(getWebauthnCredentialRow(dbPath, passkey.credentialId)).toEqual(
+      firstCredentialSnapshot,
+    );
+
+    const secondPasskey = createTestPasskey('rust-e2e-second-passkey');
+    const secondRegisterOptions = await requestRegistrationOptions(
+      baseUrl,
+      emailTokens.access_token,
+      webauthnOrigin,
+    );
+    const secondRegisterResponse = await postJson(
+      `${baseUrl}/webauthn/register/verify`,
+      {
+        request_id: secondRegisterOptions.request_id,
+        credential: secondPasskey.createRegistrationCredential(
+          secondRegisterOptions.publicKey,
+          webauthnOrigin,
+        ),
+      },
+      emailTokens.access_token,
+      webauthnOrigin,
+    );
+    expect(secondRegisterResponse.status).toBe(200);
+    expect(await secondRegisterResponse.json()).toEqual({ ok: true });
+    expect(getWebauthnCredentialRow(dbPath, passkey.credentialId)).toEqual(
+      firstCredentialSnapshot,
+    );
+    const secondCredentialSnapshot = getWebauthnCredentialRow(
+      dbPath,
+      secondPasskey.credentialId,
+    );
+    expect(secondCredentialSnapshot).toBeDefined();
+    if (!secondCredentialSnapshot) {
+      throw new Error('second credential row was not stored');
+    }
+    expect(getWebauthnCredentialCount(dbPath)).toBe(2);
+
+    const duplicateOptions = await requestRegistrationOptions(
+      baseUrl,
+      emailTokens.access_token,
+      webauthnOrigin,
+    );
+    const duplicateResponse = await postJson(
+      `${baseUrl}/webauthn/register/verify`,
+      {
+        request_id: duplicateOptions.request_id,
+        credential: passkey.createRegistrationCredential(
+          duplicateOptions.publicKey,
+          webauthnOrigin,
+        ),
+      },
+      emailTokens.access_token,
+      webauthnOrigin,
+    );
+    expect(duplicateResponse.status).toBe(400);
+    expect(await duplicateResponse.json()).toEqual({
+      error: 'invalid_webauthn_registration',
+    });
+    expect(
+      getWebauthnChallengeConsumedAt(dbPath, duplicateOptions.request_id),
+    ).toBeNull();
+    expect(getWebauthnCredentialRow(dbPath, passkey.credentialId)).toEqual(
+      firstCredentialSnapshot,
+    );
+    expect(
+      getWebauthnCredentialRow(dbPath, secondPasskey.credentialId),
+    ).toEqual(secondCredentialSnapshot);
+    expect(getWebauthnCredentialCount(dbPath)).toBe(2);
 
     const authOptionsResponse = await postJson(
       `${baseUrl}/webauthn/authenticate/options`,
@@ -287,11 +450,12 @@ describe.sequential('rust external server e2e smoke', () => {
     );
     expect(authOptionsResponse.status).toBe(200);
     const authOptions =
-      (await authOptionsResponse.json()) as WebauthnOptionsResponse;
+      (await authOptionsResponse.json()) as WebauthnAuthenticationOptionsResponse;
     expect(authOptions.publicKey).toMatchObject({
       challenge: expect.any(String),
       rpId: webauthnRpId,
     });
+    expect(authOptions.publicKey).not.toHaveProperty('allowCredentials');
 
     const authVerifyResponse = await postJson(
       `${baseUrl}/webauthn/authenticate/verify`,
@@ -319,6 +483,9 @@ describe.sequential('rust external server e2e smoke', () => {
       rp_id: webauthnRpId,
       last_used_at: expect.any(String),
     });
+    expect(
+      getWebauthnCredentialRow(dbPath, secondPasskey.credentialId),
+    ).toEqual(secondCredentialSnapshot);
 
     const webauthnMe = await fetch(`${baseUrl}/me`, {
       headers: bearerHeaders(webauthnTokens.access_token),
@@ -329,7 +496,7 @@ describe.sequential('rust external server e2e smoke', () => {
       active_sessions: expect.arrayContaining([
         expect.objectContaining({ auth_method: 'webauthn' }),
       ]),
-      webauthn_credentials: [
+      webauthn_credentials: expect.arrayContaining([
         expect.objectContaining({
           id: passkey.credentialId,
           credential_id: passkey.credentialId,
@@ -337,7 +504,13 @@ describe.sequential('rust external server e2e smoke', () => {
           rp_id: webauthnRpId,
           last_used_at: expect.any(String),
         }),
-      ],
+        expect.objectContaining({
+          id: secondPasskey.credentialId,
+          credential_id: secondPasskey.credentialId,
+          rp_id: webauthnRpId,
+          last_used_at: null,
+        }),
+      ]),
     });
   });
 });
@@ -349,14 +522,54 @@ type TokenResponse = {
   refresh_token: string;
 };
 
-type WebauthnOptionsResponse = {
+type WebauthnRegistrationOptionsResponse = {
   request_id: string;
   publicKey: {
     challenge: string;
-    rp?: { id: string; name: string };
-    rpId?: string;
+    rp: { id: string; name: string };
+    user: { id: string; name: string; displayName: string };
+    authenticatorSelection: {
+      residentKey: 'required';
+      requireResidentKey: true;
+      userVerification: 'required';
+    };
+    extensions: { credProps: true };
   };
 };
+
+type WebauthnAuthenticationOptionsResponse = {
+  request_id: string;
+  publicKey: {
+    challenge: string;
+    rpId: string;
+    allowCredentials?: unknown;
+  };
+};
+
+type WebauthnCredentialRow = {
+  credential_id: string;
+  user_id: string;
+  passkey_json: string;
+  rp_id: string;
+  last_used_at: string | null;
+  created_at: string;
+};
+
+async function requestRegistrationOptions(
+  baseUrl: string,
+  accessToken: string,
+  origin: string,
+) {
+  const response = await postJson(
+    `${baseUrl}/webauthn/register/options`,
+    {},
+    accessToken,
+    origin,
+  );
+  expect(response.status).toBe(200);
+
+  return (await response.json()) as WebauthnRegistrationOptionsResponse;
+}
 
 function seedOtp(dbPath: string, email: string, code: string) {
   const db = new Database(dbPath);
@@ -388,6 +601,84 @@ function getWebauthnCredential(dbPath: string, credentialId: string) {
   } finally {
     db.close();
   }
+}
+
+function getWebauthnCredentialRow(dbPath: string, credentialId: string) {
+  const db = new Database(dbPath, { readonly: true });
+
+  try {
+    return db
+      .prepare(
+        `SELECT credential_id, user_id, passkey_json, rp_id, last_used_at, created_at
+         FROM webauthn_credentials WHERE credential_id = ?`,
+      )
+      .get(credentialId) as WebauthnCredentialRow | undefined;
+  } finally {
+    db.close();
+  }
+}
+
+function getWebauthnChallengeConsumedAt(dbPath: string, requestId: string) {
+  const db = new Database(dbPath, { readonly: true });
+
+  try {
+    const row = db
+      .prepare(
+        'SELECT consumed_at FROM webauthn_challenges WHERE request_id = ?',
+      )
+      .get(requestId) as { consumed_at: string | null } | undefined;
+
+    return row?.consumed_at;
+  } finally {
+    db.close();
+  }
+}
+
+function getWebauthnCredentialCount(dbPath: string) {
+  const db = new Database(dbPath, { readonly: true });
+
+  try {
+    const row = db
+      .prepare('SELECT COUNT(*) AS count FROM webauthn_credentials')
+      .get() as { count: number };
+
+    return row.count;
+  } finally {
+    db.close();
+  }
+}
+
+function hasNormalizedUnsignedCredProps(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some(hasNormalizedUnsignedCredProps);
+  }
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  for (const [key, nested] of Object.entries(value)) {
+    if (
+      (key === 'cred_props' || key === 'credProps') &&
+      nested &&
+      typeof nested === 'object' &&
+      'Unsigned' in nested
+    ) {
+      const unsigned = nested.Unsigned;
+      if (
+        unsigned &&
+        typeof unsigned === 'object' &&
+        'rk' in unsigned &&
+        unsigned.rk === true
+      ) {
+        return true;
+      }
+    }
+    if (hasNormalizedUnsignedCredProps(nested)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 async function getFreePort() {

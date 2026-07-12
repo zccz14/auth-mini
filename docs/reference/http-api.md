@@ -174,15 +174,23 @@ Response shape:
     "timeout": 300000,
     "authenticatorSelection": {
       "residentKey": "required",
-      "userVerification": "preferred"
+      "requireResidentKey": true,
+      "userVerification": "required"
+    },
+    "extensions": {
+      "credProps": true
     }
   }
 }
 ```
 
+The RP ID comes from server configuration. The response always requests a discoverable credential with `residentKey: "required"`, the legacy-compatible `requireResidentKey: true`, and exactly the `credProps: true` extension input.
+
 ### `POST /webauthn/authenticate/options`
 
 Starts a username-less passkey sign-in challenge.
+
+The response uses the same configured RP ID as registration and intentionally has no `allowCredentials` field. auth-mini does not offer a username-first fallback for credentials that the client cannot discover.
 
 Request body:
 
@@ -271,7 +279,9 @@ Example request body:
     "rawId": "<base64url>",
     "type": "public-key",
     "authenticatorAttachment": "platform",
-    "clientExtensionResults": {},
+    "clientExtensionResults": {
+      "credProps": { "rk": true }
+    },
     "response": {
       "clientDataJSON": "<base64url>",
       "attestationObject": "<base64url>",
@@ -280,6 +290,14 @@ Example request body:
   }
 }
 ```
+
+`clientExtensionResults.credProps.rk` must be the JSON boolean `true`. `false`, a missing value, `null`, or another JSON type returns the existing generic `400 invalid_webauthn_registration` response. The server still performs the complete WebAuthn registration verification; the unsigned extension result never replaces challenge, origin, RP ID, user-verification, algorithm, or attestation checks.
+
+Rejected registration does not consume the challenge or write, update, or delete a credential. A cryptographically valid duplicate credential ID also returns `400 invalid_webauthn_registration`; its transaction rolls back, preserving the challenge and all fields of the existing row.
+
+`credProps.rk` is client-reported and unsigned, so it is a protocol policy signal rather than proof that an authenticator stored a resident key. For successful registration, `webauthn-rs` 0.5.5 normalizes it as `Unsigned(CredProps)` inside the new credential's `passkey_json`. auth-mini does not persist the raw extension payload separately or copy it into a trusted column.
+
+Registration is append-only. Existing credentials are not migrated, replaced, rewritten, or deleted. Older non-discoverable credentials can remain visible for explicit management while still being unavailable to username-less authentication.
 
 Response shape:
 

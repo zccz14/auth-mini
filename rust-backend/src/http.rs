@@ -2360,6 +2360,18 @@ mod tests {
         assert_eq!(body["publicKey"]["rp"]["id"], "example.com");
         assert_eq!(body["publicKey"]["user"]["name"], "user@example.com");
         assert_eq!(
+            body["publicKey"]["authenticatorSelection"],
+            serde_json::json!({
+                "residentKey": "required",
+                "requireResidentKey": true,
+                "userVerification": "required"
+            })
+        );
+        assert_eq!(
+            body["publicKey"]["extensions"],
+            serde_json::json!({ "credProps": true })
+        );
+        assert_eq!(
             stored,
             (
                 "register".to_string(),
@@ -2489,6 +2501,139 @@ mod tests {
             r#"{"error":"invalid_webauthn_registration"}"#
         );
         assert!(consumed_at.is_none());
+    }
+
+    #[test]
+    fn webauthn_register_verify_rejects_non_true_cred_props_without_side_effects() {
+        for (case_name, client_extension_results) in [
+            (
+                "false",
+                Some(serde_json::json!({ "credProps": { "rk": false } })),
+            ),
+            ("missing", None),
+        ] {
+            let db_path = test_db_path(&format!(
+                "http-webauthn-register-verify-cred-props-{case_name}"
+            ));
+            let connection = Connection::open(&db_path).expect("database opens");
+            create_auth_schema(&connection);
+            connection
+                .execute(
+                    "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                    ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+                )
+                .expect("user inserted");
+            connection
+                .execute(
+                    "INSERT INTO webauthn_challenges
+                     (request_id, type, state_json, user_id, expires_at, rp_id, origin)
+                     VALUES (?1, 'register', ?2, ?3, ?4, ?5, ?6)",
+                    (
+                        "00000000-0000-4000-8000-000000000000",
+                        "state-not-reached",
+                        "user-1",
+                        "9999-01-01T00:00:00.000Z",
+                        "example.com",
+                        "https://app.example.com",
+                    ),
+                )
+                .expect("challenge inserted");
+            connection
+                .execute(
+                    "INSERT INTO webauthn_credentials
+                     (credential_id, user_id, passkey_json, rp_id, last_used_at, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    (
+                        "existing-credential",
+                        "user-1",
+                        r#"{"existing":true}"#,
+                        "example.com",
+                        "2026-01-02T00:00:00.000Z",
+                        "2026-01-01T00:00:00.000Z",
+                    ),
+                )
+                .expect("existing credential inserted");
+            let before: (String, String, String, String, Option<String>, String) = connection
+                .query_row(
+                    "SELECT credential_id, user_id, passkey_json, rp_id, last_used_at, created_at
+                     FROM webauthn_credentials WHERE credential_id = 'existing-credential'",
+                    [],
+                    |row| {
+                        Ok((
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2)?,
+                            row.get(3)?,
+                            row.get(4)?,
+                            row.get(5)?,
+                        ))
+                    },
+                )
+                .expect("existing credential snapshot reads");
+            let pair =
+                mint_session_tokens(&connection, "user-1", "email_otp", "auth-mini", None, None)
+                    .expect("session minted");
+            drop(connection);
+
+            let response = route_request(
+                &Request {
+                    method: "POST".to_string(),
+                    path: "/webauthn/register/verify".to_string(),
+                    headers: vec![(
+                        "Authorization".to_string(),
+                        format!("Bearer {}", pair.access_token),
+                    )],
+                    body: register_verify_body_with_extension_results(client_extension_results),
+                },
+                &Config {
+                    database: Some(crate::DatabaseConfig {
+                        db_path: db_path.clone(),
+                    }),
+                    ..Config::default()
+                },
+            )
+            .expect("webauthn register verify response builds");
+            let connection = Connection::open(db_path).expect("database opens");
+            let consumed_at: Option<String> = connection
+                .query_row(
+                    "SELECT consumed_at FROM webauthn_challenges WHERE request_id = ?1",
+                    ["00000000-0000-4000-8000-000000000000"],
+                    |row| row.get(0),
+                )
+                .expect("consumed_at reads");
+            let after: (String, String, String, String, Option<String>, String) = connection
+                .query_row(
+                    "SELECT credential_id, user_id, passkey_json, rp_id, last_used_at, created_at
+                     FROM webauthn_credentials WHERE credential_id = 'existing-credential'",
+                    [],
+                    |row| {
+                        Ok((
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2)?,
+                            row.get(3)?,
+                            row.get(4)?,
+                            row.get(5)?,
+                        ))
+                    },
+                )
+                .expect("existing credential reads");
+            let credential_count: i64 = connection
+                .query_row("SELECT COUNT(*) FROM webauthn_credentials", [], |row| {
+                    row.get(0)
+                })
+                .expect("credential count reads");
+
+            assert_eq!(response.status, 400, "case: {case_name}");
+            assert_eq!(
+                response.body_text(),
+                r#"{"error":"invalid_webauthn_registration"}"#,
+                "case: {case_name}"
+            );
+            assert!(consumed_at.is_none(), "case: {case_name}");
+            assert_eq!(after, before, "case: {case_name}");
+            assert_eq!(credential_count, 1, "case: {case_name}");
+        }
     }
 
     #[test]
@@ -3224,7 +3369,33 @@ mod tests {
     }
 
     fn register_verify_body() -> String {
-        r#"{"request_id":"00000000-0000-4000-8000-000000000000","credential":{"id":"credential-id","rawId":"raw-id","type":"public-key","response":{"clientDataJSON":"client-data","attestationObject":"attestation"}}}"#.to_string()
+        register_verify_body_with_extension_results(Some(
+            serde_json::json!({ "credProps": { "rk": true } }),
+        ))
+    }
+
+    fn register_verify_body_with_extension_results(
+        client_extension_results: Option<serde_json::Value>,
+    ) -> String {
+        let mut credential = serde_json::json!({
+            "id": "credential-id",
+            "rawId": "raw-id",
+            "type": "public-key",
+            "response": {
+                "clientDataJSON": "client-data",
+                "attestationObject": "attestation"
+            }
+        });
+
+        if let Some(results) = client_extension_results {
+            credential["clientExtensionResults"] = results;
+        }
+
+        serde_json::json!({
+            "request_id": "00000000-0000-4000-8000-000000000000",
+            "credential": credential
+        })
+        .to_string()
     }
 
     fn authentication_verify_body() -> String {

@@ -601,7 +601,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/OkResponse'
         '400':
-          description: Request body or ceremony verification failed
+          description: Request body, ceremony verification, or credential storage failed
           content:
             application/json:
               schema:
@@ -617,14 +617,6 @@ paths:
           $ref: '#/components/responses/InvalidAccessToken'
         '403':
           $ref: '#/components/responses/InsufficientAuthenticationMethod'
-        '409':
-          description: Credential id already belongs to another stored credential
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error: duplicate_credential
   /webauthn/authenticate/options:
     post:
       security: []
@@ -1327,6 +1319,7 @@ components:
         - pubKeyCredParams
         - timeout
         - authenticatorSelection
+        - extensions
       properties:
         challenge:
           type: string
@@ -1376,12 +1369,27 @@ components:
           additionalProperties: false
           required:
             - residentKey
+            - requireResidentKey
             - userVerification
           properties:
             residentKey:
               type: string
+              const: required
+            requireResidentKey:
+              type: boolean
+              const: true
             userVerification:
               type: string
+              const: required
+        extensions:
+          type: object
+          additionalProperties: false
+          required:
+            - credProps
+          properties:
+            credProps:
+              type: boolean
+              const: true
     PublicKeyCredentialRequestOptionsJson:
       type: object
       additionalProperties: true
@@ -1406,6 +1414,7 @@ components:
         - id
         - rawId
         - type
+        - clientExtensionResults
         - response
       properties:
         id:
@@ -1422,6 +1431,22 @@ components:
         clientExtensionResults:
           type: object
           additionalProperties: true
+          description: >-
+            Client-reported, unsigned registration extension output. auth-mini
+            requires credProps.rk=true as a protocol policy signal; it is not
+            cryptographic proof that the authenticator stored a resident key.
+          required:
+            - credProps
+          properties:
+            credProps:
+              type: object
+              additionalProperties: true
+              required:
+                - rk
+              properties:
+                rk:
+                  type: boolean
+                  const: true
         response:
           type: object
           additionalProperties: false
