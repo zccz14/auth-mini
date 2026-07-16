@@ -547,6 +547,10 @@ paths:
         - webauthn
       operationId: createWebauthnRegistrationOptions
       summary: Create passkey registration options for the caller
+      description: >-
+        Email OTP and WebAuthn sessions may create registration options. An
+        Ed25519 session may create options only while the caller has no stored
+        passkey; otherwise the route returns insufficient_authentication_method.
       security:
         - bearerAuth: []
       requestBody:
@@ -585,6 +589,11 @@ paths:
         - webauthn
       operationId: verifyWebauthnRegistration
       summary: Verify a passkey registration ceremony
+      description: >-
+        Email OTP and WebAuthn sessions may complete registration. An Ed25519
+        session may complete only the caller's first passkey registration. The
+        server checks that restriction again when storing the credential, so a
+        ceremony started before another passkey was added cannot bypass it.
       security:
         - bearerAuth: []
       requestBody:

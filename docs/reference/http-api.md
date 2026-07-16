@@ -146,7 +146,7 @@ Starts passkey registration for an authenticated user.
 
 Request: send `Authorization: Bearer <access_token>`.
 
-This route requires a human-authenticated session. The presented access token must carry an `amr` that includes either `email_otp` or `webauthn`.
+Sessions with `amr: ["email_otp"]` or `amr: ["webauthn"]` may start registration. A session with `amr: ["ed25519"]` may start registration only when the current user has no stored PassKey. This exception lets an administrator created without an email address bootstrap a first PassKey. Once the user has a PassKey, an Ed25519 session receives `403 insufficient_authentication_method`.
 
 Request body:
 
@@ -265,7 +265,7 @@ Completes passkey registration for an authenticated user.
 
 Request: send `Authorization: Bearer <access_token>`.
 
-This route requires a human-authenticated session. The presented access token must carry an `amr` that includes either `email_otp` or `webauthn`.
+Sessions with `amr: ["email_otp"]` or `amr: ["webauthn"]` may complete registration. A session with `amr: ["ed25519"]` may complete only the current user's first PassKey registration. The server checks this condition again when it stores the credential; if another PassKey was added after options were created, verification returns `403 insufficient_authentication_method` without consuming the registration challenge or storing the new credential.
 
 Serialize the browser `PublicKeyCredential` into JSON before sending it. Keep string fields as-is, include `authenticatorAttachment` when present, include `clientExtensionResults`, base64url-encode binary fields such as `rawId`, `response.clientDataJSON`, and `response.attestationObject`, and keep `response.transports` as a plain string array when your client exposes it.
 

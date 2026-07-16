@@ -19,9 +19,10 @@ use crate::email_verify::{
 use crate::jwks::{list_admin_keys, list_public_keys, rotate_keys};
 use crate::openapi::{read_openapi_json, read_openapi_yaml};
 use crate::session::{
-    authenticate_access_token, current_user_response, logout_peer_session, logout_session,
-    mint_session_tokens, parse_refresh_request, refresh_session_tokens, require_admin_auth,
-    require_passkey_management_auth, token_json, SessionError,
+    authenticate_access_token, authorize_passkey_registration, current_user_response,
+    logout_peer_session, logout_session, mint_session_tokens, parse_refresh_request,
+    refresh_session_tokens, require_admin_auth, require_passkey_management_auth, token_json,
+    SessionError,
 };
 use crate::setup::{
     apply_admin_config, apply_admin_setup, parse_admin_config_request, parse_admin_setup_request,
@@ -699,11 +700,15 @@ fn handle_webauthn_register_options(request: &Request, config: &Config) -> io::R
     let Some((connection, auth)) = authenticated_connection(request, config)? else {
         return Ok(Response::json_error(401, "invalid_access_token"));
     };
-    if require_passkey_management_auth(&auth).is_err() {
-        return Ok(Response::json_error(
-            403,
-            "insufficient_authentication_method",
-        ));
+    match authorize_passkey_registration(&connection, &auth) {
+        Ok(_) => {}
+        Err(SessionError::InsufficientAuthenticationMethod) => {
+            return Ok(Response::json_error(
+                403,
+                "insufficient_authentication_method",
+            ));
+        }
+        Err(_) => return Ok(Response::json_error(401, "invalid_access_token")),
     }
     let parsed = match parse_options_request(&request.body) {
         Ok(parsed) => parsed,
@@ -726,19 +731,27 @@ fn handle_webauthn_register_verify(request: &Request, config: &Config) -> io::Re
     let Some((connection, auth)) = authenticated_connection(request, config)? else {
         return Ok(Response::json_error(401, "invalid_access_token"));
     };
-    if require_passkey_management_auth(&auth).is_err() {
-        return Ok(Response::json_error(
-            403,
-            "insufficient_authentication_method",
-        ));
-    }
+    let authorization = match authorize_passkey_registration(&connection, &auth) {
+        Ok(authorization) => authorization,
+        Err(SessionError::InsufficientAuthenticationMethod) => {
+            return Ok(Response::json_error(
+                403,
+                "insufficient_authentication_method",
+            ));
+        }
+        Err(_) => return Ok(Response::json_error(401, "invalid_access_token")),
+    };
     let parsed = match parse_register_verify_request(&request.body) {
         Ok(parsed) => parsed,
         Err(_) => return Ok(Response::json_error(400, "invalid_request")),
     };
 
-    match webauthn_register_verify(&connection, &auth.user_id, &parsed) {
+    match webauthn_register_verify(&connection, &auth.user_id, &parsed, authorization) {
         Ok(body) => Ok(Response::json_value(200, body)),
+        Err(RegisterVerifyError::InsufficientAuthenticationMethod) => Ok(Response::json_error(
+            403,
+            "insufficient_authentication_method",
+        )),
         Err(RegisterVerifyError::InvalidWebauthnRegistration) => {
             Ok(Response::json_error(400, "invalid_webauthn_registration"))
         }
@@ -2400,7 +2413,58 @@ mod tests {
     }
 
     #[test]
-    fn rejects_webauthn_register_options_without_passkey_management_auth() {
+    fn creates_first_webauthn_register_options_for_ed25519_admin_without_email() {
+        let db_path = test_db_path("http-webauthn-register-options-first-ed25519");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email) VALUES (?1, NULL)",
+                ["admin-user"],
+            )
+            .expect("admin user inserted");
+        connection
+            .execute(
+                "UPDATE app_meta SET admin_user_id = 'admin-user' WHERE id = 'APP'",
+                [],
+            )
+            .expect("admin user configured");
+        let pair = mint_session_tokens(
+            &connection,
+            "admin-user",
+            "ed25519",
+            "auth-mini",
+            None,
+            None,
+        )
+        .expect("session minted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/webauthn/register/options".to_string(),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", pair.access_token),
+                )],
+                body: r#"{}"#.to_string(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig { db_path }),
+                ..Config::default()
+            },
+        )
+        .expect("webauthn register options response builds");
+        let body: serde_json::Value =
+            serde_json::from_str(&response.body_text()).expect("options response parses");
+
+        assert_eq!(response.status, 200);
+        assert_eq!(body["publicKey"]["user"]["name"], "admin-user");
+    }
+
+    #[test]
+    fn rejects_webauthn_register_options_for_ed25519_user_with_passkey() {
         let db_path = test_db_path("http-webauthn-register-options-rejects-auth-method");
         let connection = Connection::open(&db_path).expect("database opens");
         create_auth_schema(&connection);
@@ -2410,6 +2474,14 @@ mod tests {
                 ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
             )
             .expect("user inserted");
+        connection
+            .execute(
+                "INSERT INTO webauthn_credentials
+                 (credential_id, user_id, passkey_json, rp_id)
+                 VALUES ('existing-passkey', 'user-1', '{}', 'example.com')",
+                [],
+            )
+            .expect("passkey inserted");
         let pair = mint_session_tokens(&connection, "user-1", "ed25519", "auth-mini", None, None)
             .expect("session minted");
         drop(connection);
@@ -2430,6 +2502,53 @@ mod tests {
             },
         )
         .expect("webauthn register options response builds");
+
+        assert_eq!(response.status, 403);
+        assert_eq!(
+            response.body_text(),
+            r#"{"error":"insufficient_authentication_method"}"#
+        );
+    }
+
+    #[test]
+    fn rejects_webauthn_register_verify_for_ed25519_user_with_passkey() {
+        let db_path = test_db_path("http-webauthn-register-verify-rejects-second-ed25519");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserted");
+        connection
+            .execute(
+                "INSERT INTO webauthn_credentials
+                 (credential_id, user_id, passkey_json, rp_id)
+                 VALUES ('existing-passkey', 'user-1', '{}', 'example.com')",
+                [],
+            )
+            .expect("passkey inserted");
+        let pair = mint_session_tokens(&connection, "user-1", "ed25519", "auth-mini", None, None)
+            .expect("session minted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/webauthn/register/verify".to_string(),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", pair.access_token),
+                )],
+                body: register_verify_body(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig { db_path }),
+                ..Config::default()
+            },
+        )
+        .expect("webauthn register verify response builds");
 
         assert_eq!(response.status, 403);
         assert_eq!(

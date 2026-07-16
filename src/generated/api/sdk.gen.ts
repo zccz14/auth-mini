@@ -226,6 +226,8 @@ export const updateEd25519Credential = <ThrowOnError extends boolean = false>(op
 
 /**
  * Create passkey registration options for the caller
+ *
+ * Email OTP and WebAuthn sessions may create registration options. An Ed25519 session may create options only while the caller has no stored passkey; otherwise the route returns insufficient_authentication_method.
  */
 export const createWebauthnRegistrationOptions = <ThrowOnError extends boolean = false>(options: Options<CreateWebauthnRegistrationOptionsData, ThrowOnError>) => (options.client ?? client).post<CreateWebauthnRegistrationOptionsResponses, CreateWebauthnRegistrationOptionsErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
@@ -239,6 +241,8 @@ export const createWebauthnRegistrationOptions = <ThrowOnError extends boolean =
 
 /**
  * Verify a passkey registration ceremony
+ *
+ * Email OTP and WebAuthn sessions may complete registration. An Ed25519 session may complete only the caller's first passkey registration. The server checks that restriction again when storing the credential, so a ceremony started before another passkey was added cannot bypass it.
  */
 export const verifyWebauthnRegistration = <ThrowOnError extends boolean = false>(options: Options<VerifyWebauthnRegistrationData, ThrowOnError>) => (options.client ?? client).post<VerifyWebauthnRegistrationResponses, VerifyWebauthnRegistrationErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],

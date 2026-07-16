@@ -179,12 +179,45 @@ pub(crate) fn require_passkey_management_auth(auth: &AuthContext) -> Result<(), 
     Err(SessionError::InsufficientAuthenticationMethod)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PasskeyRegistrationAuthorization {
+    HumanAuthenticated,
+    FirstPasskeyFromEd25519,
+}
+
+pub(crate) fn authorize_passkey_registration(
+    connection: &Connection,
+    auth: &AuthContext,
+) -> Result<PasskeyRegistrationAuthorization, SessionError> {
+    if require_passkey_management_auth(auth).is_ok() {
+        return Ok(PasskeyRegistrationAuthorization::HumanAuthenticated);
+    }
+
+    if auth.auth_method != "ed25519" || user_has_passkey(connection, &auth.user_id)? {
+        return Err(SessionError::InsufficientAuthenticationMethod);
+    }
+
+    Ok(PasskeyRegistrationAuthorization::FirstPasskeyFromEd25519)
+}
+
+fn user_has_passkey(connection: &Connection, user_id: &str) -> Result<bool, SessionError> {
+    connection
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM webauthn_credentials WHERE user_id = ?1
+             )",
+            [user_id],
+            |row| row.get(0),
+        )
+        .map_err(|_| SessionError::InvalidAccessToken)
+}
+
 pub(crate) fn require_admin_auth(
     connection: &Connection,
     auth: &AuthContext,
 ) -> Result<(), SessionError> {
-    let admin_user_id = read_admin_user_id(connection)
-        .map_err(|_| SessionError::InvalidAccessToken)?;
+    let admin_user_id =
+        read_admin_user_id(connection).map_err(|_| SessionError::InvalidAccessToken)?;
 
     if admin_user_id.as_deref() == Some(auth.user_id.as_str()) {
         return Ok(());

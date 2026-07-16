@@ -1,13 +1,15 @@
 # WebAuthn integration
 
-auth-mini uses discoverable credentials for passkey login. Users sign in with email first, register a passkey while authenticated, and can later sign in directly with the passkey without entering an email address first.
+auth-mini uses discoverable credentials for passkey login. Users normally sign in with email OTP before registering a passkey. An Ed25519-authenticated user with no stored PassKey may also register the first PassKey, which lets an administrator created without an email address bootstrap human authentication. Users can later sign in directly with the passkey without entering an email address first.
 
 ## Registration flow
 
-1. Sign in with email OTP.
+1. Sign in with email OTP, an existing PassKey, or Ed25519 when the user has no stored PassKey.
 2. Call `POST /webauthn/register/options` while authenticated with `{}`.
 3. Pass `publicKey` into `navigator.credentials.create()`.
 4. Send `{ request_id, credential }` to `POST /webauthn/register/verify`.
+
+Email OTP and WebAuthn sessions may register additional PassKeys. The Ed25519 exception applies only to the first PassKey: both registration endpoints return `403 insufficient_authentication_method` once the user has a stored PassKey. The verify endpoint checks again while storing the credential, so two concurrent Ed25519 registration ceremonies cannot both use the first-PassKey exception.
 
 Registration options require discoverable credentials:
 
