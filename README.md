@@ -67,7 +67,7 @@ sequenceDiagram
     participant Frontend
     participant Auth as Auth Mini Server
 
-    Note over User,Auth: Register passkey after email sign-in
+    Note over User,Auth: Register passkey after email, passkey, or eligible Ed25519 sign-in
     Frontend->>Auth: POST /webauthn/register/options
     Auth-->>Frontend: request_id + publicKey
     Frontend->>User: Browser shows passkey creation prompt
@@ -167,7 +167,7 @@ curl -X PUT http://127.0.0.1:7777/admin/setup \
   -d '{"admin_ed25519":{"name":"ops laptop","public_key":"<base64url-ed25519-public-key>"}}'
 ```
 
-After admin sign-in, configure the externally visible issuer, passkey RP ID, and optional SMTP settings from the admin configuration page or `/admin/config`. The issuer is stored at `app_meta.issuer`, and passkey registration/login use the single `app_meta.rp_id`; the WebAuthn origin is the Auth Mini server origin derived from the issuer. SMTP is not required for bootstrap, the SMTP password is never returned, and `admin_ed25519` can create an admin user without an email address for later Ed25519 login. HTTP CORS is served with `Access-Control-Allow-Origin: *`, so downstream apps need to manage that exposure carefully.
+After admin sign-in, configure the externally visible issuer, passkey RP ID, and optional SMTP settings from the admin configuration page or `/admin/config`. The issuer is stored at `app_meta.issuer`, and passkey registration/login use the single `app_meta.rp_id`; the WebAuthn origin is the Auth Mini server origin derived from the issuer. SMTP is not required for bootstrap, the SMTP password is never returned, and `admin_ed25519` can create an admin user without an email address for later Ed25519 login. An Ed25519 session may register that user's first PassKey; after one is stored, additional PassKey registration requires an email OTP or WebAuthn session. HTTP CORS is served with `Access-Control-Allow-Origin: *`, so downstream apps need to manage that exposure carefully.
 
 When the Rust binary DB path is omitted, it uses `~/.auth-mini/default.sqlite3`. Server startup creates the SQLite file, parent directory, `app_meta`, JWKS keys, and schema automatically when missing. The Rust binary prints the SQLite database path it uses to stderr. The Rust binary embeds the database schema and `openapi.yaml`; runtime initialization uses the embedded schema. The Rust runtime has no `--openapi` parameter, and `/openapi.yaml` plus `/openapi.json` do not depend on the current working directory.
 

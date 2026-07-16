@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use chrono::{DateTime, Duration as ChronoDuration, SecondsFormat, Utc};
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -11,6 +11,7 @@ use webauthn_rs::prelude::{
 };
 
 use crate::db::read_app_webauthn_config;
+use crate::session::PasskeyRegistrationAuthorization;
 
 const WEBAUTHN_CHALLENGE_SECONDS: i64 = 300;
 
@@ -102,6 +103,7 @@ struct AuthenticationCredentialResponse {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum RegisterVerifyError {
     InvalidWebauthnRegistration,
+    InsufficientAuthenticationMethod,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -420,6 +422,7 @@ pub(crate) fn register_verify(
     connection: &Connection,
     user_id: &str,
     request: &RegisterVerifyRequest,
+    authorization: PasskeyRegistrationAuthorization,
 ) -> Result<Value, RegisterVerifyError> {
     let challenge = get_valid_register_challenge(connection, &request.request_id)?;
 
@@ -450,17 +453,41 @@ pub(crate) fn register_verify(
         .to_string();
     let passkey_json = serde_json::to_string(&passkey)
         .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)?;
+
+    store_registration(
+        connection,
+        user_id,
+        &request.request_id,
+        &credential_id,
+        &passkey_json,
+        &challenge.rp_id,
+        authorization,
+    )?;
+
+    Ok(json!({ "ok": true }))
+}
+
+fn store_registration(
+    connection: &Connection,
+    user_id: &str,
+    request_id: &str,
+    credential_id: &str,
+    passkey_json: &str,
+    rp_id: &str,
+    authorization: PasskeyRegistrationAuthorization,
+) -> Result<(), RegisterVerifyError> {
     let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
-    let transaction = connection
-        .unchecked_transaction()
+    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)
         .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)?;
+
+    ensure_registration_still_authorized(&transaction, user_id, authorization)?;
 
     transaction
         .execute(
             "UPDATE webauthn_challenges
              SET consumed_at = ?1
              WHERE request_id = ?2 AND consumed_at IS NULL",
-            params![now, request.request_id],
+            params![now, request_id],
         )
         .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)
         .and_then(|changes| {
@@ -475,14 +502,40 @@ pub(crate) fn register_verify(
             "INSERT INTO webauthn_credentials
              (credential_id, user_id, passkey_json, rp_id)
              VALUES (?1, ?2, ?3, ?4)",
-            params![credential_id, user_id, passkey_json, challenge.rp_id],
+            params![credential_id, user_id, passkey_json, rp_id],
         )
         .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)?;
     transaction
         .commit()
         .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)?;
 
-    Ok(json!({ "ok": true }))
+    Ok(())
+}
+
+fn ensure_registration_still_authorized(
+    connection: &Connection,
+    user_id: &str,
+    authorization: PasskeyRegistrationAuthorization,
+) -> Result<(), RegisterVerifyError> {
+    if authorization == PasskeyRegistrationAuthorization::HumanAuthenticated {
+        return Ok(());
+    }
+
+    let has_passkey = connection
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM webauthn_credentials WHERE user_id = ?1
+             )",
+            [user_id],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|_| RegisterVerifyError::InvalidWebauthnRegistration)?;
+
+    if has_passkey {
+        return Err(RegisterVerifyError::InsufficientAuthenticationMethod);
+    }
+
+    Ok(())
 }
 
 fn reports_discoverable_credential(client_extension_results: Option<&Value>) -> bool {
@@ -1306,8 +1359,13 @@ mod tests {
             .expect("challenge inserts");
         let request = register_verify_base64_request();
 
-        let error =
-            register_verify(&connection, "user-1", &request).expect_err("wrong user is rejected");
+        let error = register_verify(
+            &connection,
+            "user-1",
+            &request,
+            PasskeyRegistrationAuthorization::HumanAuthenticated,
+        )
+        .expect_err("wrong user is rejected");
 
         assert_eq!(error, RegisterVerifyError::InvalidWebauthnRegistration);
     }
@@ -1334,8 +1392,13 @@ mod tests {
             .expect("challenge inserts");
         let request = register_verify_base64_request();
 
-        let error =
-            register_verify(&connection, "user-1", &request).expect_err("legacy state is rejected");
+        let error = register_verify(
+            &connection,
+            "user-1",
+            &request,
+            PasskeyRegistrationAuthorization::HumanAuthenticated,
+        )
+        .expect_err("legacy state is rejected");
         let consumed_at: Option<String> = connection
             .query_row(
                 "SELECT consumed_at FROM webauthn_challenges WHERE request_id = ?1",
@@ -1346,6 +1409,59 @@ mod tests {
 
         assert_eq!(error, RegisterVerifyError::InvalidWebauthnRegistration);
         assert!(consumed_at.is_none());
+    }
+
+    #[test]
+    fn first_passkey_store_rejects_existing_credential_without_consuming_challenge() {
+        let connection = Connection::open_in_memory().expect("database opens");
+        create_register_options_schema(&connection);
+        create_webauthn_credentials_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO webauthn_challenges
+                 (request_id, type, state_json, user_id, expires_at, rp_id, origin)
+                 VALUES ('00000000-0000-4000-8000-000000000000', 'register', '{}',
+                         'user-1', '9999-01-01T00:00:00.000Z', 'example.com',
+                         'https://app.example.com')",
+                [],
+            )
+            .expect("challenge inserts");
+        connection
+            .execute(
+                "INSERT INTO webauthn_credentials
+                 (credential_id, user_id, passkey_json, rp_id)
+                 VALUES ('credential-1', 'user-1', '{}', 'example.com')",
+                [],
+            )
+            .expect("credential inserts");
+
+        let error = store_registration(
+            &connection,
+            "user-1",
+            "00000000-0000-4000-8000-000000000000",
+            "credential-2",
+            "{}",
+            "example.com",
+            PasskeyRegistrationAuthorization::FirstPasskeyFromEd25519,
+        )
+        .expect_err("second passkey is rejected");
+        let consumed_at: Option<String> = connection
+            .query_row(
+                "SELECT consumed_at FROM webauthn_challenges
+                 WHERE request_id = '00000000-0000-4000-8000-000000000000'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("challenge reads");
+        let credential_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM webauthn_credentials", [], |row| {
+                row.get(0)
+            })
+            .expect("credential count reads");
+
+        assert_eq!(error, RegisterVerifyError::InsufficientAuthenticationMethod);
+        assert!(consumed_at.is_none());
+        assert_eq!(credential_count, 1);
     }
 
     #[test]

@@ -154,6 +154,48 @@ describe.sequential('rust external server e2e smoke', () => {
       ]),
     });
 
+    const adminPasskey = createTestPasskey('rust-e2e-admin-first-passkey');
+    const adminRegisterOptions = await requestRegistrationOptions(
+      baseUrl,
+      adminTokens.access_token,
+      webauthnOrigin,
+    );
+    const adminRegisterVerify = await postJson(
+      `${baseUrl}/webauthn/register/verify`,
+      {
+        request_id: adminRegisterOptions.request_id,
+        credential: adminPasskey.createRegistrationCredential(
+          adminRegisterOptions.publicKey,
+          webauthnOrigin,
+        ),
+      },
+      adminTokens.access_token,
+      webauthnOrigin,
+    );
+    expect(adminRegisterVerify.status).toBe(200);
+    expect(await adminRegisterVerify.json()).toEqual({ ok: true });
+    expect(
+      getWebauthnCredentialRow(dbPath, adminPasskey.credentialId),
+    ).toMatchObject({
+      credential_id: adminPasskey.credentialId,
+      user_id: setupState.admin_user_id,
+      rp_id: webauthnRpId,
+    });
+    expect(getWebauthnCredentialCount(dbPath, setupState.admin_user_id)).toBe(
+      1,
+    );
+
+    const rejectedAdminRegisterOptions = await postJson(
+      `${baseUrl}/webauthn/register/options`,
+      {},
+      adminTokens.access_token,
+      webauthnOrigin,
+    );
+    expect(rejectedAdminRegisterOptions.status).toBe(403);
+    expect(await rejectedAdminRegisterOptions.json()).toEqual({
+      error: 'insufficient_authentication_method',
+    });
+
     const preflight = await fetch(`${baseUrl}/email/start`, {
       method: 'OPTIONS',
       headers: {
@@ -189,10 +231,12 @@ describe.sequential('rust external server e2e smoke', () => {
       headers: bearerHeaders(emailTokens.access_token),
     });
     expect(authenticatedMe.status).toBe(200);
-    expect(await authenticatedMe.json()).toMatchObject({
+    const authenticatedMeState = await authenticatedMe.json();
+    expect(authenticatedMeState).toMatchObject({
       email: 'rust-user@example.com',
       active_sessions: [expect.objectContaining({ auth_method: 'email_otp' })],
     });
+    const emailUserId = String(authenticatedMeState.user_id);
 
     const deviceKey = createTestEd25519Keypair('alternate');
     const credentialResponse = await postJson(
@@ -408,7 +452,7 @@ describe.sequential('rust external server e2e smoke', () => {
     if (!secondCredentialSnapshot) {
       throw new Error('second credential row was not stored');
     }
-    expect(getWebauthnCredentialCount(dbPath)).toBe(2);
+    expect(getWebauthnCredentialCount(dbPath, emailUserId)).toBe(2);
 
     const duplicateOptions = await requestRegistrationOptions(
       baseUrl,
@@ -440,7 +484,7 @@ describe.sequential('rust external server e2e smoke', () => {
     expect(
       getWebauthnCredentialRow(dbPath, secondPasskey.credentialId),
     ).toEqual(secondCredentialSnapshot);
-    expect(getWebauthnCredentialCount(dbPath)).toBe(2);
+    expect(getWebauthnCredentialCount(dbPath, emailUserId)).toBe(2);
 
     const authOptionsResponse = await postJson(
       `${baseUrl}/webauthn/authenticate/options`,
@@ -634,13 +678,15 @@ function getWebauthnChallengeConsumedAt(dbPath: string, requestId: string) {
   }
 }
 
-function getWebauthnCredentialCount(dbPath: string) {
+function getWebauthnCredentialCount(dbPath: string, userId: string) {
   const db = new Database(dbPath, { readonly: true });
 
   try {
     const row = db
-      .prepare('SELECT COUNT(*) AS count FROM webauthn_credentials')
-      .get() as { count: number };
+      .prepare(
+        'SELECT COUNT(*) AS count FROM webauthn_credentials WHERE user_id = ?',
+      )
+      .get(userId) as { count: number };
 
     return row.count;
   } finally {
