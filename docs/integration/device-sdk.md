@@ -12,7 +12,6 @@ import { createDeviceSdk } from 'auth-mini/sdk/device';
 
 const sdk = createDeviceSdk({
   serverBaseUrl: 'https://auth.example.com',
-  credentialId: '550e8400-e29b-41d4-a716-446655440000',
   privateKeySeed: '7rANewlCLceTsUo9feN0DLjnu-ayYsdhkVWvHT4FelM',
 });
 
@@ -27,10 +26,11 @@ await sdk.dispose();
 
 `createDeviceSdk(...)` starts the device sign-in flow immediately:
 
-1. `POST /ed25519/start` with the configured `credentialId`
-2. decode the configured `privateKeySeed`, derive the Ed25519 private key locally, and sign the returned challenge
-3. `POST /ed25519/verify` with the signature payload
-4. store the resulting session in the instance's in-memory state
+1. decode the configured `privateKeySeed` and derive the Ed25519 key pair locally
+2. `POST /ed25519/start` with the derived `public_key`
+3. sign the returned challenge locally
+4. `POST /ed25519/verify` with the `request_id` and signature payload
+5. store the resulting session in the instance's in-memory state
 
 If any step fails, `sdk.ready` rejects and the instance stays responsible only for its own in-memory state.
 

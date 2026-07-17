@@ -192,7 +192,6 @@ import { createDeviceSdk } from 'auth-mini/sdk/device';
 
 const sdk = createDeviceSdk({
   serverBaseUrl: 'https://auth.your-domain.com',
-  credentialId: '550e8400-e29b-41d4-a716-446655440000',
   privateKeySeed: '7rANewlCLceTsUo9feN0DLjnu-ayYsdhkVWvHT4FelM',
 });
 
@@ -228,12 +227,23 @@ From there, typical integration looks like this:
 
 `docs/` is the canonical static reference source. `ui-web/` is the current interactive demo source and Pages publish target, while the deployed live demo remains the easiest way to try the browser flows end-to-end.
 
-- Device SDK integration: [docs/integration/device-sdk.md](docs/integration/device-sdk.md)
+### Integration guides
+
+Choose the guide that matches the part of your app integrating with Auth Mini:
+
 - Browser SDK integration: [docs/integration/browser-sdk.md](docs/integration/browser-sdk.md)
+- Device SDK integration: [docs/integration/device-sdk.md](docs/integration/device-sdk.md)
+- API SDK integration: [docs/integration/api-sdk.md](docs/integration/api-sdk.md)
 - WebAuthn integration: [docs/integration/webauthn.md](docs/integration/webauthn.md)
+- Login redirect integration: [docs/integration/login-redirect.md](docs/integration/login-redirect.md)
 - Backend JWT verification: [docs/integration/backend-jwt-verification.md](docs/integration/backend-jwt-verification.md)
+
+### Reference
+
 - HTTP API reference: [docs/reference/http-api.md](docs/reference/http-api.md)
 - CLI and operations: [docs/reference/cli-and-operations.md](docs/reference/cli-and-operations.md)
+
+The integration guides describe app-facing flows and SDK usage; the reference pages document the HTTP contract and server operations.
 
 ## Philosophy
 
