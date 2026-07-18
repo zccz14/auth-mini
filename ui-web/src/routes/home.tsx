@@ -13,6 +13,7 @@ import {
   generateDemoEd25519Keypair,
   validateBase64Url32,
 } from '@/lib/demo-ed25519';
+import { useI18n } from '@/lib/i18n';
 
 type Me = Awaited<
   ReturnType<NonNullable<ReturnType<typeof useDemo>['sdk']>['me']['fetch']>
@@ -75,17 +76,20 @@ function getSessionCapability(accessToken: string): SessionCapability {
     : 'not-manageable';
 }
 
-function formatNullable(value: string | null | undefined) {
+function formatNullable(value: string | null | undefined, unavailable: string) {
   if (value == null || value.trim() === '') {
-    return 'Unavailable';
+    return unavailable;
   }
 
   return value;
 }
 
-function truncateUserAgent(value: string | null | undefined) {
+function truncateUserAgent(
+  value: string | null | undefined,
+  unavailable: string,
+) {
   if (value == null || value.trim() === '') {
-    return 'Unavailable';
+    return unavailable;
   }
 
   return value.length > 48 ? value.slice(0, 45) + '...' : value;
@@ -93,12 +97,15 @@ function truncateUserAgent(value: string | null | undefined) {
 
 export function HomeRoute() {
   const { config, sdk, session } = useDemo();
+  const { t } = useI18n();
   const [me, setMe] = useState<Me | null>(null);
   const [loadingMe, setLoadingMe] = useState(false);
   const [meError, setMeError] = useState('');
   const [meWarning, setMeWarning] = useState('');
   const loadMeRequestIdRef = useRef(0);
-  const [ed25519Name, setEd25519Name] = useState('ED25519 key');
+  const [ed25519Name, setEd25519Name] = useState(() =>
+    t('home.defaultEd25519Name'),
+  );
   const [privateKey, setPrivateKey] = useState('');
   const [publicKey, setPublicKey] = useState('');
   const [pendingCredential, setPendingCredential] = useState<string | null>(
@@ -147,7 +154,7 @@ export function HomeRoute() {
 
         setMe(null);
         setMeError(
-          cause instanceof Error ? cause.message : 'Unable to load account.',
+          cause instanceof Error ? cause.message : t('home.loadError'),
         );
       } finally {
         if (loadMeRequestIdRef.current === requestId) {
@@ -155,7 +162,7 @@ export function HomeRoute() {
         }
       }
     },
-    [config.status, sdk, session.authenticated, session.sessionId],
+    [config.status, sdk, session.authenticated, session.sessionId, t],
   );
 
   useEffect(() => {
@@ -172,7 +179,7 @@ export function HomeRoute() {
       await loadMe();
     } catch (cause) {
       setCredentialError(
-        cause instanceof Error ? cause.message : 'Unable to register passkey.',
+        cause instanceof Error ? cause.message : t('home.registerPasskeyError'),
       );
     } finally {
       setPendingCredential(null);
@@ -189,9 +196,7 @@ export function HomeRoute() {
       setPublicKey(keypair.publicKey);
     } catch (cause) {
       setCredentialError(
-        cause instanceof Error
-          ? cause.message
-          : 'Unable to generate ED25519 key.',
+        cause instanceof Error ? cause.message : t('home.generateKeyError'),
       );
     } finally {
       setPendingCredential(null);
@@ -212,9 +217,7 @@ export function HomeRoute() {
       await loadMe();
     } catch (cause) {
       setCredentialError(
-        cause instanceof Error
-          ? cause.message
-          : 'Unable to register ED25519 key.',
+        cause instanceof Error ? cause.message : t('home.registerKeyError'),
       );
     } finally {
       setPendingCredential(null);
@@ -222,7 +225,7 @@ export function HomeRoute() {
   }
 
   async function deleteCredential(path: string) {
-    if (!session.accessToken || !window.confirm('Remove this credential?'))
+    if (!session.accessToken || !window.confirm(t('home.deleteConfirm')))
       return;
     setPendingCredential(path);
     setCredentialError('');
@@ -236,12 +239,12 @@ export function HomeRoute() {
         },
       );
       if (!response.ok) {
-        throw new Error('Delete failed.');
+        throw new Error(t('home.deleteFailed'));
       }
       await loadMe();
     } catch (cause) {
       setCredentialError(
-        cause instanceof Error ? cause.message : 'Unable to delete credential.',
+        cause instanceof Error ? cause.message : t('home.deleteError'),
       );
     } finally {
       setPendingCredential(null);
@@ -254,7 +257,7 @@ export function HomeRoute() {
     }
 
     if (!sdk || !session.accessToken || config.status !== 'ready') {
-      setSessionError('Unable to kick session.');
+      setSessionError(t('home.kickError'));
       return;
     }
 
@@ -273,7 +276,7 @@ export function HomeRoute() {
       }
 
       if (getSessionCapability(accessToken) !== 'manageable') {
-        throw new Error('Unable to kick session.');
+        throw new Error(t('home.kickError'));
       }
 
       const response = await fetch(
@@ -288,15 +291,14 @@ export function HomeRoute() {
       );
 
       if (!response.ok) {
-        throw new Error('Unable to kick session.');
+        throw new Error(t('home.kickError'));
       }
 
       await loadMe({
-        warningMessage:
-          'Session updated, but account data could not be refreshed.',
+        warningMessage: t('home.kickRefreshWarning'),
       });
     } catch {
-      setSessionError('Unable to kick session.');
+      setSessionError(t('home.kickError'));
     } finally {
       setPendingSessionId(null);
     }
@@ -310,20 +312,25 @@ export function HomeRoute() {
     <div className="grid gap-5">
       <Card>
         <CardHeader>
-          <CardTitle>Account</CardTitle>
-          <CardDescription>Your current authentication state.</CardDescription>
+          <CardTitle>{t('common.account')}</CardTitle>
+          <CardDescription>{t('home.description')}</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-2 text-sm text-slate-700">
           <div>
-            User ID:{' '}
-            <span className="font-mono">{me?.user_id ?? 'Loading...'}</span>
+            {t('home.userId')}:{' '}
+            <span className="font-mono">
+              {me?.user_id ?? t('common.loading')}
+            </span>
           </div>
-          <div>Email: {me?.email ?? 'No verified email'}</div>
           <div>
-            Session ID: <span className="font-mono">{session.sessionId}</span>
+            {t('common.email')}: {me?.email ?? t('home.noVerifiedEmail')}
+          </div>
+          <div>
+            {t('home.sessionId')}:{' '}
+            <span className="font-mono">{session.sessionId}</span>
           </div>
           {loadingMe ? (
-            <p className="text-slate-600">Loading account...</p>
+            <p className="text-slate-600">{t('home.loadingAccount')}</p>
           ) : null}
           {meError ? <p className="text-rose-600">{meError}</p> : null}
           {meWarning ? <p className="text-amber-700">{meWarning}</p> : null}
@@ -336,24 +343,18 @@ export function HomeRoute() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Email</CardTitle>
-          <CardDescription>
-            Email OTP sign-in is managed from the login page.
-          </CardDescription>
+          <CardTitle>{t('common.email')}</CardTitle>
+          <CardDescription>{t('home.emailDescription')}</CardDescription>
         </CardHeader>
         <CardContent className="text-sm text-slate-700">
-          {me?.email
-            ? 'Verified email is active.'
-            : 'No verified email on this account.'}
+          {me?.email ? t('home.emailVerified') : t('home.emailNotVerified')}
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>PassKey</CardTitle>
-          <CardDescription>
-            Register browser passkeys and remove old authenticators.
-          </CardDescription>
+          <CardTitle>{t('common.passkey')}</CardTitle>
+          <CardDescription>{t('home.passkeyDescription')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <Button
@@ -361,8 +362,8 @@ export function HomeRoute() {
             onClick={() => void registerPasskey()}
           >
             {pendingCredential === 'passkey'
-              ? 'Registering...'
-              : 'Register passkey'}
+              ? t('home.registering')
+              : t('home.registerPasskey')}
           </Button>
           <CredentialList
             deletePath={(id) => '/webauthn/credentials/' + id}
@@ -376,10 +377,8 @@ export function HomeRoute() {
 
       <Card>
         <CardHeader>
-          <CardTitle>ED25519</CardTitle>
-          <CardDescription>
-            Generate a key, save the private key, then register the public key.
-          </CardDescription>
+          <CardTitle>{t('common.ed25519')}</CardTitle>
+          <CardDescription>{t('home.ed25519Description')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <form className="grid gap-3" onSubmit={registerEd25519}>
@@ -394,8 +393,8 @@ export function HomeRoute() {
                 onClick={() => void generateEd25519()}
               >
                 {pendingCredential === 'generate-ed25519'
-                  ? 'Generating...'
-                  : 'Generate key'}
+                  ? t('setup.generating')
+                  : t('home.generateKey')}
               </Button>
               <Button
                 type="submit"
@@ -406,8 +405,8 @@ export function HomeRoute() {
                 }
               >
                 {pendingCredential === 'register-ed25519'
-                  ? 'Registering...'
-                  : 'Register public key'}
+                  ? t('home.registering')
+                  : t('home.registerPublicKey')}
               </Button>
             </div>
             {privateKey ? (
@@ -418,8 +417,8 @@ export function HomeRoute() {
               />
             ) : null}
             <Input
-              aria-label="ED25519 public key"
-              placeholder="Public key"
+              aria-label={t('home.publicKey')}
+              placeholder={t('common.publicKey')}
               value={publicKey}
               onChange={(event) => setPublicKey(event.currentTarget.value)}
             />
@@ -436,19 +435,17 @@ export function HomeRoute() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Active Sessions</CardTitle>
-          <CardDescription>
-            Review every active session and kick peers as needed.
-          </CardDescription>
+          <CardTitle>{t('home.activeSessions')}</CardTitle>
+          <CardDescription>{t('home.sessionsDescription')}</CardDescription>
         </CardHeader>
         <CardContent>
           {sessionError ? (
-            <p className="mb-4 text-sm text-rose-600">
-              Unable to kick session.
-            </p>
+            <p className="mb-4 text-sm text-rose-600">{sessionError}</p>
           ) : null}
           {meError ? null : activeSessions.length === 0 ? (
-            <p className="text-sm text-slate-600">No active sessions.</p>
+            <p className="text-sm text-slate-600">
+              {t('home.noActiveSessions')}
+            </p>
           ) : (
             <ActiveSessionsTable
               onKick={kickSession}
@@ -475,8 +472,10 @@ function CredentialList({
   onDelete: (path: string) => Promise<void>;
   pending: string | null;
 }) {
+  const { t } = useI18n();
+
   if (items.length === 0) {
-    return <p className="text-sm text-slate-600">No credentials.</p>;
+    return <p className="text-sm text-slate-600">{t('home.noCredentials')}</p>;
   }
 
   return (
@@ -493,7 +492,9 @@ function CredentialList({
             <div className="min-w-0">
               <div className="truncate font-mono text-slate-900">{id}</div>
               <div className="text-slate-500">
-                Created {String(item.created_at ?? '')}
+                {t('home.credentialCreated', {
+                  date: String(item.created_at ?? ''),
+                })}
               </div>
             </div>
             <Button
@@ -501,7 +502,7 @@ function CredentialList({
               disabled={pending === path}
               onClick={() => void onDelete(path)}
             >
-              Remove
+              {t('common.remove')}
             </Button>
           </div>
         );
@@ -519,18 +520,20 @@ function ActiveSessionsTable({
   pendingSessionId: string | null;
   rows: ActiveSession[];
 }) {
+  const { t } = useI18n();
+
   return (
     <div className="overflow-x-auto">
       <table className="min-w-full border-collapse text-sm">
         <thead>
           <tr className="border-b border-slate-200 text-left text-slate-600">
-            <th className="px-3 py-2 font-medium">Session ID</th>
-            <th className="px-3 py-2 font-medium">Auth Method</th>
-            <th className="px-3 py-2 font-medium">Created At</th>
-            <th className="px-3 py-2 font-medium">Expires At</th>
-            <th className="px-3 py-2 font-medium">IP</th>
-            <th className="px-3 py-2 font-medium">User-Agent</th>
-            <th className="px-3 py-2 font-medium">Action</th>
+            <th className="px-3 py-2 font-medium">{t('home.sessionId')}</th>
+            <th className="px-3 py-2 font-medium">{t('home.authMethod')}</th>
+            <th className="px-3 py-2 font-medium">{t('home.createdAt')}</th>
+            <th className="px-3 py-2 font-medium">{t('home.expiresAt')}</th>
+            <th className="px-3 py-2 font-medium">{t('home.ip')}</th>
+            <th className="px-3 py-2 font-medium">{t('home.userAgent')}</th>
+            <th className="px-3 py-2 font-medium">{t('common.action')}</th>
           </tr>
         </thead>
         <tbody>
@@ -555,17 +558,20 @@ function ActiveSessionsTable({
                   {activeSession.expires_at}
                 </td>
                 <td className="px-3 py-2 font-mono text-xs text-slate-950">
-                  {formatNullable(activeSession.ip)}
+                  {formatNullable(activeSession.ip, t('common.unavailable'))}
                 </td>
                 <td className="px-3 py-2 font-mono text-xs text-slate-950">
-                  {truncateUserAgent(activeSession.user_agent)}
+                  {truncateUserAgent(
+                    activeSession.user_agent,
+                    t('common.unavailable'),
+                  )}
                 </td>
                 <td className="px-3 py-2">
                   <Button
                     disabled={isPending}
                     onClick={() => void onKick(activeSession.id)}
                   >
-                    {isPending ? 'Kicking...' : 'Kick'}
+                    {isPending ? t('home.kicking') : t('home.kick')}
                   </Button>
                 </td>
               </tr>

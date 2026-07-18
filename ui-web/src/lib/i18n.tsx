@@ -1,0 +1,350 @@
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import type { PropsWithChildren } from 'react';
+
+export const LOCALES = ['en', 'zh-CN'] as const;
+
+export type Locale = (typeof LOCALES)[number];
+
+const LOCALE_STORAGE_KEY = 'auth-mini.gui.locale';
+
+export const en = {
+  'common.language': 'Language',
+  'common.english': 'English',
+  'common.chinese': '中文',
+  'common.loadingAuthMini': 'Loading auth-mini...',
+  'common.loading': 'Loading...',
+  'common.unavailable': 'Unavailable',
+  'common.noneGenerated': 'None generated yet.',
+  'common.noDerivedKey': 'No seed-derived public key yet.',
+  'common.admin': 'Admin',
+  'common.signOut': 'Sign out',
+  'common.email': 'Email',
+  'common.passkey': 'PassKey',
+  'common.ed25519': 'ED25519',
+  'common.account': 'Account',
+  'common.issuer': 'Issuer',
+  'common.rpId': 'Passkey RP ID',
+  'common.brandName': 'Brand name',
+  'common.brandBackgroundImage': 'Brand background image',
+  'common.credentialName': 'Credential name',
+  'common.privateKey': 'Private key',
+  'common.publicKey': 'Public key',
+  'common.emailAddress': 'Email address',
+  'common.oneTimeCode': 'One-time code',
+  'common.seed': 'Seed (base64url 32-byte)',
+  'common.smtpHost': 'SMTP host',
+  'common.smtpPort': 'SMTP port',
+  'common.smtpUsername': 'SMTP username',
+  'common.smtpPassword': 'SMTP password',
+  'common.fromEmail': 'From email',
+  'common.fromName': 'From name',
+  'common.password': 'Password',
+  'common.username': 'Username',
+  'common.action': 'Action',
+  'common.remove': 'Remove',
+  'shell.admin': 'Admin',
+  'shell.signOut': 'Sign out',
+  'setup.defaultCredentialName': 'Administrator ED25519 key',
+  'setup.generateError': 'Unable to generate key.',
+  'setup.initializeError': 'Initialization failed.',
+  'setup.title': 'Initialize auth-mini',
+  'setup.description':
+    'Create the administrator credential that secures this server.',
+  'setup.privateKeySaved': 'I have saved the private key.',
+  'setup.generate': 'Generate ED25519 key',
+  'setup.generating': 'Generating...',
+  'setup.initializing': 'Initializing...',
+  'setup.complete': 'Complete initialization',
+  'login.title': 'Sign in',
+  'login.description': 'Choose a secure way to continue.',
+  'login.continueDescription':
+    'Continue to the application that opened this window.',
+  'login.serverNotConfigured': 'Auth server is not configured',
+  'login.invalidRequest': 'Invalid login request',
+  'login.passkeySignIn': 'Sign In with PassKey',
+  'login.email.send': 'Send email code',
+  'login.email.sending': 'Sending code...',
+  'login.email.verify': 'Verify and continue',
+  'login.email.verifying': 'Verifying...',
+  'login.ed25519.signIn': 'Sign in with ED25519',
+  'login.ed25519.signingIn': 'Signing in...',
+  'login.email.sent': 'Check your email for the one-time code.',
+  'login.signedIn': 'Signed in.',
+  'login.redirecting': 'Redirecting back to the application.',
+  'login.startError': 'Unable to start email sign-in.',
+  'login.signInError': 'Sign-in failed.',
+  'home.loadError': 'Unable to load account.',
+  'home.registerPasskeyError': 'Unable to register passkey.',
+  'home.generateKeyError': 'Unable to generate ED25519 key.',
+  'home.registerKeyError': 'Unable to register ED25519 key.',
+  'home.deleteConfirm': 'Remove this credential?',
+  'home.deleteError': 'Unable to delete credential.',
+  'home.deleteFailed': 'Delete failed.',
+  'home.kickError': 'Unable to kick session.',
+  'home.kickRefreshWarning':
+    'Session updated, but account data could not be refreshed.',
+  'home.description': 'Your current authentication state.',
+  'home.userId': 'User ID',
+  'home.sessionId': 'Session ID',
+  'home.emailDescription': 'Email OTP sign-in is managed from the login page.',
+  'home.passkeyDescription':
+    'Register browser passkeys and remove old authenticators.',
+  'home.ed25519Description':
+    'Generate a key, save the private key, then register the public key.',
+  'home.sessionsDescription':
+    'Review every active session and kick peers as needed.',
+  'home.credentialCreated': 'Created {date}',
+  'home.noVerifiedEmail': 'No verified email',
+  'home.loadingAccount': 'Loading account...',
+  'home.emailVerified': 'Verified email is active.',
+  'home.emailNotVerified': 'No verified email on this account.',
+  'home.registerPasskey': 'Register passkey',
+  'home.registering': 'Registering...',
+  'home.defaultEd25519Name': 'ED25519 key',
+  'home.generateKey': 'Generate key',
+  'home.registerPublicKey': 'Register public key',
+  'home.publicKey': 'ED25519 public key',
+  'home.activeSessions': 'Active Sessions',
+  'home.noActiveSessions': 'No active sessions.',
+  'home.noCredentials': 'No credentials.',
+  'home.authMethod': 'Auth Method',
+  'home.createdAt': 'Created At',
+  'home.expiresAt': 'Expires At',
+  'home.ip': 'IP',
+  'home.userAgent': 'User-Agent',
+  'home.kick': 'Kick',
+  'home.kicking': 'Kicking...',
+  'admin.loadError': 'Unable to load admin data.',
+  'admin.saveError': 'Unable to save configuration.',
+  'admin.exportError': 'Unable to export database.',
+  'admin.exportFailed': 'Database export failed.',
+  'admin.rotateError': 'Unable to rotate JWKs.',
+  'admin.title': 'Admin',
+  'admin.description': 'Configure this auth-mini instance and inspect users.',
+  'admin.configurationDescription':
+    'Configure public identity, branding, and optional email delivery.',
+  'admin.jwksDescription':
+    'Public signing keys in the CURRENT and STANDBY slots.',
+  'admin.usersDescription': 'Current users and credential counts.',
+  'admin.userId': 'Admin user ID',
+  'admin.secureSmtp': 'Secure SMTP',
+  'admin.configuration': 'Configuration',
+  'admin.loadingSettings': 'Loading...',
+  'admin.configureSmtp': 'Configure SMTP',
+  'admin.leavePassword': 'Leave blank to keep current password',
+  'admin.save': 'Save configuration',
+  'admin.saving': 'Saving...',
+  'admin.jwks': 'JWKs',
+  'admin.rotate': 'JWK Rotate',
+  'admin.rotating': 'Rotating...',
+  'admin.users': 'Users',
+  'admin.user': 'User',
+  'admin.sessions': 'Sessions',
+  'admin.passkeys': 'Passkeys',
+  'admin.exportDatabase': 'Export SQLite database',
+  'admin.exporting': 'Exporting...',
+  'status.backend': 'Backend status',
+  'status.connected': 'Connected to {url}',
+  'status.sdkReady': 'SDK ready',
+  'status.sdkIdle': 'SDK idle',
+} as const;
+
+type TranslationKey = keyof typeof en;
+
+export const zhCN: Record<TranslationKey, string> = {
+  'common.language': '语言',
+  'common.english': 'English',
+  'common.chinese': '中文',
+  'common.loadingAuthMini': '正在加载 auth-mini...',
+  'common.loading': '正在加载...',
+  'common.unavailable': '不可用',
+  'common.noneGenerated': '尚未生成。',
+  'common.noDerivedKey': '尚未从种子派生公钥。',
+  'common.admin': '管理',
+  'common.signOut': '退出登录',
+  'common.email': '邮箱',
+  'common.passkey': '通行密钥',
+  'common.ed25519': 'ED25519',
+  'common.account': '账户',
+  'common.issuer': '签发者',
+  'common.rpId': '通行密钥 RP ID',
+  'common.brandName': '品牌名称',
+  'common.brandBackgroundImage': '品牌背景图片',
+  'common.credentialName': '凭据名称',
+  'common.privateKey': '私钥',
+  'common.publicKey': '公钥',
+  'common.emailAddress': '邮箱地址',
+  'common.oneTimeCode': '一次性验证码',
+  'common.seed': '种子（base64url，32 字节）',
+  'common.smtpHost': 'SMTP 主机',
+  'common.smtpPort': 'SMTP 端口',
+  'common.smtpUsername': 'SMTP 用户名',
+  'common.smtpPassword': 'SMTP 密码',
+  'common.fromEmail': '发件邮箱',
+  'common.fromName': '发件人名称',
+  'common.password': '密码',
+  'common.username': '用户名',
+  'common.action': '操作',
+  'common.remove': '移除',
+  'shell.admin': '管理',
+  'shell.signOut': '退出登录',
+  'setup.defaultCredentialName': '管理员 ED25519 密钥',
+  'setup.generateError': '无法生成密钥。',
+  'setup.initializeError': '初始化失败。',
+  'setup.title': '初始化 auth-mini',
+  'setup.description': '创建用于保护此服务器的管理员凭据。',
+  'setup.privateKeySaved': '我已保存私钥。',
+  'setup.generate': '生成 ED25519 密钥',
+  'setup.generating': '正在生成...',
+  'setup.initializing': '正在初始化...',
+  'setup.complete': '完成初始化',
+  'login.title': '登录',
+  'login.description': '选择一种安全的方式继续。',
+  'login.continueDescription': '继续访问打开此窗口的应用。',
+  'login.serverNotConfigured': '尚未配置认证服务器',
+  'login.invalidRequest': '登录请求无效',
+  'login.passkeySignIn': '使用通行密钥登录',
+  'login.email.send': '发送邮箱验证码',
+  'login.email.sending': '正在发送验证码...',
+  'login.email.verify': '验证并继续',
+  'login.email.verifying': '正在验证...',
+  'login.ed25519.signIn': '使用 ED25519 登录',
+  'login.ed25519.signingIn': '正在登录...',
+  'login.email.sent': '请在邮箱中查收一次性验证码。',
+  'login.signedIn': '已登录。',
+  'login.redirecting': '正在返回应用。',
+  'login.startError': '无法开始邮箱登录。',
+  'login.signInError': '登录失败。',
+  'home.loadError': '无法加载账户。',
+  'home.registerPasskeyError': '无法注册通行密钥。',
+  'home.generateKeyError': '无法生成 ED25519 密钥。',
+  'home.registerKeyError': '无法注册 ED25519 密钥。',
+  'home.deleteConfirm': '要移除此凭据吗？',
+  'home.deleteError': '无法删除凭据。',
+  'home.deleteFailed': '删除失败。',
+  'home.kickError': '无法终止会话。',
+  'home.kickRefreshWarning': '会话已更新，但无法刷新账户数据。',
+  'home.description': '您当前的认证状态。',
+  'home.userId': '用户 ID',
+  'home.sessionId': '会话 ID',
+  'home.emailDescription': '请从登录页使用邮箱一次性验证码登录。',
+  'home.passkeyDescription': '注册浏览器通行密钥，并移除旧的认证器。',
+  'home.ed25519Description': '生成密钥、保存私钥，然后注册公钥。',
+  'home.sessionsDescription': '查看每个活跃会话，并按需终止其他会话。',
+  'home.credentialCreated': '创建于 {date}',
+  'home.noVerifiedEmail': '没有已验证的邮箱',
+  'home.loadingAccount': '正在加载账户...',
+  'home.emailVerified': '已验证邮箱处于有效状态。',
+  'home.emailNotVerified': '此账户没有已验证的邮箱。',
+  'home.registerPasskey': '注册通行密钥',
+  'home.registering': '正在注册...',
+  'home.defaultEd25519Name': 'ED25519 密钥',
+  'home.generateKey': '生成密钥',
+  'home.registerPublicKey': '注册公钥',
+  'home.publicKey': 'ED25519 公钥',
+  'home.activeSessions': '活跃会话',
+  'home.noActiveSessions': '没有活跃会话。',
+  'home.noCredentials': '没有凭据。',
+  'home.authMethod': '认证方式',
+  'home.createdAt': '创建时间',
+  'home.expiresAt': '过期时间',
+  'home.ip': 'IP',
+  'home.userAgent': '用户代理',
+  'home.kick': '终止',
+  'home.kicking': '正在终止...',
+  'admin.loadError': '无法加载管理数据。',
+  'admin.saveError': '无法保存配置。',
+  'admin.exportError': '无法导出数据库。',
+  'admin.exportFailed': '数据库导出失败。',
+  'admin.rotateError': '无法轮换 JWK。',
+  'admin.title': '管理',
+  'admin.description': '配置此 auth-mini 实例并查看用户。',
+  'admin.configurationDescription': '配置公开身份、品牌和可选的邮件投递。',
+  'admin.jwksDescription': 'CURRENT 和 STANDBY 插槽中的公开签名密钥。',
+  'admin.usersDescription': '当前用户和凭据数量。',
+  'admin.userId': '管理员用户 ID',
+  'admin.secureSmtp': '安全 SMTP',
+  'admin.configuration': '配置',
+  'admin.loadingSettings': '正在加载...',
+  'admin.configureSmtp': '配置 SMTP',
+  'admin.leavePassword': '留空以保留当前密码',
+  'admin.save': '保存配置',
+  'admin.saving': '正在保存...',
+  'admin.jwks': 'JWK',
+  'admin.rotate': '轮换 JWK',
+  'admin.rotating': '正在轮换...',
+  'admin.users': '用户',
+  'admin.user': '用户',
+  'admin.sessions': '会话',
+  'admin.passkeys': '通行密钥',
+  'admin.exportDatabase': '导出 SQLite 数据库',
+  'admin.exporting': '正在导出...',
+  'status.backend': '后端状态',
+  'status.connected': '已连接至 {url}',
+  'status.sdkReady': 'SDK 已就绪',
+  'status.sdkIdle': 'SDK 空闲',
+};
+
+const dictionaries: Record<Locale, Record<TranslationKey, string>> = {
+  en,
+  'zh-CN': zhCN,
+};
+
+function readInitialLocale(): Locale {
+  if (typeof window === 'undefined') return 'en';
+
+  try {
+    const saved = window.localStorage.getItem(LOCALE_STORAGE_KEY);
+    if (saved && LOCALES.includes(saved as Locale)) return saved as Locale;
+  } catch {
+    // A private browsing policy can deny storage; the browser preference remains usable.
+  }
+
+  return navigator.language.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en';
+}
+
+function interpolate(template: string, values?: Record<string, string>) {
+  if (!values) return template;
+  return template.replace(
+    /\{(\w+)\}/g,
+    (_, name: string) => values[name] ?? `{${name}}`,
+  );
+}
+
+type I18nContextValue = {
+  locale: Locale;
+  setLocale: (locale: Locale) => void;
+  t: (key: TranslationKey, values?: Record<string, string>) => string;
+};
+
+const I18nContext = createContext<I18nContextValue | null>(null);
+
+export function I18nProvider({ children }: PropsWithChildren) {
+  const [locale, setLocale] = useState<Locale>(readInitialLocale);
+
+  useEffect(() => {
+    document.documentElement.lang = locale;
+    try {
+      window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+    } catch {
+      // Language selection still applies for this page when storage is unavailable.
+    }
+  }, [locale]);
+
+  const value = useMemo<I18nContextValue>(
+    () => ({
+      locale,
+      setLocale,
+      t: (key, values) => interpolate(dictionaries[locale][key], values),
+    }),
+    [locale],
+  );
+
+  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
+}
+
+export function useI18n() {
+  const value = useContext(I18nContext);
+  if (!value) throw new Error('useI18n must be used inside I18nProvider');
+  return value;
+}

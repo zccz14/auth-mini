@@ -5,19 +5,22 @@ import { AdminRoute } from '@/routes/admin';
 import { HomeRoute } from '@/routes/home';
 import { LoginRoute } from '@/routes/login';
 import { SetupRoute } from '@/routes/setup';
+import { I18nProvider } from '@/lib/i18n';
 
 export function AppRouter() {
   return (
-    <DemoProvider>
-      <Routes>
-        <Route path="/login" element={<LoginRoute />} />
-        <Route element={<AppShell />}>
-          <Route path="/" element={<HomeRoute />} />
-          <Route path="/initialize" element={<SetupRoute />} />
-          <Route path="/admin" element={<AdminRoute />} />
-        </Route>
-        <Route path="*" element={<Navigate replace to="/" />} />
-      </Routes>
-    </DemoProvider>
+    <I18nProvider>
+      <DemoProvider>
+        <Routes>
+          <Route path="/login" element={<LoginRoute />} />
+          <Route element={<AppShell />}>
+            <Route path="/" element={<HomeRoute />} />
+            <Route path="/initialize" element={<SetupRoute />} />
+            <Route path="/admin" element={<AdminRoute />} />
+          </Route>
+          <Route path="*" element={<Navigate replace to="/" />} />
+        </Routes>
+      </DemoProvider>
+    </I18nProvider>
   );
 }

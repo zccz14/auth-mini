@@ -2,8 +2,9 @@ import type { ReactNode } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppRouter } from '@/app/router';
+import { I18nProvider } from '@/lib/i18n';
 import { AdminRoute } from './admin';
 import { HomeRoute } from './home';
 import { LoginRoute } from './login';
@@ -71,9 +72,18 @@ function LocationProbe() {
   );
 }
 
+function renderRoute(ui: ReactNode) {
+  return render(<I18nProvider>{ui}</I18nProvider>);
+}
+
+afterEach(() => {
+  localStorage.clear();
+  document.documentElement.lang = 'en';
+});
+
 describe('formal GUI routes', () => {
   it('renders the dedicated initialization page', () => {
-    render(<SetupRoute />);
+    renderRoute(<SetupRoute />);
 
     expect(
       screen.getByRole('heading', { name: 'Initialize auth-mini' }),
@@ -84,7 +94,7 @@ describe('formal GUI routes', () => {
   });
 
   it('renders the dedicated login page with all sign-in methods', () => {
-    render(
+    renderRoute(
       <MemoryRouter
         initialEntries={[
           '/login?redirect_uri=https%3A%2F%2Fapp.example.com%2Fcallback',
@@ -111,6 +121,23 @@ describe('formal GUI routes', () => {
     expect(screen.getByRole('tab', { name: 'ED25519' })).toBeInTheDocument();
   });
 
+  it('switches the login form to Chinese without leaving the route', async () => {
+    const user = userEvent.setup();
+    renderRoute(
+      <MemoryRouter initialEntries={['/login']}>
+        <LoginRoute />
+      </MemoryRouter>,
+    );
+
+    await user.selectOptions(screen.getByLabelText('Language'), 'zh-CN');
+
+    expect(screen.getByRole('heading', { name: '登录' })).toBeInTheDocument();
+    expect(screen.getByLabelText('邮箱地址')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: '发送邮箱验证码' }),
+    ).toBeInTheDocument();
+  });
+
   it('renders the home page with credential and session management', async () => {
     sdk.me.fetch.mockResolvedValue({
       active_sessions: [],
@@ -120,7 +147,7 @@ describe('formal GUI routes', () => {
       webauthn_credentials: [],
     });
 
-    render(<HomeRoute />);
+    renderRoute(<HomeRoute />);
 
     expect(screen.getByRole('heading', { name: 'Email' })).toBeInTheDocument();
     expect(
@@ -156,7 +183,10 @@ describe('formal GUI routes', () => {
     sdk.admin.jwks.rotate.mockResolvedValue({
       keys: [
         { slot: 'CURRENT', public_jwk: { kid: 'standby-kid', kty: 'OKP' } },
-        { slot: 'STANDBY', public_jwk: { kid: 'fresh-standby-kid', kty: 'OKP' } },
+        {
+          slot: 'STANDBY',
+          public_jwk: { kid: 'fresh-standby-kid', kty: 'OKP' },
+        },
       ],
     });
     sdk.admin.config.save.mockResolvedValue({
@@ -171,7 +201,7 @@ describe('formal GUI routes', () => {
     sdk.admin.users.mockResolvedValue({ users: [] });
     const user = userEvent.setup();
 
-    render(<AdminRoute />);
+    renderRoute(<AdminRoute />);
 
     expect(screen.getByRole('heading', { name: 'Admin' })).toBeInTheDocument();
     expect(
@@ -191,7 +221,9 @@ describe('formal GUI routes', () => {
       screen.getByLabelText('Brand background image'),
       'https://cdn.example.com/login.jpg',
     );
-    await user.click(screen.getByRole('button', { name: 'Save configuration' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Save configuration' }),
+    );
 
     await waitFor(() =>
       expect(sdk.admin.config.save).toHaveBeenCalledWith({

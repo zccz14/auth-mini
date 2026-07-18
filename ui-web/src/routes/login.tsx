@@ -10,6 +10,8 @@ import {
   InputOTPSlot,
 } from '@/components/ui/input-otp';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { LanguageSelect } from '@/components/app/language-select';
+import { useI18n } from '@/lib/i18n';
 import { REGEXP_ONLY_DIGITS } from 'input-otp';
 import {
   buildLoginCallbackUrl,
@@ -31,6 +33,7 @@ export function LoginRoute() {
   const location = useLocation();
   const navigate = useNavigate();
   const { adoptDemoSession, config, sdk, setupState } = useDemo();
+  const { t } = useI18n();
   const request = parseLoginRequest(location.search, window.location.search);
   const [method, setMethod] = useState<LoginMethod>('email');
   const [email, setEmail] = useState('');
@@ -85,9 +88,9 @@ export function LoginRoute() {
 
     try {
       await sdk.email.start({ email: email.trim() });
-      setMessage('Check your email for the one-time code.');
+      setMessage(t('login.email.sent'));
     } catch (cause) {
-      setError(formatLoginError(cause, 'Unable to start email sign-in.'));
+      setError(formatLoginError(cause, t('login.startError')));
     } finally {
       setPendingAction(null);
     }
@@ -151,12 +154,12 @@ export function LoginRoute() {
 
     if (!request.redirectUri) {
       await adoptDemoSession(toDemoSessionTokens(tokens));
-      setMessage('Signed in.');
+      setMessage(t('login.signedIn'));
       navigate('/');
       return;
     }
 
-    setMessage('Redirecting back to the application.');
+    setMessage(t('login.redirecting'));
     sendLoginCallback(
       buildLoginCallbackUrl({
         redirectUri: request.redirectUri,
@@ -174,7 +177,7 @@ export function LoginRoute() {
     try {
       await task();
     } catch (cause) {
-      setError(formatLoginError(cause, 'Sign-in failed.'));
+      setError(formatLoginError(cause, t('login.signInError')));
     } finally {
       setPendingAction(null);
     }
@@ -186,26 +189,31 @@ export function LoginRoute() {
       style={loginBackgroundStyle}
     >
       <section className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-xl flex-col justify-center">
+        <div className="mb-4 flex justify-end">
+          <LanguageSelect />
+        </div>
         <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="space-y-2">
             <p className="text-sm font-medium text-slate-500">{brandName}</p>
-            <h1 className="text-2xl font-semibold text-slate-950">Sign in</h1>
+            <h1 className="text-2xl font-semibold text-slate-950">
+              {t('login.title')}
+            </h1>
             <p className="text-sm leading-6 text-slate-600">
-              Continue to the application that opened this window.
+              {t('login.continueDescription')}
             </p>
           </div>
 
           <div className="mt-5 space-y-4">
             {config.status !== 'ready' ? (
               <Alert className="border-amber-200 bg-amber-50 text-amber-900">
-                <AlertTitle>Auth server is not configured</AlertTitle>
+                <AlertTitle>{t('login.serverNotConfigured')}</AlertTitle>
                 <AlertDescription>{config.configError}</AlertDescription>
               </Alert>
             ) : null}
 
             {request.status === 'invalid' ? (
               <Alert className="border-rose-200 bg-rose-50 text-rose-900">
-                <AlertTitle>Invalid login request</AlertTitle>
+                <AlertTitle>{t('login.invalidRequest')}</AlertTitle>
                 <AlertDescription>{request.error}</AlertDescription>
               </Alert>
             ) : null}
@@ -216,7 +224,7 @@ export function LoginRoute() {
                 disabled={!canUsePasskey}
                 onClick={() => void handlePasskey()}
               >
-                Sign In with PassKey
+                {t('login.passkeySignIn')}
               </Button>
             ) : null}
 
@@ -225,16 +233,16 @@ export function LoginRoute() {
               onValueChange={(value) => setMethod(value as LoginMethod)}
             >
               <TabsList className="grid h-auto w-full grid-cols-2">
-                <TabsTrigger value="email">Email</TabsTrigger>
+                <TabsTrigger value="email">{t('common.email')}</TabsTrigger>
                 <TabsTrigger value="ed25519">ED25519</TabsTrigger>
               </TabsList>
 
               <TabsContent value="email" className="space-y-4">
                 <form className="space-y-3" onSubmit={handleEmailStart}>
                   <label className="grid gap-2 text-sm font-medium text-slate-700">
-                    <span>Email address</span>
+                    <span>{t('common.emailAddress')}</span>
                     <Input
-                      aria-label="Email address"
+                      aria-label={t('common.emailAddress')}
                       autoComplete="email"
                       value={email}
                       onChange={(event) => setEmail(event.currentTarget.value)}
@@ -247,16 +255,16 @@ export function LoginRoute() {
                     disabled={!canStartEmail}
                   >
                     {pendingAction === 'email-start'
-                      ? 'Sending code...'
-                      : 'Send email code'}
+                      ? t('login.email.sending')
+                      : t('login.email.send')}
                   </Button>
                 </form>
 
                 <form className="space-y-3" onSubmit={handleEmailVerify}>
                   <label className="grid gap-2 text-sm font-medium text-slate-700">
-                    <span>One-time code</span>
+                    <span>{t('common.oneTimeCode')}</span>
                     <InputOTP
-                      aria-label="One-time code"
+                      aria-label={t('common.oneTimeCode')}
                       autoComplete="one-time-code"
                       maxLength={6}
                       pattern={REGEXP_ONLY_DIGITS}
@@ -280,8 +288,8 @@ export function LoginRoute() {
                     disabled={!canVerifyEmail}
                   >
                     {pendingAction === 'email-verify'
-                      ? 'Verifying...'
-                      : 'Verify and continue'}
+                      ? t('login.email.verifying')
+                      : t('login.email.verify')}
                   </Button>
                 </form>
               </TabsContent>
@@ -289,9 +297,9 @@ export function LoginRoute() {
               <TabsContent value="ed25519" className="space-y-4">
                 <form className="space-y-3" onSubmit={handleEd25519}>
                   <label className="grid gap-2 text-sm font-medium text-slate-700">
-                    <span>Seed (base64url 32-byte)</span>
+                    <span>{t('common.seed')}</span>
                     <Input
-                      aria-label="Seed (base64url 32-byte)"
+                      aria-label={t('common.seed')}
                       value={seed}
                       onChange={(event) => setSeed(event.currentTarget.value)}
                       placeholder="7rANewlCLceTsUo9feN0DLjnu-ayYsdhkVWvHT4FelM"
@@ -306,8 +314,8 @@ export function LoginRoute() {
                     disabled={!canUseEd25519}
                   >
                     {pendingAction === 'ed25519'
-                      ? 'Signing in...'
-                      : 'Sign in with ED25519'}
+                      ? t('login.ed25519.signingIn')
+                      : t('login.ed25519.signIn')}
                   </Button>
                 </form>
               </TabsContent>
