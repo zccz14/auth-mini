@@ -52,11 +52,11 @@ const sdk = createBrowserSdk('http://127.0.0.1:7777');
 
 If a refresh token is already stored, startup enters `recovering` first and then settles to `authenticated` or `anonymous` after recovery completes. `sdk.session.getState()` only exposes session/auth fields; it never includes a cached `/me` snapshot.
 
-## Explicit `/me` reads
+## High-level SDK boundary
 
-- `await sdk.me.fetch()` performs one explicit authenticated `/me` request and resolves with that response.
-- `sdk.me.fetch()` may refresh the access token first when the stored session requires it, but it does not write `/me` into shared session state or browser storage.
-- Callers own any local memoization, loading state, error state, and refresh timing for `/me`.
+The browser SDK does not expose `sdk.me` or `sdk.me.fetch()`. Its public surface is the browser session and authentication lifecycle.
+
+`GET /me` remains a server-side self-audience capability for Auth Mini's own GUI and account-management views. It is not part of the downstream browser SDK contract. If an integration needs the raw HTTP operation and has an appropriate self-audience token, use the low-level API SDK's [`sdk.me.get()`](./api-sdk.md#authenticated-requests).
 
 ## Passkey example
 
@@ -68,12 +68,10 @@ const sdk = createBrowserSdk('https://auth.example.com');
 async function signIn(email: string, code: string) {
   await sdk.email.start({ email });
   await sdk.email.verify({ email, code });
-  console.log(await sdk.me.fetch());
 }
 
 async function signInWithPasskey() {
   await sdk.webauthn.authenticate();
-  console.log(await sdk.me.fetch());
 }
 ```
 
@@ -82,7 +80,7 @@ async function signInWithPasskey() {
 - The browser SDK requires an explicit server base URL via `createBrowserSdk(serverBaseUrl)`.
 - Configure the issuer and passkey RP ID on the Auth Mini instance; passkey requests use that server-side configuration.
 - Multiple tabs sharing one session can still race during refresh-token rotation, but the loser tab enters `recovering` and usually converges to the latest shared session state.
-- That convergence only shares session tokens/status; `/me` remains caller-owned and must be fetched explicitly in each tab when needed.
+- That convergence shares session tokens/status only; account/profile data remains outside the high-level browser SDK contract.
 
 ## Demo and publishing guidance
 

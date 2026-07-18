@@ -14,10 +14,9 @@ import {
   validateBase64Url32,
 } from '@/lib/demo-ed25519';
 import { useI18n } from '@/lib/i18n';
+import type { DemoCurrentUser } from '@/lib/demo-sdk';
 
-type Me = Awaited<
-  ReturnType<NonNullable<ReturnType<typeof useDemo>['sdk']>['me']['fetch']>
->;
+type Me = DemoCurrentUser;
 type SessionCapability = 'manageable' | 'not-manageable' | 'legacy-token';
 type ActiveSession = {
   id: string;
@@ -135,7 +134,7 @@ export function HomeRoute() {
       }
 
       try {
-        const nextMe = await sdk.me.fetch();
+        const nextMe = await sdk.currentUser.fetch();
         if (loadMeRequestIdRef.current !== requestId) {
           return;
         }

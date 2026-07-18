@@ -1,4 +1,6 @@
 import { createBrowserSdk } from 'auth-mini/sdk/browser';
+import type { MeResponse } from 'auth-mini/sdk/api';
+import type { SessionSnapshot } from 'auth-mini/sdk/browser';
 
 type DemoEd25519Api = {
   register(input: { name: string; public_key: string }): Promise<unknown>;
@@ -79,8 +81,15 @@ type AdminApi = {
   databaseUrl(): string;
 };
 
+export type DemoCurrentUser = MeResponse;
+
+type CurrentUserApi = {
+  fetch(): Promise<DemoCurrentUser>;
+};
+
 export type DemoSdk = ReturnType<typeof createBrowserSdk> & {
   admin: AdminApi;
+  currentUser: CurrentUserApi;
   ed25519: DemoEd25519Api;
 };
 
@@ -133,6 +142,22 @@ export function createDemoSdk(serverBaseUrl: string): DemoSdk {
       error.status === 401 &&
       (!('error' in error) || error.error !== 'session_superseded')
     );
+  }
+
+  function needsRefresh(snapshot: SessionSnapshot): boolean {
+    if (!snapshot.expiresAt || !snapshot.receivedAt) {
+      return true;
+    }
+
+    const expiresAt = Date.parse(snapshot.expiresAt);
+    const receivedAt = Date.parse(snapshot.receivedAt);
+    if (!Number.isFinite(expiresAt) || !Number.isFinite(receivedAt)) {
+      return true;
+    }
+
+    const lifetimeMs = expiresAt - receivedAt;
+    const thresholdMs = lifetimeMs < 10 * 60_000 ? lifetimeMs / 2 : 5 * 60_000;
+    return Date.now() >= expiresAt - thresholdMs;
   }
 
   async function requireAccessToken(forceRefresh = false): Promise<string> {
@@ -268,6 +293,29 @@ export function createDemoSdk(serverBaseUrl: string): DemoSdk {
       },
       databaseUrl() {
         return new URL('/admin/database', serverBaseUrl).toString();
+      },
+    },
+    currentUser: {
+      async fetch() {
+        const accessToken = await requireAccessToken(
+          needsRefresh(sdk.session.getState()),
+        );
+
+        try {
+          return await getJson<DemoCurrentUser>('/me', accessToken);
+        } catch (error) {
+          if (
+            !isRetryableAuthError(error) ||
+            !sdk.session.getState().refreshToken
+          ) {
+            throw error;
+          }
+
+          return await getJson<DemoCurrentUser>(
+            '/me',
+            await requireAccessToken(true),
+          );
+        }
       },
     },
     ed25519: {

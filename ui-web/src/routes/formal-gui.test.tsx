@@ -20,7 +20,7 @@ const sdk = {
   },
   ed25519: { register: vi.fn(), start: vi.fn(), verify: vi.fn() },
   email: { start: vi.fn(), verify: vi.fn() },
-  me: { fetch: vi.fn() },
+  currentUser: { fetch: vi.fn() },
   passkey: { authenticate: vi.fn(), register: vi.fn() },
   session: {
     getState: vi.fn(),
@@ -139,7 +139,7 @@ describe('formal GUI routes', () => {
   });
 
   it('renders the home page with credential and session management', async () => {
-    sdk.me.fetch.mockResolvedValue({
+    sdk.currentUser.fetch.mockResolvedValue({
       active_sessions: [],
       ed25519_credentials: [],
       email: 'user@example.com',
@@ -242,7 +242,7 @@ describe('formal GUI routes', () => {
   });
 
   it('redirects unknown pages to the default page', async () => {
-    sdk.me.fetch.mockResolvedValue({
+    sdk.currentUser.fetch.mockResolvedValue({
       active_sessions: [],
       ed25519_credentials: [],
       email: 'user@example.com',

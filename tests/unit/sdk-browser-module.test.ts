@@ -24,9 +24,7 @@ describe('browser module sdk', () => {
     try {
       expect(typeof sdk.email.start).toBe('function');
       expect(typeof sdk.session.onChange).toBe('function');
-      expect(typeof sdk.me.fetch).toBe('function');
-      expect(sdk.me).not.toHaveProperty('get');
-      expect(sdk.me).not.toHaveProperty('reload');
+      expect(sdk).not.toHaveProperty('me');
       expect('AuthMini' in globalThis).toBe(false);
 
       await expect(
@@ -82,16 +80,6 @@ describe('browser module sdk', () => {
         });
       }
 
-      if (requestUrl.pathname.endsWith('/me')) {
-        return jsonResponse({
-          user_id: 'user-a',
-          email: 'user@example.com',
-          webauthn_credentials: [],
-          ed25519_credentials: [],
-          active_sessions: [],
-        });
-      }
-
       return jsonResponse({ ok: true });
     });
 
@@ -105,6 +93,9 @@ describe('browser module sdk', () => {
         email: 'user@example.com',
         code: '123456',
       });
+      expect(
+        fetch.mock.calls.map(([input]) => new URL(String(input)).pathname),
+      ).not.toContain('/me');
 
       fetch.mockClear();
 
@@ -149,69 +140,6 @@ describe('browser module sdk', () => {
     }
   });
 
-  it('rejects malformed /me payloads from explicit browser me.fetch calls', async () => {
-    const storage = fakeStorage();
-
-    seedBrowserSdkStorage(storage, 'https://auth.example.com', {
-      sessionId: 'session-1',
-      accessToken: 'access-1',
-      refreshToken: 'refresh-1',
-      receivedAt: '2036-04-03T00:00:00.000Z',
-      expiresAt: '2036-04-03T00:15:00.000Z',
-    });
-    const fetch = vi.fn(async (input: string | URL) => {
-      const requestUrl = new URL(String(input));
-
-      if (requestUrl.pathname.endsWith('/me')) {
-        return jsonResponse({
-          user_id: 'user-1',
-          email: 'user@example.com',
-          webauthn_credentials: [],
-          active_sessions: [],
-        });
-      }
-
-      return jsonResponse({ error: 'unexpected' }, 500);
-    });
-
-    vi.stubGlobal('fetch', fetch);
-    vi.stubGlobal('localStorage', storage);
-
-    try {
-      const sdk = createBrowserSdk('https://auth.example.com');
-
-      await expect(sdk.me.fetch()).rejects.toMatchObject({
-        error: 'request_failed',
-      });
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
-  it('rejects explicit browser me.fetch calls without an authenticated session', async () => {
-    const storage = fakeStorage();
-    const fetch = vi.fn(async () => jsonResponse({ error: 'unexpected' }, 500));
-
-    vi.stubGlobal('fetch', fetch);
-    vi.stubGlobal('localStorage', storage);
-
-    try {
-      const sdk = createBrowserSdk('https://auth.example.com');
-
-      await expect(sdk.me.fetch()).rejects.toMatchObject({
-        code: 'missing_session',
-      });
-      expect(sdk.session.getState()).toMatchObject({
-        status: 'anonymous',
-        authenticated: false,
-      });
-      expect(sdk.session.getState()).not.toHaveProperty('me');
-      expect(fetch).not.toHaveBeenCalled();
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
   it('browser startup recovery keeps token-only state without requesting /me', async () => {
     const storage = fakeStorage();
 
@@ -249,53 +177,6 @@ describe('browser module sdk', () => {
       });
       expect(sdk.session.getState()).not.toHaveProperty('me');
       expect(fetch).not.toHaveBeenCalled();
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
-  it('rejects browser /me payloads when nested credential items are malformed', async () => {
-    const storage = fakeStorage();
-
-    seedBrowserSdkStorage(storage, 'https://auth.example.com', {
-      sessionId: 'session-1',
-      accessToken: 'access-1',
-      refreshToken: 'refresh-1',
-      receivedAt: '2036-04-03T00:00:00.000Z',
-      expiresAt: '2036-04-03T00:15:00.000Z',
-    });
-    const fetch = vi.fn(async (input: string | URL) => {
-      const requestUrl = new URL(String(input));
-
-      if (requestUrl.pathname.endsWith('/me')) {
-        return jsonResponse({
-          user_id: 'user-1',
-          email: 'user@example.com',
-          webauthn_credentials: [],
-          ed25519_credentials: [
-            {
-              id: 'cred-1',
-              public_key: 'public-key',
-              created_at: '2036-04-03T00:00:00.000Z',
-              last_used_at: null,
-            },
-          ],
-          active_sessions: [],
-        });
-      }
-
-      return jsonResponse({ error: 'unexpected' }, 500);
-    });
-
-    vi.stubGlobal('fetch', fetch);
-    vi.stubGlobal('localStorage', storage);
-
-    try {
-      const sdk = createBrowserSdk('https://auth.example.com');
-
-      await expect(sdk.me.fetch()).rejects.toMatchObject({
-        error: 'request_failed',
-      });
     } finally {
       vi.unstubAllGlobals();
     }

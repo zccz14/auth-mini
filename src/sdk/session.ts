@@ -1,8 +1,6 @@
 import { createSdkError } from './errors.js';
 import type { HttpClient } from './http.js';
-import { parseMeResponse } from './me.js';
 import type {
-  MeResponse,
   PersistedSdkState,
   SessionSnapshot,
   SessionResult,
@@ -28,7 +26,6 @@ export function createSessionController(input: {
   waitForExternalStorage?: (timeoutMs: number) => Promise<void>;
 }) {
   let refreshPromise: Promise<SessionResult> | null = null;
-  let meFetchPromise: Promise<MeResponse> | null = null;
   let supersededRecoveryPromise: Promise<void> | null = null;
 
   return {
@@ -145,40 +142,6 @@ export function createSessionController(input: {
             throw error;
           }
         }
-      }
-    },
-    async fetchMe(): Promise<MeResponse> {
-      if (meFetchPromise) {
-        return meFetchPromise;
-      }
-
-      meFetchPromise = (async () => {
-        const snapshot = input.state.getState();
-
-        if (!snapshot.refreshToken) {
-          throw createSdkError('missing_session', 'Missing refresh token');
-        }
-
-        const accessToken =
-          !snapshot.accessToken || needsRefresh(snapshot, input.now())
-            ? (await this.refresh()).accessToken
-            : snapshot.accessToken;
-
-        if (!accessToken) {
-          throw createSdkError('missing_session', 'Missing access token');
-        }
-
-        return parseMeResponse(
-          await input.http.getJson('/me', {
-            accessToken,
-          }),
-        );
-      })();
-
-      try {
-        return await meFetchPromise;
-      } finally {
-        meFetchPromise = null;
       }
     },
     async logout(): Promise<void> {

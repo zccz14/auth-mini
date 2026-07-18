@@ -43,4 +43,4 @@ const sdk = createApiSdk({
 const me = await sdk.me.get();
 ```
 
-The SDK applies the bearer header for operations that require authenticated access.
+The SDK applies the bearer header for operations that require authenticated access. `sdk.me.get()` remains available on this low-level API SDK when the caller is using a token valid for Auth Mini's self-audience. The higher-level Browser and Device SDKs do not expose `sdk.me.fetch()`; `/me` is reserved for the Auth Mini server's own GUI and account-management views.

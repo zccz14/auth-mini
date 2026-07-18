@@ -34,16 +34,6 @@ describe('device module sdk', () => {
         });
       }
 
-      if (url.pathname === '/auth/base/me') {
-        return jsonResponse({
-          user_id: 'user-1',
-          email: 'device@example.com',
-          webauthn_credentials: [],
-          ed25519_credentials: [],
-          active_sessions: [],
-        });
-      }
-
       if (url.pathname === '/auth/base/session/refresh') {
         return jsonResponse({
           session_id: 'session-2',
@@ -67,16 +57,11 @@ describe('device module sdk', () => {
       now: () => Date.parse('2026-04-12T00:00:00.000Z'),
     });
 
-    expect(typeof sdk.me.fetch).toBe('function');
-    expect(sdk.me).not.toHaveProperty('get');
-    expect(sdk.me).not.toHaveProperty('reload');
+    expect(sdk).not.toHaveProperty('me');
     await expect(sdk.ready).resolves.toBeUndefined();
     await expect(sdk.session.refresh()).resolves.toMatchObject({
       sessionId: 'session-2',
       accessToken: 'access-2',
-    });
-    await expect(sdk.me.fetch()).resolves.toMatchObject({
-      email: 'device@example.com',
     });
     expect(sdk.session.getState()).not.toHaveProperty('me');
     await expect(sdk.session.logout()).resolves.toBeUndefined();
@@ -85,12 +70,11 @@ describe('device module sdk', () => {
       'https://sdk.example.test:9443/auth/base/ed25519/start',
       'https://sdk.example.test:9443/auth/base/ed25519/verify',
       'https://sdk.example.test:9443/auth/base/session/refresh',
-      'https://sdk.example.test:9443/auth/base/me',
       'https://sdk.example.test:9443/auth/base/session/logout',
     ]);
   });
 
-  it('auto-authenticates on construction before any explicit /me fetch', async () => {
+  it('auto-authenticates on construction without requesting /me', async () => {
     const fetch = vi.fn(async (input: URL | RequestInfo) => {
       const url = input instanceof URL ? input : new URL(String(input));
 
@@ -229,16 +213,6 @@ describe('device module sdk', () => {
           });
         }
 
-        if (url.pathname === '/me') {
-          return jsonResponse({
-            user_id: 'user-1',
-            email: 'device@example.com',
-            webauthn_credentials: [],
-            ed25519_credentials: [],
-            active_sessions: [],
-          });
-        }
-
         if (url.pathname === '/session/logout') {
           return jsonResponse({ ok: true });
         }
@@ -255,9 +229,6 @@ describe('device module sdk', () => {
     await sdk.dispose();
     await sdk.dispose();
 
-    await expect(sdk.me.fetch()).rejects.toMatchObject({
-      code: 'disposed_session',
-    });
     await expect(sdk.session.refresh()).rejects.toMatchObject({
       code: 'disposed_session',
     });

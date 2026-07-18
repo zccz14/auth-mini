@@ -1,10 +1,6 @@
 import type {
-  Ed25519Credential as GeneratedMeEd25519Credential,
   EmailStartRequest as GeneratedEmailStartInput,
   EmailVerifyRequest as GeneratedEmailVerifyInput,
-  MeResponse as GeneratedMeResponse,
-  SessionSummary as GeneratedMeActiveSession,
-  WebauthnCredential as GeneratedMeWebauthnCredential,
 } from '../generated/api/index.js';
 
 export type SdkStatus = 'recovering' | 'authenticated' | 'anonymous';
@@ -13,14 +9,6 @@ export type FetchLike = (
   input: string | URL,
   init?: RequestInit,
 ) => Promise<Response>;
-
-export type MeWebauthnCredential = GeneratedMeWebauthnCredential;
-
-export type MeEd25519Credential = GeneratedMeEd25519Credential;
-
-export type MeActiveSession = GeneratedMeActiveSession;
-
-export type MeResponse = GeneratedMeResponse;
 
 export type SessionSnapshot = {
   status: SdkStatus;
@@ -85,9 +73,6 @@ export type DeviceSdkApi = {
   ready: Promise<void>;
   dispose(): Promise<void>;
   [Symbol.asyncDispose](): Promise<void>;
-  me: {
-    fetch(): Promise<MeResponse>;
-  };
   session: {
     getState(): SessionSnapshot;
     onChange(listener: Listener): () => void;
@@ -104,9 +89,6 @@ export type AuthMiniApi = {
   passkey: {
     authenticate(input?: AuthenticationTargetInput): Promise<SessionResult>;
     register(): Promise<WebauthnVerifyResponse>;
-  };
-  me: {
-    fetch(): Promise<MeResponse>;
   };
   session: {
     getState(): SessionSnapshot;
