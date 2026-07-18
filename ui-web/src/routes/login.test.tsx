@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { act } from 'react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { AppRouter } from '@/app/router';
 
@@ -34,6 +34,7 @@ const sdkMocks = vi.hoisted(() => {
   const ed25519Start = vi.fn();
   const ed25519Verify = vi.fn();
   const setupFetch = vi.fn();
+  const clearLocal = vi.fn();
 
   return {
     createDemoSdk: vi.fn(() => ({
@@ -51,6 +52,7 @@ const sdkMocks = vi.hoisted(() => {
         onChange: vi.fn(() => vi.fn()),
         refresh: vi.fn(),
         logout: vi.fn(),
+        clearLocal,
       },
       webauthn: { register: vi.fn(), authenticate: vi.fn() },
     })),
@@ -60,6 +62,7 @@ const sdkMocks = vi.hoisted(() => {
     ed25519Start,
     ed25519Verify,
     setupFetch,
+    clearLocal,
     persistDemoSession: vi.fn(),
     sendLoginCallback: vi.fn(),
     sessionState,
@@ -86,10 +89,18 @@ vi.mock('@/lib/login-callback', async (importOriginal) => {
   };
 });
 
-function loginPath(redirectUri = 'https://app.example.com/callback') {
-  return (
-    '/login?redirect_uri=' + encodeURIComponent(redirectUri) + '&state=state-1'
-  );
+function loginPath(
+  redirectUri = 'https://app.example.com/callback',
+  audience?: string,
+) {
+  const params = new URLSearchParams({
+    redirect_uri: redirectUri,
+    state: 'state-1',
+  });
+  if (audience) {
+    params.set('aud', audience);
+  }
+  return `/login?${params.toString()}`;
 }
 
 function renderLogin(path = loginPath()) {
@@ -107,6 +118,15 @@ async function expectButtonEnabled(name: string) {
 }
 
 const INPUT_OTP_SELECTION_SYNC_DELAY_MS = 60;
+
+afterEach(async () => {
+  // input-otp schedules an uncancelled 50ms selection sync on blur/unmount.
+  await act(async () => {
+    await new Promise((resolve) =>
+      setTimeout(resolve, INPUT_OTP_SELECTION_SYNC_DELAY_MS),
+    );
+  });
+});
 
 async function typeOneTimeCode(
   user: ReturnType<typeof userEvent.setup>,
@@ -138,6 +158,7 @@ describe('LoginRoute', () => {
     sdkMocks.ed25519Start.mockReset();
     sdkMocks.ed25519Verify.mockReset();
     sdkMocks.setupFetch.mockReset();
+    sdkMocks.clearLocal.mockReset();
     sdkMocks.setupFetch.mockResolvedValue({
       admin_ed25519: null,
       admin_user_id: 'admin-user',
@@ -186,6 +207,44 @@ describe('LoginRoute', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('always identifies the HTTPS application domain', async () => {
+    renderLogin(loginPath('https://APP.Example.com:443/callback'));
+
+    expect(
+      await screen.findByText('You are signing in to'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('app.example.com')).toBeInTheDocument();
+  });
+
+  it('identifies Auth Mini itself when no redirect is requested', async () => {
+    renderLogin('/login');
+
+    expect(
+      await screen.findByText('You are signing in to Auth Mini'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('This session is for Auth Mini itself.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('auth.example.com')).toBeInTheDocument();
+  });
+
+  it('identifies a local app and its requested audience in both languages', async () => {
+    const user = userEvent.setup();
+    renderLogin(loginPath('http://localhost:5173/callback', 'app.ntnl.io'));
+
+    expect(
+      await screen.findByText('Local development app'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('localhost:5173')).toBeInTheDocument();
+    expect(screen.getByText('Requesting access to')).toBeInTheDocument();
+    expect(screen.getByText('app.ntnl.io')).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText('Language'), 'zh-CN');
+
+    expect(screen.getByText('本地开发应用')).toBeInTheDocument();
+    expect(screen.getByText('请求访问')).toBeInTheDocument();
+  });
+
   it('renders configured brand name and login background image', async () => {
     sdkMocks.setupFetch.mockResolvedValueOnce({
       admin_ed25519: null,
@@ -230,10 +289,12 @@ describe('LoginRoute', () => {
     expect(sdkMocks.emailVerify).toHaveBeenCalledWith({
       email: 'user@example.com',
       code: '123456',
+      redirect_uri: 'https://app.example.com/callback',
     });
     expect(sdkMocks.sendLoginCallback).toHaveBeenCalledWith(
       'https://app.example.com/callback#access_token=jwt-email&token_type=Bearer&session_id=session-email&refresh_token=refresh-email&expires_in=3600&expires_at=2026-06-30T01%3A00%3A00.000Z&state=state-1',
     );
+    expect(sdkMocks.clearLocal).toHaveBeenCalledTimes(1);
   });
 
   it('redirects when redirect_uri is on the document query before the hash route', async () => {
@@ -278,7 +339,10 @@ describe('LoginRoute', () => {
 
     await user.click(await expectButtonEnabled('Sign In with PassKey'));
 
-    expect(sdkMocks.passkeyAuthenticate).toHaveBeenCalledTimes(1);
+    expect(sdkMocks.passkeyAuthenticate).toHaveBeenCalledWith({
+      redirect_uri: 'https://app.example.com/callback',
+    });
+    expect(sdkMocks.clearLocal).toHaveBeenCalledTimes(1);
     expect(sdkMocks.sendLoginCallback).toHaveBeenCalledWith(
       'https://app.example.com/callback#access_token=jwt-passkey&token_type=Bearer&session_id=session-passkey&refresh_token=refresh-passkey&expires_in=3600&expires_at=2026-06-30T01%3A00%3A00.000Z&state=state-1',
     );
@@ -295,9 +359,7 @@ describe('LoginRoute', () => {
 
     renderLogin();
 
-    await waitFor(() =>
-      expect(sdkMocks.setupFetch).toHaveBeenCalled(),
-    );
+    await waitFor(() => expect(sdkMocks.setupFetch).toHaveBeenCalled());
 
     expect(
       screen.queryByRole('button', { name: 'Sign In with PassKey' }),
@@ -336,8 +398,10 @@ describe('LoginRoute', () => {
     expect(sdkMocks.ed25519Verify).toHaveBeenCalledWith({
       request_id: 'request-1',
       signature: 'signature-1',
+      redirect_uri: 'https://app.example.com/#/callback?next=%2Fapp',
     });
     expect(sdkMocks.persistDemoSession).not.toHaveBeenCalled();
+    expect(sdkMocks.clearLocal).toHaveBeenCalledTimes(1);
     expect(sdkMocks.sendLoginCallback).toHaveBeenCalledWith(
       'https://app.example.com/#/callback?next=%2Fapp&access_token=jwt-ed25519&token_type=Bearer&session_id=session-ed25519&refresh_token=refresh-ed25519&expires_in=900&expires_at=2026-06-30T00%3A15%3A00.000Z&state=state-1',
     );
@@ -374,9 +438,40 @@ describe('LoginRoute', () => {
         token_type: 'Bearer',
       },
     );
+    expect(sdkMocks.emailVerify).toHaveBeenCalledWith({
+      email: 'user@example.com',
+      code: '123456',
+    });
     expect(sdkMocks.sendLoginCallback).not.toHaveBeenCalled();
+    expect(sdkMocks.clearLocal).not.toHaveBeenCalled();
     expect(
       await screen.findByRole('heading', { name: 'Account' }),
     ).toBeInTheDocument();
+  });
+
+  it('passes redirect_uri and aud when a local app verifies login', async () => {
+    const user = userEvent.setup();
+    sdkMocks.emailStart.mockResolvedValueOnce({ ok: true });
+    sdkMocks.emailVerify.mockResolvedValueOnce({
+      sessionId: 'session-local-app',
+      accessToken: 'jwt-local-app',
+      refreshToken: 'refresh-local-app',
+      receivedAt: '2026-06-30T00:00:00.000Z',
+      expiresAt: '2026-06-30T01:00:00.000Z',
+    });
+
+    renderLogin(loginPath('http://127.0.0.1:4173/callback', 'app.ntnl.io'));
+
+    await user.type(screen.getByLabelText('Email address'), 'user@example.com');
+    await user.click(await expectButtonEnabled('Send email code'));
+    await typeOneTimeCode(user, '123456');
+    await user.click(await expectButtonEnabled('Verify and continue'));
+
+    expect(sdkMocks.emailVerify).toHaveBeenCalledWith({
+      email: 'user@example.com',
+      code: '123456',
+      redirect_uri: 'http://127.0.0.1:4173/callback',
+      aud: 'app.ntnl.io',
+    });
   });
 });

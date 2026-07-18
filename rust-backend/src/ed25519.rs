@@ -4,7 +4,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::session::{mint_session_tokens, TokenPair};
+use crate::session::{mint_session_tokens_for_audience, TokenPair};
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 pub(crate) struct CredentialCreateRequest {
@@ -28,6 +28,8 @@ pub(crate) struct StartAuthenticationRequest {
 pub(crate) struct VerifyAuthenticationRequest {
     pub(crate) request_id: String,
     pub(crate) signature: String,
+    pub(crate) redirect_uri: Option<String>,
+    pub(crate) aud: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -211,6 +213,7 @@ pub(crate) fn verify_authentication(
     connection: &mut Connection,
     request: &VerifyAuthenticationRequest,
     issuer: &str,
+    audience: &str,
     ip: Option<&str>,
     user_agent: Option<&str>,
 ) -> Result<TokenPair, VerifyAuthenticationError> {
@@ -245,11 +248,12 @@ pub(crate) fn verify_authentication(
             params![now, credential.id],
         )
         .map_err(|_| VerifyAuthenticationError::Database)?;
-    let pair = mint_session_tokens(
+    let pair = mint_session_tokens_for_audience(
         &transaction,
         &credential.user_id,
         "ed25519",
         issuer,
+        audience,
         ip,
         user_agent,
     )
@@ -1017,15 +1021,24 @@ mod tests {
             &VerifyAuthenticationRequest {
                 request_id: "00000000-0000-4000-8000-000000000000".to_string(),
                 signature,
+                redirect_uri: None,
+                aud: None,
             },
             "auth-mini",
+            "api.example.com",
             None,
             Some("Agent/1.0"),
         )
         .expect("authentication verifies");
-        let stored: (Option<String>, Option<String>, String, Option<String>) = connection
+        let stored: (
+            Option<String>,
+            Option<String>,
+            String,
+            Option<String>,
+            String,
+        ) = connection
             .query_row(
-                "SELECT c.consumed_at, p.last_used_at, s.auth_method, s.user_agent
+                "SELECT c.consumed_at, p.last_used_at, s.auth_method, s.user_agent, s.audience
                  FROM ed25519_challenges c, ed25519_credentials p, sessions s
                  WHERE c.request_id = ?1 AND p.id = ?2 AND s.id = ?3",
                 [
@@ -1033,7 +1046,15 @@ mod tests {
                     "00000000-0000-4000-8000-000000000001",
                     &pair.session_id,
                 ],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
             )
             .expect("side effects read");
 
@@ -1043,6 +1064,7 @@ mod tests {
         assert!(stored.1.is_some());
         assert_eq!(stored.2, "ed25519");
         assert_eq!(stored.3, Some("Agent/1.0".to_string()));
+        assert_eq!(stored.4, "api.example.com");
     }
 
     #[test]
@@ -1084,7 +1106,10 @@ mod tests {
             &VerifyAuthenticationRequest {
                 request_id: "00000000-0000-4000-8000-000000000000".to_string(),
                 signature,
+                redirect_uri: None,
+                aud: None,
             },
+            "auth-mini",
             "auth-mini",
             None,
             None,
@@ -1148,7 +1173,10 @@ mod tests {
             &VerifyAuthenticationRequest {
                 request_id: "00000000-0000-4000-8000-000000000000".to_string(),
                 signature,
+                redirect_uri: None,
+                aud: None,
             },
+            "auth-mini",
             "auth-mini",
             None,
             None,
@@ -1175,6 +1203,7 @@ mod tests {
                     user_id TEXT NOT NULL,
                     refresh_token_hash TEXT NOT NULL,
                     auth_method TEXT NOT NULL,
+                    audience TEXT NOT NULL DEFAULT '',
                     ip TEXT,
                     user_agent TEXT,
                     expires_at TEXT NOT NULL,

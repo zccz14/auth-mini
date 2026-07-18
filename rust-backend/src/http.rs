@@ -2,6 +2,7 @@ use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{IpAddr, TcpListener, TcpStream};
 
+use crate::audience::resolve_audience;
 use crate::config::Config;
 use crate::db::{initialize_runtime_database, read_app_issuer};
 use crate::ed25519::{
@@ -18,11 +19,13 @@ use crate::email_verify::{
 };
 use crate::jwks::{list_admin_keys, list_public_keys, rotate_keys};
 use crate::openapi::{read_openapi_json, read_openapi_yaml};
+#[cfg(test)]
+use crate::session::mint_session_tokens;
 use crate::session::{
     authenticate_access_token, authorize_passkey_registration, current_user_response,
-    logout_peer_session, logout_session, mint_session_tokens, parse_refresh_request,
-    refresh_session_tokens, require_admin_auth, require_passkey_management_auth, token_json,
-    SessionError,
+    logout_peer_session, logout_session, mint_session_tokens_for_audience, parse_refresh_request,
+    refresh_session_tokens, require_admin_auth, require_passkey_management_auth,
+    require_self_audience, token_json, SessionError,
 };
 use crate::setup::{
     apply_admin_config, apply_admin_setup, parse_admin_config_request, parse_admin_setup_request,
@@ -520,18 +523,26 @@ fn handle_email_verify(request: &Request, config: &Config) -> io::Result<Respons
     let Some(database) = &config.database else {
         return Ok(Response::json_error(501, "not_implemented"));
     };
+    let connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
+    let issuer = read_app_issuer(&connection).map_err(io::Error::other)?;
+    let audience = match resolve_audience(
+        &issuer,
+        parsed.redirect_uri.as_deref(),
+        parsed.aud.as_deref(),
+    ) {
+        Ok(audience) => audience,
+        Err(_) => return Ok(Response::json_error(400, "invalid_request")),
+    };
 
     match consume_email_verify_otp(&database.db_path, &parsed).map_err(io::Error::other)? {
         EmailVerifyOutcome::InvalidOtp => Ok(Response::json_error(401, "invalid_email_otp")),
         EmailVerifyOutcome::OtpConsumed { user_id } => {
-            let connection =
-                rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
-            let issuer = read_app_issuer(&connection).map_err(io::Error::other)?;
-            let pair = mint_session_tokens(
+            let pair = mint_session_tokens_for_audience(
                 &connection,
                 &user_id,
                 "email_otp",
                 &issuer,
+                &audience,
                 request.client_ip().as_deref(),
                 request.header("User-Agent").as_deref(),
             )
@@ -561,7 +572,7 @@ fn handle_session_refresh(request: &Request, config: &Config) -> io::Result<Resp
 }
 
 fn handle_session_logout(request: &Request, config: &Config) -> io::Result<Response> {
-    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+    let Some((connection, auth)) = authenticated_session_connection(request, config)? else {
         return Ok(Response::json_error(401, "invalid_access_token"));
     };
     logout_session(&connection, &auth.session_id).map_err(io::Error::other)?;
@@ -794,15 +805,24 @@ fn handle_webauthn_authentication_verify(
         return Ok(Response::json_error(501, "not_implemented"));
     };
     let connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
+    let issuer = read_app_issuer(&connection).map_err(io::Error::other)?;
+    let audience = match resolve_audience(
+        &issuer,
+        parsed.redirect_uri.as_deref(),
+        parsed.aud.as_deref(),
+    ) {
+        Ok(audience) => audience,
+        Err(_) => return Ok(Response::json_error(400, "invalid_request")),
+    };
 
     match webauthn_authentication_verify(&connection, &parsed) {
         Ok(outcome) => {
-            let issuer = read_app_issuer(&connection).map_err(io::Error::other)?;
-            let pair = mint_session_tokens(
+            let pair = mint_session_tokens_for_audience(
                 &connection,
                 &outcome.user_id,
                 "webauthn",
                 &issuer,
+                &audience,
                 request.client_ip().as_deref(),
                 request.header("User-Agent").as_deref(),
             )
@@ -843,11 +863,20 @@ fn handle_ed25519_verify(request: &Request, config: &Config) -> io::Result<Respo
     };
     let mut connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
     let issuer = read_app_issuer(&connection).map_err(io::Error::other)?;
+    let audience = match resolve_audience(
+        &issuer,
+        parsed.redirect_uri.as_deref(),
+        parsed.aud.as_deref(),
+    ) {
+        Ok(audience) => audience,
+        Err(_) => return Ok(Response::json_error(400, "invalid_request")),
+    };
 
     match verify_ed25519_authentication(
         &mut connection,
         &parsed,
         &issuer,
+        &audience,
         request.client_ip().as_deref(),
         request.header("User-Agent").as_deref(),
     ) {
@@ -881,6 +910,20 @@ fn handle_jwks(config: &Config) -> io::Result<Response> {
 }
 
 fn authenticated_connection(
+    request: &Request,
+    config: &Config,
+) -> io::Result<Option<(rusqlite::Connection, crate::session::AuthContext)>> {
+    let Some((connection, auth)) = authenticated_session_connection(request, config)? else {
+        return Ok(None);
+    };
+    if require_self_audience(&connection, &auth).is_err() {
+        return Ok(None);
+    }
+
+    Ok(Some((connection, auth)))
+}
+
+fn authenticated_session_connection(
     request: &Request,
     config: &Config,
 ) -> io::Result<Option<(rusqlite::Connection, crate::session::AuthContext)>> {
@@ -1487,7 +1530,7 @@ mod tests {
                 method: "POST".to_string(),
                 path: "/email/verify".to_string(),
                 headers: Vec::new(),
-                body: r#"{"email":"user@example.com","code":"123456"}"#.to_string(),
+                body: r#"{"email":"user@example.com","code":"123456","redirect_uri":"https://portal.example.com/callback"}"#.to_string(),
             },
             &no_database_config(),
         )
@@ -1523,12 +1566,13 @@ mod tests {
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
-                INSERT INTO app_meta (id, issuer) VALUES ('APP', 'auth-mini');
+                INSERT INTO app_meta (id, issuer) VALUES ('APP', 'https://auth.example.com');
                 CREATE TABLE sessions (
                     id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL,
                     refresh_token_hash TEXT NOT NULL,
                     auth_method TEXT NOT NULL,
+                    audience TEXT NOT NULL DEFAULT '',
                     ip TEXT,
                     user_agent TEXT,
                     expires_at TEXT NOT NULL,
@@ -1566,7 +1610,7 @@ mod tests {
                         "198.51.100.20".to_string(),
                     ),
                 ],
-                body: r#"{"email":"user@example.com","code":"123456"}"#.to_string(),
+                body: r#"{"email":"user@example.com","code":"123456","redirect_uri":"https://portal.example.com/callback"}"#.to_string(),
             },
             &Config {
                 database: Some(crate::DatabaseConfig {
@@ -1592,11 +1636,20 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("user count reads");
-        let session_context: (Option<String>, Option<String>) = connection
-            .query_row("SELECT ip, user_agent FROM sessions LIMIT 1", [], |row| {
-                Ok((row.get(0)?, row.get(1)?))
-            })
+        let session_context: (Option<String>, Option<String>, String) = connection
+            .query_row(
+                "SELECT ip, user_agent, audience FROM sessions LIMIT 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
             .expect("session context reads");
+        let body: serde_json::Value =
+            serde_json::from_str(&response.body_text()).expect("token response parses");
+        let payload = crate::jwks::verify_access_token(
+            &connection,
+            body["access_token"].as_str().expect("access token exists"),
+        )
+        .expect("email access token verifies");
 
         assert_eq!(response.status, 200);
         assert!(response.body_text().contains("access_token"));
@@ -1605,6 +1658,8 @@ mod tests {
         assert_eq!(user_count, 1);
         assert_eq!(session_context.0.as_deref(), Some("198.51.100.20"));
         assert_eq!(session_context.1.as_deref(), Some("EmailAgent/1.0"));
+        assert_eq!(session_context.2, "portal.example.com");
+        assert_eq!(payload["aud"], "portal.example.com");
     }
 
     #[test]
@@ -1618,8 +1673,16 @@ mod tests {
                 ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
             )
             .expect("user inserted");
-        let pair = mint_session_tokens(&connection, "user-1", "email_otp", "auth-mini", None, None)
-            .expect("session minted");
+        let pair = mint_session_tokens_for_audience(
+            &connection,
+            "user-1",
+            "email_otp",
+            "https://app.example.com",
+            "api.example.com",
+            None,
+            None,
+        )
+        .expect("session minted");
         drop(connection);
 
         let response = route_request(
@@ -1633,7 +1696,9 @@ mod tests {
                 ),
             },
             &Config {
-                database: Some(crate::DatabaseConfig { db_path }),
+                database: Some(crate::DatabaseConfig {
+                    db_path: db_path.clone(),
+                }),
                 ..Config::default()
             },
         )
@@ -1642,6 +1707,77 @@ mod tests {
         assert_eq!(response.status, 200);
         assert!(response.body_text().contains("access_token"));
         assert!(!response.body_text().contains(&pair.refresh_token));
+        let body: serde_json::Value =
+            serde_json::from_str(&response.body_text()).expect("refresh response parses");
+        let connection = Connection::open(&db_path).expect("database reopens");
+        let payload = crate::jwks::verify_access_token(
+            &connection,
+            body["access_token"].as_str().expect("access token exists"),
+        )
+        .expect("refreshed access token verifies");
+        assert_eq!(payload["aud"], "api.example.com");
+    }
+
+    #[test]
+    fn external_audience_cannot_use_self_apis_but_can_logout_current_session() {
+        let db_path = test_db_path("external-audience-self-api-boundary");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserted");
+        let pair = mint_session_tokens_for_audience(
+            &connection,
+            "user-1",
+            "email_otp",
+            "https://app.example.com",
+            "api.example.com",
+            None,
+            None,
+        )
+        .expect("external session minted");
+        drop(connection);
+        let config = Config {
+            database: Some(crate::DatabaseConfig { db_path }),
+            ..Config::default()
+        };
+        let authorization = (
+            "Authorization".to_string(),
+            format!("Bearer {}", pair.access_token),
+        );
+
+        for (method, path) in [
+            ("GET", "/me"),
+            ("GET", "/ed25519/credentials"),
+            ("GET", "/admin/jwks"),
+        ] {
+            let response = route_request(
+                &Request {
+                    method: method.to_string(),
+                    path: path.to_string(),
+                    headers: vec![authorization.clone()],
+                    body: String::new(),
+                },
+                &config,
+            )
+            .expect("self API response builds");
+            assert_eq!(response.status, 401, "{path}");
+        }
+
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/session/logout".to_string(),
+                headers: vec![authorization],
+                body: String::new(),
+            },
+            &config,
+        )
+        .expect("logout response builds");
+        assert_eq!(response.status, 200);
     }
 
     #[test]
@@ -3342,7 +3478,13 @@ mod tests {
                     email TEXT UNIQUE,
                     email_verified_at TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-                );",
+                );
+                CREATE TABLE app_meta (
+                    id TEXT PRIMARY KEY CHECK (id = 'APP'),
+                    issuer TEXT NOT NULL
+                );
+                INSERT INTO app_meta (id, issuer)
+                VALUES ('APP', 'https://auth.example.com');",
             )
             .expect("email_otps table exists");
         drop(connection);
@@ -3411,6 +3553,7 @@ mod tests {
                     user_id TEXT NOT NULL,
                     refresh_token_hash TEXT NOT NULL,
                     auth_method TEXT NOT NULL,
+                    audience TEXT NOT NULL DEFAULT '',
                     ip TEXT,
                     user_agent TEXT,
                     expires_at TEXT NOT NULL,

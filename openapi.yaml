@@ -1080,6 +1080,18 @@ components:
           type: string
           pattern: ^\d{6}$
           example: '123456'
+        redirect_uri:
+          type: string
+          format: uri
+          description: >-
+            HTTPS callback URL whose normalized hostname becomes the access
+            token audience. HTTP is allowed only for localhost, 127.0.0.1,
+            and ::1.
+        aud:
+          type: string
+          description: >-
+            Explicit normalized hostname audience. Required only when
+            redirect_uri uses localhost, 127.0.0.1, or ::1; rejected otherwise.
     RefreshRequest:
       type: object
       additionalProperties: false
@@ -1290,6 +1302,18 @@ components:
         signature:
           type: string
           minLength: 1
+        redirect_uri:
+          type: string
+          format: uri
+          description: >-
+            HTTPS callback URL whose normalized hostname becomes the access
+            token audience. HTTP is allowed only for localhost, 127.0.0.1,
+            and ::1.
+        aud:
+          type: string
+          description: >-
+            Explicit normalized hostname audience. Required only when
+            redirect_uri uses localhost, 127.0.0.1, or ::1; rejected otherwise.
     WebauthnOptionsRequest:
       type: object
       additionalProperties: false
@@ -1541,6 +1565,18 @@ components:
           format: uuid
         credential:
           $ref: '#/components/schemas/AuthenticationCredentialJson'
+        redirect_uri:
+          type: string
+          format: uri
+          description: >-
+            HTTPS callback URL whose normalized hostname becomes the access
+            token audience. HTTP is allowed only for localhost, 127.0.0.1,
+            and ::1.
+        aud:
+          type: string
+          description: >-
+            Explicit normalized hostname audience. Required only when
+            redirect_uri uses localhost, 127.0.0.1, or ::1; rejected otherwise.
     JwkPublicEd25519:
       type: object
       additionalProperties: false

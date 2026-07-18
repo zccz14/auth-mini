@@ -3,6 +3,7 @@ import type { AuthMiniApi } from './types.js';
 
 export type {
   AuthMiniApi,
+  AuthenticationTargetInput,
   EmailStartInput,
   EmailStartResponse,
   EmailVerifyInput,

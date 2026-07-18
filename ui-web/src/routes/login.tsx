@@ -2,6 +2,7 @@ import { useState, type CSSProperties, type FormEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useDemo } from '@/app/providers/demo-provider';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -15,10 +16,13 @@ import { useI18n } from '@/lib/i18n';
 import { REGEXP_ONLY_DIGITS } from 'input-otp';
 import {
   buildLoginCallbackUrl,
+  authenticationTarget,
+  issuerAudience,
   parseLoginRequest,
   sendLoginCallback,
   toDemoSessionTokens,
   type LoginCallbackTokens,
+  type LoginRequest,
 } from '@/lib/login-callback';
 import {
   deriveEd25519PublicKey,
@@ -71,10 +75,13 @@ export function LoginRoute() {
     passkeyConfigured &&
     pendingAction === null;
   const brandName = setupState?.brand_name ?? 'auth-mini';
+  const issuerHostname = setupState ? issuerAudience(setupState.issuer) : null;
   const brandBackgroundImage = setupState?.brand_background_image ?? '';
   const loginBackgroundStyle: CSSProperties | undefined = brandBackgroundImage
     ? { backgroundImage: `url("${brandBackgroundImage}")` }
     : undefined;
+  const target =
+    request.status === 'ready' ? authenticationTarget(request) : null;
 
   async function handleEmailStart(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -107,6 +114,7 @@ export function LoginRoute() {
         await sdk.email.verify({
           email: email.trim(),
           code: code.trim(),
+          ...(target ?? {}),
         }),
       ),
     );
@@ -118,7 +126,7 @@ export function LoginRoute() {
     }
 
     await runLogin('passkey', async () =>
-      completeLogin(await sdk.passkey.authenticate()),
+      completeLogin(await sdk.passkey.authenticate(target ?? {})),
     );
   }
 
@@ -141,6 +149,7 @@ export function LoginRoute() {
       const tokens = await sdk.ed25519.verify({
         request_id: challenge.request_id,
         signature,
+        ...(target ?? {}),
       });
       await completeLogin(tokens);
     });
@@ -152,17 +161,18 @@ export function LoginRoute() {
       return;
     }
 
-    if (!request.redirectUri) {
+    if (request.target.kind === 'self') {
       await adoptDemoSession(toDemoSessionTokens(tokens));
       setMessage(t('login.signedIn'));
       navigate('/');
       return;
     }
 
+    sdk?.session.clearLocal();
     setMessage(t('login.redirecting'));
     sendLoginCallback(
       buildLoginCallbackUrl({
-        redirectUri: request.redirectUri,
+        redirectUri: request.target.redirectUri,
         state: request.state,
         tokens,
       }),
@@ -204,6 +214,13 @@ export function LoginRoute() {
           </div>
 
           <div className="mt-5 space-y-4">
+            {request.status === 'ready' ? (
+              <LoginDestination
+                issuerHostname={issuerHostname}
+                request={request}
+              />
+            ) : null}
+
             {config.status !== 'ready' ? (
               <Alert className="border-amber-200 bg-amber-50 text-amber-900">
                 <AlertTitle>{t('login.serverNotConfigured')}</AlertTitle>
@@ -329,6 +346,62 @@ export function LoginRoute() {
         </div>
       </section>
     </main>
+  );
+}
+
+function LoginDestination({
+  issuerHostname,
+  request,
+}: {
+  issuerHostname: string | null;
+  request: Extract<LoginRequest, { status: 'ready' }>;
+}) {
+  const { t } = useI18n();
+
+  if (request.target.kind === 'self') {
+    return (
+      <Alert>
+        <AlertTitle>{t('login.destination.self')}</AlertTitle>
+        <AlertDescription className="mt-2 flex flex-col items-start gap-2">
+          {issuerHostname ? (
+            <Badge className="max-w-full break-all text-sm">
+              {issuerHostname}
+            </Badge>
+          ) : null}
+          <span>{t('login.destination.selfDescription')}</span>
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  if (request.target.kind === 'loopback') {
+    return (
+      <Alert>
+        <AlertTitle>{t('login.destination.local')}</AlertTitle>
+        <AlertDescription className="mt-2 flex flex-col items-start gap-2">
+          <Badge className="max-w-full break-all text-sm">
+            {request.target.displayHost}
+          </Badge>
+          <span>
+            {t('login.destination.requestingAudience')}{' '}
+            <strong className="break-all font-semibold">
+              {request.target.audience}
+            </strong>
+          </span>
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  return (
+    <Alert>
+      <AlertTitle>{t('login.destination.remote')}</AlertTitle>
+      <AlertDescription className="mt-2">
+        <Badge className="max-w-full break-all text-sm">
+          {request.target.audience}
+        </Badge>
+      </AlertDescription>
+    </Alert>
   );
 }
 

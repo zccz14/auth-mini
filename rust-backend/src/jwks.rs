@@ -73,6 +73,7 @@ pub(crate) fn sign_access_token(
     user_id: &str,
     session_id: &str,
     issuer: &str,
+    audience: &str,
     auth_method: &str,
 ) -> rusqlite::Result<String> {
     bootstrap_keys(connection)?;
@@ -83,6 +84,7 @@ pub(crate) fn sign_access_token(
         "sub": user_id,
         "sid": session_id,
         "iss": issuer,
+        "aud": audience,
         "amr": [auth_method],
         "auth_admin": auth_admin,
         "typ": "access",
@@ -135,8 +137,28 @@ pub(crate) fn verify_access_token(connection: &Connection, token: &str) -> rusql
         .get("exp")
         .and_then(Value::as_i64)
         .ok_or(rusqlite::Error::InvalidQuery)?;
+    let issuer = payload
+        .get("iss")
+        .and_then(Value::as_str)
+        .ok_or(rusqlite::Error::InvalidQuery)?;
+    let token_type = payload
+        .get("typ")
+        .and_then(Value::as_str)
+        .ok_or(rusqlite::Error::InvalidQuery)?;
+    let audience = payload
+        .get("aud")
+        .and_then(Value::as_str)
+        .ok_or(rusqlite::Error::InvalidQuery)?;
+    let expected_issuer: String =
+        connection.query_row("SELECT issuer FROM app_meta WHERE id = 'APP'", [], |row| {
+            row.get(0)
+        })?;
 
-    if exp <= Utc::now().timestamp() {
+    if exp <= Utc::now().timestamp()
+        || issuer != expected_issuer
+        || token_type != "access"
+        || audience.is_empty()
+    {
         return Err(rusqlite::Error::InvalidQuery);
     }
 
@@ -470,10 +492,20 @@ mod tests {
     #[test]
     fn signs_access_token_with_current_ed25519_key() {
         let connection = jwks_connection();
-        let token = sign_access_token(&connection, "user-1", "session-1", "auth-mini", "email_otp")
-            .expect("token signs");
+        let token = sign_access_token(
+            &connection,
+            "user-1",
+            "session-1",
+            "https://auth.example.com",
+            "app.example.com",
+            "email_otp",
+        )
+        .expect("token signs");
         let segments = token.split('.').collect::<Vec<_>>();
         let header = decode_json_segment(segments[0]).expect("header decodes");
+        let payload = decode_json_segment(segments[1]).expect("payload decodes");
+        assert_eq!(payload["iss"], "https://auth.example.com");
+        assert_eq!(payload["aud"], "app.example.com");
         let kid = header["kid"].as_str().expect("kid exists");
         let public_jwk = public_jwk_for_kid(&connection, kid);
         let public_key_bytes = decode_segment(public_jwk["x"].as_str().expect("public x exists"))
@@ -500,8 +532,15 @@ mod tests {
     #[test]
     fn rejects_tampered_access_token_signature() {
         let connection = jwks_connection();
-        let token = sign_access_token(&connection, "user-1", "session-1", "auth-mini", "email_otp")
-            .expect("token signs");
+        let token = sign_access_token(
+            &connection,
+            "user-1",
+            "session-1",
+            "https://auth.example.com",
+            "app.example.com",
+            "email_otp",
+        )
+        .expect("token signs");
         let mut segments = token.split('.').collect::<Vec<_>>();
         segments[1] = "eyJzdWIiOiJhdHRhY2tlciJ9";
         let tampered = segments.join(".");

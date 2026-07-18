@@ -3,6 +3,7 @@ use std::path::Path;
 
 use rusqlite::Connection;
 
+use crate::audience::issuer_audience;
 use crate::jwks::bootstrap_keys;
 
 const SCHEMA_SQL: &str = include_str!("../../sql/schema.sql");
@@ -19,10 +20,17 @@ pub fn initialize_database(
 }
 
 pub fn initialize_runtime_database(db_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    initialize_database_from_schema(db_path, SCHEMA_SQL)?;
-    let connection = Connection::open(db_path)?;
-    migrate_runtime_schema(&connection)?;
+    if let Some(parent) = db_path.parent().filter(|path| !path.as_os_str().is_empty()) {
+        fs::create_dir_all(parent)?;
+    }
+
+    let mut connection = Connection::open(db_path)?;
+    connection.pragma_update(None, "foreign_keys", "ON")?;
+    connection.pragma_update(None, "journal_mode", "WAL")?;
+    connection.execute_batch(SCHEMA_SQL)?;
+    migrate_runtime_schema(&mut connection)?;
     ensure_app_meta(&connection)?;
+    assert_required_schema(&connection)?;
     bootstrap_keys(&connection)?;
 
     Ok(())
@@ -63,7 +71,7 @@ pub(crate) fn read_app_webauthn_config(
     )
 }
 
-fn migrate_runtime_schema(connection: &Connection) -> rusqlite::Result<()> {
+fn migrate_runtime_schema(connection: &mut Connection) -> rusqlite::Result<()> {
     // COMPATIBILITY: SQLite files created before app_meta allowed only non-null
     // users.email. Remove after old auth-mini SQLite files no longer need
     // automatic runtime upgrade support.
@@ -102,6 +110,20 @@ fn migrate_runtime_schema(connection: &Connection) -> rusqlite::Result<()> {
             [],
         )?;
     }
+    let issuer = read_app_issuer(connection).unwrap_or_else(|_| DEFAULT_ISSUER.to_string());
+    let audience = issuer_audience(&issuer).map_err(|_| rusqlite::Error::InvalidQuery)?;
+    let session_migration = connection.transaction()?;
+    if !table_has_column(&session_migration, "sessions", "audience")? {
+        session_migration.execute(
+            "ALTER TABLE sessions ADD COLUMN audience TEXT NOT NULL DEFAULT ''",
+            [],
+        )?;
+    }
+    session_migration.execute(
+        "UPDATE sessions SET audience = ?1 WHERE audience IS NULL OR audience = ''",
+        [audience],
+    )?;
+    session_migration.commit()?;
     if !table_has_column(connection, "webauthn_challenges", "rp_name")? {
         connection.execute(
             "ALTER TABLE webauthn_challenges ADD COLUMN rp_name TEXT NOT NULL DEFAULT 'auth-mini'",
@@ -147,6 +169,7 @@ fn assert_required_schema(connection: &Connection) -> rusqlite::Result<()> {
                 "user_id",
                 "refresh_token_hash",
                 "auth_method",
+                "audience",
                 "ip",
                 "user_agent",
                 "expires_at",
@@ -389,6 +412,111 @@ mod tests {
     }
 
     #[test]
+    fn runtime_migration_backfills_audience_after_old_binary_writes_empty_value() {
+        let db_path = test_db_path("sessions-audience-migration");
+        let connection = Connection::open(&db_path).expect("legacy database opens");
+        connection
+            .execute_batch(
+                "CREATE TABLE users (
+                    id TEXT PRIMARY KEY,
+                    email TEXT,
+                    email_verified_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                 );
+                 CREATE TABLE app_meta (
+                    id TEXT PRIMARY KEY,
+                    issuer TEXT NOT NULL,
+                    admin_user_id TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                 );
+                 INSERT INTO app_meta (id, issuer)
+                 VALUES ('APP', 'https://auth.example.com');
+                 INSERT INTO users (id) VALUES ('user-1');
+                 CREATE TABLE sessions (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    refresh_token_hash TEXT NOT NULL,
+                    auth_method TEXT NOT NULL,
+                    ip TEXT,
+                    user_agent TEXT,
+                    expires_at TEXT NOT NULL,
+                    revoked_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                 );
+                 INSERT INTO sessions
+                    (id, user_id, refresh_token_hash, auth_method, expires_at)
+                 VALUES
+                    ('session-1', 'user-1', 'refresh-1', 'email_otp', '2099-01-01T00:00:00.000Z');",
+            )
+            .expect("legacy schema exists");
+        drop(connection);
+
+        initialize_runtime_database(&db_path).expect("legacy database migrates");
+        let connection = Connection::open(&db_path).expect("migrated database opens");
+        let audience: String = connection
+            .query_row(
+                "SELECT audience FROM sessions WHERE id = 'session-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("migrated audience reads");
+        assert_eq!(audience, "auth.example.com");
+        connection
+            .execute(
+                "INSERT INTO sessions
+                    (id, user_id, refresh_token_hash, auth_method, expires_at)
+                 VALUES
+                    ('session-2', 'user-1', 'refresh-2', 'email_otp', '2099-01-01T00:00:00.000Z')",
+                [],
+            )
+            .expect("old binary can omit audience after rollback");
+        drop(connection);
+
+        initialize_runtime_database(&db_path).expect("database re-migrates after rollback write");
+        let connection = Connection::open(&db_path).expect("re-migrated database opens");
+        let audience: String = connection
+            .query_row(
+                "SELECT audience FROM sessions WHERE id = 'session-2'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("backfilled audience reads");
+        assert_eq!(audience, "auth.example.com");
+    }
+
+    #[test]
+    fn fresh_database_allows_rollback_insert_and_backfills_it_on_restart() {
+        let db_path = test_db_path("fresh-sessions-audience-rollback");
+        initialize_runtime_database(&db_path).expect("fresh database initializes");
+        let connection = Connection::open(&db_path).expect("fresh database opens");
+        connection
+            .execute("INSERT INTO users (id) VALUES ('user-1')", [])
+            .expect("user inserts");
+        connection
+            .execute(
+                "INSERT INTO sessions
+                    (id, user_id, refresh_token_hash, auth_method, expires_at)
+                 VALUES
+                    ('session-1', 'user-1', 'refresh-1', 'email_otp', '2099-01-01T00:00:00.000Z')",
+                [],
+            )
+            .expect("rolled-back binary can omit audience");
+        drop(connection);
+
+        initialize_runtime_database(&db_path).expect("new binary backfills rollback insert");
+        let connection = Connection::open(&db_path).expect("restarted database opens");
+        let audience: String = connection
+            .query_row(
+                "SELECT audience FROM sessions WHERE id = 'session-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("audience reads");
+        assert_eq!(audience, "localhost");
+    }
+
+    #[test]
     fn runtime_database_migrates_legacy_users_not_null_email() {
         let db_path = test_db_path("legacy-users-email");
         let connection = Connection::open(&db_path).expect("database opens");
@@ -410,6 +538,8 @@ mod tests {
         connection
             .execute("INSERT INTO users (id, email) VALUES ('admin-1', NULL)", [])
             .expect("nullable email insert succeeds after migration");
+        let issuer = read_app_issuer(&connection).expect("APP metadata is restored");
+        assert_eq!(issuer, DEFAULT_ISSUER);
     }
 
     #[test]

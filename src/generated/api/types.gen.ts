@@ -90,6 +90,14 @@ export type EmailStartRequest = {
 export type EmailVerifyRequest = {
     email: string;
     code: string;
+    /**
+     * HTTPS callback URL whose normalized hostname becomes the access token audience. HTTP is allowed only for localhost, 127.0.0.1, and ::1.
+     */
+    redirect_uri?: string;
+    /**
+     * Explicit normalized hostname audience. Required only when redirect_uri uses localhost, 127.0.0.1, or ::1; rejected otherwise.
+     */
+    aud?: string;
 };
 
 export type RefreshRequest = {
@@ -161,6 +169,14 @@ export type Ed25519ChallengeResponse = {
 export type Ed25519VerifyRequest = {
     request_id: string;
     signature: string;
+    /**
+     * HTTPS callback URL whose normalized hostname becomes the access token audience. HTTP is allowed only for localhost, 127.0.0.1, and ::1.
+     */
+    redirect_uri?: string;
+    /**
+     * Explicit normalized hostname audience. Required only when redirect_uri uses localhost, 127.0.0.1, or ::1; rejected otherwise.
+     */
+    aud?: string;
 };
 
 export type WebauthnOptionsRequest = {
@@ -258,6 +274,14 @@ export type WebauthnRegisterVerifyRequest = {
 export type WebauthnAuthenticateVerifyRequest = {
     request_id: string;
     credential: AuthenticationCredentialJson;
+    /**
+     * HTTPS callback URL whose normalized hostname becomes the access token audience. HTTP is allowed only for localhost, 127.0.0.1, and ::1.
+     */
+    redirect_uri?: string;
+    /**
+     * Explicit normalized hostname audience. Required only when redirect_uri uses localhost, 127.0.0.1, or ::1; rejected otherwise.
+     */
+    aud?: string;
 };
 
 export type JwkPublicEd25519 = {

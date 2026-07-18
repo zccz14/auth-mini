@@ -4,6 +4,7 @@ use chrono::{DateTime, Duration as ChronoDuration, SecondsFormat, Utc};
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+
 use sha2::{Digest, Sha256};
 use webauthn_rs::prelude::{
     DiscoverableAuthentication, DiscoverableKey, Passkey, PasskeyRegistration, PublicKeyCredential,
@@ -44,6 +45,8 @@ pub(crate) struct RegisterVerifyRequest {
 pub(crate) struct AuthenticationVerifyRequest {
     request_id: String,
     credential: AuthenticationCredential,
+    pub(crate) redirect_uri: Option<String>,
+    pub(crate) aud: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
