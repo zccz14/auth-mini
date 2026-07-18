@@ -706,7 +706,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     state: SessionStore;
   }) {
     return {
-      async authenticate() {
+      async authenticate(target = {}) {
         ensureWebauthnSupport('authenticate');
         const options = (await input.http.postJson(
           '/webauthn/authenticate/options',
@@ -727,6 +727,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
           {
             request_id: options.request_id,
             credential: serializeCredential(credential),
+            ...target,
           },
         );
         return await input.session.acceptSessionResponse(response);
@@ -919,6 +920,9 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
         },
         logout() {
           return session.logout();
+        },
+        clearLocal() {
+          state.setAnonymous();
         },
       },
       passkey,

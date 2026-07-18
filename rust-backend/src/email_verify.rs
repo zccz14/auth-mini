@@ -11,6 +11,8 @@ use sha2::{Digest, Sha256};
 pub(crate) struct EmailVerifyRequest {
     pub(crate) email: String,
     pub(crate) code: String,
+    pub(crate) redirect_uri: Option<String>,
+    pub(crate) aud: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]

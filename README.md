@@ -204,11 +204,15 @@ Minimal backend JWT verification (jose example):
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 const issuer = 'https://auth.your-domain.com';
+const audience = 'app.your-domain.com';
 const JWKS = createRemoteJWKSet(new URL(`/jwks`, issuer));
 
 async function verifyAccessToken(token) {
   try {
-    const { payload } = await jwtVerify(token, JWKS, { issuer });
+    const { payload } = await jwtVerify(token, JWKS, {
+      issuer,
+      audience,
+    });
     console.log('Token is valid. Payload:', payload);
   } catch (err) {
     console.error('Invalid token:', err);

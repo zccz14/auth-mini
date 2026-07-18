@@ -118,6 +118,37 @@ describe('browser module sdk', () => {
     }
   });
 
+  it('clears a browser session locally without invalidating it on the server', async () => {
+    const storage = fakeStorage();
+    const fetch = vi.fn(async () => jsonResponse({ ok: true }));
+    seedBrowserSdkStorage(storage, 'https://auth.example.com', {
+      sessionId: 'session-external',
+      accessToken: 'access-external',
+      refreshToken: 'refresh-external',
+      receivedAt: '2036-04-03T00:00:00.000Z',
+      expiresAt: '2036-04-03T00:15:00.000Z',
+    });
+    vi.stubGlobal('fetch', fetch);
+    vi.stubGlobal('localStorage', storage);
+
+    try {
+      const sdk = createBrowserSdk('https://auth.example.com');
+
+      sdk.session.clearLocal();
+
+      expect(sdk.session.getState()).toMatchObject({
+        status: 'anonymous',
+        sessionId: null,
+      });
+      const recovered = createBrowserSdk('https://auth.example.com');
+      await (recovered as AuthMiniApi & { ready: Promise<void> }).ready;
+      expect(recovered.session.getState().status).toBe('anonymous');
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('rejects malformed /me payloads from explicit browser me.fetch calls', async () => {
     const storage = fakeStorage();
 

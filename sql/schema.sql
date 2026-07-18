@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   user_id TEXT NOT NULL,
   refresh_token_hash TEXT NOT NULL,
   auth_method TEXT NOT NULL CHECK (auth_method IN ('email_otp', 'webauthn', 'ed25519')),
+  audience TEXT NOT NULL DEFAULT '',
   ip TEXT,
   user_agent TEXT,
   expires_at TEXT NOT NULL,

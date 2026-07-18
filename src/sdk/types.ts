@@ -54,6 +54,11 @@ export type SessionResult = SessionTokens;
 
 export type EmailStartInput = GeneratedEmailStartInput;
 
+export type AuthenticationTargetInput = {
+  redirect_uri?: string;
+  aud?: string;
+};
+
 export type EmailVerifyInput = GeneratedEmailVerifyInput;
 
 export type EmailStartResponse = {
@@ -97,7 +102,7 @@ export type AuthMiniApi = {
     verify(input: EmailVerifyInput): Promise<SessionResult>;
   };
   passkey: {
-    authenticate(): Promise<SessionResult>;
+    authenticate(input?: AuthenticationTargetInput): Promise<SessionResult>;
     register(): Promise<WebauthnVerifyResponse>;
   };
   me: {
@@ -108,9 +113,10 @@ export type AuthMiniApi = {
     onChange(listener: Listener): () => void;
     refresh(): Promise<SessionResult>;
     logout(): Promise<void>;
+    clearLocal(): void;
   };
   webauthn: {
-    authenticate(): Promise<SessionResult>;
+    authenticate(input?: AuthenticationTargetInput): Promise<SessionResult>;
     register(): Promise<WebauthnVerifyResponse>;
   };
 };

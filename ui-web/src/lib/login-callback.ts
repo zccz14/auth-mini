@@ -3,8 +3,22 @@ import type { DemoSessionTokens } from '@/lib/demo-sdk';
 export type LoginRequest =
   | {
       status: 'ready';
-      redirectUri: string | null;
       state: string | null;
+      target:
+        | {
+            kind: 'self';
+          }
+        | {
+            kind: 'redirect';
+            audience: string;
+            redirectUri: string;
+          }
+        | {
+            kind: 'loopback';
+            audience: string;
+            displayHost: string;
+            redirectUri: string;
+          };
     }
   | {
       status: 'invalid';
@@ -33,13 +47,26 @@ export function parseLoginRequest(
     documentParams.get('redirect_uri') ??
     ''
   ).trim();
+  const audienceParam = params.has('aud')
+    ? params.get('aud')
+    : documentParams.has('aud')
+      ? documentParams.get('aud')
+      : null;
+  const audience = audienceParam ?? '';
   const state = params.get('state') ?? documentParams.get('state');
 
   if (!redirectUri) {
+    if (audienceParam !== null) {
+      return {
+        status: 'invalid',
+        error: 'aud requires a loopback redirect_uri.',
+      };
+    }
+
     return {
       status: 'ready',
-      redirectUri: null,
       state,
+      target: { kind: 'self' },
     };
   }
 
@@ -60,11 +87,114 @@ export function parseLoginRequest(
     };
   }
 
+  const hostname = normalizeHostname(parsed.hostname);
+  if (isLoopbackHostname(hostname)) {
+    const normalizedAudience = normalizeAudience(audience);
+    if (audienceParam === null) {
+      return {
+        status: 'invalid',
+        error: 'aud is required for a loopback redirect_uri.',
+      };
+    }
+    if (!normalizedAudience) {
+      return {
+        status: 'invalid',
+        error: 'aud must be a valid hostname without a scheme, port, or path.',
+      };
+    }
+
+    return {
+      status: 'ready',
+      state,
+      target: {
+        kind: 'loopback',
+        audience: normalizedAudience,
+        displayHost: parsed.host,
+        redirectUri: parsed.toString(),
+      },
+    };
+  }
+
+  if (parsed.protocol !== 'https:') {
+    return {
+      status: 'invalid',
+      error: 'redirect_uri must use https unless it is a loopback address.',
+    };
+  }
+  if (audienceParam !== null) {
+    return {
+      status: 'invalid',
+      error: 'aud is only allowed with a loopback redirect_uri.',
+    };
+  }
+
   return {
     status: 'ready',
-    redirectUri: parsed.toString(),
     state,
+    target: {
+      kind: 'redirect',
+      audience: hostname,
+      redirectUri: parsed.toString(),
+    },
   };
+}
+
+export function authenticationTarget(
+  request: Extract<LoginRequest, { status: 'ready' }>,
+) {
+  if (request.target.kind === 'self') {
+    return {};
+  }
+
+  if (request.target.kind === 'redirect') {
+    return { redirect_uri: request.target.redirectUri };
+  }
+
+  return {
+    redirect_uri: request.target.redirectUri,
+    aud: request.target.audience,
+  };
+}
+
+function isLoopbackHostname(hostname: string) {
+  return ['localhost', '127.0.0.1', '::1'].includes(hostname);
+}
+
+function normalizeAudience(value: string) {
+  if (!value || value !== value.trim()) {
+    return null;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(
+      value.includes(':') ? `https://[${value}]` : `https://${value}`,
+    );
+  } catch {
+    return null;
+  }
+
+  if (
+    parsed.username ||
+    parsed.password ||
+    parsed.port ||
+    parsed.pathname !== '/' ||
+    parsed.search ||
+    parsed.hash
+  ) {
+    return null;
+  }
+
+  return normalizeHostname(parsed.hostname);
+}
+
+export function issuerAudience(issuer: string) {
+  return normalizeHostname(new URL(issuer).hostname);
+}
+
+function normalizeHostname(hostname: string) {
+  const withoutIpv6Brackets = hostname.replace(/^\[|\]$/g, '');
+  return withoutIpv6Brackets.toLowerCase().replace(/\.+$/, '');
 }
 
 export function toDemoSessionTokens(

@@ -9,6 +9,8 @@ type DemoEd25519Api = {
   verify(input: {
     request_id: string;
     signature: string;
+    redirect_uri?: string;
+    aud?: string;
   }): Promise<DemoSessionTokens>;
 };
 

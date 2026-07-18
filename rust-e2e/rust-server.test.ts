@@ -122,7 +122,7 @@ describe.sequential('rust external server e2e smoke', () => {
       signature: adminKey.signChallenge(adminChallenge.challenge),
     });
     expect(adminVerifyResponse.status).toBe(200);
-    const adminTokens = (await adminVerifyResponse.json()) as TokenResponse;
+    let adminTokens = (await adminVerifyResponse.json()) as TokenResponse;
     const adminConfig = await putJson(
       `${baseUrl}/admin/config`,
       {
@@ -141,6 +141,12 @@ describe.sequential('rust external server e2e smoke', () => {
       issuer: webauthnOrigin,
       rp_id: webauthnRpId,
     });
+    const refreshedAdminSession = await postJson(`${baseUrl}/session/refresh`, {
+      session_id: adminTokens.session_id,
+      refresh_token: adminTokens.refresh_token,
+    });
+    expect(refreshedAdminSession.status).toBe(200);
+    adminTokens = (await refreshedAdminSession.json()) as TokenResponse;
     const adminMe = await fetch(`${baseUrl}/me`, {
       headers: bearerHeaders(adminTokens.access_token),
     });
@@ -560,6 +566,7 @@ describe.sequential('rust external server e2e smoke', () => {
 });
 
 type TokenResponse = {
+  session_id: string;
   access_token: string;
   token_type: 'Bearer';
   expires_in: number;

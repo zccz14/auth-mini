@@ -2,7 +2,7 @@
 
 auth-mini separates frontend session recovery from backend API authorization.
 
-- **Access tokens** are short-lived JWTs signed by auth-mini.
+- **Access tokens** are short-lived JWTs signed by auth-mini for one hostname audience.
 - **Refresh tokens** are database-backed secrets used only with auth-mini, together with `session_id`, to mint a new access/refresh pair.
 
 That means your backend usually sees only the access token. It verifies the JWT locally, while the frontend handles refresh with auth-mini when needed.
@@ -21,9 +21,23 @@ That means your backend usually sees only the access token. It verifies the JWT 
 
 - Fetch `GET /jwks` from auth-mini and cache the key set according to your verifier library's normal JWKS caching strategy instead of refetching on every request.
 - Validate the JWT `iss` claim against the exact auth-mini issuer origin you configured.
-- Validate `aud` when your backend uses audience boundaries; reject tokens minted for a different API audience.
+- Validate the JWT `aud` claim against your exact business hostname; reject tokens minted for a different audience.
 - Authorize requests from the verified JWT claims your backend trusts, rather than calling `GET /me` on every protected request.
-- Reserve `/me` for client-facing session/profile views, not as the per-request backend authorization source of truth.
+- Reserve `/me` for Auth Mini's self-audience session/profile views. A token minted for a downstream hostname cannot read or manage the Auth Mini account.
+
+Minimal `jose` verification:
+
+```js
+import { createRemoteJWKSet, jwtVerify } from 'jose';
+
+const issuer = 'https://auth.example.com';
+const audience = 'app.example.com';
+const JWKS = createRemoteJWKSet(new URL('/jwks', issuer));
+
+export function verifyAccessToken(token) {
+  return jwtVerify(token, JWKS, { issuer, audience });
+}
+```
 
 ## Why `/jwks` exists
 
@@ -31,6 +45,6 @@ That means your backend usually sees only the access token. It verifies the JWT 
 
 ## Integration boundary
 
-- Frontends talk to auth-mini for sign-in, `/me`, and refresh.
+- Frontends talk to auth-mini for sign-in and refresh. Auth Mini's own GUI uses a self-audience token for `/me` and account management.
 - Backends trust verified access tokens for API authorization and derive request authorization from the verified JWT.
 - Refresh tokens should stay between the client and auth-mini; they are not backend bearer tokens.

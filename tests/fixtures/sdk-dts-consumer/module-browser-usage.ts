@@ -1,5 +1,6 @@
 import { createBrowserSdk } from 'auth-mini/sdk/browser';
 import type {
+  AuthenticationTargetInput,
   AuthMiniApi,
   MeResponse,
   SessionSnapshot,
@@ -14,10 +15,16 @@ const state: SessionSnapshot = sdk.session.getState();
 const emailVerifyResult = await sdk.email.verify({
   email: 'user@example.com',
   code: '123456',
+  redirect_uri: 'https://app.example.com/callback',
 });
 const sessionRefreshResult = await sdk.session.refresh();
 const webauthnAuthenticateResult = await sdk.webauthn.authenticate();
-const passkeyAuthenticateResult = await sdk.passkey.authenticate();
+const localTarget: AuthenticationTargetInput = {
+  redirect_uri: 'http://localhost:5173/callback',
+  aud: 'app.example.com',
+};
+const passkeyAuthenticateResult = await sdk.passkey.authenticate(localTarget);
+sdk.session.clearLocal();
 // @ts-expect-error session snapshots no longer expose me
 void sdk.session.getState().me;
 // @ts-expect-error me.get was removed from the public contract

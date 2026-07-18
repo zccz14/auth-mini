@@ -83,6 +83,25 @@ describe('sdk webauthn flows', () => {
     expect(readJsonBody(fetch, '/webauthn/authenticate/options')).toEqual({});
   });
 
+  it('passes the login target only to passkey verification', async () => {
+    const fetch = createWebauthnRequestRecorder();
+    const sdk = createWebauthnSdkForTest({
+      fetch,
+      navigatorCredentials: fakeNavigatorCredentials(),
+    });
+
+    await sdk.passkey.authenticate({
+      redirect_uri: 'http://localhost:5173/callback',
+      aud: 'app.example.com',
+    });
+
+    expect(readJsonBody(fetch, '/webauthn/authenticate/options')).toEqual({});
+    expect(readJsonBody(fetch, '/webauthn/authenticate/verify')).toMatchObject({
+      redirect_uri: 'http://localhost:5173/callback',
+      aud: 'app.example.com',
+    });
+  });
+
   it('starts passkey register with server-configured rp_id', async () => {
     const fetch = createWebauthnRequestRecorder();
     const sdk = createWebauthnSdkForTest({

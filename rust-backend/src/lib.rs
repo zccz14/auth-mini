@@ -1,3 +1,4 @@
+mod audience;
 mod config;
 mod db;
 mod ed25519;
