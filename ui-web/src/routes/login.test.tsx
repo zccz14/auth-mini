@@ -45,7 +45,7 @@ const sdkMocks = vi.hoisted(() => {
         start: ed25519Start,
         verify: ed25519Verify,
       },
-      me: { fetch: vi.fn() },
+      currentUser: { fetch: vi.fn() },
       passkey: { register: vi.fn(), authenticate: passkeyAuthenticate },
       session: {
         getState: () => sessionState.current,

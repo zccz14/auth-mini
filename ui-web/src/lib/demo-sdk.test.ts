@@ -32,7 +32,6 @@ const sdkMocks = vi.hoisted(() => {
   const createBrowserSdk = vi.fn(() => ({
     email: { start: vi.fn(), verify: vi.fn() },
     passkey: { register: vi.fn(), authenticate: vi.fn() },
-    me: { fetch: vi.fn() },
     session: {
       getState: () => sessionState.current,
       onChange: vi.fn(() => vi.fn()),

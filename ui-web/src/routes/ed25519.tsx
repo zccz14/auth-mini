@@ -10,6 +10,7 @@ import { JsonPanel } from '@/components/app/json-panel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useDemo } from '@/app/providers/demo-provider';
+import type { DemoCurrentUser } from '@/lib/demo-sdk';
 import {
   deriveEd25519PublicKey,
   generateDemoEd25519Keypair,
@@ -17,9 +18,7 @@ import {
   validateBase64Url32,
 } from '@/lib/demo-ed25519';
 
-type DemoMe = Awaited<
-  ReturnType<NonNullable<ReturnType<typeof useDemo>['sdk']>['me']['fetch']>
->;
+type DemoMe = DemoCurrentUser;
 
 export function Ed25519Route() {
   const { adoptDemoSession, config, sdk, session } = useDemo();
@@ -84,7 +83,7 @@ export function Ed25519Route() {
       }
 
       try {
-        const nextMe = await sdk.me.fetch();
+        const nextMe = await sdk.currentUser.fetch();
         if (loadMeRequestIdRef.current !== requestId) {
           return;
         }

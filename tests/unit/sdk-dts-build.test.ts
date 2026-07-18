@@ -137,31 +137,15 @@ describe('sdk d.ts build artifact', () => {
     const browserOutput = readBrowserModuleDeclaration();
 
     expect(sharedTypes).toContain(
-      'import type { Ed25519Credential as GeneratedMeEd25519Credential',
-    );
-    expect(sharedTypes).toContain(
       'EmailStartRequest as GeneratedEmailStartInput',
     );
     expect(sharedTypes).toContain(
       'EmailVerifyRequest as GeneratedEmailVerifyInput',
     );
-    expect(sharedTypes).toContain('MeResponse as GeneratedMeResponse');
-    expect(sharedTypes).toContain('SessionSummary as GeneratedMeActiveSession');
-    expect(sharedTypes).toContain(
-      'WebauthnCredential as GeneratedMeWebauthnCredential',
-    );
-    expect(sharedTypes).toContain(
-      'export type MeWebauthnCredential = GeneratedMeWebauthnCredential;',
-    );
-    expect(sharedTypes).toContain(
-      'export type MeEd25519Credential = GeneratedMeEd25519Credential;',
-    );
-    expect(sharedTypes).toContain(
-      'export type MeActiveSession = GeneratedMeActiveSession;',
-    );
-    expect(sharedTypes).toContain(
-      'export type MeResponse = GeneratedMeResponse;',
-    );
+    expect(sharedTypes).not.toContain('MeResponse');
+    expect(sharedTypes).not.toContain('MeWebauthnCredential');
+    expect(sharedTypes).not.toContain('MeEd25519Credential');
+    expect(sharedTypes).not.toContain('MeActiveSession');
     expect(sharedTypes).toContain(
       'export type EmailStartInput = GeneratedEmailStartInput;',
     );
@@ -214,27 +198,29 @@ describe('sdk d.ts build artifact', () => {
     expect(errors).toContain("'disposed_session'");
   });
 
-  it('keeps active session snapshot fields readable from declaration consumers', () => {
-    for (const fixture of ['module-browser-usage.ts']) {
+  it('keeps low-level api.me.get response fields readable from declaration consumers', () => {
+    const source = readConsumerFixture('module-api-usage.ts');
+
+    expect(source).toContain('const meResponse = await sdk.me.get();');
+    expect(source).toContain(
+      'const me: MeResponse = meResponse.data as MeResponse;',
+    );
+    expect(source).toContain('me.active_sessions[0].auth_method');
+    expect(source).toContain('me.active_sessions[0].ip');
+    expect(source).toContain('me.active_sessions[0].user_agent');
+    expect(source).toContain('type IsAny<T> = 0 extends 1 & T ? true : false;');
+    expect(source).toContain('type AssertNotAny<T extends false> = T;');
+  });
+
+  it('keeps removed high-level me APIs out of browser and device consumers', () => {
+    for (const fixture of [
+      'module-browser-usage.ts',
+      'module-device-usage.ts',
+    ]) {
       const source = readConsumerFixture(fixture);
 
-      expect(source).toContain('me.active_sessions[0].auth_method');
-      expect(source).toContain('me.active_sessions[0].ip');
-      expect(source).toContain('me.active_sessions[0].user_agent');
-      expect(source).toContain(
-        'type IsAny<T> = 0 extends 1 & T ? true : false;',
-      );
-      expect(source).toContain('type AssertNotAny<T extends false> = T;');
-      expect(source).toContain(
-        'type ActiveSession = (typeof me.active_sessions)[number];',
-      );
-      expect(source).toContain('type AuthMethodIsNotAny = AssertNotAny<');
-      expect(source).toContain(
-        "type IpIsNotAny = AssertNotAny<IsAny<ActiveSession['ip']>>;",
-      );
-      expect(source).toContain(
-        "type UserAgentIsNotAny = AssertNotAny<IsAny<ActiveSession['user_agent']>>;",
-      );
+      expect(source).not.toContain('sdk.me');
+      expect(source).not.toContain('MeResponse');
     }
   });
 });

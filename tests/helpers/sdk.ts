@@ -13,7 +13,6 @@ import {
 } from '../../src/sdk/storage.js';
 import type {
   InternalSdkDeps,
-  MeResponse,
   PersistedSdkState,
 } from '../../src/sdk/types.js';
 import { vi } from 'vitest';
@@ -227,11 +226,6 @@ export function createAuthMiniForTest(options: TestSdkOptions = {}) {
   return {
     ready,
     email: createEmailModule({ http, session }),
-    me: {
-      fetch() {
-        return session.fetchMe();
-      },
-    },
     session: {
       getState() {
         return state.getState();
@@ -445,10 +439,6 @@ export function createWebauthnRequestRecorder() {
       return jsonResponse({ ok: true });
     }
 
-    if (path === '/me') {
-      return jsonResponse(createMe());
-    }
-
     throw new Error(
       `Unhandled fetch path: ${path} ${JSON.stringify(init ?? {})}`,
     );
@@ -503,16 +493,4 @@ function readFetchPaths(fetchMock: { mock?: { calls: unknown[][] } }) {
 
     return new URL(String(input)).pathname;
   });
-}
-
-function createMe(overrides: Partial<MeResponse> = {}): MeResponse {
-  return {
-    user_id: 'user-1',
-    email: 'u@example.com',
-    auth_admin: false,
-    webauthn_credentials: [],
-    ed25519_credentials: [],
-    active_sessions: [],
-    ...overrides,
-  };
 }

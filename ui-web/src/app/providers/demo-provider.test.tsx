@@ -55,7 +55,7 @@ const sdkMocks = vi.hoisted(() => {
 
     return {
       session: { getState: () => sessionState.current, onChange, logout },
-      me: { fetch: vi.fn() },
+      currentUser: { fetch: vi.fn() },
     };
   });
 

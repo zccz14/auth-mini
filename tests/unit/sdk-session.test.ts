@@ -33,52 +33,19 @@ describe('sdk session flows', () => {
     expect(sdk.session.getState()).not.toHaveProperty('me');
   });
 
-  it('shares one in-flight refresh across concurrent explicit me.fetch calls', async () => {
-    const fetch = vi
-      .fn()
-      .mockResolvedValueOnce(
-        jsonResponse({
-          session_id: 's2',
-          access_token: 'a2',
-          refresh_token: 'r2',
-          expires_in: 900,
-          token_type: 'Bearer',
-        }),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse({
-          user_id: 'u1',
-          email: 'u@example.com',
-          webauthn_credentials: [],
-          ed25519_credentials: [],
-          active_sessions: [],
-        }),
-      );
-    const sdk = createAuthMiniForTest({
-      fetch,
-      now: () => Date.parse('2026-04-03T00:02:00.000Z'),
-      storage: fakeAuthenticatedStorage({
-        receivedAt: '2026-04-03T00:00:00.000Z',
-        expiresAt: '2026-04-03T00:03:00.000Z',
-      }),
-    });
-
-    await Promise.all([sdk.me.fetch(), sdk.me.fetch()]);
-    expect(countRefreshCalls(fetch)).toBe(1);
-  });
-
   it('refresh success keeps session state token-only', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        session_id: 's2',
+        access_token: 'a2',
+        refresh_token: 'r2',
+        expires_in: 900,
+        token_type: 'Bearer',
+      }),
+    );
     const sdk = createAuthMiniForTest({
       storage: fakeAuthenticatedStorage(),
-      fetch: vi.fn().mockResolvedValueOnce(
-        jsonResponse({
-          session_id: 's2',
-          access_token: 'a2',
-          refresh_token: 'r2',
-          expires_in: 900,
-          token_type: 'Bearer',
-        }),
-      ),
+      fetch,
     });
 
     const refreshed = await sdk.session.refresh();
@@ -90,6 +57,7 @@ describe('sdk session flows', () => {
     });
     expect(refreshed).not.toHaveProperty('me');
     expect(sdk.session.getState()).not.toHaveProperty('me');
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it('preserves authenticated state when refresh fails with a transient 5xx error', async () => {
@@ -109,178 +77,6 @@ describe('sdk session flows', () => {
       accessToken: 'access-token',
     });
     expect(sdk.session.getState()).not.toHaveProperty('me');
-  });
-
-  it('me.fetch performs an explicit /me request without mutating session state', async () => {
-    const sdk = createAuthMiniForTest({
-      storage: fakeAuthenticatedStorage(),
-      fetch: vi.fn().mockResolvedValueOnce(
-        jsonResponse({
-          user_id: 'u1',
-          email: 'updated@example.com',
-          webauthn_credentials: [],
-          ed25519_credentials: [],
-          active_sessions: [],
-        }),
-      ),
-    });
-
-    const me = await sdk.me.fetch();
-
-    expect(me.email).toBe('updated@example.com');
-    expect(sdk.session.getState()).not.toHaveProperty('me');
-  });
-
-  it('me.fetch returns active session snapshot fields', async () => {
-    const sdk = createAuthMiniForTest({
-      storage: fakeAuthenticatedStorage(),
-      fetch: vi.fn().mockResolvedValueOnce(
-        jsonResponse({
-          user_id: 'u1',
-          email: 'updated@example.com',
-          webauthn_credentials: [],
-          ed25519_credentials: [],
-          active_sessions: [
-            {
-              id: 'session-1',
-              auth_method: 'webauthn',
-              created_at: '2026-04-13T00:00:00.000Z',
-              expires_at: '2026-04-13T01:00:00.000Z',
-              ip: '203.0.113.20',
-              user_agent: 'SDKAgent/1.0',
-            },
-          ],
-        }),
-      ),
-    });
-
-    const me = await sdk.me.fetch();
-
-    expect(me.active_sessions[0]).toEqual({
-      id: 'session-1',
-      auth_method: 'webauthn',
-      created_at: '2026-04-13T00:00:00.000Z',
-      expires_at: '2026-04-13T01:00:00.000Z',
-      ip: '203.0.113.20',
-      user_agent: 'SDKAgent/1.0',
-    });
-  });
-
-  it('rejects /me payloads that omit ed25519_credentials', async () => {
-    const sdk = createAuthMiniForTest({
-      storage: fakeAuthenticatedStorage(),
-      fetch: vi.fn().mockResolvedValueOnce(
-        jsonResponse({
-          user_id: 'u1',
-          email: 'updated@example.com',
-          webauthn_credentials: [],
-          active_sessions: [],
-        }),
-      ),
-    });
-
-    await expect(sdk.me.fetch()).rejects.toMatchObject({
-      error: 'request_failed',
-    });
-  });
-
-  it('rejects /me payloads that omit active_sessions', async () => {
-    const sdk = createAuthMiniForTest({
-      storage: fakeAuthenticatedStorage(),
-      fetch: vi.fn().mockResolvedValueOnce(
-        jsonResponse({
-          user_id: 'u1',
-          email: 'updated@example.com',
-          webauthn_credentials: [],
-          ed25519_credentials: [],
-        }),
-      ),
-    });
-
-    await expect(sdk.me.fetch()).rejects.toMatchObject({
-      error: 'request_failed',
-    });
-  });
-
-  it('rejects /me payloads that omit active_sessions auth_method', async () => {
-    const sdk = createAuthMiniForTest({
-      storage: fakeAuthenticatedStorage(),
-      fetch: vi.fn().mockResolvedValueOnce(
-        jsonResponse({
-          user_id: 'u1',
-          email: 'updated@example.com',
-          webauthn_credentials: [],
-          ed25519_credentials: [],
-          active_sessions: [
-            {
-              id: 'session-1',
-              created_at: '...',
-              expires_at: '...',
-              ip: null,
-              user_agent: null,
-            },
-          ],
-        }),
-      ),
-    });
-
-    await expect(sdk.me.fetch()).rejects.toMatchObject({
-      error: 'request_failed',
-    });
-  });
-
-  it('rejects /me payloads that omit active_sessions ip', async () => {
-    const sdk = createAuthMiniForTest({
-      storage: fakeAuthenticatedStorage(),
-      fetch: vi.fn().mockResolvedValueOnce(
-        jsonResponse({
-          user_id: 'u1',
-          email: 'updated@example.com',
-          webauthn_credentials: [],
-          ed25519_credentials: [],
-          active_sessions: [
-            {
-              id: 'session-1',
-              auth_method: 'webauthn',
-              created_at: '...',
-              expires_at: '...',
-              user_agent: null,
-            },
-          ],
-        }),
-      ),
-    });
-
-    await expect(sdk.me.fetch()).rejects.toMatchObject({
-      error: 'request_failed',
-    });
-  });
-
-  it('rejects /me payloads that omit active_sessions user_agent', async () => {
-    const sdk = createAuthMiniForTest({
-      storage: fakeAuthenticatedStorage(),
-      fetch: vi.fn().mockResolvedValueOnce(
-        jsonResponse({
-          user_id: 'u1',
-          email: 'updated@example.com',
-          webauthn_credentials: [],
-          ed25519_credentials: [],
-          active_sessions: [
-            {
-              id: 'session-1',
-              auth_method: 'webauthn',
-              created_at: '...',
-              expires_at: '...',
-              ip: null,
-            },
-          ],
-        }),
-      ),
-    });
-
-    await expect(sdk.me.fetch()).rejects.toMatchObject({
-      error: 'request_failed',
-    });
   });
 
   it('startup recovery settles authenticated without any implicit /me load', async () => {
@@ -308,38 +104,6 @@ describe('sdk session flows', () => {
       refreshToken: 'refresh-token',
     });
     expect(fetch).not.toHaveBeenCalled();
-    expect(sdk.session.getState()).not.toHaveProperty('me');
-  });
-
-  it('returns ed25519 credentials from me.fetch without caching them in session state', async () => {
-    const sdk = createAuthMiniForTest({
-      storage: fakeAuthenticatedStorage(),
-      fetch: vi.fn().mockResolvedValueOnce(
-        jsonResponse({
-          user_id: 'u1',
-          email: 'updated@example.com',
-          webauthn_credentials: [],
-          ed25519_credentials: [
-            {
-              id: 'cred-1',
-              name: 'Laptop signer',
-              public_key: 'public-key',
-              created_at: '2026-04-12T00:00:00.000Z',
-              last_used_at: null,
-            },
-          ],
-          active_sessions: [],
-        }),
-      ),
-    });
-
-    const me = (await sdk.me.fetch()) as {
-      ed25519_credentials?: Array<{ id: string }>;
-    };
-
-    expect(me.ed25519_credentials).toEqual([
-      expect.objectContaining({ id: 'cred-1' }),
-    ]);
     expect(sdk.session.getState()).not.toHaveProperty('me');
   });
 

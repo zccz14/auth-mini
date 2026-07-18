@@ -54,9 +54,9 @@ sequenceDiagram
     User->>Frontend: Enter OTP
     Frontend->>Auth: POST /email/verify
     Auth-->>Frontend: session_id + access token + refresh token
-    Frontend->>Auth: GET /me
-    Auth-->>Frontend: Current user + active credentials/sessions
 ```
+
+The downstream Browser and Device high-level SDKs expose sign-in, session, and refresh lifecycle APIs; they do not provide `sdk.me.fetch()`. `GET /me` remains a self-audience profile and account-management capability for Auth Mini's own server-side GUI. The low-level `auth-mini/sdk/api` client retains `sdk.me.get()` for callers with an appropriate self-audience token.
 
 ### Passkey registration and sign-in
 

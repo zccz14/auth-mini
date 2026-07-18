@@ -13,7 +13,6 @@ export type {
   DeviceSdkApi,
   DeviceSdkOptions,
   Listener,
-  MeResponse,
   SessionResult,
   SessionSnapshot,
   SdkStatus,
@@ -134,13 +133,6 @@ export function createDeviceSdk(options: DeviceSdkOptions): DeviceSdkApi {
     dispose,
     [Symbol.asyncDispose]() {
       return dispose();
-    },
-    me: {
-      async fetch() {
-        assertNotDisposed();
-
-        return await session.fetchMe();
-      },
     },
     session: {
       getState() {

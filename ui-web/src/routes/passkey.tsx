@@ -3,10 +3,9 @@ import { FlowCard } from '@/components/app/flow-card';
 import { JsonPanel } from '@/components/app/json-panel';
 import { Button } from '@/components/ui/button';
 import { useDemo } from '@/app/providers/demo-provider';
+import type { DemoCurrentUser } from '@/lib/demo-sdk';
 
-type DemoMe = Awaited<
-  ReturnType<NonNullable<ReturnType<typeof useDemo>['sdk']>['me']['fetch']>
->;
+type DemoMe = DemoCurrentUser;
 
 export function PasskeyRoute() {
   const { config, sdk, session } = useDemo();
@@ -24,52 +23,57 @@ export function PasskeyRoute() {
   const setupReady = config.status === 'ready' && Boolean(sdk);
   const canRegister = setupReady && session.authenticated && me !== null;
 
-  const loadMe = useCallback(async (options?: { warningMessage?: string }) => {
-    const requestId = loadMeRequestIdRef.current + 1;
-    loadMeRequestIdRef.current = requestId;
+  const loadMe = useCallback(
+    async (options?: { warningMessage?: string }) => {
+      const requestId = loadMeRequestIdRef.current + 1;
+      loadMeRequestIdRef.current = requestId;
 
-    if (!sdk || config.status !== 'ready' || !session.authenticated) {
-      setMe(null);
-      setMeError('');
-      setMeWarning('');
-      setLoadingMe(false);
-      return;
-    }
-
-    setLoadingMe(true);
-    setMeError('');
-    if (!options?.warningMessage) {
-      setMeWarning('');
-    }
-
-    try {
-      const nextMe = await sdk.me.fetch();
-      if (loadMeRequestIdRef.current !== requestId) {
-        return;
-      }
-
-      setMe(nextMe);
-      setMeWarning('');
-    } catch (cause) {
-      if (loadMeRequestIdRef.current !== requestId) {
-        return;
-      }
-
-      if (options?.warningMessage) {
-        setMeWarning(options.warningMessage);
-        return;
-      }
-
-      setMe(null);
-      setMeError(
-        cause instanceof Error ? cause.message : 'Unable to load current user.',
-      );
-    } finally {
-      if (loadMeRequestIdRef.current === requestId) {
+      if (!sdk || config.status !== 'ready' || !session.authenticated) {
+        setMe(null);
+        setMeError('');
+        setMeWarning('');
         setLoadingMe(false);
+        return;
       }
-    }
-  }, [config.status, sdk, session.authenticated, session.sessionId]);
+
+      setLoadingMe(true);
+      setMeError('');
+      if (!options?.warningMessage) {
+        setMeWarning('');
+      }
+
+      try {
+        const nextMe = await sdk.currentUser.fetch();
+        if (loadMeRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        setMe(nextMe);
+        setMeWarning('');
+      } catch (cause) {
+        if (loadMeRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        if (options?.warningMessage) {
+          setMeWarning(options.warningMessage);
+          return;
+        }
+
+        setMe(null);
+        setMeError(
+          cause instanceof Error
+            ? cause.message
+            : 'Unable to load current user.',
+        );
+      } finally {
+        if (loadMeRequestIdRef.current === requestId) {
+          setLoadingMe(false);
+        }
+      }
+    },
+    [config.status, sdk, session.authenticated, session.sessionId],
+  );
 
   useEffect(() => {
     void loadMe();
@@ -89,7 +93,8 @@ export function PasskeyRoute() {
           : await sdk.passkey.authenticate();
       if (action === 'register') {
         await loadMe({
-          warningMessage: 'Passkey registered, but current user data could not be refreshed.',
+          warningMessage:
+            'Passkey registered, but current user data could not be refreshed.',
         });
       }
       setLastResult(result);
@@ -140,7 +145,9 @@ export function PasskeyRoute() {
           <p className="text-sm text-slate-600">Loading current user…</p>
         ) : null}
         {meError ? <p className="text-sm text-rose-600">{meError}</p> : null}
-        {meWarning ? <p className="text-sm text-amber-700">{meWarning}</p> : null}
+        {meWarning ? (
+          <p className="text-sm text-amber-700">{meWarning}</p>
+        ) : null}
 
         {error ? <p className="text-sm text-rose-600">{error}</p> : null}
 

@@ -489,7 +489,7 @@ Example response:
 
 ## `/me` behavior
 
-`GET /me` returns the current user, stored WebAuthn credentials, stored ED25519 credentials, and only active sessions.
+`GET /me` returns the current user, stored WebAuthn credentials, stored ED25519 credentials, and only active sessions. It is the self-audience profile and account-management capability used by Auth Mini's own GUI. Downstream Browser and Device high-level SDKs do not expose `sdk.me.fetch()`; callers that need this raw operation must use the low-level API SDK's `sdk.me.get()` with an appropriate self-audience token.
 
 Example response:
 

@@ -1,4 +1,3 @@
-import { parseMeResponse } from './me.js';
 import type {
   AuthMiniInternal,
   FetchLike,
@@ -99,7 +98,7 @@ export function createBrowserSdkInternal(
 }
 
 export function renderBrowserRuntimeSource(): string {
-  return `(${createRuntime.toString()})(parseMeResponse)`;
+  return `(${createRuntime.toString()})()`;
 }
 
 function getRuntime() {
@@ -107,7 +106,7 @@ function getRuntime() {
   return runtimeCache;
 }
 
-function createRuntime(parseMeResponseImpl = parseMeResponse) {
+function createRuntime() {
   const SDK_STORAGE_KEY = 'auth-mini.sdk';
 
   // @ts-expect-error preserve extracted helper signature
@@ -525,21 +524,6 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
           }
         }
       },
-      async fetchMe() {
-        const snapshot = input.state.getState();
-        if (!snapshot.refreshToken) {
-          throw createSdkError('missing_session', 'Missing refresh token');
-        }
-        if (!snapshot.accessToken || needsRefresh(snapshot, input.now())) {
-          return await fetchMe(
-            (await controller.refresh()).accessToken as string,
-          );
-        }
-        if (!snapshot.sessionId) {
-          throw createSdkError('missing_session', 'Missing session id');
-        }
-        return await fetchMe(snapshot.accessToken);
-      },
       async logout() {
         const snapshot = input.state.getState();
         if (!snapshot.refreshToken && !snapshot.accessToken) {
@@ -572,16 +556,6 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     };
 
     return controller;
-
-    async function fetchMe(accessToken: string) {
-      if (!accessToken) {
-        throw createSdkError('missing_session', 'Missing access token');
-      }
-
-      return parseMeResponseImpl(
-        await input.http.getJson('/me', { accessToken }),
-      );
-    }
 
     async function startSupersededRecovery(snapshot: SessionSnapshot) {
       input.state.setRecovering({
@@ -903,11 +877,6 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     });
     const api = {
       email: createEmailModule({ http, session }),
-      me: {
-        fetch() {
-          return session.fetchMe();
-        },
-      },
       session: {
         getState() {
           return state.getState();
@@ -1107,8 +1076,7 @@ function createRuntime(parseMeResponseImpl = parseMeResponse) {
     const value = error as { code?: unknown; message?: unknown } | null;
     return (
       value?.code === 'request_failed' &&
-      (value?.message === 'request_failed: Invalid session payload' ||
-        value?.message === 'request_failed: Invalid /me payload')
+      value?.message === 'request_failed: Invalid session payload'
     );
   }
 
