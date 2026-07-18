@@ -14,9 +14,11 @@ import type {
   AdminJwkSlot,
   AdminSetupState,
 } from '@/lib/demo-sdk';
+import { useI18n } from '@/lib/i18n';
 
 export function AdminRoute() {
   const { sdk, session } = useDemo();
+  const { t } = useI18n();
   const [settings, setSettings] = useState<AdminSetupState | null>(null);
   const [jwkSlots, setJwkSlots] = useState<AdminJwkSlot[]>([]);
   const [users, setUsers] = useState<Array<Record<string, unknown>>>([]);
@@ -62,9 +64,7 @@ export function AdminRoute() {
 
   useEffect(() => {
     void loadAdmin().catch((cause) => {
-      setError(
-        cause instanceof Error ? cause.message : 'Unable to load admin data.',
-      );
+      setError(cause instanceof Error ? cause.message : t('admin.loadError'));
     });
   }, [loadAdmin]);
 
@@ -79,11 +79,7 @@ export function AdminRoute() {
       setSettings(saved);
       await loadAdmin();
     } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : 'Unable to save configuration.',
-      );
+      setError(cause instanceof Error ? cause.message : t('admin.saveError'));
     } finally {
       setPending(null);
     }
@@ -99,7 +95,7 @@ export function AdminRoute() {
         headers: { authorization: 'Bearer ' + session.accessToken },
       });
       if (!response.ok) {
-        throw new Error('Database export failed.');
+        throw new Error(t('admin.exportFailed'));
       }
       const url = URL.createObjectURL(await response.blob());
       const link = document.createElement('a');
@@ -108,9 +104,7 @@ export function AdminRoute() {
       link.click();
       URL.revokeObjectURL(url);
     } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : 'Unable to export database.',
-      );
+      setError(cause instanceof Error ? cause.message : t('admin.exportError'));
     } finally {
       setPending(null);
     }
@@ -125,9 +119,7 @@ export function AdminRoute() {
       const rotated = await sdk.admin.jwks.rotate();
       setJwkSlots(rotated.keys);
     } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : 'Unable to rotate JWKs.',
-      );
+      setError(cause instanceof Error ? cause.message : t('admin.rotateError'));
     } finally {
       setPending(null);
     }
@@ -158,19 +150,23 @@ export function AdminRoute() {
     <div className="space-y-5">
       <Card className="rounded-lg">
         <CardHeader>
-          <CardTitle>Admin</CardTitle>
-          <CardDescription>
-            Configure this auth-mini instance and inspect users.
-          </CardDescription>
+          <CardTitle>{t('admin.title')}</CardTitle>
+          <CardDescription>{t('admin.description')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-2 text-sm text-slate-700">
             <div>
-              Admin user ID:{' '}
+              {t('admin.userId')}:{' '}
               <span className="font-mono">{settings?.admin_user_id}</span>
             </div>
-            <div>Issuer: {settings?.issuer ?? 'Loading...'}</div>
-            <div>Passkey RP ID: {settings?.rp_id ?? 'Loading...'}</div>
+            <div>
+              {t('common.issuer')}:{' '}
+              {settings?.issuer ?? t('admin.loadingSettings')}
+            </div>
+            <div>
+              {t('common.rpId')}:{' '}
+              {settings?.rp_id ?? t('admin.loadingSettings')}
+            </div>
           </div>
           {error ? <p className="text-sm text-rose-600">{error}</p> : null}
         </CardContent>
@@ -178,15 +174,15 @@ export function AdminRoute() {
 
       <Card className="rounded-lg">
         <CardHeader>
-          <CardTitle>Configuration</CardTitle>
+          <CardTitle>{t('admin.configuration')}</CardTitle>
           <CardDescription>
-            Issuer, passkey RP ID, branding, and SMTP delivery.
+            {t('admin.configurationDescription')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form className="grid gap-4" onSubmit={saveConfig}>
             <Input
-              aria-label="Issuer"
+              aria-label={t('common.issuer')}
               placeholder="https://auth.example.com"
               value={form.issuer}
               onChange={(event) =>
@@ -194,7 +190,7 @@ export function AdminRoute() {
               }
             />
             <Input
-              aria-label="Passkey RP ID"
+              aria-label={t('common.rpId')}
               placeholder="auth.example.com"
               value={form.rp_id}
               onChange={(event) =>
@@ -202,7 +198,7 @@ export function AdminRoute() {
               }
             />
             <Input
-              aria-label="Brand name"
+              aria-label={t('common.brandName')}
               placeholder="auth-mini"
               value={form.brand_name}
               onChange={(event) =>
@@ -210,7 +206,7 @@ export function AdminRoute() {
               }
             />
             <Input
-              aria-label="Brand background image"
+              aria-label={t('common.brandBackgroundImage')}
               placeholder="https://cdn.example.com/login-background.jpg"
               value={form.brand_background_image}
               onChange={(event) =>
@@ -242,20 +238,20 @@ export function AdminRoute() {
                   })
                 }
               />
-              Configure SMTP
+              {t('admin.configureSmtp')}
             </label>
             {form.smtp ? (
               <div className="grid gap-3 md:grid-cols-2">
                 <Input
-                  aria-label="SMTP host"
-                  placeholder="SMTP host"
+                  aria-label={t('common.smtpHost')}
+                  placeholder={t('common.smtpHost')}
                   value={form.smtp.host}
                   onChange={(event) =>
                     updateSmtp('host', event.currentTarget.value)
                   }
                 />
                 <Input
-                  aria-label="SMTP port"
+                  aria-label={t('common.smtpPort')}
                   type="number"
                   value={form.smtp.port}
                   onChange={(event) =>
@@ -263,19 +259,19 @@ export function AdminRoute() {
                   }
                 />
                 <Input
-                  aria-label="SMTP username"
-                  placeholder="Username"
+                  aria-label={t('common.smtpUsername')}
+                  placeholder={t('common.username')}
                   value={form.smtp.username}
                   onChange={(event) =>
                     updateSmtp('username', event.currentTarget.value)
                   }
                 />
                 <Input
-                  aria-label="SMTP password"
+                  aria-label={t('common.smtpPassword')}
                   placeholder={
                     settings?.smtp
-                      ? 'Leave blank to keep current password'
-                      : 'Password'
+                      ? t('admin.leavePassword')
+                      : t('common.password')
                   }
                   type="password"
                   value={form.smtp.password}
@@ -284,16 +280,16 @@ export function AdminRoute() {
                   }
                 />
                 <Input
-                  aria-label="From email"
-                  placeholder="From email"
+                  aria-label={t('common.fromEmail')}
+                  placeholder={t('common.fromEmail')}
                   value={form.smtp.from_email}
                   onChange={(event) =>
                     updateSmtp('from_email', event.currentTarget.value)
                   }
                 />
                 <Input
-                  aria-label="From name"
-                  placeholder="From name"
+                  aria-label={t('common.fromName')}
+                  placeholder={t('common.fromName')}
                   value={form.smtp.from_name}
                   onChange={(event) =>
                     updateSmtp('from_name', event.currentTarget.value)
@@ -307,12 +303,12 @@ export function AdminRoute() {
                       updateSmtp('secure', event.currentTarget.checked)
                     }
                   />
-                  Secure SMTP
+                  {t('admin.secureSmtp')}
                 </label>
               </div>
             ) : null}
             <Button type="submit" disabled={pending !== null}>
-              {pending === 'config' ? 'Saving...' : 'Save configuration'}
+              {pending === 'config' ? t('admin.saving') : t('admin.save')}
             </Button>
           </form>
         </CardContent>
@@ -320,10 +316,8 @@ export function AdminRoute() {
 
       <Card className="rounded-lg">
         <CardHeader>
-          <CardTitle>JWKs</CardTitle>
-          <CardDescription>
-            Public signing keys in the CURRENT and STANDBY slots.
-          </CardDescription>
+          <CardTitle>{t('admin.jwks')}</CardTitle>
+          <CardDescription>{t('admin.jwksDescription')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-3 md:grid-cols-2">
@@ -342,27 +336,25 @@ export function AdminRoute() {
             ))}
           </div>
           <Button disabled={pending !== null} onClick={() => void rotateJwks()}>
-            {pending === 'jwks' ? 'Rotating...' : 'JWK Rotate'}
+            {pending === 'jwks' ? t('admin.rotating') : t('admin.rotate')}
           </Button>
         </CardContent>
       </Card>
 
       <Card className="rounded-lg">
         <CardHeader>
-          <CardTitle>Users</CardTitle>
-          <CardDescription>
-            Current users and credential counts.
-          </CardDescription>
+          <CardTitle>{t('admin.users')}</CardTitle>
+          <CardDescription>{t('admin.usersDescription')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-slate-500">
-                  <th className="p-2">User</th>
-                  <th className="p-2">Email</th>
-                  <th className="p-2">Sessions</th>
-                  <th className="p-2">Passkeys</th>
+                  <th className="p-2">{t('admin.user')}</th>
+                  <th className="p-2">{t('common.email')}</th>
+                  <th className="p-2">{t('admin.sessions')}</th>
+                  <th className="p-2">{t('admin.passkeys')}</th>
                   <th className="p-2">ED25519</th>
                 </tr>
               </thead>
@@ -388,7 +380,9 @@ export function AdminRoute() {
             disabled={pending !== null}
             onClick={() => void exportDatabase()}
           >
-            {pending === 'database' ? 'Exporting...' : 'Export SQLite database'}
+            {pending === 'database'
+              ? t('admin.exporting')
+              : t('admin.exportDatabase')}
           </Button>
         </CardContent>
       </Card>

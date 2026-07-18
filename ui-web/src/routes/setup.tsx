@@ -1,17 +1,27 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useDemo } from '@/app/providers/demo-provider';
 import { generateDemoEd25519Keypair } from '@/lib/demo-ed25519';
+import { useI18n } from '@/lib/i18n';
 
 export function SetupRoute() {
   const { reloadSetupState, sdk } = useDemo();
-  const [name, setName] = useState('Administrator ED25519 key');
+  const { t } = useI18n();
+  const [name, setName] = useState(() => t('setup.defaultCredentialName'));
   const [privateKey, setPrivateKey] = useState('');
   const [publicKey, setPublicKey] = useState('');
   const [saved, setSaved] = useState(false);
-  const [pending, setPending] = useState<'generate' | 'initialize' | null>(null);
+  const [pending, setPending] = useState<'generate' | 'initialize' | null>(
+    null,
+  );
   const [error, setError] = useState('');
 
   async function generateKey() {
@@ -24,7 +34,9 @@ export function SetupRoute() {
       setPublicKey(keypair.publicKey);
       setSaved(false);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Unable to generate key.');
+      setError(
+        cause instanceof Error ? cause.message : t('setup.generateError'),
+      );
     } finally {
       setPending(null);
     }
@@ -48,7 +60,9 @@ export function SetupRoute() {
       });
       await reloadSetupState();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Initialization failed.');
+      setError(
+        cause instanceof Error ? cause.message : t('setup.initializeError'),
+      );
     } finally {
       setPending(null);
     }
@@ -58,17 +72,17 @@ export function SetupRoute() {
     <div className="mx-auto w-full max-w-2xl">
       <Card className="rounded-lg">
         <CardHeader>
-          <CardTitle>Initialize auth-mini</CardTitle>
-          <CardDescription>
-            Create the administrator account with a local ED25519 key. Save the
-            private key before completing initialization.
-          </CardDescription>
+          <CardTitle>{t('setup.title')}</CardTitle>
+          <CardDescription>{t('setup.description')}</CardDescription>
         </CardHeader>
         <CardContent>
           <form className="space-y-5" onSubmit={initialize}>
             <label className="grid gap-2 text-sm font-medium text-slate-700">
-              <span>Credential name</span>
-              <Input value={name} onChange={(event) => setName(event.currentTarget.value)} />
+              <span>{t('common.credentialName')}</span>
+              <Input
+                value={name}
+                onChange={(event) => setName(event.currentTarget.value)}
+              />
             </label>
 
             <div className="flex flex-wrap gap-3">
@@ -77,14 +91,16 @@ export function SetupRoute() {
                 disabled={pending !== null}
                 onClick={() => void generateKey()}
               >
-                {pending === 'generate' ? 'Generating...' : 'Generate ED25519 key'}
+                {pending === 'generate'
+                  ? t('setup.generating')
+                  : t('setup.generate')}
               </Button>
             </div>
 
             {privateKey ? (
               <div className="grid gap-4">
                 <label className="grid gap-2 text-sm font-medium text-slate-700">
-                  <span>Private key</span>
+                  <span>{t('common.privateKey')}</span>
                   <textarea
                     readOnly
                     className="min-h-24 rounded-md border border-slate-200 bg-slate-50 p-3 font-mono text-sm text-slate-900"
@@ -92,7 +108,7 @@ export function SetupRoute() {
                   />
                 </label>
                 <label className="grid gap-2 text-sm font-medium text-slate-700">
-                  <span>Public key</span>
+                  <span>{t('common.publicKey')}</span>
                   <Input readOnly value={publicKey} />
                 </label>
                 <label className="flex items-center gap-2 text-sm text-slate-700">
@@ -101,7 +117,7 @@ export function SetupRoute() {
                     checked={saved}
                     onChange={(event) => setSaved(event.currentTarget.checked)}
                   />
-                  I have saved the private key.
+                  {t('setup.privateKeySaved')}
                 </label>
               </div>
             ) : null}
@@ -110,9 +126,13 @@ export function SetupRoute() {
 
             <Button
               type="submit"
-              disabled={!saved || !publicKey || pending !== null || !name.trim()}
+              disabled={
+                !saved || !publicKey || pending !== null || !name.trim()
+              }
             >
-              {pending === 'initialize' ? 'Initializing...' : 'Complete initialization'}
+              {pending === 'initialize'
+                ? t('setup.initializing')
+                : t('setup.complete')}
             </Button>
           </form>
         </CardContent>
