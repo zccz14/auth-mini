@@ -62,6 +62,42 @@ export type AdminJwksResponse = {
   keys: AdminJwkSlot[];
 };
 
+export type AdminSystemResourcesSnapshot = {
+  sampled_at: number;
+  sample_interval_ms: number;
+  cpu: { usage_percent: number; load_1m: number; logical_cpus: number };
+  memory: {
+    used_bytes: number;
+    total_bytes: number;
+    available_bytes: number;
+    process_used_bytes: number;
+    other_used_bytes: number;
+    usage_percent: number;
+    swap_used_bytes: number;
+    swap_total_bytes: number;
+  };
+  network: {
+    receive_bytes_per_second: number;
+    transmit_bytes_per_second: number;
+    interfaces: number;
+  };
+  disk: null | {
+    mount_point: string;
+    used_bytes: number;
+    total_bytes: number;
+    available_bytes: number;
+    usage_percent: number;
+  };
+  sqlite: {
+    main_bytes: number;
+    wal_bytes: number;
+    shm_bytes: number;
+    total_bytes: number;
+    freelist_bytes: number;
+    freelist_percent: number;
+  };
+};
+
 type AdminApi = {
   setup: {
     fetch(): Promise<AdminSetupState>;
@@ -76,6 +112,9 @@ type AdminApi = {
   jwks: {
     list(): Promise<AdminJwksResponse>;
     rotate(): Promise<AdminJwksResponse>;
+  };
+  resources: {
+    fetch(): Promise<AdminSystemResourcesSnapshot>;
   };
   users(): Promise<{ users: Array<Record<string, unknown>> }>;
   databaseUrl(): string;
@@ -281,6 +320,14 @@ export function createDemoSdk(serverBaseUrl: string): DemoSdk {
           return postJson<AdminJwksResponse>(
             '/admin/jwks/rotate',
             {},
+            await requireAccessToken(),
+          );
+        },
+      },
+      resources: {
+        async fetch() {
+          return getJson<AdminSystemResourcesSnapshot>(
+            '/admin/resources',
             await requireAccessToken(),
           );
         },

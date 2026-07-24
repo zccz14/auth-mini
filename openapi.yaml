@@ -201,6 +201,31 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 error: not_implemented
+  /admin/resources:
+    get:
+      tags:
+        - admin
+      operationId: getAdminSystemResources
+      summary: Read the current host and SQLite resource snapshot
+      responses:
+        '200':
+          description: Current system resource snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemResourcesSnapshot'
+        '401':
+          $ref: '#/components/responses/InvalidAccessToken'
+        '403':
+          $ref: '#/components/responses/AdminRequired'
+        '501':
+          description: Database-backed resource monitoring is not available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: not_implemented
   /email/start:
     post:
       security: []
@@ -929,6 +954,160 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AdminUserSummary'
+    SystemResourcesSnapshot:
+      type: object
+      additionalProperties: false
+      required:
+        - sampled_at
+        - sample_interval_ms
+        - cpu
+        - memory
+        - network
+        - disk
+        - sqlite
+      properties:
+        sampled_at:
+          type: integer
+          description: Unix timestamp in seconds
+        sample_interval_ms:
+          type: integer
+          minimum: 0
+        cpu:
+          $ref: '#/components/schemas/CpuResourceSnapshot'
+        memory:
+          $ref: '#/components/schemas/MemoryResourceSnapshot'
+        network:
+          $ref: '#/components/schemas/NetworkResourceSnapshot'
+        disk:
+          oneOf:
+            - $ref: '#/components/schemas/DiskResourceSnapshot'
+            - type: 'null'
+        sqlite:
+          $ref: '#/components/schemas/SqliteResourceSnapshot'
+    CpuResourceSnapshot:
+      type: object
+      additionalProperties: false
+      required:
+        - usage_percent
+        - load_1m
+        - logical_cpus
+      properties:
+        usage_percent:
+          type: number
+          minimum: 0
+        load_1m:
+          type: number
+          minimum: 0
+        logical_cpus:
+          type: integer
+          minimum: 1
+    MemoryResourceSnapshot:
+      type: object
+      additionalProperties: false
+      required:
+        - used_bytes
+        - total_bytes
+        - available_bytes
+        - process_used_bytes
+        - other_used_bytes
+        - usage_percent
+        - swap_used_bytes
+        - swap_total_bytes
+      properties:
+        used_bytes:
+          type: integer
+          minimum: 0
+        total_bytes:
+          type: integer
+          minimum: 0
+        available_bytes:
+          type: integer
+          minimum: 0
+        process_used_bytes:
+          type: integer
+          minimum: 0
+        other_used_bytes:
+          type: integer
+          minimum: 0
+        usage_percent:
+          type: number
+          minimum: 0
+        swap_used_bytes:
+          type: integer
+          minimum: 0
+        swap_total_bytes:
+          type: integer
+          minimum: 0
+    NetworkResourceSnapshot:
+      type: object
+      additionalProperties: false
+      required:
+        - receive_bytes_per_second
+        - transmit_bytes_per_second
+        - interfaces
+      properties:
+        receive_bytes_per_second:
+          type: integer
+          minimum: 0
+        transmit_bytes_per_second:
+          type: integer
+          minimum: 0
+        interfaces:
+          type: integer
+          minimum: 0
+    DiskResourceSnapshot:
+      type: object
+      additionalProperties: false
+      required:
+        - mount_point
+        - used_bytes
+        - total_bytes
+        - available_bytes
+        - usage_percent
+      properties:
+        mount_point:
+          type: string
+        used_bytes:
+          type: integer
+          minimum: 0
+        total_bytes:
+          type: integer
+          minimum: 0
+        available_bytes:
+          type: integer
+          minimum: 0
+        usage_percent:
+          type: number
+          minimum: 0
+    SqliteResourceSnapshot:
+      type: object
+      additionalProperties: false
+      required:
+        - main_bytes
+        - wal_bytes
+        - shm_bytes
+        - total_bytes
+        - freelist_bytes
+        - freelist_percent
+      properties:
+        main_bytes:
+          type: integer
+          minimum: 0
+        wal_bytes:
+          type: integer
+          minimum: 0
+        shm_bytes:
+          type: integer
+          minimum: 0
+        total_bytes:
+          type: integer
+          minimum: 0
+        freelist_bytes:
+          type: integer
+          minimum: 0
+        freelist_percent:
+          type: number
+          minimum: 0
     AdminUserSummary:
       type: object
       additionalProperties: false

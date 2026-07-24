@@ -15,6 +15,7 @@ const sdk = {
     config: { fetch: vi.fn(), save: vi.fn() },
     databaseUrl: () => 'https://auth.example.com/admin/database',
     jwks: { list: vi.fn(), rotate: vi.fn() },
+    resources: { fetch: vi.fn() },
     setup: { fetch: vi.fn(), initialize: vi.fn() },
     users: vi.fn(),
   },
@@ -199,11 +200,54 @@ describe('formal GUI routes', () => {
       smtp: null,
     });
     sdk.admin.users.mockResolvedValue({ users: [] });
+    sdk.admin.resources.fetch.mockResolvedValue({
+      sampled_at: 1_784_200_000,
+      sample_interval_ms: 5_000,
+      cpu: { usage_percent: 12.5, load_1m: 0.42, logical_cpus: 4 },
+      memory: {
+        used_bytes: 1_073_741_824,
+        total_bytes: 2_147_483_648,
+        available_bytes: 1_073_741_824,
+        process_used_bytes: 67_108_864,
+        other_used_bytes: 1_006_632_960,
+        usage_percent: 50,
+        swap_used_bytes: 0,
+        swap_total_bytes: 0,
+      },
+      network: {
+        receive_bytes_per_second: 1_024,
+        transmit_bytes_per_second: 2_048,
+        interfaces: 2,
+      },
+      disk: {
+        mount_point: '/',
+        used_bytes: 4_294_967_296,
+        total_bytes: 8_589_934_592,
+        available_bytes: 4_294_967_296,
+        usage_percent: 50,
+      },
+      sqlite: {
+        main_bytes: 1_024,
+        wal_bytes: 512,
+        shm_bytes: 128,
+        total_bytes: 1_664,
+        freelist_bytes: 256,
+        freelist_percent: 10,
+      },
+    });
     const user = userEvent.setup();
 
     renderRoute(<AdminRoute />);
 
     expect(screen.getByRole('heading', { name: 'Admin' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'System resources' }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByText('Auth Mini RSS: 64 MiB', { exact: false }),
+      ).toBeInTheDocument(),
+    );
     expect(
       await screen.findByRole('heading', { name: 'Users' }),
     ).toBeInTheDocument();
