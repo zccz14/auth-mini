@@ -15,6 +15,7 @@ import type {
   AdminSetupState,
 } from '@/lib/demo-sdk';
 import { useI18n } from '@/lib/i18n';
+import { SystemResourcesCard } from '@/components/app/system-resources-card';
 
 export function AdminRoute() {
   const { sdk, session } = useDemo();
@@ -171,6 +172,8 @@ export function AdminRoute() {
           {error ? <p className="text-sm text-rose-600">{error}</p> : null}
         </CardContent>
       </Card>
+
+      {sdk ? <SystemResourcesCard sdk={sdk} /> : null}
 
       <Card className="rounded-lg">
         <CardHeader>

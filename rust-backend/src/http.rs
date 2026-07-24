@@ -1,6 +1,7 @@
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{IpAddr, TcpListener, TcpStream};
+use std::sync::{Mutex, OnceLock};
 
 use crate::audience::resolve_audience;
 use crate::config::Config;
@@ -19,6 +20,7 @@ use crate::email_verify::{
 };
 use crate::jwks::{list_admin_keys, list_public_keys, rotate_keys};
 use crate::openapi::{read_openapi_json, read_openapi_yaml};
+use crate::resources::ResourceMonitor;
 #[cfg(test)]
 use crate::session::mint_session_tokens;
 use crate::session::{
@@ -44,6 +46,11 @@ use crate::webauthn::{
 
 const CORS_ALLOW_METHODS: &str = "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS";
 const CORS_ALLOW_HEADERS: &str = "*";
+
+fn resource_monitor() -> &'static Mutex<ResourceMonitor> {
+    static MONITOR: OnceLock<Mutex<ResourceMonitor>> = OnceLock::new();
+    MONITOR.get_or_init(|| Mutex::new(ResourceMonitor::new()))
+}
 
 pub fn run_server(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(database) = &config.database {
@@ -174,6 +181,10 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
 
     if request.method == "GET" && request.path == "/admin/database" {
         return handle_admin_database(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "GET" && request.path == "/admin/resources" {
+        return handle_admin_resources(request, config).map(|response| cors(request, response));
     }
 
     if request.method == "GET" {
@@ -472,6 +483,27 @@ fn handle_admin_database(request: &Request, config: &Config) -> io::Result<Respo
     fs::remove_file(export_path).map_err(io::Error::other)?;
 
     Ok(Response::bytes(200, "application/octet-stream", bytes))
+}
+
+fn handle_admin_resources(request: &Request, config: &Config) -> io::Result<Response> {
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    if require_admin_auth(&connection, &auth).is_err() {
+        return Ok(Response::json_error(403, "admin_required"));
+    }
+    let Some(database) = &config.database else {
+        return Ok(Response::json_error(501, "not_implemented"));
+    };
+    let snapshot = resource_monitor()
+        .lock()
+        .map_err(|_| io::Error::other("resource monitor unavailable"))?
+        .sample(&database.db_path, &connection)?;
+
+    Ok(Response::json_value(
+        200,
+        serde_json::to_value(snapshot).map_err(io::Error::other)?,
+    ))
 }
 
 fn admin_setup_connection(request: &Request, config: &Config) -> io::Result<AdminSetupAccess> {
@@ -3320,6 +3352,69 @@ mod tests {
         assert!(response.body_text().contains("\"slot\":\"CURRENT\""));
         assert!(response.body_text().contains("\"slot\":\"STANDBY\""));
         assert!(!response.body_text().contains("\"d\""));
+    }
+
+    #[test]
+    fn serves_system_resources_only_to_the_administrator() {
+        let db_path = test_db_path("http-admin-resources");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        let admin_pair = mint_session_tokens(
+            &connection,
+            "admin-user",
+            "email_otp",
+            "auth-mini",
+            None,
+            None,
+        )
+        .expect("session tokens mint");
+        let user_pair =
+            mint_session_tokens(&connection, "user-1", "email_otp", "auth-mini", None, None)
+                .expect("user session tokens mint");
+        connection
+            .execute(
+                "UPDATE app_meta SET admin_user_id = 'admin-user' WHERE id = 'APP'",
+                [],
+            )
+            .expect("admin user configured");
+        drop(connection);
+        let config = Config {
+            database: Some(crate::DatabaseConfig { db_path }),
+            ..Config::default()
+        };
+
+        let forbidden = route_request(
+            &Request {
+                method: "GET".to_string(),
+                path: "/admin/resources".to_string(),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", user_pair.access_token),
+                )],
+                body: String::new(),
+            },
+            &config,
+        )
+        .expect("non-admin resource response builds");
+        let response = route_request(
+            &Request {
+                method: "GET".to_string(),
+                path: "/admin/resources".to_string(),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", admin_pair.access_token),
+                )],
+                body: String::new(),
+            },
+            &config,
+        )
+        .expect("admin resource response builds");
+
+        assert_eq!(forbidden, Response::json_error(403, "admin_required"));
+        assert_eq!(response.status, 200);
+        assert!(response.body_text().contains("\"cpu\""));
+        assert!(response.body_text().contains("\"memory\""));
+        assert!(response.body_text().contains("\"sqlite\""));
     }
 
     #[test]

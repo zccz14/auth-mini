@@ -43,6 +43,59 @@ export type AdminUsersResponse = {
     users: Array<AdminUserSummary>;
 };
 
+export type SystemResourcesSnapshot = {
+    /**
+     * Unix timestamp in seconds
+     */
+    sampled_at: number;
+    sample_interval_ms: number;
+    cpu: CpuResourceSnapshot;
+    memory: MemoryResourceSnapshot;
+    network: NetworkResourceSnapshot;
+    disk: DiskResourceSnapshot | null;
+    sqlite: SqliteResourceSnapshot;
+};
+
+export type CpuResourceSnapshot = {
+    usage_percent: number;
+    load_1m: number;
+    logical_cpus: number;
+};
+
+export type MemoryResourceSnapshot = {
+    used_bytes: number;
+    total_bytes: number;
+    available_bytes: number;
+    process_used_bytes: number;
+    other_used_bytes: number;
+    usage_percent: number;
+    swap_used_bytes: number;
+    swap_total_bytes: number;
+};
+
+export type NetworkResourceSnapshot = {
+    receive_bytes_per_second: number;
+    transmit_bytes_per_second: number;
+    interfaces: number;
+};
+
+export type DiskResourceSnapshot = {
+    mount_point: string;
+    used_bytes: number;
+    total_bytes: number;
+    available_bytes: number;
+    usage_percent: number;
+};
+
+export type SqliteResourceSnapshot = {
+    main_bytes: number;
+    wal_bytes: number;
+    shm_bytes: number;
+    total_bytes: number;
+    freelist_bytes: number;
+    freelist_percent: number;
+};
+
 export type AdminUserSummary = {
     id: string;
     email: string | null;
@@ -581,6 +634,39 @@ export type ExportAdminDatabaseResponses = {
 };
 
 export type ExportAdminDatabaseResponse = ExportAdminDatabaseResponses[keyof ExportAdminDatabaseResponses];
+
+export type GetAdminSystemResourcesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/resources';
+};
+
+export type GetAdminSystemResourcesErrors = {
+    /**
+     * Missing, malformed, expired, or revoked access token
+     */
+    401: ErrorResponse;
+    /**
+     * Access token is valid but does not belong to the configured administrator
+     */
+    403: ErrorResponse;
+    /**
+     * Database-backed resource monitoring is not available
+     */
+    501: ErrorResponse;
+};
+
+export type GetAdminSystemResourcesError = GetAdminSystemResourcesErrors[keyof GetAdminSystemResourcesErrors];
+
+export type GetAdminSystemResourcesResponses = {
+    /**
+     * Current system resource snapshot
+     */
+    200: SystemResourcesSnapshot;
+};
+
+export type GetAdminSystemResourcesResponse = GetAdminSystemResourcesResponses[keyof GetAdminSystemResourcesResponses];
 
 export type StartEmailAuthData = {
     body: EmailStartRequest;
