@@ -1,6 +1,6 @@
 # CLI and operations
 
-Install the Rust release binary for your platform from GitHub Releases, verify its `.sha256` checksum, extract it, and put `auth-mini` on `PATH`:
+Install the Rust release binary for Linux or macOS from GitHub Releases, verify its `.sha256` checksum, extract it, and put `auth-mini` on `PATH`:
 
 ```bash
 curl -LO https://github.com/zccz14/auth-mini/releases/download/latest/auth-mini-linux-x86_64.tar.gz
@@ -12,7 +12,7 @@ sudo mv auth-mini /usr/local/bin/auth-mini
 auth-mini
 ```
 
-Use the matching archive for your platform from the GitHub Release assets. The npm package does not provide a CLI; it only ships SDK exports. The released Rust binary is the auth-mini server runtime.
+GitHub Release assets provide prebuilt binaries for Linux and macOS. Use the matching archive, verify its checksum, and put `auth-mini` on `PATH`. The npm package does not provide a CLI; it only ships SDK exports. The released Rust binary is the auth-mini server runtime.
 
 ## Instance setup
 

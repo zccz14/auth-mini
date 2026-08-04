@@ -48,6 +48,20 @@ describe('ui-web Pages release contract', () => {
     }
   });
 
+  it('publishes Rust release binaries only for Linux and macOS', () => {
+    const workflow = readRepoFile('.github/workflows/release.yml');
+
+    expect(workflow).toContain('x86_64-unknown-linux-gnu');
+    expect(workflow).toContain('x86_64-apple-darwin');
+    expect(workflow).toContain('aarch64-apple-darwin');
+    expect(workflow).toContain('Assets include macOS and Linux builds.');
+    expect(workflow).toContain('remove-windows-release-assets:');
+    expect(workflow).not.toContain('windows-latest');
+    expect(workflow).not.toContain('x86_64-pc-windows-msvc');
+    expect(workflow).not.toContain('auth-mini-windows-x86_64.zip');
+    expect(workflow).not.toContain('auth-mini.exe');
+  });
+
   it('builds Pages from the root entrypoint and uploads ui-web/dist', () => {
     const workflow = readRepoFile('.github/workflows/pages.yml');
     const deployJobStart = workflow.indexOf('jobs:\n  deploy:');
