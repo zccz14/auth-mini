@@ -1,6 +1,5 @@
 import { createBrowserSdk } from 'auth-mini/sdk/browser';
 import type { MeResponse } from 'auth-mini/sdk/api';
-import type { SessionSnapshot } from 'auth-mini/sdk/browser';
 
 type DemoEd25519Api = {
   register(input: { name: string; public_key: string }): Promise<unknown>;
@@ -183,22 +182,6 @@ export function createDemoSdk(serverBaseUrl: string): DemoSdk {
     );
   }
 
-  function needsRefresh(snapshot: SessionSnapshot): boolean {
-    if (!snapshot.expiresAt || !snapshot.receivedAt) {
-      return true;
-    }
-
-    const expiresAt = Date.parse(snapshot.expiresAt);
-    const receivedAt = Date.parse(snapshot.receivedAt);
-    if (!Number.isFinite(expiresAt) || !Number.isFinite(receivedAt)) {
-      return true;
-    }
-
-    const lifetimeMs = expiresAt - receivedAt;
-    const thresholdMs = lifetimeMs < 10 * 60_000 ? lifetimeMs / 2 : 5 * 60_000;
-    return Date.now() >= expiresAt - thresholdMs;
-  }
-
   async function requireAccessToken(forceRefresh = false): Promise<string> {
     const snapshot = sdk.session.getState();
 
@@ -344,9 +327,7 @@ export function createDemoSdk(serverBaseUrl: string): DemoSdk {
     },
     currentUser: {
       async fetch() {
-        const accessToken = await requireAccessToken(
-          needsRefresh(sdk.session.getState()),
-        );
+        const accessToken = await requireAccessToken();
 
         try {
           return await getJson<DemoCurrentUser>('/me', accessToken);

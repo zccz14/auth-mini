@@ -108,6 +108,13 @@ function getRuntime() {
 
 function createRuntime() {
   const SDK_STORAGE_KEY = 'auth-mini.sdk';
+  const BACKGROUND_REFRESH_LEEWAY_MS = 10_000;
+  const BACKGROUND_REFRESH_RETRY_MS = 10_000;
+  const MAX_TIMEOUT_MS = 2_147_483_647;
+  const browserRefreshCoordinators = new WeakMap<
+    Storage,
+    Map<string, ReturnType<typeof createBrowserRefreshCoordinator>>
+  >();
 
   // @ts-expect-error preserve extracted helper signature
   function createSdkError(code, message) {
@@ -928,7 +935,7 @@ function createRuntime() {
       getDefaultStorage: () => browser.localStorage,
     });
 
-    return createAuthMiniInternal({
+    const sdk = createAuthMiniInternal({
       baseUrl: normalizedBaseUrl,
       fetch: resolveFetch(input.fetch),
       navigatorCredentials: browser.navigator?.credentials,
@@ -939,6 +946,85 @@ function createRuntime() {
       storageKey,
       storageSync: createBrowserStorageSync(browser, storage, storageKey),
     });
+
+    let coordinators = browserRefreshCoordinators.get(storage);
+    if (!coordinators) {
+      coordinators = new Map();
+      browserRefreshCoordinators.set(storage, coordinators);
+    }
+    let coordinator = coordinators.get(storageKey);
+    if (!coordinator) {
+      coordinator = createBrowserRefreshCoordinator();
+      coordinators.set(storageKey, coordinator);
+    }
+    coordinator.register(sdk);
+
+    return sdk;
+  }
+
+  function createBrowserRefreshCoordinator() {
+    let activeSdk: AuthMiniInternal | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    return {
+      register(sdk: AuthMiniInternal) {
+        sdk.session.onChange((snapshot) => {
+          if (snapshot.status === 'authenticated') {
+            activeSdk = sdk;
+            schedule(snapshot);
+            return;
+          }
+          if (snapshot.status === 'anonymous') {
+            activeSdk = null;
+            clearSchedule();
+          }
+        });
+      },
+    };
+
+    function clearSchedule() {
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    }
+
+    function schedule(snapshot: SessionSnapshot, delayMs?: number) {
+      clearSchedule();
+      if (
+        !snapshot.sessionId ||
+        !snapshot.refreshToken ||
+        !snapshot.expiresAt
+      ) {
+        return;
+      }
+      const expiresAt = Date.parse(snapshot.expiresAt);
+      if (!Number.isFinite(expiresAt)) {
+        return;
+      }
+      const delay =
+        delayMs ??
+        Math.max(0, expiresAt - Date.now() - BACKGROUND_REFRESH_LEEWAY_MS);
+      timer = setTimeout(refreshInBackground, Math.min(delay, MAX_TIMEOUT_MS));
+    }
+
+    function refreshInBackground() {
+      timer = null;
+      const sdk = activeSdk;
+      if (!sdk) {
+        return;
+      }
+      const snapshot = sdk.session.getState();
+      if (snapshot.status !== 'authenticated') {
+        return;
+      }
+      void sdk.session.refresh().catch(() => {
+        const current = sdk.session.getState();
+        if (current.status === 'authenticated') {
+          schedule(current, BACKGROUND_REFRESH_RETRY_MS);
+        }
+      });
+    }
   }
 
   function createBrowserStorageSync(

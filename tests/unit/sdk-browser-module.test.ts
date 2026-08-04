@@ -182,6 +182,193 @@ describe('browser module sdk', () => {
     }
   });
 
+  it('refreshes browser sessions ten seconds before expiry and reschedules', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-03T00:00:00.000Z'));
+
+    const storage = fakeStorage();
+    seedBrowserSdkStorage(storage, 'https://auth.example.com', {
+      sessionId: 'session-1',
+      accessToken: 'access-1',
+      refreshToken: 'refresh-1',
+      receivedAt: '2026-04-03T00:00:00.000Z',
+      expiresAt: '2026-04-03T00:00:30.000Z',
+    });
+    let refreshCount = 0;
+    const fetch = vi.fn(async (input: string | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname === '/session/refresh') {
+        refreshCount += 1;
+        return jsonResponse({
+          session_id: 'session-1',
+          access_token: `access-${refreshCount + 1}`,
+          refresh_token: `refresh-${refreshCount + 1}`,
+          expires_in: 30,
+        });
+      }
+      return jsonResponse({ error: 'unexpected' }, 500);
+    });
+
+    vi.stubGlobal('fetch', fetch);
+    vi.stubGlobal('localStorage', storage);
+
+    try {
+      const sdk = createBrowserSdk(
+        'https://auth.example.com',
+      ) as AuthMiniApi & { ready: Promise<void> };
+      await sdk.ready;
+
+      await vi.advanceTimersByTimeAsync(19_999);
+      expect(fetch).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(sdk.session.getState()).toMatchObject({
+        accessToken: 'access-2',
+        refreshToken: 'refresh-2',
+      });
+
+      await vi.advanceTimersByTimeAsync(19_999);
+      expect(fetch).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(fetch).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('stops browser background refresh after local session clear', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-03T00:00:00.000Z'));
+
+    const storage = fakeStorage();
+    seedBrowserSdkStorage(storage, 'https://auth.example.com', {
+      sessionId: 'session-1',
+      accessToken: 'access-1',
+      refreshToken: 'refresh-1',
+      receivedAt: '2026-04-03T00:00:00.000Z',
+      expiresAt: '2026-04-03T00:00:30.000Z',
+    });
+    const fetch = vi.fn(async () => jsonResponse({ ok: true }));
+
+    vi.stubGlobal('fetch', fetch);
+    vi.stubGlobal('localStorage', storage);
+
+    try {
+      const sdk = createBrowserSdk(
+        'https://auth.example.com',
+      ) as AuthMiniApi & { ready: Promise<void> };
+      await sdk.ready;
+      sdk.session.clearLocal();
+
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('retries browser background refresh after a transient failure', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-03T00:00:00.000Z'));
+
+    const storage = fakeStorage();
+    seedBrowserSdkStorage(storage, 'https://auth.example.com', {
+      sessionId: 'session-1',
+      accessToken: 'access-1',
+      refreshToken: 'refresh-1',
+      receivedAt: '2026-04-03T00:00:00.000Z',
+      expiresAt: '2026-04-03T00:00:30.000Z',
+    });
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(jsonResponse({ error: 'internal_error' }, 500))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          session_id: 'session-1',
+          access_token: 'access-2',
+          refresh_token: 'refresh-2',
+          expires_in: 30,
+        }),
+      );
+
+    vi.stubGlobal('fetch', fetch);
+    vi.stubGlobal('localStorage', storage);
+
+    try {
+      const sdk = createBrowserSdk(
+        'https://auth.example.com',
+      ) as AuthMiniApi & { ready: Promise<void> };
+      await sdk.ready;
+
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(sdk.session.getState().status).toBe('authenticated');
+
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(fetch).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(sdk.session.getState()).toMatchObject({
+        accessToken: 'access-2',
+        refreshToken: 'refresh-2',
+      });
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('coordinates browser background refresh for same-tab SDK instances', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-03T00:00:00.000Z'));
+
+    const storage = fakeStorage();
+    seedBrowserSdkStorage(storage, 'https://auth.example.com', {
+      sessionId: 'session-1',
+      accessToken: 'access-1',
+      refreshToken: 'refresh-1',
+      receivedAt: '2026-04-03T00:00:00.000Z',
+      expiresAt: '2026-04-03T00:00:30.000Z',
+    });
+    const fetch = vi.fn(async () =>
+      jsonResponse({
+        session_id: 'session-1',
+        access_token: 'access-2',
+        refresh_token: 'refresh-2',
+        expires_in: 30,
+      }),
+    );
+
+    vi.stubGlobal('fetch', fetch);
+    vi.stubGlobal('localStorage', storage);
+
+    try {
+      const first = createBrowserSdk(
+        'https://auth.example.com',
+      ) as AuthMiniApi & { ready: Promise<void> };
+      await first.ready;
+      const second = createBrowserSdk(
+        'https://auth.example.com',
+      ) as AuthMiniApi & { ready: Promise<void> };
+      await second.ready;
+
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(second.session.getState()).toMatchObject({
+        accessToken: 'access-2',
+        refreshToken: 'refresh-2',
+      });
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('keeps the browser module declaration free of singleton global typings', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/sdk/browser.ts'),

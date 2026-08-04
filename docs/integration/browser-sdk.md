@@ -50,7 +50,7 @@ const sdk = createBrowserSdk('http://127.0.0.1:7777');
 
 ## Startup state model
 
-If a refresh token is already stored, startup enters `recovering` first and then settles to `authenticated` or `anonymous` after recovery completes. `sdk.session.getState()` only exposes session/auth fields; it never includes a cached `/me` snapshot.
+If a refresh token is already stored, startup enters `recovering` first and then settles to `authenticated` or `anonymous` after recovery completes. While authenticated, the Browser SDK refreshes the session in the background about 10 seconds before `expiresAt`; every successful refresh rotates the refresh token, updates the session state, and schedules the next refresh. `sdk.session.getState()` only exposes session/auth fields; it never includes a cached `/me` snapshot.
 
 ## High-level SDK boundary
 
@@ -78,6 +78,8 @@ async function signInWithPasskey() {
 ## Operational limits
 
 - The browser SDK requires an explicit server base URL via `createBrowserSdk(serverBaseUrl)`.
+- Integrations do not need to run an access-token refresh timer. Read `sdk.session.getState().accessToken` when sending a protected request, or subscribe with `sdk.session.onChange()`; do not retain the token string captured at login.
+- Browser background timers may be delayed while a page is suspended. Keep a single retry after a protected-request `401` by calling `sdk.session.refresh()`, then retry the request with the current session token.
 - Configure the issuer and passkey RP ID on the Auth Mini instance; passkey requests use that server-side configuration.
 - Multiple tabs sharing one session can still race during refresh-token rotation, but the loser tab enters `recovering` and usually converges to the latest shared session state.
 - That convergence shares session tokens/status only; account/profile data remains outside the high-level browser SDK contract.
