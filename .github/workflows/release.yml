@@ -76,7 +76,7 @@ jobs:
         run: npm run demo:build:web
 
       - name: Build release binary
-        run: cargo build --manifest-path rust-backend/Cargo.toml --release --target ${{ matrix.target }} --target-dir rust-backend/target
+        run: cargo build --manifest-path rust-backend/Cargo.toml --release --locked --target ${{ matrix.target }} --target-dir rust-backend/target
 
       - name: Package archive and checksum
         env:

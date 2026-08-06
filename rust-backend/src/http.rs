@@ -1,7 +1,15 @@
 use std::fs;
-use std::io::{self, BufRead, BufReader, Read, Write};
-use std::net::{IpAddr, TcpListener, TcpStream};
-use std::sync::{Mutex, OnceLock};
+use std::io;
+use std::net::{IpAddr, SocketAddr};
+use std::sync::{Arc, Mutex, OnceLock};
+
+use axum::body::{to_bytes, Body};
+use axum::extract::{ConnectInfo, Request as AxumRequest, State};
+use axum::http::{HeaderValue, StatusCode};
+use axum::response::Response as AxumResponse;
+use axum::routing::any;
+use axum::Router;
+use tokio::sync::Semaphore;
 
 use crate::audience::resolve_audience;
 use crate::config::Config;
@@ -52,78 +60,127 @@ fn resource_monitor() -> &'static Mutex<ResourceMonitor> {
     MONITOR.get_or_init(|| Mutex::new(ResourceMonitor::new()))
 }
 
-pub fn run_server(config: Config) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run_server(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(database) = &config.database {
         initialize_runtime_database(&database.db_path)?;
     }
 
-    let listener = TcpListener::bind((config.host.as_str(), config.port))?;
+    let listener = tokio::net::TcpListener::bind((config.host.as_str(), config.port)).await?;
     eprintln!(
         "auth-mini rust backend listening on {}:{}",
         config.host, config.port
     );
 
-    for stream in listener.incoming() {
-        handle_connection(stream?, &config)?;
-    }
-
-    Ok(())
+    axum::serve(
+        listener,
+        router(config).into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .map_err(Into::into)
 }
 
-fn handle_connection(mut stream: TcpStream, config: &Config) -> io::Result<()> {
-    let peer_ip = stream.peer_addr()?.ip();
-    let request = read_request(&mut stream, peer_ip)?;
-    let response = route_request(&request, config)?;
-    stream.write_all(&response.to_http_bytes())
+#[derive(Clone)]
+struct AppState {
+    config: Arc<Config>,
+    blocking_gate: Arc<Semaphore>,
 }
 
-fn read_request(stream: &mut TcpStream, peer_ip: IpAddr) -> io::Result<Request> {
-    let mut reader = BufReader::new(stream);
-    let mut request_line = String::new();
-    reader.read_line(&mut request_line)?;
-    let mut content_length = 0;
-    let mut headers = Vec::new();
+fn router(config: Config) -> Router {
+    Router::new()
+        .route("/healthz", any(axum_request))
+        .route("/openapi.yaml", any(axum_request))
+        .route("/openapi.json", any(axum_request))
+        .route("/admin/setup", any(axum_request))
+        .route("/admin/config", any(axum_request))
+        .route("/admin/users", any(axum_request))
+        .route("/admin/jwks", any(axum_request))
+        .route("/admin/jwks/rotate", any(axum_request))
+        .route("/admin/database", any(axum_request))
+        .route("/admin/resources", any(axum_request))
+        .route("/email/start", any(axum_request))
+        .route("/email/verify", any(axum_request))
+        .route("/session/refresh", any(axum_request))
+        .route("/session/logout", any(axum_request))
+        .route("/session/{session_id}/logout", any(axum_request))
+        .route("/ed25519/credentials", any(axum_request))
+        .route("/ed25519/credentials/{credential_id}", any(axum_request))
+        .route("/ed25519/start", any(axum_request))
+        .route("/ed25519/verify", any(axum_request))
+        .route("/webauthn/register/options", any(axum_request))
+        .route("/webauthn/register/verify", any(axum_request))
+        .route("/webauthn/authenticate/options", any(axum_request))
+        .route("/webauthn/authenticate/verify", any(axum_request))
+        .route("/me", any(axum_request))
+        .route("/jwks", any(axum_request))
+        .route("/web", any(axum_request))
+        .route("/web/{*path}", any(axum_request))
+        .fallback(any(axum_request))
+        .with_state(AppState {
+            config: Arc::new(config),
+            blocking_gate: Arc::new(Semaphore::new(1)),
+        })
+}
 
-    loop {
-        let mut line = String::new();
-        reader.read_line(&mut line)?;
-        if line == "\r\n" || line == "\n" || line.is_empty() {
-            break;
-        }
-
-        if let Some((name, value)) = line.split_once(':') {
-            if name.eq_ignore_ascii_case("x-auth-mini-peer-loopback")
-                || name.eq_ignore_ascii_case("x-auth-mini-peer-ip")
-            {
-                continue;
-            }
-            headers.push((name.trim().to_string(), value.trim().to_string()));
-            if name.eq_ignore_ascii_case("content-length") {
-                content_length = value.trim().parse().map_err(|_| {
-                    io::Error::new(io::ErrorKind::InvalidInput, "invalid content-length")
-                })?;
-            }
-        }
-    }
-
-    let mut parts = request_line.split_whitespace();
-    let method = parts.next().unwrap_or_default().to_string();
-    let path = parts.next().unwrap_or_default().to_string();
-    let mut body = vec![0; content_length];
-    reader.read_exact(&mut body)?;
-
+async fn axum_request(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    request: AxumRequest,
+) -> AxumResponse {
+    let (parts, body) = request.into_parts();
+    let body = match to_bytes(body, usize::MAX).await {
+        Ok(body) => body,
+        Err(_) => return axum_json_error(StatusCode::BAD_REQUEST, "invalid_request"),
+    };
+    let mut headers = parts
+        .headers
+        .iter()
+        .filter_map(|(name, value)| {
+            value
+                .to_str()
+                .ok()
+                .map(|value| (name.as_str().to_string(), value.to_string()))
+        })
+        .collect::<Vec<_>>();
     headers.push((
         "x-auth-mini-peer-loopback".to_string(),
-        peer_ip.is_loopback().to_string(),
+        peer.ip().is_loopback().to_string(),
     ));
-    headers.push(("x-auth-mini-peer-ip".to_string(), peer_ip.to_string()));
-
-    Ok(Request {
-        method,
-        path,
+    headers.push(("x-auth-mini-peer-ip".to_string(), peer.ip().to_string()));
+    let request = Request {
+        method: parts.method.to_string(),
+        path: parts
+            .uri
+            .path_and_query()
+            .map(|value| value.as_str().to_string())
+            .unwrap_or_else(|| parts.uri.path().to_string()),
         headers,
         body: String::from_utf8_lossy(&body).into_owned(),
+    };
+    let config = state.config;
+    let permit = match state.blocking_gate.acquire_owned().await {
+        Ok(permit) => permit,
+        Err(_) => return axum_json_error(StatusCode::INTERNAL_SERVER_ERROR, "internal_error"),
+    };
+
+    match tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        route_request(&request, &config)
     })
+    .await
+    {
+        Ok(Ok(response)) => response.into_axum(),
+        Ok(Err(_)) | Err(_) => axum_json_error(StatusCode::INTERNAL_SERVER_ERROR, "internal_error"),
+    }
+}
+
+fn axum_json_error(status: StatusCode, error: &str) -> AxumResponse {
+    let mut response = AxumResponse::new(Body::from(format!(r#"{{"error":"{error}"}}"#)));
+    *response.status_mut() = status;
+    response.headers_mut().insert(
+        "content-type",
+        HeaderValue::from_static("application/json; charset=utf-8"),
+    );
+    response
 }
 
 fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
@@ -1096,20 +1153,23 @@ impl Response {
         )
     }
 
-    fn to_http_bytes(&self) -> Vec<u8> {
-        let reason = reason_phrase(self.status);
-        let mut headers = format!(
-            "HTTP/1.1 {} {}\r\ncontent-type: {}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
-            self.status,
-            reason,
-            self.content_type,
-            self.body.len()
-        );
-        for (name, value) in &self.headers {
-            let insert_at = headers.len() - 2;
-            headers.insert_str(insert_at, &format!("{name}: {value}\r\n"));
+    fn into_axum(self) -> AxumResponse {
+        let body_length = self.body.len().to_string();
+        let mut response = AxumResponse::new(Body::from(self.body));
+        *response.status_mut() =
+            StatusCode::from_u16(self.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        response
+            .headers_mut()
+            .insert("content-type", HeaderValue::from_static(self.content_type));
+        if let Ok(value) = HeaderValue::try_from(body_length) {
+            response.headers_mut().insert("content-length", value);
         }
-        [headers.as_bytes(), &self.body].concat()
+        for (name, value) in self.headers {
+            response
+                .headers_mut()
+                .insert(name, HeaderValue::from_static(value));
+        }
+        response
     }
 
     #[cfg(test)]
@@ -1142,27 +1202,15 @@ fn cors(request: &Request, response: Response) -> Response {
     response
 }
 
-fn reason_phrase(status: u16) -> &'static str {
-    match status {
-        200 => "OK",
-        204 => "No Content",
-        308 => "Permanent Redirect",
-        400 => "Bad Request",
-        401 => "Unauthorized",
-        403 => "Forbidden",
-        404 => "Not Found",
-        503 => "Service Unavailable",
-        501 => "Not Implemented",
-        _ => "Internal Server Error",
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
     use crate::db::initialize_runtime_database;
+    use axum::body::Body;
+    use axum::http::{header, Request as AxumRequest};
     use rusqlite::Connection;
+    use tower::ServiceExt;
 
     use super::*;
 
@@ -3618,13 +3666,52 @@ mod tests {
     }
 
     #[test]
-    fn serializes_http_response() {
-        let bytes = Response::text(200, "ok").to_http_bytes();
-        let text = String::from_utf8(bytes).expect("response is utf8");
+    fn converts_response_to_axum() {
+        let response = Response::text(200, "ok").into_axum();
 
-        assert!(text.starts_with("HTTP/1.1 200 OK\r\n"));
-        assert!(text.contains("content-length: 2\r\n"));
-        assert!(text.ends_with("\r\n\r\nok"));
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()["content-length"], "2");
+        assert_eq!(
+            response.headers()["content-type"],
+            "text/plain; charset=utf-8"
+        );
+    }
+
+    #[tokio::test]
+    async fn axum_router_preserves_health_and_preflight_contracts() {
+        let app = router(no_database_config());
+        let peer = ConnectInfo(
+            "127.0.0.1:40000"
+                .parse::<SocketAddr>()
+                .expect("peer parses"),
+        );
+        let mut health_request = AxumRequest::builder()
+            .method("GET")
+            .uri("/healthz")
+            .body(Body::empty())
+            .expect("health request builds");
+        health_request.extensions_mut().insert(peer);
+        let health = app
+            .clone()
+            .oneshot(health_request)
+            .await
+            .expect("health response returns");
+        assert_eq!(health.status(), StatusCode::OK);
+
+        let mut preflight_request = AxumRequest::builder()
+            .method("OPTIONS")
+            .uri("/anything")
+            .header(header::ORIGIN, "https://app.example.com")
+            .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+            .body(Body::empty())
+            .expect("preflight request builds");
+        preflight_request.extensions_mut().insert(peer);
+        let preflight = app
+            .oneshot(preflight_request)
+            .await
+            .expect("preflight response returns");
+        assert_eq!(preflight.status(), StatusCode::NO_CONTENT);
+        assert_eq!(preflight.headers()["access-control-allow-origin"], "*");
     }
 
     fn test_db_path(name: &str) -> PathBuf {

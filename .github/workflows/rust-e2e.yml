@@ -31,6 +31,8 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
       - name: Cache Cargo artifacts
         uses: actions/cache@v4
@@ -39,7 +41,8 @@ jobs:
             .cargo-home/registry
             .cargo-home/git
             rust-backend/target
-          key: ${{ runner.os }}-cargo-rust-e2e-${{ hashFiles('rust-backend/Cargo.lock') }}
+            crates/auth-mini-axum/target
+          key: ${{ runner.os }}-cargo-rust-e2e-${{ hashFiles('rust-backend/Cargo.lock', 'crates/auth-mini-axum/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-rust-e2e-
 
@@ -47,7 +50,27 @@ jobs:
         run: npm ci
 
       - name: Build Rust binary
-        run: cargo build --manifest-path rust-backend/Cargo.toml
+        run: cargo build --manifest-path rust-backend/Cargo.toml --locked
+
+      - name: Check Rust formatting
+        run: |
+          cargo fmt --manifest-path rust-backend/Cargo.toml -- --check
+          cargo fmt --manifest-path crates/auth-mini-axum/Cargo.toml -- --check
+
+      - name: Lint Rust server and middleware crate
+        run: |
+          cargo clippy --manifest-path rust-backend/Cargo.toml --all-targets --locked -- -D warnings
+          cargo clippy --manifest-path crates/auth-mini-axum/Cargo.toml --all-targets --locked -- -D warnings
+
+      - name: Test Rust server and middleware crate
+        run: |
+          cargo test --manifest-path rust-backend/Cargo.toml --locked
+          cargo test --manifest-path crates/auth-mini-axum/Cargo.toml --locked
+
+      - name: Verify middleware crate package
+        run: |
+          cargo package --manifest-path crates/auth-mini-axum/Cargo.toml --list --locked
+          cargo publish --manifest-path crates/auth-mini-axum/Cargo.toml --dry-run --locked
 
       - name: Run Rust E2E tests
         run: npm run test:rust-e2e
