@@ -39,6 +39,40 @@ export function verifyAccessToken(token) {
 }
 ```
 
+## Rust Axum middleware
+
+For Axum services, use the published [`auth-mini-axum`](https://crates.io/crates/auth-mini-axum)
+crate. Construct the layer once during application startup with the exact issuer
+origin and the one audience that this service accepts. Startup fails closed if
+the initial JWKS warm-up fails.
+
+```rust,no_run
+use auth_mini_axum::{AuthMiniLayer, AuthMiniPrincipal, JwksCachePolicy};
+use axum::{extract::Extension, routing::get, Router};
+
+async fn private(Extension(principal): Extension<AuthMiniPrincipal>) -> String {
+    principal.subject
+}
+
+async fn app() -> Result<Router, auth_mini_axum::AuthMiniError> {
+    let auth = AuthMiniLayer::from_issuer(
+        "https://auth.example.com",
+        "api.example.com",
+        JwksCachePolicy::default(),
+    )
+    .await?;
+
+    Ok(Router::new().route("/private", get(private)).route_layer(auth))
+}
+```
+
+The middleware derives `/jwks` only from the configured issuer, rejects
+redirects and non-Ed25519 signing keys, verifies the signature before exposing
+`AuthMiniPrincipal`, and never exposes Auth Mini's `auth_admin` claim as a
+downstream authorization role. The cache uses stale-while-revalidate for known
+keys, single-flights key rotation refreshes, backs off failed refreshes from one
+second to one minute, and refuses cache entries at or beyond `max_stale`.
+
 ## Why `/jwks` exists
 
 `/jwks` lets API consumers verify access tokens without sharing auth-mini's private keys and without hitting the auth database for every protected request. auth-mini initializes and publishes `CURRENT` and `STANDBY` keys automatically when the database is created.

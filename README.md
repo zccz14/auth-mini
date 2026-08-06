@@ -273,9 +273,12 @@ Run `npm run format`, `npm run lint`, `npm run typecheck`, and `npm test`.
 
 ## Release version rule
 
-Git tag `vX.Y.Z` is the single source of truth for a release version. Before pushing a release tag, manually set `package.json`, `rust-backend/Cargo.toml`, and the `auth-mini` package entry in `rust-backend/Cargo.lock` to `X.Y.Z`, then run `npm run check:release-version -- vX.Y.Z`.
-
-The release workflows fail before building binaries when the tag or any manifest version does not match. The check never bumps versions or creates release tags.
+Release versioning is intentionally independent across artifacts. The npm SDK is
+published from `package.json`; Rust server binaries are continuously published
+from `main` under the moving `latest` GitHub Release tag; and
+`auth-mini-axum` has its own immutable crates.io SemVer in
+`crates/auth-mini-axum/Cargo.toml`. Do not couple a crate version to the npm
+package version or to the server binary's internal manifest version.
 
 ## License
 

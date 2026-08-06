@@ -1,0 +1,30 @@
+[package]
+name = "auth-mini-axum"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+description = "Axum middleware for verifying Auth Mini access tokens with stale-while-revalidate JWKS caching."
+license = "MIT"
+repository = "https://github.com/zccz14/auth-mini"
+homepage = "https://github.com/zccz14/auth-mini"
+readme = "README.md"
+keywords = ["auth", "axum", "jwt", "jwks", "authentication"]
+categories = ["authentication", "web-programming::http-server"]
+include = ["src/**", "Cargo.toml", "README.md", "LICENSE"]
+publish = ["crates-io"]
+
+[dependencies]
+axum = "0.8.9"
+base64 = "0.23.1"
+ed25519-dalek = "2.1.1"
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+thiserror = "2.0.19"
+tokio = { version = "1.53.1", features = ["macros", "net", "rt", "sync", "time"] }
+tower = "0.5.3"
+url = "2.5.7"
+
+[dev-dependencies]
+tokio = { version = "1.53.1", features = ["macros", "net", "rt-multi-thread", "sync", "test-util", "time"] }
+tower = { version = "0.5.3", features = ["util"] }
