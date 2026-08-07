@@ -40,6 +40,18 @@ export type SessionTokens = {
 
 export type SessionResult = SessionTokens;
 
+/**
+ * Token fields returned by Auth Mini after a browser login redirect.
+ *
+ * Consumers must validate the redirect `state` before adopting this payload.
+ */
+export type RedirectSessionInput = {
+  access_token: string;
+  session_id: string;
+  refresh_token: string;
+  expires_in: number;
+};
+
 export type EmailStartInput = GeneratedEmailStartInput;
 
 export type AuthenticationTargetInput = {
@@ -93,6 +105,7 @@ export type AuthMiniApi = {
   session: {
     getState(): SessionSnapshot;
     onChange(listener: Listener): () => void;
+    acceptRedirectCallback(input: RedirectSessionInput): Promise<SessionResult>;
     refresh(): Promise<SessionResult>;
     logout(): Promise<void>;
     clearLocal(): void;

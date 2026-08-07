@@ -5,6 +5,7 @@ import type {
   Listener,
   NavigatorCredentialsLike,
   PersistedSdkState,
+  RedirectSessionInput,
   SessionSnapshot,
 } from './types.js';
 
@@ -890,6 +891,9 @@ function createRuntime() {
         },
         onChange(listener: Listener) {
           return state.onChange(listener);
+        },
+        acceptRedirectCallback(input: RedirectSessionInput) {
+          return session.acceptSessionResponse(input);
         },
         refresh() {
           return session.refresh();

@@ -7,6 +7,7 @@ export type {
   EmailStartInput,
   EmailStartResponse,
   EmailVerifyInput,
+  RedirectSessionInput,
   SessionResult,
   SessionSnapshot,
   SdkStatus,

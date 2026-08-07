@@ -8,6 +8,12 @@ import type {
 const sdk: AuthMiniApi = createBrowserSdk('https://auth.example.com');
 
 const state: SessionSnapshot = sdk.session.getState();
+await sdk.session.acceptRedirectCallback({
+  access_token: 'access-token',
+  session_id: 'session-id',
+  refresh_token: 'refresh-token',
+  expires_in: 900,
+});
 const emailVerifyResult = await sdk.email.verify({
   email: 'user@example.com',
   code: '123456',
