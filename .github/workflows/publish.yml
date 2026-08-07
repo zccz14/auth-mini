@@ -73,3 +73,67 @@ jobs:
       - name: Publish to npm
         if: steps.check_version.outputs.skip_publish == 'false'
         run: npm publish --provenance --access public
+
+  publish-react-components:
+    needs: publish-npm
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          registry-url: https://registry.npmjs.org
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            packages/auth-mini-react-components/package-lock.json
+
+      - name: Install and build Browser SDK
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install component dependencies
+        run: npm --prefix packages/auth-mini-react-components ci --ignore-scripts
+
+      - name: Check component package
+        run: |
+          npm --prefix packages/auth-mini-react-components run typecheck
+          npm --prefix packages/auth-mini-react-components test
+          npm --prefix packages/auth-mini-react-components run build
+          npm --prefix packages/auth-mini-react-components run pack:check
+
+      - name: Verify build outputs
+        run: |
+          test -f packages/auth-mini-react-components/dist/index.js
+          test -f packages/auth-mini-react-components/dist/index.d.ts
+          test -f packages/auth-mini-react-components/dist/styles.css
+
+      - name: Check if version already exists
+        id: check_version
+        working-directory: packages/auth-mini-react-components
+        run: |
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+
+          echo "package_name=$PACKAGE_NAME" >> "$GITHUB_OUTPUT"
+          echo "package_version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
+
+          if npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version > /dev/null 2>&1; then
+            echo "skip_publish=true" >> "$GITHUB_OUTPUT"
+            echo "Version already published: $PACKAGE_NAME@$PACKAGE_VERSION"
+          else
+            echo "skip_publish=false" >> "$GITHUB_OUTPUT"
+            echo "Version not yet published: $PACKAGE_NAME@$PACKAGE_VERSION"
+          fi
+
+      - name: Publish to npm
+        if: steps.check_version.outputs.skip_publish == 'false'
+        working-directory: packages/auth-mini-react-components
+        run: npm publish --provenance --access public

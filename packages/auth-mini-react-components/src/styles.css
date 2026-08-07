@@ -1,0 +1,171 @@
+.auth-mini-button {
+  align-items: center;
+  background-color: hsl(var(--primary));
+  background-color: var(--primary);
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius) - 2px);
+  box-sizing: border-box;
+  color: hsl(var(--primary-foreground));
+  color: var(--primary-foreground);
+  cursor: pointer;
+  display: inline-flex;
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  gap: 0.5rem;
+  justify-content: center;
+  line-height: 1.25rem;
+  min-height: 2.25rem;
+  padding: 0.5rem 1rem;
+  text-decoration: none;
+  transition:
+    background-color 150ms ease-out,
+    border-color 150ms ease-out,
+    color 150ms ease-out,
+    opacity 150ms ease-out;
+}
+
+.auth-mini-button:hover:not(:disabled) {
+  background-color: hsl(var(--primary) / 0.9);
+  background-color: color-mix(in srgb, var(--primary) 90%, transparent);
+}
+
+.auth-mini-button:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.auth-mini-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.auth-mini-button--sm {
+  min-height: 2rem;
+  padding: 0.375rem 0.75rem;
+}
+
+.auth-mini-button--lg {
+  min-height: 2.5rem;
+  padding: 0.625rem 2rem;
+}
+
+.auth-mini-button--secondary {
+  background-color: hsl(var(--secondary));
+  background-color: var(--secondary);
+  color: hsl(var(--secondary-foreground));
+  color: var(--secondary-foreground);
+}
+
+.auth-mini-button--outline {
+  background-color: hsl(var(--background));
+  background-color: var(--background);
+  border-color: hsl(var(--input));
+  border-color: var(--input);
+  color: hsl(var(--foreground));
+  color: var(--foreground);
+}
+
+.auth-mini-button--ghost {
+  background-color: transparent;
+  color: hsl(var(--foreground));
+  color: var(--foreground);
+}
+
+.auth-mini-button--link {
+  background: transparent;
+  color: hsl(var(--primary));
+  color: var(--primary);
+  min-height: auto;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.auth-mini-error {
+  color: hsl(var(--destructive));
+  color: var(--destructive);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  margin: 0.5rem 0 0;
+}
+
+.auth-mini-dialog-backdrop {
+  background: rgb(0 0 0 / 0.5);
+  inset: 0;
+  min-height: 100dvh;
+  position: fixed;
+  transition: opacity 150ms ease-out;
+}
+
+.auth-mini-dialog-backdrop[data-starting-style],
+.auth-mini-dialog-backdrop[data-ending-style] {
+  opacity: 0;
+}
+
+.auth-mini-dialog-content {
+  background-color: hsl(var(--background));
+  background-color: var(--background);
+  border: 1px solid hsl(var(--border));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-sizing: border-box;
+  color: hsl(var(--foreground));
+  color: var(--foreground);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  left: 50%;
+  max-width: calc(100vw - 2rem);
+  padding: 1.5rem;
+  position: fixed;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  transition:
+    opacity 150ms ease-out,
+    transform 150ms ease-out;
+  width: 28rem;
+}
+
+.auth-mini-dialog-content[data-starting-style],
+.auth-mini-dialog-content[data-ending-style] {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.98);
+}
+
+.auth-mini-dialog-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.auth-mini-dialog-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.5rem;
+  margin: 0;
+}
+
+.auth-mini-dialog-description {
+  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  margin: 0;
+}
+
+.auth-mini-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-mini-button,
+  .auth-mini-dialog-backdrop,
+  .auth-mini-dialog-content {
+    transition-duration: 0ms;
+  }
+}

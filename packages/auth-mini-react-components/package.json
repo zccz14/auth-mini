@@ -1,0 +1,67 @@
+{
+  "name": "auth-mini-react-components",
+  "version": "0.1.0",
+  "description": "Auth Mini sign-in and account-security controls for React and shadcn/ui.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zccz14/auth-mini.git",
+    "directory": "packages/auth-mini-react-components"
+  },
+  "homepage": "https://github.com/zccz14/auth-mini/tree/main/packages/auth-mini-react-components#readme",
+  "bugs": {
+    "url": "https://github.com/zccz14/auth-mini/issues"
+  },
+  "type": "module",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./styles.css": "./dist/styles.css"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": [
+    "./dist/styles.css"
+  ],
+  "engines": {
+    "node": ">=20.10.0"
+  },
+  "scripts": {
+    "build": "vite build && tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "pack:check": "npm pack --dry-run"
+  },
+  "peerDependencies": {
+    "auth-mini": "^0.4.2",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.7.0",
+    "@date-fns/tz": "^1.4.1",
+    "date-fns": "^4.1.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/react": "^19.1.16",
+    "@types/react-dom": "^19.1.9",
+    "auth-mini": "file:../..",
+    "jsdom": "^26.1.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "typescript": "^5.9.3",
+    "vite": "^6.3.5",
+    "vitest": "^3.2.4"
+  }
+}

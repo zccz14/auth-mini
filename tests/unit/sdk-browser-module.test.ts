@@ -369,6 +369,40 @@ describe('browser module sdk', () => {
     }
   });
 
+  it('adopts a validated redirect callback into Browser SDK persistence', async () => {
+    const storage = fakeStorage();
+    const fetch = vi.fn(async () => jsonResponse({ ok: true }));
+    vi.stubGlobal('fetch', fetch);
+    vi.stubGlobal('localStorage', storage);
+
+    try {
+      const sdk = createBrowserSdk('https://auth.example.com');
+
+      await expect(
+        sdk.session.acceptRedirectCallback({
+          access_token: 'access-token',
+          session_id: 'session-id',
+          refresh_token: 'refresh-token',
+          expires_in: 900,
+        }),
+      ).resolves.toMatchObject({
+        sessionId: 'session-id',
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+      });
+
+      expect(sdk.session.getState()).toMatchObject({
+        status: 'authenticated',
+        sessionId: 'session-id',
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+      });
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('keeps the browser module declaration free of singleton global typings', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/sdk/browser.ts'),

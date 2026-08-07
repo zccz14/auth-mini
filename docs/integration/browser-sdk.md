@@ -29,6 +29,22 @@ Passkey registration and sign-in are completed on the Auth Mini server page. Dow
 
 For the redirect URL contract, callback fragment fields, and business App responsibilities, see [业务 App 跳转登录接入](./login-redirect.md).
 
+After the business App validates the one-time redirect `state`, it can adopt the
+returned session into Browser SDK persistence with `acceptRedirectCallback`:
+
+```ts
+await sdk.session.acceptRedirectCallback({
+  access_token,
+  session_id,
+  refresh_token,
+  expires_in,
+});
+```
+
+This method validates and persists the token payload for the Browser SDK. It
+does not validate the redirect `state`; that validation remains the business
+App's responsibility before this method is called.
+
 HTTP CORS remains separate from WebAuthn origin policy. Auth Mini serves wildcard CORS for API routes, so downstream apps should decide whether direct API access or a proxy/gateway is appropriate for their deployment.
 
 ### Localhost example

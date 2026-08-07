@@ -40,3 +40,34 @@ jobs:
 
       - name: Build package
         run: npm run build
+
+  react-components:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            packages/auth-mini-react-components/package-lock.json
+
+      - name: Install and build Browser SDK
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install component dependencies
+        run: npm --prefix packages/auth-mini-react-components ci --ignore-scripts
+
+      - name: Check component package
+        run: |
+          npm --prefix packages/auth-mini-react-components run typecheck
+          npm --prefix packages/auth-mini-react-components test
+          npm --prefix packages/auth-mini-react-components run build
+          npm --prefix packages/auth-mini-react-components run pack:check
