@@ -141,14 +141,23 @@ describe('formal GUI routes', () => {
 
   it('renders the home page with credential and session management', async () => {
     sdk.currentUser.fetch.mockResolvedValue({
-      active_sessions: [],
+      active_sessions: [
+        {
+          auth_method: 'webauthn',
+          created_at: '2026-08-08T00:00:00Z',
+          expires_at: '2026-08-15T00:00:00Z',
+          id: 'session-mobile-layout',
+          ip: '127.0.0.1',
+          user_agent: 'Auth Mini mobile layout test',
+        },
+      ],
       ed25519_credentials: [],
       email: 'user@example.com',
       user_id: 'user-1',
       webauthn_credentials: [],
     });
 
-    renderRoute(<HomeRoute />);
+    const { container } = renderRoute(<HomeRoute />);
 
     expect(screen.getByRole('heading', { name: 'Email' })).toBeInTheDocument();
     expect(
@@ -163,6 +172,11 @@ describe('formal GUI routes', () => {
     expect(
       await screen.findByText('Verified email is active.'),
     ).toBeInTheDocument();
+    expect(screen.getByText('session-mobile-layout')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Kick' })).toBeInTheDocument();
+    expect(container.querySelector('tbody td > span')).toHaveTextContent(
+      'Session ID',
+    );
   });
 
   it('renders the administrator page', async () => {

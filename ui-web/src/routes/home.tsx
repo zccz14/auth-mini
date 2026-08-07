@@ -308,7 +308,7 @@ export function HomeRoute() {
   const activeSessions = (me?.active_sessions ?? []) as ActiveSession[];
 
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-4 sm:gap-5">
       <Card>
         <CardHeader>
           <CardTitle>{t('common.account')}</CardTitle>
@@ -317,27 +317,34 @@ export function HomeRoute() {
         <CardContent className="grid gap-2 text-sm text-slate-700">
           <div>
             {t('home.userId')}:{' '}
-            <span className="font-mono">
+            <span className="break-all font-mono">
               {me?.user_id ?? t('common.loading')}
             </span>
           </div>
           <div>
-            {t('common.email')}: {me?.email ?? t('home.noVerifiedEmail')}
+            {t('common.email')}:{' '}
+            <span className="break-words">
+              {me?.email ?? t('home.noVerifiedEmail')}
+            </span>
           </div>
           <div>
             {t('home.sessionId')}:{' '}
-            <span className="font-mono">{session.sessionId}</span>
+            <span className="break-all font-mono">{session.sessionId}</span>
           </div>
           {loadingMe ? (
             <p className="text-slate-600">{t('home.loadingAccount')}</p>
           ) : null}
-          {meError ? <p className="text-rose-600">{meError}</p> : null}
-          {meWarning ? <p className="text-amber-700">{meWarning}</p> : null}
+          {meError ? (
+            <p className="break-words text-rose-600">{meError}</p>
+          ) : null}
+          {meWarning ? (
+            <p className="break-words text-amber-700">{meWarning}</p>
+          ) : null}
         </CardContent>
       </Card>
 
       {credentialError ? (
-        <p className="text-sm text-rose-600">{credentialError}</p>
+        <p className="break-words text-sm text-rose-600">{credentialError}</p>
       ) : null}
 
       <Card>
@@ -385,8 +392,9 @@ export function HomeRoute() {
               value={ed25519Name}
               onChange={(event) => setEd25519Name(event.currentTarget.value)}
             />
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row">
               <Button
+                className="w-full sm:w-auto"
                 type="button"
                 disabled={pendingCredential !== null}
                 onClick={() => void generateEd25519()}
@@ -396,6 +404,7 @@ export function HomeRoute() {
                   : t('home.generateKey')}
               </Button>
               <Button
+                className="w-full sm:w-auto"
                 type="submit"
                 disabled={
                   !publicKey ||
@@ -411,7 +420,7 @@ export function HomeRoute() {
             {privateKey ? (
               <textarea
                 readOnly
-                className="min-h-20 rounded-md border border-slate-200 bg-slate-50 p-3 font-mono text-sm"
+                className="min-h-20 w-full max-w-full rounded-md border border-slate-200 bg-slate-50 p-3 font-mono text-sm"
                 value={privateKey}
               />
             ) : null}
@@ -439,7 +448,9 @@ export function HomeRoute() {
         </CardHeader>
         <CardContent>
           {sessionError ? (
-            <p className="mb-4 text-sm text-rose-600">{sessionError}</p>
+            <p className="mb-4 break-words text-sm text-rose-600">
+              {sessionError}
+            </p>
           ) : null}
           {meError ? null : activeSessions.length === 0 ? (
             <p className="text-sm text-slate-600">
@@ -486,10 +497,10 @@ function CredentialList({
         return (
           <div
             key={id}
-            className="flex flex-wrap items-center justify-between gap-3 p-3 text-sm"
+            className="flex flex-col gap-3 p-3 text-sm sm:flex-row sm:items-center sm:justify-between"
           >
             <div className="min-w-0">
-              <div className="truncate font-mono text-slate-900">{id}</div>
+              <div className="break-all font-mono text-slate-900">{id}</div>
               <div className="text-slate-500">
                 {t('home.credentialCreated', {
                   date: String(item.created_at ?? ''),
@@ -497,7 +508,7 @@ function CredentialList({
               </div>
             </div>
             <Button
-              className="bg-white text-rose-700 ring-1 ring-rose-200 hover:bg-rose-50"
+              className="self-start bg-white text-rose-700 ring-1 ring-rose-200 hover:bg-rose-50"
               disabled={pending === path}
               onClick={() => void onDelete(path)}
             >
@@ -522,9 +533,9 @@ function ActiveSessionsTable({
   const { t } = useI18n();
 
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full border-collapse text-sm">
-        <thead>
+    <div className="w-full">
+      <table className="block w-full text-sm sm:table sm:min-w-full sm:border-collapse">
+        <thead className="hidden sm:table-header-group">
           <tr className="border-b border-slate-200 text-left text-slate-600">
             <th className="px-3 py-2 font-medium">{t('home.sessionId')}</th>
             <th className="px-3 py-2 font-medium">{t('home.authMethod')}</th>
@@ -535,49 +546,67 @@ function ActiveSessionsTable({
             <th className="px-3 py-2 font-medium">{t('common.action')}</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody className="grid gap-3 sm:table-row-group">
           {rows.map((activeSession) => {
             const isPending = pendingSessionId === activeSession.id;
 
             return (
               <tr
                 key={activeSession.id}
-                className="border-b border-slate-200 last:border-b-0"
+                className="grid gap-0 rounded-md border border-slate-200 px-4 py-2 sm:table-row sm:rounded-none sm:border-x-0 sm:border-t-0 sm:px-0 sm:py-0"
               >
-                <td className="px-3 py-2 font-mono text-xs text-slate-950">
+                <SessionField label={t('home.sessionId')}>
                   {activeSession.id}
-                </td>
-                <td className="px-3 py-2 font-mono text-xs text-slate-950">
+                </SessionField>
+                <SessionField label={t('home.authMethod')}>
                   {activeSession.auth_method}
-                </td>
-                <td className="px-3 py-2 font-mono text-xs text-slate-950">
+                </SessionField>
+                <SessionField label={t('home.createdAt')}>
                   {activeSession.created_at}
-                </td>
-                <td className="px-3 py-2 font-mono text-xs text-slate-950">
+                </SessionField>
+                <SessionField label={t('home.expiresAt')}>
                   {activeSession.expires_at}
-                </td>
-                <td className="px-3 py-2 font-mono text-xs text-slate-950">
+                </SessionField>
+                <SessionField label={t('home.ip')}>
                   {formatNullable(activeSession.ip, t('common.unavailable'))}
-                </td>
-                <td className="px-3 py-2 font-mono text-xs text-slate-950">
+                </SessionField>
+                <SessionField label={t('home.userAgent')}>
                   {truncateUserAgent(
                     activeSession.user_agent,
                     t('common.unavailable'),
                   )}
-                </td>
-                <td className="px-3 py-2">
+                </SessionField>
+                <SessionField label={t('common.action')}>
                   <Button
+                    className="font-sans"
                     disabled={isPending}
                     onClick={() => void onKick(activeSession.id)}
                   >
                     {isPending ? t('home.kicking') : t('home.kick')}
                   </Button>
-                </td>
+                </SessionField>
               </tr>
             );
           })}
         </tbody>
       </table>
     </div>
+  );
+}
+
+function SessionField({
+  children,
+  label,
+}: {
+  children: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <td className="grid grid-cols-[minmax(5.5rem,0.8fr)_minmax(0,1.2fr)] gap-3 break-all px-0 py-2 font-mono text-xs text-slate-950 sm:table-cell sm:px-3 sm:py-2">
+      <span className="text-xs font-medium text-slate-600 sm:hidden">
+        {label}
+      </span>
+      {children}
+    </td>
   );
 }
