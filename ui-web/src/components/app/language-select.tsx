@@ -4,11 +4,11 @@ export function LanguageSelect() {
   const { locale, setLocale, t } = useI18n();
 
   return (
-    <label className="flex items-center gap-2 text-sm text-slate-600">
+    <label className="flex min-h-11 items-center gap-2 text-sm text-slate-600">
       <span>{t('common.language')}</span>
       <select
         aria-label={t('common.language')}
-        className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm font-medium text-slate-700 outline-none transition focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2"
+        className="h-11 rounded-md border border-slate-200 bg-white px-2 text-sm font-medium text-slate-700 outline-none transition focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 sm:h-9"
         value={locale}
         onChange={(event) => setLocale(event.target.value as typeof locale)}
       >
