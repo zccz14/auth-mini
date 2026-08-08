@@ -19,6 +19,19 @@ describe('Auth Mini redirect helpers', () => {
     );
   });
 
+  it('adds an explicit audience to a loopback login URL', () => {
+    expect(
+      getAuthMiniLoginUrl({
+        authMiniBaseUrl: 'https://auth.example.test',
+        callbackUrl: 'http://localhost:5173/auth/callback',
+        state: 'state-123',
+        audience: 'app.example.test',
+      }),
+    ).toBe(
+      'https://auth.example.test/web/#/login?redirect_uri=http%3A%2F%2Flocalhost%3A5173%2Fauth%2Fcallback&state=state-123&aud=app.example.test',
+    );
+  });
+
   it('preserves a hash-router callback route while removing sensitive tokens', () => {
     const callback = readAuthMiniRedirectCallback(
       'https://app.example.test/#/auth/callback?next=%2Ffunds&access_token=access&token_type=Bearer&session_id=session&refresh_token=refresh&expires_in=900&state=state-123',

@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthMiniButton } from '../src/auth-mini-button.js';
+import { AuthMiniProvider } from '../src/auth-mini-provider.js';
 
 const session = {
   getState: vi.fn(),
@@ -34,6 +35,14 @@ const authenticated = {
   refreshToken: 'refresh',
 };
 
+function renderButton() {
+  return render(
+    <AuthMiniProvider authMiniBaseUrl="https://auth.example.test">
+      <AuthMiniButton />
+    </AuthMiniProvider>,
+  );
+}
+
 describe('AuthMiniButton', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -43,9 +52,9 @@ describe('AuthMiniButton', () => {
     session.onChange.mockReturnValue(() => undefined);
   });
 
-  it('opens an accessible settings dialog for an authenticated session', async () => {
+  it('opens an accessible settings dialog for an authenticated shared session', async () => {
     session.getState.mockReturnValue(authenticated);
-    render(<AuthMiniButton authMiniBaseUrl="https://auth.example.test" />);
+    renderButton();
 
     await screen.findByRole('button', { name: 'Account' });
     fireEvent.click(screen.getByRole('button', { name: 'Account' }));
@@ -59,45 +68,29 @@ describe('AuthMiniButton', () => {
     ).toHaveAttribute('target', '_blank');
   });
 
-  it('adopts only a callback with the matching one-time state', async () => {
-    window.history.replaceState(
-      null,
-      '',
-      'https://app.example.test/callback#access_token=access&token_type=Bearer&session_id=session&refresh_token=refresh&expires_in=900&state=state-123',
-    );
-    window.sessionStorage.setItem(
-      'auth-mini.react.login.state:https://auth.example.test/',
-      'state-123',
-    );
-    render(<AuthMiniButton authMiniBaseUrl="https://auth.example.test" />);
+  it('reads the provider session instead of creating another SDK', async () => {
+    renderButton();
 
-    await waitFor(() =>
-      expect(session.acceptRedirectCallback).toHaveBeenCalledWith({
-        access_token: 'access',
-        session_id: 'session',
-        refresh_token: 'refresh',
-        expires_in: 900,
-      }),
-    );
-    expect(window.location.href).toBe('https://app.example.test/callback');
-    expect(window.sessionStorage).toHaveLength(0);
+    await screen.findByRole('button', { name: 'Sign in with Auth Mini' });
+    expect(session.getState).toHaveBeenCalledOnce();
+    expect(session.onChange).toHaveBeenCalledOnce();
   });
 
-  it('rejects an untrusted callback before it reaches the SDK', async () => {
-    window.history.replaceState(
-      null,
-      '',
-      'https://app.example.test/callback#access_token=access&token_type=Bearer&session_id=session&refresh_token=refresh&expires_in=900&state=untrusted',
-    );
-    window.sessionStorage.setItem(
-      'auth-mini.react.login.state:https://auth.example.test/',
-      'state-123',
-    );
-    render(<AuthMiniButton authMiniBaseUrl="https://auth.example.test" />);
+  it('stays disabled while the shared session is recovering', async () => {
+    session.getState.mockReturnValue({
+      ...anonymous,
+      status: 'recovering' as const,
+    });
+    renderButton();
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Invalid Auth Mini login state',
+    expect(
+      await screen.findByRole('button', { name: 'Checking session…' }),
+    ).toBeDisabled();
+  });
+
+  it('requires an AuthMiniProvider', () => {
+    expect(() => render(<AuthMiniButton />)).toThrow(
+      'useAuthMini must be used within an AuthMiniProvider',
     );
-    expect(session.acceptRedirectCallback).not.toHaveBeenCalled();
   });
 });
