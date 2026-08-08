@@ -38,6 +38,10 @@ pub(crate) fn match_web_asset(path: &str) -> Option<WebAsset> {
     }
 
     if let Some(asset_path) = path.strip_prefix("/web/assets/") {
+        return Some(match_asset(&format!("assets/{asset_path}")));
+    }
+
+    if let Some(asset_path) = root_asset_path(path) {
         return Some(match_asset(asset_path));
     }
 
@@ -45,13 +49,21 @@ pub(crate) fn match_web_asset(path: &str) -> Option<WebAsset> {
 }
 
 fn match_asset(path: &str) -> WebAsset {
-    asset_body(&format!("assets/{path}"))
+    asset_body(path)
         .map(|body| WebAsset::Body {
             content_type: content_type(path),
             cache_control: WEB_ASSET_CACHE_CONTROL,
             body,
         })
         .unwrap_or(WebAsset::MissingAsset)
+}
+
+fn root_asset_path(path: &str) -> Option<&'static str> {
+    match path {
+        "/web/auth-mini-logo.png" => Some("auth-mini-logo.png"),
+        "/web/auth-mini-favicon.png" => Some("auth-mini-favicon.png"),
+        _ => None,
+    }
 }
 
 fn index_asset() -> WebAsset {
@@ -209,6 +221,25 @@ mod tests {
         assert_eq!(content_type, "text/javascript; charset=utf-8");
         assert_eq!(cache_control, WEB_ASSET_CACHE_CONTROL);
         assert!(!body.is_empty());
+    }
+
+    #[test]
+    fn matches_root_png_assets_with_real_bodies() {
+        for path in ["/web/auth-mini-logo.png", "/web/auth-mini-favicon.png"] {
+            let Some(WebAsset::Body {
+                content_type,
+                cache_control,
+                body,
+            }) = match_web_asset(path)
+            else {
+                panic!("expected embedded png asset for {path}");
+            };
+
+            assert_eq!(content_type, "image/png");
+            assert_eq!(cache_control, WEB_ASSET_CACHE_CONTROL);
+            assert!(body.starts_with(b"\x89PNG\r\n\x1a\n"));
+            assert!(body.len() > b"\x89PNG\r\n\x1a\n".len());
+        }
     }
 
     #[test]
