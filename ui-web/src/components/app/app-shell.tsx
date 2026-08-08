@@ -35,6 +35,7 @@ export function AppShell() {
   const authenticated = session.authenticated;
   const admin = accessTokenHasAdmin(session.accessToken);
   const brandName = setupState?.brand_name ?? t('common.loading');
+  const logoSrc = `${import.meta.env.BASE_URL}auth-mini-logo.png`;
   const setupPath = location.pathname === '/initialize';
   const loginPath = location.pathname === '/login';
 
@@ -67,11 +68,17 @@ export function AppShell() {
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4">
           <Link
-            className="min-w-0 flex-1 truncate text-base font-semibold text-slate-950 outline-none transition hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2"
+            aria-label={brandName}
+            className="flex min-w-0 flex-1 items-center gap-3 truncate text-base font-semibold text-slate-950 outline-none transition hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2"
             title={brandName}
             to="/"
           >
-            {brandName}
+            <img
+              src={logoSrc}
+              alt={`${brandName} logo`}
+              className="h-8 w-auto max-w-40 object-contain"
+            />
+            <span className="truncate">{brandName}</span>
           </Link>
           <div className="flex shrink-0 items-center gap-2">
             <LanguageSelect />

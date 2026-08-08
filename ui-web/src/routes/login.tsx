@@ -75,6 +75,7 @@ export function LoginRoute() {
     passkeyConfigured &&
     pendingAction === null;
   const brandName = setupState?.brand_name ?? 'auth-mini';
+  const logoSrc = `${import.meta.env.BASE_URL}auth-mini-logo.png`;
   const issuerHostname = setupState ? issuerAudience(setupState.issuer) : null;
   const brandBackgroundImage = setupState?.brand_background_image ?? '';
   const loginBackgroundStyle: CSSProperties | undefined = brandBackgroundImage
@@ -203,7 +204,12 @@ export function LoginRoute() {
           <LanguageSelect />
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-          <div className="space-y-2">
+          <div className="space-y-3">
+            <img
+              src={logoSrc}
+              alt={`${brandName} logo`}
+              className="h-10 w-auto max-w-48 object-contain"
+            />
             <p className="text-sm font-medium text-slate-500">{brandName}</p>
             <h1 className="text-2xl font-semibold text-slate-950">
               {t('login.title')}

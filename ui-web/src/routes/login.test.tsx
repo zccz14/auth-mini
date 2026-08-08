@@ -259,6 +259,9 @@ describe('LoginRoute', () => {
     renderLogin();
 
     expect(await screen.findByText('Example Auth')).toBeInTheDocument();
+    expect(
+      screen.getByRole('img', { name: 'Example Auth logo' }),
+    ).toHaveAttribute('src', '/auth-mini-logo.png');
     expect(screen.getByRole('main')).toHaveStyle({
       backgroundImage: 'url("https://cdn.example.com/login.jpg")',
     });

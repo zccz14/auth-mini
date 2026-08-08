@@ -43,6 +43,9 @@ describe('AppShell', () => {
 
     const brandLink = screen.getByRole('link', { name: 'Example Auth' });
     expect(brandLink).toHaveAttribute('href', '/');
+    expect(
+      screen.getByRole('img', { name: 'Example Auth logo' }),
+    ).toHaveAttribute('src', '/auth-mini-logo.png');
 
     await user.click(brandLink);
 
