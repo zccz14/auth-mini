@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -121,6 +121,19 @@ describe('ui-web Pages release contract', () => {
     const viteConfig = readRepoFile('ui-web/vite.config.ts');
 
     expect(viteConfig).toMatch(/base:\s*['"]\.\/?['"]/);
+  });
+
+  it('publishes the base-aware auth-mini logo and favicon assets', () => {
+    const index = readRepoFile('ui-web/index.html');
+
+    expect(index).toContain('href="%BASE_URL%auth-mini-favicon.png"');
+    expect(
+      statSync(resolve(process.cwd(), 'ui-web/public/auth-mini-logo.png')).size,
+    ).toBeGreaterThan(0);
+    expect(
+      statSync(resolve(process.cwd(), 'ui-web/public/auth-mini-favicon.png'))
+        .size,
+    ).toBeGreaterThan(0);
   });
 
   it('documents docs as canonical and ui-web as the live Pages source', () => {
