@@ -4,7 +4,7 @@
 
 Minimal, opinionated authentication server for apps that just need a solid authentication core.
 
-[Live demo](https://auth-mini.zccz14.com/web/) | [Docs](docs/) | [GitHub](https://github.com/zccz14/auth-mini)
+[Docs](docs/) | [GitHub](https://github.com/zccz14/auth-mini)
 
 ✅ Good fit for authentication system needs:
 
@@ -229,7 +229,7 @@ From there, typical integration looks like this:
 
 ## Docs and next steps
 
-`docs/` is the canonical static reference source. `ui-web/` is the current interactive demo source and Pages publish target, while the deployed live demo remains the easiest way to try the browser flows end-to-end.
+`docs/` is the canonical static reference source. `ui-web/` is the current interactive demo source, and the Rust release binary embeds it under `/web/` so the same server can serve the browser flows end-to-end.
 
 ### Integration guides
 

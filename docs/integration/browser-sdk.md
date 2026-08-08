@@ -100,20 +100,17 @@ async function signInWithPasskey() {
 - Multiple tabs sharing one session can still race during refresh-token rotation, but the loser tab enters `recovering` and usually converges to the latest shared session state.
 - That convergence shares session tokens/status only; account/profile data remains outside the high-level browser SDK contract.
 
-## Demo and publishing guidance
+## Demo deployment guidance
 
 `ui-web/` is the interactive browser-flow demo source. `docs/` remains the canonical static reference source.
 
 The embedded `/web` GUI no longer accepts an auth-server-origin override. It always calls the same Rust server that served the GUI by resolving the relative base URL `..`.
 
-The current publish flow builds the demo with the root-level `demo:build` script and deploys `ui-web/dist` as the static site root.
+The Rust release workflow builds the demo with the root-level `demo:build:web` script and embeds the resulting assets in the release binary. The same auth-mini server serves the GUI at `/web/`.
 
-- Treat `ui-web/` as the source for the interactive demo and `ui-web/dist` as the publish artifact.
-- For GitHub Pages, upload `ui-web/dist` directly rather than a sibling `demo/` + `dist/` artifact layout.
-- The published page should be served from the site root for that artifact, such as `https://<user>.github.io/auth-mini/` for project Pages or `https://your-domain.example/` for a custom domain.
+- Treat `ui-web/` as the source for the interactive demo and `ui-web/dist` as the build artifact.
 - Configure the issuer to the final Auth Mini server origin and set `rp_id` to that host or a valid parent domain.
 - If a downstream app serves its own frontend separately from auth-mini, it should redirect users to the Auth Mini page for browser sign-in; the built-in `/web` GUI is same-server only.
-- If you attach a custom GitHub Pages domain for docs, publish a matching `CNAME` file in the deployed site root so GitHub serves that domain consistently.
 
 Example:
 
