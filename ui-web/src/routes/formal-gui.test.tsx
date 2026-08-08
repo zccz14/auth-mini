@@ -31,6 +31,8 @@ const sdk = {
   },
 };
 
+const reloadSetupState = vi.hoisted(() => vi.fn());
+
 vi.mock('@/app/providers/demo-provider', () => ({
   DemoProvider: ({ children }: { children: ReactNode }) => children,
   useDemo: () => ({
@@ -41,7 +43,7 @@ vi.mock('@/app/providers/demo-provider', () => ({
       serverBaseUrl: '..',
       status: 'ready',
     },
-    reloadSetupState: vi.fn(),
+    reloadSetupState,
     sdk,
     session: {
       accessToken: 'token',
@@ -80,6 +82,7 @@ function renderRoute(ui: ReactNode) {
 afterEach(() => {
   localStorage.clear();
   document.documentElement.lang = 'en';
+  reloadSetupState.mockClear();
 });
 
 describe('formal GUI routes', () => {
@@ -292,6 +295,7 @@ describe('formal GUI routes', () => {
         smtp: null,
       }),
     );
+    await waitFor(() => expect(reloadSetupState).toHaveBeenCalledOnce());
 
     await user.click(screen.getByRole('button', { name: 'JWK Rotate' }));
 

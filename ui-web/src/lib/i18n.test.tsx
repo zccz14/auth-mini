@@ -22,7 +22,7 @@ describe('GUI i18n', () => {
     );
   });
 
-  it('switches the visible language control immediately and persists the choice', async () => {
+  it('switches language from the icon-only picker and persists the choice', async () => {
     const user = userEvent.setup();
     render(
       <I18nProvider>

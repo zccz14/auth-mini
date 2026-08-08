@@ -18,7 +18,7 @@ import { useI18n } from '@/lib/i18n';
 import { SystemResourcesCard } from '@/components/app/system-resources-card';
 
 export function AdminRoute() {
-  const { sdk, session } = useDemo();
+  const { reloadSetupState, sdk, session } = useDemo();
   const { t } = useI18n();
   const [settings, setSettings] = useState<AdminSetupState | null>(null);
   const [jwkSlots, setJwkSlots] = useState<AdminJwkSlot[]>([]);
@@ -78,6 +78,7 @@ export function AdminRoute() {
     try {
       const saved = await sdk.admin.config.save(form);
       setSettings(saved);
+      await reloadSetupState();
       await loadAdmin();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t('admin.saveError'));
