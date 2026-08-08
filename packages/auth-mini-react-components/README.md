@@ -1,9 +1,10 @@
 # auth-mini-react-components
 
-`auth-mini-react-components` provides one React control for the standard Auth
-Mini browser flow in a shadcn/ui app. It initializes Browser SDK persistence,
-redirects anonymous users to Auth Mini, verifies and adopts the returned
-callback, and gives signed-in users an account-security dialog.
+`auth-mini-react-components` provides a shared Auth Mini session for React and
+shadcn/ui. `AuthMiniProvider` owns Browser SDK persistence and redirect
+handling once for the whole application. Its `useAuthMini` hook makes the
+current session available anywhere below the Provider, while `AuthMiniButton`
+renders the standard sign-in and account-security control.
 
 ## Install
 
@@ -17,38 +18,58 @@ Tailwind scanner to include `node_modules`.
 
 ```tsx
 import 'auth-mini-react-components/styles.css';
-import { AuthMiniButton } from 'auth-mini-react-components';
+import {
+  AuthMiniButton,
+  AuthMiniProvider,
+  useAuthMini,
+} from 'auth-mini-react-components';
 ```
 
 ## Usage
 
 ```tsx
-<AuthMiniButton
-  authMiniBaseUrl="https://auth.example.com"
-  onAuthStateChange={(session) => {
-    // Read session.accessToken at request time. Browser SDK refreshes it.
-  }}
-/>
+function App() {
+  return (
+    <AuthMiniProvider authMiniBaseUrl="https://auth.example.com">
+      <Page />
+      <AuthMiniButton />
+    </AuthMiniProvider>
+  );
+}
+
+function Page() {
+  const { session, isAuthenticated, signOut } = useAuthMini();
+
+  // Read session.accessToken at request time. Browser SDK refreshes it.
+  return isAuthenticated ? (
+    <button onClick={() => void signOut()}>
+      {session?.sessionId}: Sign out
+    </button>
+  ) : null;
+}
 ```
 
-On an ordinary HTTPS app, the component uses the current URL as the callback
-by default. Override `callbackUrl` only when the app has a dedicated callback
+On an ordinary HTTPS app, the Provider uses the current URL as the callback by
+default. Override `callbackUrl` only when the app has a dedicated callback
 route. `audience` is for a loopback development callback only; do not pass it
 for an HTTPS callback because Auth Mini derives that audience from the callback
 hostname.
 
 ```tsx
-<AuthMiniButton
+<AuthMiniProvider
   authMiniBaseUrl="https://auth.example.com"
   callbackUrl="http://localhost:5173/auth/callback"
   audience="app.example.com"
-/>
+>
+  <App />
+</AuthMiniProvider>
 ```
 
-The component supports ordinary fragment callbacks and HashRouter callback
-queries. It creates and verifies a one-time `state` value before asking
-Browser SDK to persist the token response. Callback tokens are removed from
-the address bar immediately and never rendered.
+The Provider supports ordinary fragment callbacks and HashRouter callback
+queries. It creates and verifies a one-time `state` value before asking Browser
+SDK to persist the token response. Callback tokens are removed from the address
+bar immediately and never rendered. It is the only component that initializes
+the Browser SDK, subscribes to session changes, or adopts a callback.
 
 ## Security settings
 
@@ -61,16 +82,31 @@ Auth Mini account management requires Auth Mini's self audience. The user may
 therefore need to sign in again in that Auth Mini tab; the component does not
 transfer a downstream token across that boundary.
 
-## Props
+## AuthMiniProvider props
 
-| Prop                           | Description                                                                |
-| ------------------------------ | -------------------------------------------------------------------------- |
-| `authMiniBaseUrl`              | Required Auth Mini issuer/server base URL.                                 |
-| `callbackUrl`                  | Callback URL string or lazy callback; defaults to the current browser URL. |
-| `audience`                     | Explicit audience for loopback callbacks only.                             |
-| `onAuthStateChange`            | Receives every Browser SDK session snapshot.                               |
-| `onAuthError`                  | Receives callback, SDK, or redirect-preparation errors.                    |
-| `securitySettingsUrl`          | Overrides the default Auth Mini `/web/#/` target.                          |
-| `securitySettingsTarget`       | `_blank` by default; `_self` is supported.                                 |
-| `variant`, `size`, `className` | Match familiar shadcn button customization.                                |
-| `labels`                       | Overrides visible control text.                                            |
+| Prop                | Description                                                                |
+| ------------------- | -------------------------------------------------------------------------- |
+| `authMiniBaseUrl`   | Required Auth Mini issuer/server base URL.                                 |
+| `callbackUrl`       | Callback URL string or lazy callback; defaults to the current browser URL. |
+| `audience`          | Explicit audience for loopback callbacks only.                             |
+| `onAuthStateChange` | Receives every Browser SDK session snapshot.                               |
+| `onAuthError`       | Receives callback, SDK, or redirect-preparation errors.                    |
+
+## useAuthMini
+
+`useAuthMini()` must be called below `AuthMiniProvider`. It returns the shared
+`sdk`, `session`, `status`, `isReady`, `isAuthenticated`, `error`, `signIn`,
+and `signOut` values. The Browser SDK remains the authority for session tokens;
+the hook does not create a second token store.
+
+## AuthMiniButton props
+
+`AuthMiniButton` must be rendered below `AuthMiniProvider` and inherits the
+Provider configuration.
+
+| Prop                           | Description                                       |
+| ------------------------------ | ------------------------------------------------- |
+| `securitySettingsUrl`          | Overrides the default Auth Mini `/web/#/` target. |
+| `securitySettingsTarget`       | `_blank` by default; `_self` is supported.        |
+| `variant`, `size`, `className` | Match familiar shadcn button customization.       |
+| `labels`                       | Overrides visible control text.                   |

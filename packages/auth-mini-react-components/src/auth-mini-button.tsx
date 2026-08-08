@@ -1,17 +1,7 @@
 import { Dialog } from '@base-ui/react/dialog';
-import {
-  createBrowserSdk,
-  type AuthMiniApi,
-  type SessionSnapshot,
-} from 'auth-mini/sdk/browser';
-import { useEffect, useRef, useState } from 'react';
-import {
-  AuthMiniCallbackError,
-  getAuthMiniLoginStateKey,
-  getAuthMiniLoginUrl,
-  getAuthMiniSecurityUrl,
-  readAuthMiniRedirectCallback,
-} from './auth-callback.js';
+import { useState } from 'react';
+import { getAuthMiniSecurityUrl } from './auth-callback.js';
+import { useAuthMini } from './auth-mini-provider.js';
 
 type ButtonSize = 'default' | 'sm' | 'lg';
 type ButtonVariant = 'default' | 'secondary' | 'outline' | 'ghost' | 'link';
@@ -26,13 +16,8 @@ export type AuthMiniButtonLabels = {
 };
 
 export type AuthMiniButtonProps = {
-  authMiniBaseUrl: string;
-  audience?: string;
-  callbackUrl?: string | (() => string);
   className?: string;
   labels?: Partial<AuthMiniButtonLabels>;
-  onAuthError?: (error: Error) => void;
-  onAuthStateChange?: (session: SessionSnapshot) => void;
   securitySettingsUrl?: string;
   securitySettingsTarget?: '_blank' | '_self';
   size?: ButtonSize;
@@ -50,83 +35,22 @@ const defaultLabels: AuthMiniButtonLabels = {
 };
 
 export function AuthMiniButton({
-  authMiniBaseUrl,
-  audience,
-  callbackUrl,
   className,
   labels: labelOverrides,
-  onAuthError,
-  onAuthStateChange,
   securitySettingsTarget = '_blank',
   securitySettingsUrl,
   size = 'default',
   variant = 'default',
 }: AuthMiniButtonProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
-  const [session, setSession] = useState<SessionSnapshot | null>(null);
-  const errorHandler = useLatest(onAuthError);
-  const stateHandler = useLatest(onAuthStateChange);
+  const {
+    authMiniBaseUrl,
+    error,
+    isAuthenticated: authenticated,
+    isReady,
+    signIn,
+  } = useAuthMini();
   const labels = { ...defaultLabels, ...labelOverrides };
-  const isReady = session !== null && session.status !== 'recovering';
-  const authenticated = session?.status === 'authenticated';
-
-  useEffect(() => {
-    let unsubscribe: (() => void) | undefined;
-    let alive = true;
-
-    try {
-      const sdk = createBrowserSdk(authMiniBaseUrl);
-      const synchronize = (nextSession: SessionSnapshot) => {
-        if (!alive) {
-          return;
-        }
-        setSession(nextSession);
-        stateHandler.current?.(nextSession);
-      };
-
-      synchronize(sdk.session.getState());
-      unsubscribe = sdk.session.onChange(synchronize);
-      void acceptCallback(sdk, authMiniBaseUrl).catch((cause: unknown) => {
-        if (!alive) {
-          return;
-        }
-        const nextError = toError(cause);
-        setError(nextError);
-        errorHandler.current?.(nextError);
-      });
-    } catch (cause) {
-      const nextError = toError(cause);
-      setError(nextError);
-      errorHandler.current?.(nextError);
-    }
-
-    return () => {
-      alive = false;
-      unsubscribe?.();
-    };
-  }, [authMiniBaseUrl, errorHandler, stateHandler]);
-
-  function beginSignIn() {
-    try {
-      const state = createLoginState();
-      const storageKey = getAuthMiniLoginStateKey(authMiniBaseUrl);
-      const returnTo = resolveCallbackUrl(callbackUrl);
-      window.sessionStorage.setItem(storageKey, state);
-      window.location.assign(
-        getAuthMiniLoginUrl({
-          authMiniBaseUrl,
-          audience,
-          callbackUrl: returnTo,
-          state,
-        }),
-      );
-    } catch (cause) {
-      const nextError = toError(cause);
-      setError(nextError);
-      errorHandler.current?.(nextError);
-    }
-  }
 
   const buttonClassName = [
     'auth-mini-button',
@@ -149,7 +73,7 @@ export function AuthMiniButton({
             setDialogOpen(true);
             return;
           }
-          beginSignIn();
+          signIn();
         }}
         type="button"
       >
@@ -196,55 +120,4 @@ export function AuthMiniButton({
       </Dialog.Portal>
     </Dialog.Root>
   );
-}
-
-async function acceptCallback(sdk: AuthMiniApi, authMiniBaseUrl: string) {
-  let callback;
-  try {
-    callback = readAuthMiniRedirectCallback(window.location.href);
-  } catch (cause) {
-    if (cause instanceof AuthMiniCallbackError) {
-      window.history.replaceState(null, '', cause.cleanUrl);
-    }
-    throw cause;
-  }
-  if (!callback) {
-    return;
-  }
-
-  const storageKey = getAuthMiniLoginStateKey(authMiniBaseUrl);
-  const expectedState = window.sessionStorage.getItem(storageKey);
-  window.history.replaceState(null, '', callback.cleanUrl);
-
-  if (!expectedState || callback.state !== expectedState) {
-    throw new Error('Invalid Auth Mini login state');
-  }
-
-  window.sessionStorage.removeItem(storageKey);
-  await sdk.session.acceptRedirectCallback(callback.tokens);
-}
-
-function createLoginState(): string {
-  if (!globalThis.crypto?.randomUUID) {
-    throw new Error('Secure random values are unavailable');
-  }
-  return globalThis.crypto.randomUUID();
-}
-
-function resolveCallbackUrl(
-  value: string | (() => string) | undefined,
-): string {
-  return typeof value === 'function'
-    ? value()
-    : (value ?? window.location.href);
-}
-
-function toError(cause: unknown): Error {
-  return cause instanceof Error ? cause : new Error(String(cause));
-}
-
-function useLatest<T>(value: T) {
-  const ref = useRef(value);
-  ref.current = value;
-  return ref;
 }
