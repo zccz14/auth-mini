@@ -125,6 +125,7 @@ describe('openapi contract', () => {
       required: [
         'id',
         'auth_method',
+        'aud',
         'created_at',
         'expires_at',
         'ip',
@@ -132,6 +133,7 @@ describe('openapi contract', () => {
       ],
       properties: {
         auth_method: { type: 'string' },
+        aud: { type: 'string' },
         ip: { type: ['string', 'null'] },
         user_agent: { type: ['string', 'null'] },
       },

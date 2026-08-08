@@ -147,11 +147,21 @@ describe('formal GUI routes', () => {
       active_sessions: [
         {
           auth_method: 'webauthn',
+          aud: 'portal.example.com',
           created_at: '2026-08-08T00:00:00Z',
           expires_at: '2026-08-15T00:00:00Z',
           id: 'session-mobile-layout',
           ip: '127.0.0.1',
           user_agent: 'Auth Mini mobile layout test',
+        },
+        {
+          auth_method: 'email_otp',
+          aud: '',
+          created_at: '2026-08-08T00:00:00Z',
+          expires_at: '2026-08-15T00:00:00Z',
+          id: 'session-legacy-audience',
+          ip: '127.0.0.1',
+          user_agent: 'Auth Mini legacy audience test',
         },
       ],
       ed25519_credentials: [],
@@ -176,7 +186,9 @@ describe('formal GUI routes', () => {
       await screen.findByText('Verified email is active.'),
     ).toBeInTheDocument();
     expect(screen.getByText('session-mobile-layout')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Kick' })).toBeInTheDocument();
+    expect(screen.getByText('portal.example.com')).toBeInTheDocument();
+    expect(screen.getByText('Unavailable')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Kick' })).toHaveLength(2);
     expect(container.querySelector('tbody td > span')).toHaveTextContent(
       'Session ID',
     );

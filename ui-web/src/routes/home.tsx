@@ -21,6 +21,7 @@ type SessionCapability = 'manageable' | 'not-manageable' | 'legacy-token';
 type ActiveSession = {
   id: string;
   auth_method: string;
+  aud: string;
   created_at: string;
   expires_at: string;
   ip?: string | null;
@@ -539,6 +540,7 @@ function ActiveSessionsTable({
           <tr className="border-b border-slate-200 text-left text-slate-600">
             <th className="px-3 py-2 font-medium">{t('home.sessionId')}</th>
             <th className="px-3 py-2 font-medium">{t('home.authMethod')}</th>
+            <th className="px-3 py-2 font-medium">{t('home.audience')}</th>
             <th className="px-3 py-2 font-medium">{t('home.createdAt')}</th>
             <th className="px-3 py-2 font-medium">{t('home.expiresAt')}</th>
             <th className="px-3 py-2 font-medium">{t('home.ip')}</th>
@@ -560,6 +562,9 @@ function ActiveSessionsTable({
                 </SessionField>
                 <SessionField label={t('home.authMethod')}>
                   {activeSession.auth_method}
+                </SessionField>
+                <SessionField label={t('home.audience')}>
+                  {formatNullable(activeSession.aud, t('common.unavailable'))}
                 </SessionField>
                 <SessionField label={t('home.createdAt')}>
                   {activeSession.created_at}

@@ -97,7 +97,7 @@ export const en = {
   'home.ed25519Description':
     'Generate a key, save the private key, then register the public key.',
   'home.sessionsDescription':
-    'Review every active session and kick peers as needed.',
+    'Review every active session, its signed-in website, and kick peers as needed.',
   'home.credentialCreated': 'Created {date}',
   'home.noVerifiedEmail': 'No verified email',
   'home.loadingAccount': 'Loading account...',
@@ -113,6 +113,7 @@ export const en = {
   'home.noActiveSessions': 'No active sessions.',
   'home.noCredentials': 'No credentials.',
   'home.authMethod': 'Auth Method',
+  'home.audience': 'Audience (aud)',
   'home.createdAt': 'Created At',
   'home.expiresAt': 'Expires At',
   'home.ip': 'IP',
@@ -268,7 +269,7 @@ export const zhCN: Record<TranslationKey, string> = {
   'home.emailDescription': '请从登录页使用邮箱一次性验证码登录。',
   'home.passkeyDescription': '注册浏览器通行密钥，并移除旧的认证器。',
   'home.ed25519Description': '生成密钥、保存私钥，然后注册公钥。',
-  'home.sessionsDescription': '查看每个活跃会话，并按需终止其他会话。',
+  'home.sessionsDescription': '查看每个活跃会话、其登录的网站，并按需终止其他会话。',
   'home.credentialCreated': '创建于 {date}',
   'home.noVerifiedEmail': '没有已验证的邮箱',
   'home.loadingAccount': '正在加载账户...',
@@ -284,6 +285,7 @@ export const zhCN: Record<TranslationKey, string> = {
   'home.noActiveSessions': '没有活跃会话。',
   'home.noCredentials': '没有凭据。',
   'home.authMethod': '认证方式',
+  'home.audience': '受众（aud）',
   'home.createdAt': '创建时间',
   'home.expiresAt': '过期时间',
   'home.ip': 'IP',
