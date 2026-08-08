@@ -415,17 +415,18 @@ fn list_ed25519_credentials(
 fn list_active_sessions(connection: &Connection, user_id: &str) -> rusqlite::Result<Vec<Value>> {
     let now = now_text();
     let mut statement = connection.prepare(
-        "SELECT id, auth_method, ip, user_agent, expires_at, created_at
+        "SELECT id, auth_method, audience, ip, user_agent, expires_at, created_at
          FROM sessions WHERE user_id = ?1 AND expires_at > ?2 ORDER BY created_at ASC, id ASC",
     )?;
     let rows = statement.query_map(params![user_id, now], |row| {
         Ok(json!({
             "id": row.get::<_, String>(0)?,
             "auth_method": row.get::<_, String>(1)?,
-            "ip": row.get::<_, Option<String>>(2)?,
-            "user_agent": row.get::<_, Option<String>>(3)?,
-            "expires_at": row.get::<_, String>(4)?,
-            "created_at": row.get::<_, String>(5)?,
+            "aud": row.get::<_, String>(2)?,
+            "ip": row.get::<_, Option<String>>(3)?,
+            "user_agent": row.get::<_, Option<String>>(4)?,
+            "expires_at": row.get::<_, String>(5)?,
+            "created_at": row.get::<_, String>(6)?,
         }))
     })?;
 
@@ -550,6 +551,14 @@ mod tests {
                 [],
             )
             .expect("ed25519 credential inserts");
+        connection
+            .execute(
+                "INSERT INTO sessions
+                 (id, user_id, refresh_token_hash, auth_method, audience, expires_at)
+                 VALUES ('session-1', 'user-1', 'refresh-token-hash', 'email_otp', 'portal.example.com', '2099-01-01T00:00:00.000Z')",
+                [],
+            )
+            .expect("session inserts");
 
         let response = current_user_response(
             &connection,
@@ -573,6 +582,7 @@ mod tests {
             response["ed25519_credentials"][0]["public_key"],
             "ed-public-key"
         );
+        assert_eq!(response["active_sessions"][0]["aud"], "portal.example.com");
     }
 
     fn create_me_response_schema(connection: &Connection) {

@@ -1313,6 +1313,7 @@ components:
       required:
         - id
         - auth_method
+        - aud
         - created_at
         - expires_at
         - ip
@@ -1323,6 +1324,9 @@ components:
           format: uuid
         auth_method:
           type: string
+        aud:
+          type: string
+          description: Normalized hostname of the website signed in to by this session.
         created_at:
           type: string
           format: date-time

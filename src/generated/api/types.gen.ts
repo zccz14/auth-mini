@@ -169,6 +169,10 @@ export type SessionTokenResponse = {
 export type SessionSummary = {
     id: string;
     auth_method: string;
+    /**
+     * Normalized hostname of the website signed in to by this session.
+     */
+    aud: string;
     created_at: string;
     expires_at: string;
     ip: string | null;

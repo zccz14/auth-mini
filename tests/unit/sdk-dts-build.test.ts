@@ -206,6 +206,7 @@ describe('sdk d.ts build artifact', () => {
       'const me: MeResponse = meResponse.data as MeResponse;',
     );
     expect(source).toContain('me.active_sessions[0].auth_method');
+    expect(source).toContain('me.active_sessions[0].aud');
     expect(source).toContain('me.active_sessions[0].ip');
     expect(source).toContain('me.active_sessions[0].user_agent');
     expect(source).toContain('type IsAny<T> = 0 extends 1 & T ? true : false;');
