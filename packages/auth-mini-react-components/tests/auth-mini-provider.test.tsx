@@ -93,7 +93,10 @@ describe('AuthMiniProvider', () => {
 
   it('initializes one SDK and shares its session with every descendant', () => {
     render(
-      <AuthMiniProvider authMiniBaseUrl="https://auth.example.test">
+      <AuthMiniProvider
+        autoRedirectToLogin={false}
+        authMiniBaseUrl="https://auth.example.test"
+      >
         <SessionReader name="first" />
         <SessionReader name="second" />
       </AuthMiniProvider>,
@@ -126,7 +129,10 @@ describe('AuthMiniProvider', () => {
     session.getState.mockReturnValue(anonymous);
 
     render(
-      <AuthMiniProvider authMiniBaseUrl="https://auth.example.test">
+      <AuthMiniProvider
+        autoRedirectToLogin
+        authMiniBaseUrl="https://auth.example.test"
+      >
         <SessionReader name="session" />
       </AuthMiniProvider>,
     );
@@ -160,7 +166,10 @@ describe('AuthMiniProvider', () => {
     );
 
     render(
-      <AuthMiniProvider authMiniBaseUrl="https://auth.example.test">
+      <AuthMiniProvider
+        autoRedirectToLogin
+        authMiniBaseUrl="https://auth.example.test"
+      >
         <SessionReader name="session" />
       </AuthMiniProvider>,
     );
@@ -185,7 +194,10 @@ describe('AuthMiniProvider', () => {
 
     render(
       <StrictMode>
-        <AuthMiniProvider authMiniBaseUrl="https://auth.example.test">
+        <AuthMiniProvider
+          autoRedirectToLogin={false}
+          authMiniBaseUrl="https://auth.example.test"
+        >
           <SessionReader name="session" />
         </AuthMiniProvider>
       </StrictMode>,
@@ -196,6 +208,85 @@ describe('AuthMiniProvider', () => {
     );
   });
 
+  it('redirects an anonymous session to login when enabled', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.stubGlobal('crypto', { randomUUID: () => 'state-123' });
+    session.getState.mockReturnValue(anonymous);
+
+    render(
+      <AuthMiniProvider
+        autoRedirectToLogin
+        authMiniBaseUrl="https://auth.example.test"
+      >
+        <SessionReader name="session" />
+      </AuthMiniProvider>,
+    );
+
+    await waitFor(() =>
+      expect(
+        window.sessionStorage.getItem(
+          'auth-mini.react.login.state:https://auth.example.test/',
+        ),
+      ).toBe('state-123'),
+    );
+  });
+
+  it('waits for an anonymous state after session recovery before redirecting', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.stubGlobal('crypto', { randomUUID: () => 'state-123' });
+    session.getState.mockReturnValue(recovering);
+
+    render(
+      <AuthMiniProvider
+        autoRedirectToLogin
+        authMiniBaseUrl="https://auth.example.test"
+      >
+        <SessionReader name="session" />
+      </AuthMiniProvider>,
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(
+      window.sessionStorage.getItem(
+        'auth-mini.react.login.state:https://auth.example.test/',
+      ),
+    ).toBeNull();
+
+    act(() => listener?.(anonymous));
+
+    await waitFor(() =>
+      expect(
+        window.sessionStorage.getItem(
+          'auth-mini.react.login.state:https://auth.example.test/',
+        ),
+      ).toBe('state-123'),
+    );
+  });
+
+  it('leaves an anonymous session in the application when disabled', async () => {
+    session.getState.mockReturnValue(anonymous);
+
+    render(
+      <AuthMiniProvider
+        autoRedirectToLogin={false}
+        authMiniBaseUrl="https://auth.example.test"
+      >
+        <SessionReader name="session" />
+      </AuthMiniProvider>,
+    );
+
+    await Promise.resolve();
+
+    expect(
+      window.sessionStorage.getItem(
+        'auth-mini.react.login.state:https://auth.example.test/',
+      ),
+    ).toBeNull();
+  });
+
   it('creates the documented login state before redirecting', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     vi.stubGlobal('crypto', { randomUUID: () => 'state-123' });
@@ -204,6 +295,7 @@ describe('AuthMiniProvider', () => {
     render(
       <AuthMiniProvider
         audience="app.example.test"
+        autoRedirectToLogin={false}
         authMiniBaseUrl="https://auth.example.test"
         callbackUrl="http://localhost:5173/auth/callback"
       >
@@ -224,7 +316,10 @@ describe('AuthMiniProvider', () => {
     const unsubscribe = vi.fn();
     session.onChange.mockReturnValue(unsubscribe);
     const view = render(
-      <AuthMiniProvider authMiniBaseUrl="https://auth.example.test">
+      <AuthMiniProvider
+        autoRedirectToLogin={false}
+        authMiniBaseUrl="https://auth.example.test"
+      >
         <SessionReader name="session" />
       </AuthMiniProvider>,
     );

@@ -30,7 +30,10 @@ import {
 ```tsx
 function App() {
   return (
-    <AuthMiniProvider authMiniBaseUrl="https://auth.example.com">
+    <AuthMiniProvider
+      autoRedirectToLogin={false}
+      authMiniBaseUrl="https://auth.example.com"
+    >
       <Page />
       <AuthMiniButton />
     </AuthMiniProvider>
@@ -55,8 +58,25 @@ route. `audience` is for a loopback development callback only; do not pass it
 for an HTTPS callback because Auth Mini derives that audience from the callback
 hostname.
 
+Every Provider must set `autoRedirectToLogin` explicitly. Set it to `true` for
+an application whose every route requires a signed-in user. After Auth Mini has
+processed a possible login callback, the Provider redirects an anonymous
+browser session directly to the Auth Mini login page. Set it to `false` when
+the application offers anonymous pages and should decide when to call
+`signIn()`.
+
 ```tsx
 <AuthMiniProvider
+  autoRedirectToLogin
+  authMiniBaseUrl="https://auth.example.com"
+>
+  <App />
+</AuthMiniProvider>
+```
+
+```tsx
+<AuthMiniProvider
+  autoRedirectToLogin={false}
   authMiniBaseUrl="https://auth.example.com"
   callbackUrl="http://localhost:5173/auth/callback"
   audience="app.example.com"
@@ -84,13 +104,14 @@ transfer a downstream token across that boundary.
 
 ## AuthMiniProvider props
 
-| Prop                | Description                                                                |
-| ------------------- | -------------------------------------------------------------------------- |
-| `authMiniBaseUrl`   | Required Auth Mini issuer/server base URL.                                 |
-| `callbackUrl`       | Callback URL string or lazy callback; defaults to the current browser URL. |
-| `audience`          | Explicit audience for loopback callbacks only.                             |
-| `onAuthStateChange` | Receives every Browser SDK session snapshot.                               |
-| `onAuthError`       | Receives callback, SDK, or redirect-preparation errors.                    |
+| Prop                  | Description                                                                                                      |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `authMiniBaseUrl`     | Required Auth Mini issuer/server base URL.                                                                       |
+| `callbackUrl`         | Callback URL string or lazy callback; defaults to the current browser URL.                                       |
+| `audience`            | Explicit audience for loopback callbacks only.                                                                   |
+| `autoRedirectToLogin` | Required. `true` redirects anonymous sessions after callback processing; `false` leaves them in the application. |
+| `onAuthStateChange`   | Receives every Browser SDK session snapshot.                                                                     |
+| `onAuthError`         | Receives callback, SDK, or redirect-preparation errors.                                                          |
 
 ## useAuthMini
 

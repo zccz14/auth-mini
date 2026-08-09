@@ -26,6 +26,7 @@ export type AuthMiniProviderProps = {
   children: ReactNode;
   audience?: string;
   callbackUrl?: string | (() => string);
+  autoRedirectToLogin: boolean;
   onAuthError?: (error: Error) => void;
   onAuthStateChange?: (session: SessionSnapshot) => void;
 };
@@ -56,6 +57,7 @@ export function AuthMiniProvider({
   authMiniBaseUrl,
   audience,
   callbackUrl,
+  autoRedirectToLogin,
   children,
   onAuthError,
   onAuthStateChange,
@@ -63,11 +65,14 @@ export function AuthMiniProvider({
   const [sdk, setSdk] = useState<AuthMiniApi | null>(null);
   const [session, setSession] = useState<SessionSnapshot | null>(null);
   const [error, setError] = useState<Error | null>(null);
+  const audienceRef = useLatest(audience);
   const callbackUrlRef = useLatest(callbackUrl);
+  const autoRedirectToLoginRef = useLatest(autoRedirectToLogin);
   const errorHandlerRef = useLatest(onAuthError);
   const stateHandlerRef = useLatest(onAuthStateChange);
   const mountedRef = useRef(false);
   const activeBaseUrlRef = useRef(authMiniBaseUrl);
+  const autoRedirectStartedRef = useRef(false);
 
   const reportError = useCallback(
     (cause: unknown) => {
@@ -79,55 +84,6 @@ export function AuthMiniProvider({
     [errorHandlerRef],
   );
 
-  useEffect(() => {
-    mountedRef.current = true;
-    activeBaseUrlRef.current = authMiniBaseUrl;
-    let unsubscribe: (() => void) | undefined;
-    let alive = true;
-
-    setSdk(null);
-    setSession(null);
-    setError(null);
-
-    try {
-      const nextSdk = createBrowserSdk(authMiniBaseUrl);
-      const synchronize = (nextSession: SessionSnapshot) => {
-        if (!alive) {
-          return;
-        }
-        setSession(nextSession);
-        stateHandlerRef.current?.(nextSession);
-      };
-
-      setSdk(nextSdk);
-      synchronize(nextSdk.session.getState());
-      unsubscribe = nextSdk.session.onChange(synchronize);
-
-      try {
-        void acceptCallback(nextSdk, authMiniBaseUrl).catch(
-          (cause: unknown) => {
-            if (
-              mountedRef.current &&
-              activeBaseUrlRef.current === authMiniBaseUrl
-            ) {
-              reportError(cause);
-            }
-          },
-        );
-      } catch (cause) {
-        reportError(cause);
-      }
-    } catch (cause) {
-      reportError(cause);
-    }
-
-    return () => {
-      alive = false;
-      mountedRef.current = false;
-      unsubscribe?.();
-    };
-  }, [authMiniBaseUrl, reportError, stateHandlerRef]);
-
   const signIn = useCallback(() => {
     try {
       const state = createLoginState();
@@ -137,7 +93,7 @@ export function AuthMiniProvider({
       window.location.assign(
         getAuthMiniLoginUrl({
           authMiniBaseUrl,
-          audience,
+          audience: audienceRef.current,
           callbackUrl: returnTo,
           state,
         }),
@@ -145,7 +101,82 @@ export function AuthMiniProvider({
     } catch (cause) {
       reportError(cause);
     }
-  }, [audience, authMiniBaseUrl, callbackUrlRef, reportError]);
+  }, [audienceRef, authMiniBaseUrl, callbackUrlRef, reportError]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    activeBaseUrlRef.current = authMiniBaseUrl;
+    autoRedirectStartedRef.current = false;
+    let unsubscribe: (() => void) | undefined;
+    let alive = true;
+    let callbackHandled = false;
+    let latestSession: SessionSnapshot;
+
+    setSdk(null);
+    setSession(null);
+    setError(null);
+
+    try {
+      const nextSdk = createBrowserSdk(authMiniBaseUrl);
+      const redirectAnonymousSession = (nextSession: SessionSnapshot) => {
+        if (
+          callbackHandled &&
+          autoRedirectToLoginRef.current &&
+          nextSession.status === 'anonymous' &&
+          !autoRedirectStartedRef.current
+        ) {
+          autoRedirectStartedRef.current = true;
+          signIn();
+        }
+      };
+      const synchronize = (nextSession: SessionSnapshot) => {
+        if (!alive) {
+          return;
+        }
+        latestSession = nextSession;
+        setSession(nextSession);
+        stateHandlerRef.current?.(nextSession);
+        redirectAnonymousSession(nextSession);
+      };
+
+      setSdk(nextSdk);
+      synchronize(nextSdk.session.getState());
+      unsubscribe = nextSdk.session.onChange(synchronize);
+
+      void acceptCallback(nextSdk, authMiniBaseUrl)
+        .then((acceptedCallback) => {
+          if (!alive || activeBaseUrlRef.current !== authMiniBaseUrl) {
+            return;
+          }
+          callbackHandled = true;
+          if (!acceptedCallback) {
+            redirectAnonymousSession(latestSession);
+          }
+        })
+        .catch((cause: unknown) => {
+          if (
+            mountedRef.current &&
+            activeBaseUrlRef.current === authMiniBaseUrl
+          ) {
+            reportError(cause);
+          }
+        });
+    } catch (cause) {
+      reportError(cause);
+    }
+
+    return () => {
+      alive = false;
+      mountedRef.current = false;
+      unsubscribe?.();
+    };
+  }, [
+    authMiniBaseUrl,
+    autoRedirectToLoginRef,
+    reportError,
+    signIn,
+    stateHandlerRef,
+  ]);
 
   const signOut = useCallback(async () => {
     if (!sdk) {
@@ -206,7 +237,7 @@ export function useAuthMini(): AuthMiniContextValue {
 function acceptCallback(
   sdk: AuthMiniApi,
   authMiniBaseUrl: string,
-): Promise<void> {
+): Promise<boolean> {
   let callback;
   try {
     callback = readAuthMiniRedirectCallback(window.location.href);
@@ -217,7 +248,7 @@ function acceptCallback(
     throw cause;
   }
   if (!callback) {
-    return Promise.resolve();
+    return Promise.resolve(false);
   }
 
   const storageKey = getAuthMiniLoginStateKey(authMiniBaseUrl);
@@ -231,7 +262,7 @@ function acceptCallback(
   window.sessionStorage.removeItem(storageKey);
   return sdk.session
     .acceptRedirectCallback(callback.tokens)
-    .then(() => undefined);
+    .then(() => true);
 }
 
 function createLoginState(): string {
