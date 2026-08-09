@@ -37,7 +37,10 @@ const authenticated = {
 
 function renderButton() {
   return render(
-    <AuthMiniProvider authMiniBaseUrl="https://auth.example.test">
+    <AuthMiniProvider
+      autoRedirectToLogin={false}
+      authMiniBaseUrl="https://auth.example.test"
+    >
       <AuthMiniButton />
     </AuthMiniProvider>,
   );

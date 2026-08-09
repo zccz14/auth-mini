@@ -26,7 +26,7 @@ export type AuthMiniProviderProps = {
   children: ReactNode;
   audience?: string;
   callbackUrl?: string | (() => string);
-  autoRedirectToLogin?: boolean;
+  autoRedirectToLogin: boolean;
   onAuthError?: (error: Error) => void;
   onAuthStateChange?: (session: SessionSnapshot) => void;
 };

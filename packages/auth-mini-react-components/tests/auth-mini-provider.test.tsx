@@ -93,7 +93,10 @@ describe('AuthMiniProvider', () => {
 
   it('initializes one SDK and shares its session with every descendant', () => {
     render(
-      <AuthMiniProvider authMiniBaseUrl="https://auth.example.test">
+      <AuthMiniProvider
+        autoRedirectToLogin={false}
+        authMiniBaseUrl="https://auth.example.test"
+      >
         <SessionReader name="first" />
         <SessionReader name="second" />
       </AuthMiniProvider>,
@@ -191,7 +194,10 @@ describe('AuthMiniProvider', () => {
 
     render(
       <StrictMode>
-        <AuthMiniProvider authMiniBaseUrl="https://auth.example.test">
+        <AuthMiniProvider
+          autoRedirectToLogin={false}
+          authMiniBaseUrl="https://auth.example.test"
+        >
           <SessionReader name="session" />
         </AuthMiniProvider>
       </StrictMode>,
@@ -260,11 +266,14 @@ describe('AuthMiniProvider', () => {
     );
   });
 
-  it('leaves an anonymous session in the application by default', async () => {
+  it('leaves an anonymous session in the application when disabled', async () => {
     session.getState.mockReturnValue(anonymous);
 
     render(
-      <AuthMiniProvider authMiniBaseUrl="https://auth.example.test">
+      <AuthMiniProvider
+        autoRedirectToLogin={false}
+        authMiniBaseUrl="https://auth.example.test"
+      >
         <SessionReader name="session" />
       </AuthMiniProvider>,
     );
@@ -286,6 +295,7 @@ describe('AuthMiniProvider', () => {
     render(
       <AuthMiniProvider
         audience="app.example.test"
+        autoRedirectToLogin={false}
         authMiniBaseUrl="https://auth.example.test"
         callbackUrl="http://localhost:5173/auth/callback"
       >
@@ -306,7 +316,10 @@ describe('AuthMiniProvider', () => {
     const unsubscribe = vi.fn();
     session.onChange.mockReturnValue(unsubscribe);
     const view = render(
-      <AuthMiniProvider authMiniBaseUrl="https://auth.example.test">
+      <AuthMiniProvider
+        autoRedirectToLogin={false}
+        authMiniBaseUrl="https://auth.example.test"
+      >
         <SessionReader name="session" />
       </AuthMiniProvider>,
     );
