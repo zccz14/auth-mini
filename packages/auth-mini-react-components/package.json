@@ -1,6 +1,6 @@
 {
   "name": "auth-mini-react-components",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Auth Mini sign-in and account-security controls for React and shadcn/ui.",
   "license": "MIT",
   "repository": {

@@ -35,7 +35,7 @@ function App() {
       authMiniBaseUrl="https://auth.example.com"
     >
       <Page />
-      <AuthMiniButton />
+      <AuthMiniButton lang="en" />
     </AuthMiniProvider>
   );
 }
@@ -93,9 +93,10 @@ the Browser SDK, subscribes to session changes, or adopts a callback.
 
 ## Security settings
 
-The signed-in dialog opens Auth Mini's real account-security page at
-`/web/#/`, where users can manage PassKeys, Ed25519 credentials, and active
-sessions. The default opens a new tab with `noopener,noreferrer` semantics.
+The signed-in User IconButton opens a dialog that displays a copyable User ID,
+links to Auth Mini's real sign-in-method management page at `/web/#/`, and
+contains the destructive sign-out action. The management page opens in a new
+tab with `noopener,noreferrer` semantics by default.
 
 The downstream app's access token has the downstream app audience, while
 Auth Mini account management requires Auth Mini's self audience. The user may
@@ -125,9 +126,10 @@ the hook does not create a second token store.
 `AuthMiniButton` must be rendered below `AuthMiniProvider` and inherits the
 Provider configuration.
 
-| Prop                           | Description                                       |
-| ------------------------------ | ------------------------------------------------- |
-| `securitySettingsUrl`          | Overrides the default Auth Mini `/web/#/` target. |
-| `securitySettingsTarget`       | `_blank` by default; `_self` is supported.        |
-| `variant`, `size`, `className` | Match familiar shadcn button customization.       |
-| `labels`                       | Overrides visible control text.                   |
+| Prop                           | Description                                                                      |
+| ------------------------------ | -------------------------------------------------------------------------------- |
+| `lang`                         | Required language string. `zh` and `zh-*` use Chinese; other values use English. |
+| `securitySettingsUrl`          | Overrides the default Auth Mini `/web/#/` target.                                |
+| `securitySettingsTarget`       | `_blank` by default; `_self` is supported.                                       |
+| `variant`, `size`, `className` | Match familiar shadcn button customization when signed out.                      |
+| `labels`                       | Overrides individual visible control text.                                       |
