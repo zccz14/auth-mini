@@ -1,5 +1,3 @@
-import './styles.css';
-
 export { AuthMiniButton } from './auth-mini-button.js';
 export type {
   AuthMiniButtonLabels,

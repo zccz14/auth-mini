@@ -12,17 +12,27 @@ renders the standard sign-in and account-security control.
 npm install auth-mini auth-mini-react-components
 ```
 
-Import the package stylesheet once after your shadcn/ui theme. The stylesheet
-uses the standard shadcn semantic CSS variables, so it does not require your
-Tailwind scanner to include `node_modules`.
+`AuthMiniButton` composes the standard shadcn Button, Dialog, and Alert
+components. It does not ship a stylesheet: it reuses the application's
+shadcn/Tailwind theme and semantic tokens. Add the package output to Tailwind's
+content sources so its shadcn utility classes are generated.
 
 ```tsx
-import 'auth-mini-react-components/styles.css';
 import {
   AuthMiniButton,
   AuthMiniProvider,
   useAuthMini,
 } from 'auth-mini-react-components';
+```
+
+```ts
+// tailwind.config.ts
+export default {
+  content: [
+    './src/**/*.{ts,tsx}',
+    './node_modules/auth-mini-react-components/dist/**/*.js',
+  ],
+};
 ```
 
 ## Usage

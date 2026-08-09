@@ -78,17 +78,20 @@ describe('AuthMiniButton', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Account' }));
 
     expect(screen.getByRole('dialog')).toHaveTextContent('You are signed in');
-    fireEvent.click(screen.getByRole('button', { name: 'User ID user-1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'User ID: user-1' }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('user-1'));
-    expect(screen.getByRole('button', { name: 'User ID Copied' })).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: 'User ID: Copied' }),
+    ).toBeVisible();
     expect(
       screen.getByRole('link', { name: 'Manage sign-in methods' }),
     ).toHaveAttribute('href', 'https://auth.example.test/web/#/');
     expect(
       screen.getByRole('link', { name: 'Manage sign-in methods' }),
     ).toHaveAttribute('target', '_blank');
-    expect(screen.getByRole('button', { name: 'Sign Out' })).toHaveClass(
-      'auth-mini-button--destructive',
+    expect(screen.getByRole('button', { name: 'Sign Out' })).toHaveAttribute(
+      'data-variant',
+      'destructive',
     );
   });
 
@@ -99,11 +102,13 @@ describe('AuthMiniButton', () => {
     await screen.findByRole('button', { name: '账户' });
     fireEvent.click(screen.getByRole('button', { name: '账户' }));
 
-    expect(
-      screen.getByRole('link', { name: '管理登录方式' }),
-    ).toHaveAttribute('href', 'https://auth.example.test/web/#/');
-    expect(screen.getByRole('button', { name: '退出登录' })).toHaveClass(
-      'auth-mini-button--destructive',
+    expect(screen.getByRole('link', { name: '管理登录方式' })).toHaveAttribute(
+      'href',
+      'https://auth.example.test/web/#/',
+    );
+    expect(screen.getByRole('button', { name: '退出登录' })).toHaveAttribute(
+      'data-variant',
+      'destructive',
     );
     fireEvent.click(screen.getByRole('button', { name: '退出登录' }));
     await waitFor(() => expect(session.logout).toHaveBeenCalledOnce());

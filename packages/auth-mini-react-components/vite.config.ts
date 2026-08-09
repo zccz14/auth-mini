@@ -6,15 +6,18 @@ export default defineConfig({
       entry: 'src/index.ts',
       formats: ['es'],
       fileName: 'index',
-      cssFileName: 'styles',
     },
     rollupOptions: {
       external: [
-        '@base-ui/react/dialog',
         'auth-mini/sdk/browser',
+        'class-variance-authority',
+        'clsx',
+        'lucide-react',
+        'radix-ui',
         'react',
         'react-dom',
         'react-dom/client',
+        'tailwind-merge',
       ],
       output: {
         banner: "'use client';",

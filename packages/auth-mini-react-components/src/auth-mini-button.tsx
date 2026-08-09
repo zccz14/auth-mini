@@ -1,5 +1,17 @@
-import { Dialog } from '@base-ui/react/dialog';
+import { UserIcon } from 'lucide-react';
 import { useState } from 'react';
+import { Alert, AlertDescription } from './components/ui/alert.js';
+import { Button } from './components/ui/button.js';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from './components/ui/dialog.js';
 import { getAuthMiniSecurityUrl } from './auth-callback.js';
 import { useAuthMini } from './auth-mini-provider.js';
 
@@ -77,85 +89,70 @@ export function AuthMiniButton({
   const labels = { ...labelsByLanguage[languageKey(lang)], ...labelOverrides };
   const userId = readUserId(session?.accessToken);
 
-  const buttonClassName = [
-    'auth-mini-button',
-    authenticated ? 'auth-mini-button--icon' : `auth-mini-button--${variant}`,
-    authenticated ? 'auth-mini-button--sm' : `auth-mini-button--${size}`,
-    className,
-  ]
-    .filter(Boolean)
-    .join(' ');
-
   return (
-    <Dialog.Root
+    <Dialog
       open={dialogOpen}
       onOpenChange={(open) => {
         setDialogOpen(open);
         setUserIdCopied(false);
       }}
     >
-      <button
-        aria-label={authenticated ? labels.signedIn : undefined}
-        aria-describedby={error ? 'auth-mini-button-error' : undefined}
-        className={buttonClassName}
-        data-authenticated={authenticated || undefined}
-        disabled={!isReady}
-        onClick={() => {
-          if (authenticated) {
-            setDialogOpen(true);
-            return;
-          }
-          signIn();
-        }}
-        type="button"
-      >
-        {isReady ? (
-          authenticated ? (
+      {authenticated ? (
+        <DialogTrigger asChild>
+          <Button
+            aria-describedby={error ? 'auth-mini-button-error' : undefined}
+            aria-label={labels.signedIn}
+            className={className}
+            disabled={!isReady}
+            size="icon"
+            type="button"
+          >
             <UserIcon />
-          ) : (
-            labels.signIn
-          )
-        ) : (
-          labels.checking
-        )}
-      </button>
+          </Button>
+        </DialogTrigger>
+      ) : (
+        <Button
+          aria-describedby={error ? 'auth-mini-button-error' : undefined}
+          className={className}
+          disabled={!isReady}
+          onClick={signIn}
+          size={size}
+          type="button"
+          variant={variant}
+        >
+          {isReady ? labels.signIn : labels.checking}
+        </Button>
+      )}
       {error ? (
-        <p className="auth-mini-error" id="auth-mini-button-error" role="alert">
-          {error.message}
-        </p>
+        <Alert id="auth-mini-button-error" variant="destructive">
+          <AlertDescription>{error.message}</AlertDescription>
+        </Alert>
       ) : null}
-      <Dialog.Portal>
-        <Dialog.Backdrop className="auth-mini-dialog-backdrop" />
-        <Dialog.Popup className="auth-mini-dialog-content">
-          <div className="auth-mini-dialog-header">
-            <Dialog.Title className="auth-mini-dialog-title">
-              {labels.signedIn}
-            </Dialog.Title>
-            <Dialog.Description className="auth-mini-dialog-description">
-              {labels.dialogDescription}
-            </Dialog.Description>
-          </div>
-          {userId ? (
-            <button
-              className="auth-mini-user-id"
-              onClick={() => {
-                if (!navigator.clipboard) {
-                  return;
-                }
-                void navigator.clipboard.writeText(userId).then(
-                  () => setUserIdCopied(true),
-                  () => undefined,
-                );
-              }}
-              type="button"
-            >
-              <span>{labels.userId}</span>
-              <strong>{userIdCopied ? labels.copied : userId}</strong>
-            </button>
-          ) : null}
-          <div className="auth-mini-dialog-actions">
+      <DialogContent showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>{labels.signedIn}</DialogTitle>
+          <DialogDescription>{labels.dialogDescription}</DialogDescription>
+        </DialogHeader>
+        {userId ? (
+          <Button
+            onClick={() => {
+              if (!navigator.clipboard) {
+                return;
+              }
+              void navigator.clipboard.writeText(userId).then(
+                () => setUserIdCopied(true),
+                () => undefined,
+              );
+            }}
+            type="button"
+            variant="outline"
+          >
+            {labels.userId}: {userIdCopied ? labels.copied : userId}
+          </Button>
+        ) : null}
+        <DialogFooter>
+          <Button asChild variant="outline">
             <a
-              className="auth-mini-button auth-mini-button--default"
               href={
                 securitySettingsUrl ?? getAuthMiniSecurityUrl(authMiniBaseUrl)
               }
@@ -166,25 +163,27 @@ export function AuthMiniButton({
             >
               {labels.securitySettings}
             </a>
-            <button
-              className="auth-mini-button auth-mini-button--destructive auth-mini-button--default"
-              onClick={() => {
-                void signOut().then(
-                  () => setDialogOpen(false),
-                  () => undefined,
-                );
-              }}
-              type="button"
-            >
-              {labels.signOut}
-            </button>
-            <Dialog.Close className="auth-mini-button auth-mini-button--outline auth-mini-button--default">
+          </Button>
+          <Button
+            onClick={() => {
+              void signOut().then(
+                () => setDialogOpen(false),
+                () => undefined,
+              );
+            }}
+            type="button"
+            variant="destructive"
+          >
+            {labels.signOut}
+          </Button>
+          <DialogClose asChild>
+            <Button type="button" variant="outline">
               {labels.close}
-            </Dialog.Close>
-          </div>
-        </Dialog.Popup>
-      </Dialog.Portal>
-    </Dialog.Root>
+            </Button>
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -211,13 +210,4 @@ function readUserId(accessToken: string | null | undefined): string | null {
   } catch {
     return null;
   }
-}
-
-function UserIcon() {
-  return (
-    <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
-      <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="2" />
-      <path d="M4 21c1.5-4 4.1-6 8-6s6.5 2 8 6" stroke="currentColor" strokeWidth="2" />
-    </svg>
-  );
 }
