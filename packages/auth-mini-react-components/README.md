@@ -62,6 +62,12 @@ function Page() {
 }
 ```
 
+For Tailwind v4, add the package output as a source in your application CSS:
+
+```css
+@source "../node_modules/auth-mini-react-components/dist";
+```
+
 On an ordinary HTTPS app, the Provider uses the current URL as the callback by
 default. Override `callbackUrl` only when the app has a dedicated callback
 route. `audience` is for a loopback development callback only; do not pass it
@@ -103,7 +109,8 @@ the Browser SDK, subscribes to session changes, or adopts a callback.
 
 ## Security settings
 
-The signed-in User IconButton opens a dialog that displays a copyable User ID,
+The signed-in User IconButton opens a dialog that displays a copyable UID with a
+dedicated copy IconButton and confirmation toast,
 an **Add passkey** action, a link to Auth Mini's real sign-in-method management
 page at `/web/#/`, and the destructive sign-out action. Add passkey opens the
 dedicated registration popup using the Provider configuration. The management
