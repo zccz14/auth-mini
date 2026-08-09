@@ -41,11 +41,15 @@ export type AuthMiniContextValue = {
   error: Error | null;
   signIn: () => void;
   signOut: () => Promise<void>;
+  openPasskeyRegistrationPage: () => Window | null;
 };
 
 const AuthMiniContext = createContext<AuthMiniContextValue | undefined>(
   undefined,
 );
+const passkeyRegistrationPopupName = 'auth-mini-passkey-registration';
+const passkeyRegistrationPopupFeatures =
+  'popup,width=520,height=720,resizable=yes,scrollbars=yes';
 
 /**
  * Creates one Browser SDK session source for an application subtree.
@@ -191,6 +195,19 @@ export function AuthMiniProvider({
     }
   }, [reportError, sdk]);
 
+  const openPasskeyRegistrationPage = useCallback(() => {
+    const url = new URL('/web/', authMiniBaseUrl);
+    url.hash = '/passkey/register';
+
+    const popup = window.open(
+      url.toString(),
+      passkeyRegistrationPopupName,
+      passkeyRegistrationPopupFeatures,
+    );
+    popup?.focus();
+    return popup;
+  }, [authMiniBaseUrl]);
+
   const status = session?.status ?? 'initializing';
   const isReady = session !== null && session.status !== 'recovering';
   const isAuthenticated = session?.status === 'authenticated';
@@ -205,6 +222,7 @@ export function AuthMiniProvider({
       error,
       signIn,
       signOut,
+      openPasskeyRegistrationPage,
     }),
     [
       authMiniBaseUrl,
@@ -215,6 +233,7 @@ export function AuthMiniProvider({
       session,
       signIn,
       signOut,
+      openPasskeyRegistrationPage,
       status,
     ],
   );
@@ -260,9 +279,7 @@ function acceptCallback(
   }
 
   window.sessionStorage.removeItem(storageKey);
-  return sdk.session
-    .acceptRedirectCallback(callback.tokens)
-    .then(() => true);
+  return sdk.session.acceptRedirectCallback(callback.tokens).then(() => true);
 }
 
 function createLoginState(): string {

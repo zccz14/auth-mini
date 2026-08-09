@@ -8,4 +8,3 @@ export type {
   AuthMiniContextValue,
   AuthMiniProviderProps,
 } from './auth-mini-provider.js';
-export { openPasskeyRegistrationPage } from './open-passkey-registration-page.js';
