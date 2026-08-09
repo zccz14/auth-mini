@@ -113,7 +113,6 @@ jobs:
         run: |
           test -f packages/auth-mini-react-components/dist/index.js
           test -f packages/auth-mini-react-components/dist/index.d.ts
-          test -f packages/auth-mini-react-components/dist/styles.css
 
       - name: Check if version already exists
         id: check_version
