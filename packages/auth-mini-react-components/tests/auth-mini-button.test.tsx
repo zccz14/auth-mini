@@ -81,11 +81,11 @@ describe('AuthMiniButton', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Account' }));
 
     expect(screen.getByRole('dialog')).toHaveTextContent('You are signed in');
-    fireEvent.click(screen.getByRole('button', { name: 'User ID: user-1' }));
+    expect(screen.getByText('UID')).toBeVisible();
+    expect(screen.getByText('user-1')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Copy UID' }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('user-1'));
-    expect(
-      screen.getByRole('button', { name: 'User ID: Copied' }),
-    ).toBeVisible();
+    expect(await screen.findByText('Copied to clipboard')).toBeVisible();
     expect(
       screen.getByRole('link', { name: 'Manage sign-in methods' }),
     ).toHaveAttribute('href', 'https://auth.example.test/web/#/');

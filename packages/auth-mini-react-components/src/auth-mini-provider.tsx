@@ -20,6 +20,7 @@ import {
   getAuthMiniLoginUrl,
   readAuthMiniRedirectCallback,
 } from './auth-callback.js';
+import { Toaster } from './components/ui/sonner.js';
 
 export type AuthMiniProviderProps = {
   authMiniBaseUrl: string;
@@ -241,6 +242,7 @@ export function AuthMiniProvider({
   return (
     <AuthMiniContext.Provider value={value}>
       {children}
+      <Toaster />
     </AuthMiniContext.Provider>
   );
 }

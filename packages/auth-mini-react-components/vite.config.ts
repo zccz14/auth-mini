@@ -9,14 +9,16 @@ export default defineConfig({
     },
     rollupOptions: {
       external: [
+        '@base-ui/react/button',
+        '@base-ui/react/dialog',
         'auth-mini/sdk/browser',
         'class-variance-authority',
         'clsx',
         'lucide-react',
-        'radix-ui',
         'react',
         'react-dom',
         'react-dom/client',
+        'sonner',
         'tailwind-merge',
       ],
       output: {

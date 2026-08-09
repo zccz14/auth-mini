@@ -1,7 +1,8 @@
-import { UserIcon } from 'lucide-react';
+import { CopyIcon, UserIcon } from 'lucide-react';
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { Alert, AlertDescription } from './components/ui/alert.js';
-import { Button } from './components/ui/button.js';
+import { Button, buttonVariants } from './components/ui/button.js';
 import {
   Dialog,
   DialogClose,
@@ -24,6 +25,7 @@ export type AuthMiniButtonLabels = {
   signedIn: string;
   dialogDescription: string;
   userId: string;
+  copyUserId: string;
   copied: string;
   addPasskey: string;
   securitySettings: string;
@@ -48,8 +50,9 @@ const labelsByLanguage: Record<'en' | 'zh', AuthMiniButtonLabels> = {
     signedIn: 'Account',
     dialogDescription:
       'You are signed in to this app. Manage your sign-in methods in Auth Mini.',
-    userId: 'User ID',
-    copied: 'Copied',
+    userId: 'UID',
+    copyUserId: 'Copy UID',
+    copied: 'Copied to clipboard',
     addPasskey: 'Add passkey',
     securitySettings: 'Manage sign-in methods',
     signOut: 'Sign Out',
@@ -60,14 +63,21 @@ const labelsByLanguage: Record<'en' | 'zh', AuthMiniButtonLabels> = {
     signIn: '登录',
     signedIn: '账户',
     dialogDescription: '你已登录此应用。请在 Auth Mini 管理你的登录方式。',
-    userId: '用户 ID',
-    copied: '已复制',
+    userId: 'UID',
+    copyUserId: '复制 UID',
+    copied: '已复制到剪贴板',
     addPasskey: '添加通行密钥',
     securitySettings: '管理登录方式',
     signOut: '退出登录',
     close: '关闭',
   },
 };
+
+const iconSizeByButtonSize = {
+  default: 'icon',
+  sm: 'icon-sm',
+  lg: 'icon-lg',
+} as const;
 
 export function AuthMiniButton({
   className,
@@ -79,7 +89,6 @@ export function AuthMiniButton({
   variant = 'default',
 }: AuthMiniButtonProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [userIdCopied, setUserIdCopied] = useState(false);
   const {
     authMiniBaseUrl,
     error,
@@ -98,22 +107,24 @@ export function AuthMiniButton({
       open={dialogOpen}
       onOpenChange={(open) => {
         setDialogOpen(open);
-        setUserIdCopied(false);
       }}
     >
       {authenticated ? (
-        <DialogTrigger asChild>
-          <Button
-            aria-describedby={error ? 'auth-mini-button-error' : undefined}
-            aria-label={labels.signedIn}
-            className={className}
-            disabled={!isReady}
-            size="icon"
-            type="button"
-          >
-            <UserIcon />
-          </Button>
-        </DialogTrigger>
+        <DialogTrigger
+          render={
+            <Button
+              aria-describedby={error ? 'auth-mini-button-error' : undefined}
+              aria-label={labels.signedIn}
+              className={className}
+              disabled={!isReady}
+              size={iconSizeByButtonSize[size]}
+              type="button"
+              variant={variant}
+            >
+              <UserIcon />
+            </Button>
+          }
+        />
       ) : (
         <Button
           aria-describedby={error ? 'auth-mini-button-error' : undefined}
@@ -138,21 +149,24 @@ export function AuthMiniButton({
           <DialogDescription>{labels.dialogDescription}</DialogDescription>
         </DialogHeader>
         {userId ? (
-          <Button
-            onClick={() => {
-              if (!navigator.clipboard) {
-                return;
-              }
-              void navigator.clipboard.writeText(userId).then(
-                () => setUserIdCopied(true),
-                () => undefined,
-              );
-            }}
-            type="button"
-            variant="outline"
-          >
-            {labels.userId}: {userIdCopied ? labels.copied : userId}
-          </Button>
+          <div className="flex items-center gap-2 px-1.5 pb-2 pt-1">
+            <span className="shrink-0 text-xs font-medium text-muted-foreground">
+              {labels.userId}
+            </span>
+            <code className="min-w-0 flex-1 truncate rounded-md bg-muted px-2 py-1.5 text-xs text-muted-foreground">
+              {userId}
+            </code>
+            <Button
+              aria-label={labels.copyUserId}
+              onClick={() => void copyUserId(userId, labels.copied)}
+              size="icon-xs"
+              title={labels.copyUserId}
+              type="button"
+              variant="ghost"
+            >
+              <CopyIcon />
+            </Button>
+          </div>
         ) : null}
         <DialogFooter>
           <Button
@@ -162,19 +176,18 @@ export function AuthMiniButton({
           >
             {labels.addPasskey}
           </Button>
-          <Button asChild variant="outline">
-            <a
-              href={
-                securitySettingsUrl ?? getAuthMiniSecurityUrl(authMiniBaseUrl)
-              }
-              rel={
-                securitySettingsTarget === '_blank' ? 'noreferrer' : undefined
-              }
-              target={securitySettingsTarget}
-            >
-              {labels.securitySettings}
-            </a>
-          </Button>
+          <a
+            className={buttonVariants({ variant: 'outline' })}
+            data-slot="button"
+            data-variant="outline"
+            href={
+              securitySettingsUrl ?? getAuthMiniSecurityUrl(authMiniBaseUrl)
+            }
+            rel={securitySettingsTarget === '_blank' ? 'noreferrer' : undefined}
+            target={securitySettingsTarget}
+          >
+            {labels.securitySettings}
+          </a>
           <Button
             onClick={() => {
               void signOut().then(
@@ -187,10 +200,8 @@ export function AuthMiniButton({
           >
             {labels.signOut}
           </Button>
-          <DialogClose asChild>
-            <Button type="button" variant="outline">
-              {labels.close}
-            </Button>
+          <DialogClose render={<Button type="button" variant="outline" />}>
+            {labels.close}
           </DialogClose>
         </DialogFooter>
       </DialogContent>
@@ -221,4 +232,9 @@ function readUserId(accessToken: string | null | undefined): string | null {
   } catch {
     return null;
   }
+}
+
+async function copyUserId(userId: string, copiedMessage: string) {
+  await navigator.clipboard.writeText(userId);
+  toast.success(copiedMessage);
 }
