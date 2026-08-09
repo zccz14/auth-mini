@@ -25,6 +25,7 @@ export type AuthMiniButtonLabels = {
   dialogDescription: string;
   userId: string;
   copied: string;
+  addPasskey: string;
   securitySettings: string;
   signOut: string;
   close: string;
@@ -49,6 +50,7 @@ const labelsByLanguage: Record<'en' | 'zh', AuthMiniButtonLabels> = {
       'You are signed in to this app. Manage your sign-in methods in Auth Mini.',
     userId: 'User ID',
     copied: 'Copied',
+    addPasskey: 'Add passkey',
     securitySettings: 'Manage sign-in methods',
     signOut: 'Sign Out',
     close: 'Close',
@@ -60,6 +62,7 @@ const labelsByLanguage: Record<'en' | 'zh', AuthMiniButtonLabels> = {
     dialogDescription: '你已登录此应用。请在 Auth Mini 管理你的登录方式。',
     userId: '用户 ID',
     copied: '已复制',
+    addPasskey: '添加通行密钥',
     securitySettings: '管理登录方式',
     signOut: '退出登录',
     close: '关闭',
@@ -85,6 +88,7 @@ export function AuthMiniButton({
     session,
     signIn,
     signOut,
+    openPasskeyRegistrationPage,
   } = useAuthMini();
   const labels = { ...labelsByLanguage[languageKey(lang)], ...labelOverrides };
   const userId = readUserId(session?.accessToken);
@@ -151,6 +155,13 @@ export function AuthMiniButton({
           </Button>
         ) : null}
         <DialogFooter>
+          <Button
+            onClick={() => openPasskeyRegistrationPage()}
+            type="button"
+            variant="outline"
+          >
+            {labels.addPasskey}
+          </Button>
           <Button asChild variant="outline">
             <a
               href={

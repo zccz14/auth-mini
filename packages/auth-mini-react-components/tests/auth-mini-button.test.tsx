@@ -70,6 +70,9 @@ describe('AuthMiniButton', () => {
 
   it('opens an account IconButton with the signed-in user ID and actions', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
+    const focus = vi.fn();
+    const popup = { focus } as unknown as Window;
+    const open = vi.spyOn(window, 'open').mockReturnValue(popup);
     vi.stubGlobal('navigator', { clipboard: { writeText } });
     session.getState.mockReturnValue(authenticated);
     renderButton();
@@ -89,6 +92,15 @@ describe('AuthMiniButton', () => {
     expect(
       screen.getByRole('link', { name: 'Manage sign-in methods' }),
     ).toHaveAttribute('target', '_blank');
+    const addPasskey = screen.getByRole('button', { name: 'Add passkey' });
+    expect(addPasskey).toHaveAttribute('data-variant', 'outline');
+    fireEvent.click(addPasskey);
+    expect(open).toHaveBeenCalledWith(
+      'https://auth.example.test/web/#/passkey/register',
+      'auth-mini-passkey-registration',
+      'popup,width=520,height=720,resizable=yes,scrollbars=yes',
+    );
+    expect(focus).toHaveBeenCalledOnce();
     expect(screen.getByRole('button', { name: 'Sign Out' })).toHaveAttribute(
       'data-variant',
       'destructive',
@@ -110,6 +122,7 @@ describe('AuthMiniButton', () => {
       'data-variant',
       'destructive',
     );
+    expect(screen.getByRole('button', { name: '添加通行密钥' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: '退出登录' }));
     await waitFor(() => expect(session.logout).toHaveBeenCalledOnce());
   });

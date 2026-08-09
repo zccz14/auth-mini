@@ -69,6 +69,19 @@ function SessionReader({ name }: { name: string }) {
   );
 }
 
+function PasskeyRegistrationButton({
+  onOpen,
+}: {
+  onOpen: (popup: Window | null) => void;
+}) {
+  const { openPasskeyRegistrationPage } = useAuthMini();
+  return (
+    <button onClick={() => onOpen(openPasskeyRegistrationPage())} type="button">
+      Register passkey
+    </button>
+  );
+}
+
 describe('AuthMiniProvider', () => {
   let listener: ((next: SessionSnapshot) => void) | undefined;
 
@@ -310,6 +323,50 @@ describe('AuthMiniProvider', () => {
         'auth-mini.react.login.state:https://auth.example.test/',
       ),
     ).toBe('state-123');
+  });
+
+  it('opens and focuses the registration popup from the configured base URL', () => {
+    const focus = vi.fn();
+    const popup = { focus } as unknown as Window;
+    const onOpen = vi.fn();
+    const open = vi.spyOn(window, 'open').mockReturnValue(popup);
+
+    render(
+      <AuthMiniProvider
+        autoRedirectToLogin={false}
+        authMiniBaseUrl="https://auth.example.test"
+      >
+        <PasskeyRegistrationButton onOpen={onOpen} />
+      </AuthMiniProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Register passkey' }));
+
+    expect(open).toHaveBeenCalledWith(
+      'https://auth.example.test/web/#/passkey/register',
+      'auth-mini-passkey-registration',
+      'popup,width=520,height=720,resizable=yes,scrollbars=yes',
+    );
+    expect(focus).toHaveBeenCalledOnce();
+    expect(onOpen).toHaveBeenCalledWith(popup);
+  });
+
+  it('returns null from the hook when the browser blocks the registration popup', () => {
+    const onOpen = vi.fn();
+    vi.spyOn(window, 'open').mockReturnValue(null);
+
+    render(
+      <AuthMiniProvider
+        autoRedirectToLogin={false}
+        authMiniBaseUrl="https://auth.example.test"
+      >
+        <PasskeyRegistrationButton onOpen={onOpen} />
+      </AuthMiniProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Register passkey' }));
+
+    expect(onOpen).toHaveBeenCalledWith(null);
   });
 
   it('unsubscribes when the provider is removed', () => {

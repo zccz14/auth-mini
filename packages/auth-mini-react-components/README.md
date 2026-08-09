@@ -104,9 +104,10 @@ the Browser SDK, subscribes to session changes, or adopts a callback.
 ## Security settings
 
 The signed-in User IconButton opens a dialog that displays a copyable User ID,
-links to Auth Mini's real sign-in-method management page at `/web/#/`, and
-contains the destructive sign-out action. The management page opens in a new
-tab with `noopener,noreferrer` semantics by default.
+an **Add passkey** action, a link to Auth Mini's real sign-in-method management
+page at `/web/#/`, and the destructive sign-out action. Add passkey opens the
+dedicated registration popup using the Provider configuration. The management
+page opens in a new tab with `noopener,noreferrer` semantics by default.
 
 The downstream app's access token has the downstream app audience, while
 Auth Mini account management requires Auth Mini's self audience. The user may
@@ -116,16 +117,19 @@ transfer a downstream token across that boundary.
 ## Passkey registration popup
 
 `openPasskeyRegistrationPage` opens Auth Mini's dedicated passkey-registration
-page in a named popup. The page owns the WebAuthn ceremony on the Auth Mini
-origin, so call it from a user interaction and pass the same base URL used by
-the Provider.
+page in a named popup. The Provider supplies its configured Auth Mini base URL,
+so call it from a user interaction below that Provider.
 
 ```tsx
-import { openPasskeyRegistrationPage } from 'auth-mini-react-components';
+import { useAuthMini } from 'auth-mini-react-components';
 
-<button onClick={() => openPasskeyRegistrationPage('https://auth.example.com')}>
-  Register passkey
-</button>;
+function RegisterPasskeyButton() {
+  const { openPasskeyRegistrationPage } = useAuthMini();
+
+  return (
+    <button onClick={openPasskeyRegistrationPage}>Register passkey</button>
+  );
+}
 ```
 
 The function returns the popup window, or `null` when the browser blocks it.
@@ -147,8 +151,9 @@ Mini session.
 
 `useAuthMini()` must be called below `AuthMiniProvider`. It returns the shared
 `sdk`, `session`, `status`, `isReady`, `isAuthenticated`, `error`, `signIn`,
-and `signOut` values. The Browser SDK remains the authority for session tokens;
-the hook does not create a second token store.
+`signOut`, and `openPasskeyRegistrationPage` values. The Browser SDK remains
+the authority for session tokens; the hook does not create a second token
+store.
 
 ## AuthMiniButton props
 
@@ -161,4 +166,4 @@ Provider configuration.
 | `securitySettingsUrl`          | Overrides the default Auth Mini `/web/#/` target.                                |
 | `securitySettingsTarget`       | `_blank` by default; `_self` is supported.                                       |
 | `variant`, `size`, `className` | Match familiar shadcn button customization when signed out.                      |
-| `labels`                       | Overrides individual visible control text.                                       |
+| `labels`                       | Overrides individual visible control text, including `addPasskey`.               |
