@@ -105,6 +105,12 @@ export const en = {
   'home.emailNotVerified': 'No verified email on this account.',
   'home.registerPasskey': 'Register passkey',
   'home.registering': 'Registering...',
+  'passkeyRegistration.title': 'Register a PassKey',
+  'passkeyRegistration.description':
+    'Add a passkey to your Auth Mini account from this secure window.',
+  'passkeyRegistration.signInRequired':
+    'Sign in to Auth Mini before registering a passkey.',
+  'passkeyRegistration.registered': 'Your passkey is ready to use.',
   'home.defaultEd25519Name': 'ED25519 key',
   'home.generateKey': 'Generate key',
   'home.registerPublicKey': 'Register public key',
@@ -277,6 +283,10 @@ export const zhCN: Record<TranslationKey, string> = {
   'home.emailNotVerified': '此账户没有已验证的邮箱。',
   'home.registerPasskey': '注册通行密钥',
   'home.registering': '正在注册...',
+  'passkeyRegistration.title': '注册通行密钥',
+  'passkeyRegistration.description': '在此安全窗口中为 Auth Mini 账户添加通行密钥。',
+  'passkeyRegistration.signInRequired': '请先登录 Auth Mini，再注册通行密钥。',
+  'passkeyRegistration.registered': '通行密钥已可使用。',
   'home.defaultEd25519Name': 'ED25519 密钥',
   'home.generateKey': '生成密钥',
   'home.registerPublicKey': '注册公钥',

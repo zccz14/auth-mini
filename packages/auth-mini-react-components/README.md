@@ -113,6 +113,25 @@ Auth Mini account management requires Auth Mini's self audience. The user may
 therefore need to sign in again in that Auth Mini tab; the component does not
 transfer a downstream token across that boundary.
 
+## Passkey registration popup
+
+`openPasskeyRegistrationPage` opens Auth Mini's dedicated passkey-registration
+page in a named popup. The page owns the WebAuthn ceremony on the Auth Mini
+origin, so call it from a user interaction and pass the same base URL used by
+the Provider.
+
+```tsx
+import { openPasskeyRegistrationPage } from 'auth-mini-react-components';
+
+<button onClick={() => openPasskeyRegistrationPage('https://auth.example.com')}>
+  Register passkey
+</button>;
+```
+
+The function returns the popup window, or `null` when the browser blocks it.
+It does not transfer the downstream app's token; the popup uses its own Auth
+Mini session.
+
 ## AuthMiniProvider props
 
 | Prop                  | Description                                                                                                      |

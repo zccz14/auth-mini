@@ -33,12 +33,19 @@ import {
 type LoginMethod = 'email' | 'ed25519';
 type PendingAction = 'email-start' | 'email-verify' | 'passkey' | 'ed25519';
 
+const PASSKEY_REGISTRATION_PATH = '/passkey/register';
+
 export function LoginRoute() {
   const location = useLocation();
   const navigate = useNavigate();
   const { adoptDemoSession, config, sdk, setupState } = useDemo();
   const { t } = useI18n();
   const request = parseLoginRequest(location.search, window.location.search);
+  const selfLoginReturnPath =
+    new URLSearchParams(location.search).get('return_to') ===
+    PASSKEY_REGISTRATION_PATH
+      ? PASSKEY_REGISTRATION_PATH
+      : '/';
   const [method, setMethod] = useState<LoginMethod>('email');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
@@ -165,7 +172,7 @@ export function LoginRoute() {
     if (request.target.kind === 'self') {
       await adoptDemoSession(toDemoSessionTokens(tokens));
       setMessage(t('login.signedIn'));
-      navigate('/');
+      navigate(selfLoginReturnPath);
       return;
     }
 

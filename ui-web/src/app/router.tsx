@@ -4,6 +4,7 @@ import { DemoProvider } from '@/app/providers/demo-provider';
 import { AdminRoute } from '@/routes/admin';
 import { HomeRoute } from '@/routes/home';
 import { LoginRoute } from '@/routes/login';
+import { PasskeyRegistrationRoute } from '@/routes/passkey-registration';
 import { SetupRoute } from '@/routes/setup';
 import { I18nProvider } from '@/lib/i18n';
 
@@ -13,6 +14,10 @@ export function AppRouter() {
       <DemoProvider>
         <Routes>
           <Route path="/login" element={<LoginRoute />} />
+          <Route
+            path="/passkey/register"
+            element={<PasskeyRegistrationRoute />}
+          />
           <Route element={<AppShell />}>
             <Route path="/" element={<HomeRoute />} />
             <Route path="/initialize" element={<SetupRoute />} />
