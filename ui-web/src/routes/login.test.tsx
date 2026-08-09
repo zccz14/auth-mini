@@ -31,6 +31,7 @@ const sdkMocks = vi.hoisted(() => {
   const emailStart = vi.fn();
   const emailVerify = vi.fn();
   const passkeyAuthenticate = vi.fn();
+  const passkeyRegister = vi.fn();
   const ed25519Start = vi.fn();
   const ed25519Verify = vi.fn();
   const setupFetch = vi.fn();
@@ -46,7 +47,7 @@ const sdkMocks = vi.hoisted(() => {
         verify: ed25519Verify,
       },
       currentUser: { fetch: vi.fn() },
-      passkey: { register: vi.fn(), authenticate: passkeyAuthenticate },
+      passkey: { register: passkeyRegister, authenticate: passkeyAuthenticate },
       session: {
         getState: () => sessionState.current,
         onChange: vi.fn(() => vi.fn()),
@@ -59,6 +60,7 @@ const sdkMocks = vi.hoisted(() => {
     emailStart,
     emailVerify,
     passkeyAuthenticate,
+    passkeyRegister,
     ed25519Start,
     ed25519Verify,
     setupFetch,
@@ -155,6 +157,7 @@ describe('LoginRoute', () => {
     sdkMocks.emailStart.mockReset();
     sdkMocks.emailVerify.mockReset();
     sdkMocks.passkeyAuthenticate.mockReset();
+    sdkMocks.passkeyRegister.mockReset();
     sdkMocks.ed25519Start.mockReset();
     sdkMocks.ed25519Verify.mockReset();
     sdkMocks.setupFetch.mockReset();
@@ -205,6 +208,22 @@ describe('LoginRoute', () => {
     expect(
       screen.queryByRole('link', { name: 'Home' }),
     ).not.toBeInTheDocument();
+  });
+
+  it('requires a self sign-in before passkey registration', async () => {
+    const user = userEvent.setup();
+
+    renderLogin('/passkey/register');
+
+    expect(
+      await screen.findByText(
+        'Sign in to Auth Mini before registering a passkey.',
+      ),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Sign in' }),
+    ).toBeInTheDocument();
   });
 
   it('always identifies the HTTPS application domain', async () => {
@@ -412,7 +431,7 @@ describe('LoginRoute', () => {
     vi.mocked(Date.now).mockRestore();
   });
 
-  it('signs in locally when redirect_uri is missing', async () => {
+  it('returns to passkey registration after a local sign-in and registers', async () => {
     const user = userEvent.setup();
     sdkMocks.emailStart.mockResolvedValueOnce({ ok: true });
     sdkMocks.emailVerify.mockResolvedValueOnce({
@@ -423,7 +442,7 @@ describe('LoginRoute', () => {
       expiresAt: '2026-06-30T01:00:00.000Z',
     });
 
-    renderLogin('/login');
+    renderLogin('/login?return_to=%2Fpasskey%2Fregister');
 
     await user.type(screen.getByLabelText('Email address'), 'user@example.com');
     await user.click(await expectButtonEnabled('Send email code'));
@@ -448,7 +467,12 @@ describe('LoginRoute', () => {
     expect(sdkMocks.sendLoginCallback).not.toHaveBeenCalled();
     expect(sdkMocks.clearLocal).not.toHaveBeenCalled();
     expect(
-      await screen.findByRole('heading', { name: 'Account' }),
+      await screen.findByRole('heading', { name: 'Register a PassKey' }),
+    ).toBeInTheDocument();
+    await user.click(await expectButtonEnabled('Register passkey'));
+    expect(sdkMocks.passkeyRegister).toHaveBeenCalledOnce();
+    expect(
+      await screen.findByText('Your passkey is ready to use.'),
     ).toBeInTheDocument();
   });
 
