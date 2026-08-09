@@ -1,5 +1,11 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthMiniButton } from '../src/auth-mini-button.js';
 import { AuthMiniProvider } from '../src/auth-mini-provider.js';
 
@@ -31,17 +37,17 @@ const authenticated = {
   status: 'authenticated' as const,
   authenticated: true,
   sessionId: 'session',
-  accessToken: 'access',
+  accessToken: 'header.eyJzdWIiOiJ1c2VyLTEifQ.signature',
   refreshToken: 'refresh',
 };
 
-function renderButton() {
+function renderButton(lang = 'en') {
   return render(
     <AuthMiniProvider
       autoRedirectToLogin={false}
       authMiniBaseUrl="https://auth.example.test"
     >
-      <AuthMiniButton />
+      <AuthMiniButton lang={lang} />
     </AuthMiniProvider>,
   );
 }
@@ -53,9 +59,18 @@ describe('AuthMiniButton', () => {
     window.sessionStorage.clear();
     session.getState.mockReturnValue(anonymous);
     session.onChange.mockReturnValue(() => undefined);
+    session.logout.mockResolvedValue(undefined);
   });
 
-  it('opens an accessible settings dialog for an authenticated shared session', async () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('opens an account IconButton with the signed-in user ID and actions', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
     session.getState.mockReturnValue(authenticated);
     renderButton();
 
@@ -63,18 +78,41 @@ describe('AuthMiniButton', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Account' }));
 
     expect(screen.getByRole('dialog')).toHaveTextContent('You are signed in');
+    fireEvent.click(screen.getByRole('button', { name: 'User ID user-1' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('user-1'));
+    expect(screen.getByRole('button', { name: 'User ID Copied' })).toBeVisible();
     expect(
-      screen.getByRole('link', { name: 'Manage security settings' }),
+      screen.getByRole('link', { name: 'Manage sign-in methods' }),
     ).toHaveAttribute('href', 'https://auth.example.test/web/#/');
     expect(
-      screen.getByRole('link', { name: 'Manage security settings' }),
+      screen.getByRole('link', { name: 'Manage sign-in methods' }),
     ).toHaveAttribute('target', '_blank');
+    expect(screen.getByRole('button', { name: 'Sign Out' })).toHaveClass(
+      'auth-mini-button--destructive',
+    );
+  });
+
+  it('uses the requested Chinese text and signs out from the dialog', async () => {
+    session.getState.mockReturnValue(authenticated);
+    renderButton('zh-CN');
+
+    await screen.findByRole('button', { name: '账户' });
+    fireEvent.click(screen.getByRole('button', { name: '账户' }));
+
+    expect(
+      screen.getByRole('link', { name: '管理登录方式' }),
+    ).toHaveAttribute('href', 'https://auth.example.test/web/#/');
+    expect(screen.getByRole('button', { name: '退出登录' })).toHaveClass(
+      'auth-mini-button--destructive',
+    );
+    fireEvent.click(screen.getByRole('button', { name: '退出登录' }));
+    await waitFor(() => expect(session.logout).toHaveBeenCalledOnce());
   });
 
   it('reads the provider session instead of creating another SDK', async () => {
     renderButton();
 
-    await screen.findByRole('button', { name: 'Sign in with Auth Mini' });
+    await screen.findByRole('button', { name: 'Sign In' });
     expect(session.getState).toHaveBeenCalledOnce();
     expect(session.onChange).toHaveBeenCalledOnce();
   });
@@ -91,8 +129,14 @@ describe('AuthMiniButton', () => {
     ).toBeDisabled();
   });
 
+  it('falls back to English for an unsupported language', async () => {
+    const view = renderButton('fr-FR');
+
+    expect(await view.findByRole('button', { name: 'Sign In' })).toBeEnabled();
+  });
+
   it('requires an AuthMiniProvider', () => {
-    expect(() => render(<AuthMiniButton />)).toThrow(
+    expect(() => render(<AuthMiniButton lang="en" />)).toThrow(
       'useAuthMini must be used within an AuthMiniProvider',
     );
   });
