@@ -98,6 +98,21 @@ impl AuthMiniLayer {
         Ok(Self { verifier })
     }
 
+    /// Returns immediately and begins warming the issuer JWKS in the background.
+    ///
+    /// Until the first successful refresh, token-bearing requests fail closed with
+    /// [`AuthMiniError::JwksUnavailable`]. Use this only when process liveness
+    /// must not depend on the issuer network round trip.
+    pub fn from_issuer_background(
+        issuer: impl AsRef<str>,
+        audience: impl Into<String>,
+        policy: JwksCachePolicy,
+    ) -> Result<Self, AuthMiniError> {
+        let verifier =
+            AuthMiniVerifier::from_issuer_background(issuer.as_ref(), audience.into(), policy)?;
+        Ok(Self { verifier })
+    }
+
     /// Returns the shared verifier backing this layer.
     pub fn verifier(&self) -> AuthMiniVerifier {
         self.verifier.clone()
@@ -198,6 +213,31 @@ impl AuthMiniVerifier {
         audience: String,
         policy: JwksCachePolicy,
     ) -> Result<Self, AuthMiniError> {
+        let verifier = Self::new(issuer, audience, policy)?;
+        verifier.refresh_now().await?;
+        verifier.start_poller();
+        Ok(verifier)
+    }
+
+    /// Returns immediately and begins the first issuer JWKS refresh in the background.
+    ///
+    /// Verification fails closed with [`AuthMiniError::JwksUnavailable`] until a
+    /// JWKS document has been fetched and validated.
+    pub fn from_issuer_background(
+        issuer: &str,
+        audience: String,
+        policy: JwksCachePolicy,
+    ) -> Result<Self, AuthMiniError> {
+        let verifier = Self::new(issuer, audience, policy)?;
+        let refresh = verifier.clone();
+        tokio::spawn(async move {
+            let _ = refresh.refresh_now().await;
+        });
+        verifier.start_poller();
+        Ok(verifier)
+    }
+
+    fn new(issuer: &str, audience: String, policy: JwksCachePolicy) -> Result<Self, AuthMiniError> {
         if audience.is_empty()
             || policy.max_stale < policy.refresh_after
             || policy.poll_interval.is_zero()
@@ -210,7 +250,7 @@ impl AuthMiniVerifier {
             .build()
             .map_err(|_| AuthMiniError::JwksUnavailable)?;
         let (refresh_events, _) = watch::channel(0_u64);
-        let verifier = Self {
+        Ok(Self {
             inner: Arc::new(VerifierInner {
                 issuer,
                 audience,
@@ -225,11 +265,7 @@ impl AuthMiniVerifier {
                 refresh_events,
                 background_refresh_scheduled: AtomicBool::new(false),
             }),
-        };
-
-        verifier.refresh_now().await?;
-        verifier.start_poller();
-        Ok(verifier)
+        })
     }
 
     /// Verifies one bearer access token against the latest valid JWKS cache.
@@ -410,15 +446,15 @@ impl AuthMiniVerifier {
 
     async fn next_poll_delay(&self) -> Duration {
         let cache = self.inner.cache.read().await.as_ref().cloned();
-        let Some(cache) = cache else {
-            return self.inner.policy.poll_interval;
-        };
         let refresh = self.inner.refresh.lock().await;
         if let Some(failure) = refresh.failure.as_ref() {
-            if failure.generation == Some(cache.generation) {
+            if failure.generation == cache.as_ref().map(|cache| cache.generation) {
                 return failure.retry_at.saturating_duration_since(Instant::now());
             }
         }
+        let Some(cache) = cache else {
+            return self.inner.policy.poll_interval;
+        };
         let age = cache.fetched_at.elapsed();
         if age >= self.inner.policy.refresh_after {
             self.inner.policy.poll_interval
@@ -840,6 +876,34 @@ mod tests {
             .expect("request completes");
 
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn background_warmup_fails_closed_until_the_first_jwks_fetch_succeeds() {
+        let key = signing_key(1);
+        let (issuer, state) = mock_issuer(jwks_document("current", &key)).await;
+        state.lock().await.delay = Duration::from_millis(50);
+        let verifier = AuthMiniLayer::from_issuer_background(&issuer, "api.example.com", policy())
+            .expect("background warmup starts")
+            .verifier();
+        let access_token = token("current", &key, &issuer, "api.example.com");
+
+        assert!(matches!(
+            verifier.verify(&access_token).await,
+            Err(AuthMiniError::JwksUnavailable)
+        ));
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if verifier.verify(&access_token).await.is_ok() {
+                    break;
+                }
+                sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("background warmup completes");
+        assert_eq!(state.lock().await.calls, 1);
     }
 
     #[tokio::test]

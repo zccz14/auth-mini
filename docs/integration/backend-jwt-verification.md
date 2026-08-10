@@ -73,6 +73,12 @@ downstream authorization role. The cache uses stale-while-revalidate for known
 keys, single-flights key rotation refreshes, backs off failed refreshes from one
 second to one minute, and refuses cache entries at or beyond `max_stale`.
 
+When a process must expose liveness before the issuer round trip completes, use
+`AuthMiniLayer::from_issuer_background` instead. It starts the same initial
+JWKS fetch immediately without awaiting it. Until that fetch succeeds, every
+JWT-bearing request fails closed with `503 Service Unavailable`; no token is
+accepted without a validated key set.
+
 ## Why `/jwks` exists
 
 `/jwks` lets API consumers verify access tokens without sharing auth-mini's private keys and without hitting the auth database for every protected request. auth-mini initializes and publishes `CURRENT` and `STANDBY` keys automatically when the database is created.

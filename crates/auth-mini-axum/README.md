@@ -11,6 +11,11 @@ the cache is stale and one background refresh runs. A poller refreshes keys on
 the configured interval. An unknown `kid` always causes a synchronous,
 coalesced refresh; keys older than `max_stale` are never used.
 
+Services whose liveness must not wait for an issuer network round trip can use
+`AuthMiniLayer::from_issuer_background` instead. It starts the same JWKS warmup
+immediately in the background; until that first validated fetch completes,
+token-bearing requests fail closed with `503 Service Unavailable`.
+
 ```no_run
 use auth_mini_axum::{AuthMiniLayer, JwksCachePolicy};
 use axum::{routing::get, Router};
