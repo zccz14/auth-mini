@@ -69,6 +69,15 @@ export function createDeviceSdk(options: DeviceSdkOptions): DeviceSdkApi {
 
       state.setRecovering(next);
     },
+    setAuthenticatedLocal(
+      next: Parameters<typeof state.setAuthenticatedLocal>[0],
+    ) {
+      if (disposed) {
+        return;
+      }
+
+      state.setAuthenticatedLocal(next);
+    },
     setAnonymous() {
       if (disposed) {
         return;

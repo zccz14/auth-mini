@@ -2,6 +2,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createBrowserSdk } from '../../src/sdk/browser.js';
+import {
+  createBrowserSdkInternal,
+  type BrowserLockManager,
+} from '../../src/sdk/browser-runtime.js';
 import type { AuthMiniApi } from '../../src/sdk/types.js';
 import {
   fakeStorage,
@@ -403,6 +407,100 @@ describe('browser module sdk', () => {
     }
   });
 
+  it('serializes refresh across tabs and adopts the winner session', async () => {
+    const storage = fakeStorage();
+    seedBrowserSdkStorage(storage, 'https://auth.example.com', {
+      sessionId: 'session-1',
+      accessToken: 'access-1',
+      refreshToken: 'refresh-1',
+      receivedAt: '2026-04-03T00:00:00.000Z',
+      expiresAt: '2026-04-03T00:15:00.000Z',
+    });
+    const refreshStarted = deferred<void>();
+    const releaseRefresh = deferred<void>();
+    const fetch = vi.fn(async () => {
+      refreshStarted.resolve();
+      await releaseRefresh.promise;
+      return jsonResponse({
+        session_id: 'session-1',
+        access_token: 'access-2',
+        refresh_token: 'refresh-2',
+        expires_in: 900,
+      });
+    });
+    const lockManager = exclusiveLockManager();
+    const first = createBrowserSdkInternal('https://auth.example.com', {
+      fetch,
+      lockManager,
+      storage,
+    });
+    const second = createBrowserSdkInternal('https://auth.example.com', {
+      fetch,
+      lockManager,
+      storage,
+    });
+
+    const firstRefresh = first.session.refresh();
+    await refreshStarted.promise;
+    const secondRefresh = second.session.refresh();
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    releaseRefresh.resolve();
+
+    await expect(Promise.all([firstRefresh, secondRefresh])).resolves.toEqual([
+      expect.objectContaining({ refreshToken: 'refresh-2' }),
+      expect.objectContaining({ refreshToken: 'refresh-2' }),
+    ]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(second.session.getState()).toMatchObject({
+      status: 'authenticated',
+      refreshToken: 'refresh-2',
+    });
+  });
+
+  it('releases the cross-tab refresh lock after the winner fails', async () => {
+    const storage = fakeStorage();
+    seedBrowserSdkStorage(storage, 'https://auth.example.com', {
+      sessionId: 'session-1',
+      accessToken: 'access-1',
+      refreshToken: 'refresh-1',
+      receivedAt: '2026-04-03T00:00:00.000Z',
+      expiresAt: '2026-04-03T00:15:00.000Z',
+    });
+    const fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('network unavailable'))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          session_id: 'session-1',
+          access_token: 'access-2',
+          refresh_token: 'refresh-2',
+          expires_in: 900,
+        }),
+      );
+    const lockManager = exclusiveLockManager();
+    const first = createBrowserSdkInternal('https://auth.example.com', {
+      fetch,
+      lockManager,
+      storage,
+    });
+    const second = createBrowserSdkInternal('https://auth.example.com', {
+      fetch,
+      lockManager,
+      storage,
+    });
+
+    const firstRefresh = first.session.refresh();
+    const secondRefresh = second.session.refresh();
+
+    await expect(firstRefresh).rejects.toThrow('network unavailable');
+    await expect(secondRefresh).resolves.toMatchObject({
+      refreshToken: 'refresh-2',
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps the browser module declaration free of singleton global typings', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/sdk/browser.ts'),
@@ -447,3 +545,38 @@ describe('browser module sdk', () => {
     ).not.toContain('createDeviceSdk');
   });
 });
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+
+  return { promise, reject, resolve };
+}
+
+function exclusiveLockManager(): BrowserLockManager {
+  let tail = Promise.resolve();
+
+  return {
+    async request<T>(
+      _name: string,
+      _options: { mode: 'exclusive' },
+      callback: () => Promise<T>,
+    ): Promise<T> {
+      const predecessor = tail;
+      const released = deferred<void>();
+      tail = predecessor.then(() => released.promise);
+
+      await predecessor;
+
+      try {
+        return await callback();
+      } finally {
+        released.resolve();
+      }
+    },
+  };
+}
