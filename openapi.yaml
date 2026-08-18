@@ -1630,7 +1630,6 @@ components:
         - id
         - rawId
         - type
-        - clientExtensionResults
         - response
       properties:
         id:
@@ -1648,21 +1647,17 @@ components:
           type: object
           additionalProperties: true
           description: >-
-            Client-reported, unsigned registration extension output. auth-mini
-            requires credProps.rk=true as a protocol policy signal; it is not
-            cryptographic proof that the authenticator stored a resident key.
-          required:
-            - credProps
+            Client-reported, unsigned registration extension output. Auth Mini
+            requests credProps for discoverable-credential interoperability;
+            an explicit credProps.rk=false is rejected, while an unavailable
+            report does not replace cryptographic registration verification.
           properties:
             credProps:
               type: object
               additionalProperties: true
-              required:
-                - rk
               properties:
                 rk:
                   type: boolean
-                  const: true
         response:
           type: object
           additionalProperties: false

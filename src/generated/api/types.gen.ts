@@ -291,11 +291,11 @@ export type RegistrationCredentialJson = {
     type: 'public-key';
     authenticatorAttachment?: string;
     /**
-     * Client-reported, unsigned registration extension output. auth-mini requires credProps.rk=true as a protocol policy signal; it is not cryptographic proof that the authenticator stored a resident key.
+     * Client-reported, unsigned registration extension output. Auth Mini requests credProps for discoverable-credential interoperability; an explicit credProps.rk=false is rejected, while an unavailable report does not replace cryptographic registration verification.
      */
-    clientExtensionResults: {
-        credProps: {
-            rk: true;
+    clientExtensionResults?: {
+        credProps?: {
+            rk?: boolean;
             [key: string]: unknown;
         };
         [key: string]: unknown;

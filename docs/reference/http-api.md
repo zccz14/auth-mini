@@ -291,7 +291,7 @@ Example request body:
 }
 ```
 
-`clientExtensionResults.credProps.rk` must be the JSON boolean `true`. `false`, a missing value, `null`, or another JSON type returns the existing generic `400 invalid_webauthn_registration` response. The server still performs the complete WebAuthn registration verification; the unsigned extension result never replaces challenge, origin, RP ID, user-verification, algorithm, or attestation checks.
+Auth Mini requests `clientExtensionResults.credProps` to check discoverable-credential interoperability. An explicit JSON boolean `false` for `credProps.rk` returns the existing generic `400 invalid_webauthn_registration` response. A missing, unavailable, `null`, or otherwise unrecognized report is accepted only after complete WebAuthn registration verification; the unsigned extension result never replaces challenge, origin, RP ID, user-verification, algorithm, attestation, or credential-storage checks.
 
 Rejected registration does not consume the challenge or write, update, or delete a credential. A cryptographically valid duplicate credential ID also returns `400 invalid_webauthn_registration`; its transaction rolls back, preserving the challenge and all fields of the existing row.
 

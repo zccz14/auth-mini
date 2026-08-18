@@ -61,7 +61,7 @@ Send the browser's registration extension result with the credential:
 }
 ```
 
-auth-mini accepts registration only when `clientExtensionResults.credProps.rk` is the JSON boolean `true` and the complete WebAuthn ceremony is valid. A missing value, `false`, `null`, or a value of another type returns `400 invalid_webauthn_registration`. The challenge remains unconsumed and no credential is written.
+auth-mini requests a discoverable credential with `residentKey: "required"` and `credProps: true`, then completes the full WebAuthn ceremony. `clientExtensionResults.credProps.rk` is an unsigned compatibility report: an explicit JSON boolean `false` returns `400 invalid_webauthn_registration`, while a missing, unavailable, or unrecognized report does not replace or weaken challenge, origin, RP ID, user-verification, attestation, or credential-storage verification.
 
 ## Authentication flow
 

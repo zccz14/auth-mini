@@ -433,7 +433,9 @@ pub(crate) fn register_verify(
         return Err(RegisterVerifyError::InvalidWebauthnRegistration);
     }
 
-    if !reports_discoverable_credential(request.credential.client_extension_results.as_ref()) {
+    if explicitly_reports_non_discoverable_credential(
+        request.credential.client_extension_results.as_ref(),
+    ) {
         return Err(RegisterVerifyError::InvalidWebauthnRegistration);
     }
 
@@ -541,13 +543,15 @@ fn ensure_registration_still_authorized(
     Ok(())
 }
 
-fn reports_discoverable_credential(client_extension_results: Option<&Value>) -> bool {
+fn explicitly_reports_non_discoverable_credential(
+    client_extension_results: Option<&Value>,
+) -> bool {
     client_extension_results
         .and_then(Value::as_object)
         .and_then(|results| results.get("credProps"))
         .and_then(Value::as_object)
         .and_then(|cred_props| cred_props.get("rk"))
-        == Some(&Value::Bool(true))
+        == Some(&Value::Bool(false))
 }
 
 pub(crate) fn authentication_verify(
@@ -1310,23 +1314,27 @@ mod tests {
     }
 
     #[test]
-    fn accepts_only_boolean_true_discoverable_credential_report() {
-        assert!(reports_discoverable_credential(Some(&json!({
-            "credProps": { "rk": true }
-        }))));
+    fn rejects_only_explicit_non_discoverable_credential_report() {
+        assert!(explicitly_reports_non_discoverable_credential(Some(
+            &json!({
+                "credProps": { "rk": false }
+            })
+        )));
 
-        for rejected in [
+        for accepted in [
             None,
             Some(json!({})),
             Some(json!({ "credProps": {} })),
-            Some(json!({ "credProps": { "rk": false } })),
+            Some(json!({ "credProps": { "rk": true } })),
             Some(json!({ "credProps": { "rk": null } })),
             Some(json!({ "credProps": { "rk": "true" } })),
             Some(json!({ "credProps": { "rk": 1 } })),
             Some(json!({ "credProps": true })),
             Some(json!([])),
         ] {
-            assert!(!reports_discoverable_credential(rejected.as_ref()));
+            assert!(!explicitly_reports_non_discoverable_credential(
+                accepted.as_ref()
+            ));
         }
     }
 

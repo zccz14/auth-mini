@@ -2839,13 +2839,19 @@ mod tests {
     }
 
     #[test]
-    fn webauthn_register_verify_rejects_non_true_cred_props_without_side_effects() {
+    fn webauthn_register_verify_rejects_explicit_false_cred_props_without_side_effects() {
         for (case_name, client_extension_results) in [
             (
                 "false",
                 Some(serde_json::json!({ "credProps": { "rk": false } })),
             ),
-            ("missing", None),
+            (
+                "false-with-other-results",
+                Some(serde_json::json!({
+                    "credProps": { "rk": false },
+                    "other": true
+                })),
+            ),
         ] {
             let db_path = test_db_path(&format!(
                 "http-webauthn-register-verify-cred-props-{case_name}"

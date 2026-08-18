@@ -177,23 +177,23 @@ describe('openapi contract', () => {
         credProps: { type: 'boolean', const: true },
       },
     });
-    expect(registrationCredential?.required).toContain(
+    expect(registrationCredential?.required ?? []).not.toContain(
       'clientExtensionResults',
     );
     expect(clientExtensionResults).toMatchObject({
       type: 'object',
       additionalProperties: true,
-      required: ['credProps'],
     });
+    expect(clientExtensionResults?.required).toBeUndefined();
     expect(clientExtensionResults?.description).toContain('unsigned');
     expect(credProps).toMatchObject({
       type: 'object',
       additionalProperties: true,
-      required: ['rk'],
       properties: {
-        rk: { type: 'boolean', const: true },
+        rk: { type: 'boolean' },
       },
     });
+    expect(credProps?.required).toBeUndefined();
     expect(
       operationAt(document.paths['/webauthn/register/verify'], 'post')
         .responses,
