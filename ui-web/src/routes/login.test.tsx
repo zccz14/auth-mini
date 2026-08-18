@@ -244,7 +244,7 @@ describe('LoginRoute', () => {
     expect(
       screen.getByText('This session is for Auth Mini itself.'),
     ).toBeInTheDocument();
-    expect(screen.getByText('auth.example.com')).toBeInTheDocument();
+    expect(screen.getByText('auth-mini')).toBeInTheDocument();
   });
 
   it('identifies a local app and its requested audience in both languages', async () => {

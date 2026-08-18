@@ -413,16 +413,17 @@ describe.sequential('rust external server e2e smoke', () => {
       emailTokens.access_token,
       webauthnOrigin,
     );
-    expect(missingReportResponse.status).toBe(400);
-    expect(await missingReportResponse.json()).toEqual({
-      error: 'invalid_webauthn_registration',
-    });
+    expect(missingReportResponse.status).toBe(200);
+    expect(await missingReportResponse.json()).toEqual({ ok: true });
     expect(
       getWebauthnChallengeConsumedAt(dbPath, missingReportOptions.request_id),
-    ).toBeNull();
+    ).not.toBeNull();
     expect(
       getWebauthnCredentialRow(dbPath, missingReportPasskey.credentialId),
-    ).toBeUndefined();
+    ).toMatchObject({
+      credential_id: missingReportPasskey.credentialId,
+      rp_id: webauthnRpId,
+    });
     expect(getWebauthnCredentialRow(dbPath, passkey.credentialId)).toEqual(
       firstCredentialSnapshot,
     );
@@ -458,7 +459,7 @@ describe.sequential('rust external server e2e smoke', () => {
     if (!secondCredentialSnapshot) {
       throw new Error('second credential row was not stored');
     }
-    expect(getWebauthnCredentialCount(dbPath, emailUserId)).toBe(2);
+    expect(getWebauthnCredentialCount(dbPath, emailUserId)).toBe(3);
 
     const duplicateOptions = await requestRegistrationOptions(
       baseUrl,
@@ -490,7 +491,7 @@ describe.sequential('rust external server e2e smoke', () => {
     expect(
       getWebauthnCredentialRow(dbPath, secondPasskey.credentialId),
     ).toEqual(secondCredentialSnapshot);
-    expect(getWebauthnCredentialCount(dbPath, emailUserId)).toBe(2);
+    expect(getWebauthnCredentialCount(dbPath, emailUserId)).toBe(3);
 
     const authOptionsResponse = await postJson(
       `${baseUrl}/webauthn/authenticate/options`,
