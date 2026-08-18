@@ -72,7 +72,7 @@ describe('sdk session flows', () => {
       error: 'internal_error',
     });
     expect(sdk.session.getState()).toMatchObject({
-      status: 'recovering',
+      status: 'authenticated',
       refreshToken: 'refresh-token',
       accessToken: 'access-token',
     });

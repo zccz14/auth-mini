@@ -97,8 +97,9 @@ async function signInWithPasskey() {
 - Integrations do not need to run an access-token refresh timer. Read `sdk.session.getState().accessToken` when sending a protected request, or subscribe with `sdk.session.onChange()`; do not retain the token string captured at login.
 - Browser background timers may be delayed while a page is suspended. Keep a single retry after a protected-request `401` by calling `sdk.session.refresh()`, then retry the request with the current session token.
 - Configure the issuer and passkey RP ID on the Auth Mini instance; passkey requests use that server-side configuration.
-- Multiple tabs sharing one session can still race during refresh-token rotation, but the loser tab enters `recovering` and usually converges to the latest shared session state.
-- That convergence shares session tokens/status only; account/profile data remains outside the high-level browser SDK contract.
+- Tabs of the same application origin serialize refresh-token rotation through an exclusive Web Locks API lock scoped to the normalized Auth Mini storage key. A tab that acquires the lock rereads shared browser storage first and adopts a winner's still-valid token pair instead of sending a second refresh request.
+- Refreshing is local transient state: it never writes an older token pair back to shared browser storage. When Web Locks is unavailable, the browser SDK retains `session_superseded` recovery as a compatibility fallback rather than pretending a localStorage lease is a mutex.
+- That coordination shares session tokens/status only; account/profile data remains outside the high-level browser SDK contract.
 
 ## Demo deployment guidance
 

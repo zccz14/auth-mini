@@ -12,6 +12,7 @@ type StateStore = {
   onChange(listener: (state: SessionSnapshot) => void): () => void;
   applyPersistedState(next: PersistedSdkState | null): void;
   setAuthenticated(next: SessionResult): void;
+  setAuthenticatedLocal(next: PersistedSdkState): void;
   setRecovering(next: PersistedSdkState): void;
   setAnonymous(): void;
   setAnonymousLocal(): void;
@@ -24,6 +25,7 @@ export function createSessionController(input: {
   recoveryTimeoutMs?: number;
   state: StateStore;
   waitForExternalStorage?: (timeoutMs: number) => Promise<void>;
+  withRefreshLock?: <T>(operation: () => Promise<T>) => Promise<T>;
 }) {
   let refreshPromise: Promise<SessionResult> | null = null;
   let supersededRecoveryPromise: Promise<void> | null = null;
@@ -61,17 +63,54 @@ export function createSessionController(input: {
         expiresAt: snapshot.expiresAt,
       });
 
-      refreshPromise = (async () => {
+      const refreshCurrentSession = async (): Promise<SessionResult> => {
+        const shared = input.readSharedState?.();
+        const adopted = newerUsableSharedSession(snapshot, shared);
+
+        if (adopted) {
+          input.state.setAuthenticated(adopted);
+          return adopted;
+        }
+
+        const current = shared ?? snapshot;
+
+        if (!current.refreshToken) {
+          throw createSdkError('missing_session', 'Missing refresh token');
+        }
+
+        if (!current.sessionId) {
+          throw createSdkError('missing_session', 'Missing session id');
+        }
+
+        input.state.setRecovering({
+          sessionId: current.sessionId,
+          accessToken: current.accessToken,
+          refreshToken: current.refreshToken,
+          receivedAt: current.receivedAt,
+          expiresAt: current.expiresAt,
+        });
+
         try {
           const response = await input.http.postJson<unknown>(
             '/session/refresh',
             {
-              session_id: snapshot.sessionId,
-              refresh_token: snapshot.refreshToken,
+              session_id: current.sessionId,
+              refresh_token: current.refreshToken,
             },
           );
 
           return await this.acceptSessionResponse(response);
+        } catch (error) {
+          input.state.setAuthenticatedLocal(current);
+          throw error;
+        }
+      };
+
+      refreshPromise = (async () => {
+        try {
+          return await (input.withRefreshLock
+            ? input.withRefreshLock(refreshCurrentSession)
+            : refreshCurrentSession());
         } catch (error) {
           if (isSessionSupersededError(error)) {
             const recoveryPromise = startSupersededRecovery(snapshot);
@@ -215,6 +254,40 @@ export function createSessionController(input: {
     input.state.setAnonymousLocal();
   }
 
+  function newerUsableSharedSession(
+    snapshot: SessionSnapshot,
+    shared: PersistedSdkState | null | undefined,
+  ): SessionResult | null {
+    if (
+      !shared?.sessionId ||
+      !shared.refreshToken ||
+      !shared.accessToken ||
+      !hasSharedSessionChanged(snapshot, shared) ||
+      needsRefresh(
+        {
+          status: 'recovering',
+          authenticated: false,
+          sessionId: shared.sessionId,
+          accessToken: shared.accessToken,
+          refreshToken: shared.refreshToken,
+          receivedAt: shared.receivedAt,
+          expiresAt: shared.expiresAt,
+        },
+        input.now(),
+      )
+    ) {
+      return null;
+    }
+
+    return {
+      sessionId: shared.sessionId,
+      accessToken: shared.accessToken,
+      refreshToken: shared.refreshToken,
+      receivedAt: shared.receivedAt ?? new Date(input.now()).toISOString(),
+      expiresAt: shared.expiresAt ?? new Date(input.now()).toISOString(),
+    };
+  }
+
   function adoptRecoveredSharedState(
     snapshot: SessionSnapshot,
   ): 'usable' | 'provisional' | 'none' {
@@ -228,28 +301,10 @@ export function createSessionController(input: {
       return 'none';
     }
 
-    if (
-      shared.accessToken &&
-      !needsRefresh(
-        {
-          status: 'recovering',
-          authenticated: false,
-          sessionId: shared.sessionId,
-          accessToken: shared.accessToken,
-          refreshToken: shared.refreshToken,
-          receivedAt: shared.receivedAt,
-          expiresAt: shared.expiresAt,
-        },
-        input.now(),
-      )
-    ) {
-      input.state.setAuthenticated({
-        sessionId: shared.sessionId,
-        accessToken: shared.accessToken,
-        refreshToken: shared.refreshToken,
-        receivedAt: shared.receivedAt ?? new Date(input.now()).toISOString(),
-        expiresAt: shared.expiresAt ?? new Date(input.now()).toISOString(),
-      });
+    const adopted = newerUsableSharedSession(snapshot, shared);
+
+    if (adopted) {
+      input.state.setAuthenticated(adopted);
       return 'usable';
     }
 

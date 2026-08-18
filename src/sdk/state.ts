@@ -40,10 +40,17 @@ export function createStateStore(input: Storage | SdkStatePersistence) {
       });
     },
     setRecovering(next: AuthenticatedStateInput): void {
-      updatePersistedState({
+      updateState({
         status: 'recovering',
         authenticated: false,
-        ...next,
+        ...clonePersistedState(next),
+      });
+    },
+    setAuthenticatedLocal(next: AuthenticatedStateInput): void {
+      updateState({
+        status: 'authenticated',
+        authenticated: true,
+        ...clonePersistedState(next),
       });
     },
     setAnonymous(): void {

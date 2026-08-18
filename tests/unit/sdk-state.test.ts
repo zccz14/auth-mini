@@ -129,6 +129,44 @@ describe('sdk state store', () => {
     expect(second.getState().status).toBe('anonymous');
   });
 
+  it('keeps refresh-in-progress state local to its tab', () => {
+    let persisted: PersistedSdkState | null = {
+      sessionId: 'session-1',
+      accessToken: 'access-winner',
+      refreshToken: 'refresh-winner',
+      receivedAt: '2026-04-03T00:02:00.000Z',
+      expiresAt: '2026-04-03T00:17:00.000Z',
+    };
+    const sdk = createStateStore({
+      clear() {
+        persisted = null;
+      },
+      read() {
+        return persisted;
+      },
+      write(next) {
+        persisted = next;
+      },
+    });
+
+    sdk.setRecovering({
+      sessionId: 'session-1',
+      accessToken: 'access-stale',
+      refreshToken: 'refresh-stale',
+      receivedAt: '2026-04-03T00:00:00.000Z',
+      expiresAt: '2026-04-03T00:03:00.000Z',
+    });
+
+    expect(sdk.getState()).toMatchObject({
+      status: 'recovering',
+      refreshToken: 'refresh-stale',
+    });
+    expect(persisted).toMatchObject({
+      accessToken: 'access-winner',
+      refreshToken: 'refresh-winner',
+    });
+  });
+
   it('notifies subscribers on transition', () => {
     const sdk = createStateStore(fakeStorage());
     const listener = vi.fn();

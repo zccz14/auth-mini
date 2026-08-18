@@ -160,7 +160,9 @@ Mini session.
 `sdk`, `session`, `status`, `isReady`, `isAuthenticated`, `error`, `signIn`,
 `signOut`, and `openPasskeyRegistrationPage` values. The Browser SDK remains
 the authority for session tokens; the hook does not create a second token
-store.
+store. Multiple Provider instances in same-origin tabs inherit the Browser SDK's
+exclusive refresh coordination, so the Provider does not create its own token
+mutex.
 
 ## AuthMiniButton props
 

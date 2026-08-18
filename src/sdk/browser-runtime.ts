@@ -9,8 +9,17 @@ import type {
   SessionSnapshot,
 } from './types.js';
 
+export type BrowserLockManager = {
+  request<T>(
+    name: string,
+    options: { mode: 'exclusive' },
+    callback: () => Promise<T>,
+  ): Promise<T>;
+};
+
 export type BrowserSdkFactoryOptions = {
   fetch?: FetchLike;
+  lockManager?: BrowserLockManager;
   now?: () => number;
   storage?: Storage;
 };
@@ -24,6 +33,7 @@ type InternalRuntimeDeps = InternalSdkDeps & {
   recoveryTimeoutMs?: number;
   storageKey?: string;
   storageSync?: StorageSync | null;
+  withRefreshLock?: <T>(operation: () => Promise<T>) => Promise<T>;
 };
 
 type RequestOptions = {
@@ -36,6 +46,7 @@ type SessionStore = {
   onChange(listener: Listener): () => void;
   setRecovering(next: PersistedSdkState): void;
   setAuthenticated(next: PersistedSdkState): void;
+  setAuthenticatedLocal(next: PersistedSdkState): void;
   setAnonymous(): void;
   applyPersistedState(next: PersistedSdkState | null): void;
   setAnonymousLocal(): void;
@@ -256,7 +267,7 @@ function createRuntime() {
         return () => listeners.delete(listener);
       },
       setRecovering(next) {
-        updatePersisted({
+        updateState({
           status: 'recovering',
           authenticated: false,
           ...clonePersisted(next),
@@ -264,6 +275,13 @@ function createRuntime() {
       },
       setAuthenticated(next) {
         updatePersisted({
+          status: 'authenticated',
+          authenticated: true,
+          ...clonePersisted(next),
+        });
+      },
+      setAuthenticatedLocal(next) {
+        updateState({
           status: 'authenticated',
           authenticated: true,
           ...clonePersisted(next),
@@ -459,15 +477,51 @@ function createRuntime() {
         if (!snapshot.sessionId) {
           throw createSdkError('missing_session', 'Missing session id');
         }
-        refreshPromise = (async () => {
+        const refreshCurrentSession = async () => {
+          const shared = input.readSharedState?.();
+          const adopted = newerUsableSharedSession(snapshot, shared);
+
+          if (adopted) {
+            input.state.setAuthenticated(adopted);
+            return adopted;
+          }
+
+          const current = shared ?? snapshot;
+
+          if (!current.refreshToken) {
+            throw createSdkError('missing_session', 'Missing refresh token');
+          }
+          if (!current.sessionId) {
+            throw createSdkError('missing_session', 'Missing session id');
+          }
+
+          input.state.setRecovering({
+            sessionId: current.sessionId,
+            accessToken: current.accessToken,
+            refreshToken: current.refreshToken,
+            receivedAt: current.receivedAt,
+            expiresAt: current.expiresAt,
+          });
+
           try {
             const response = await input.http.postJson('/session/refresh', {
-              session_id: snapshot.sessionId,
-              refresh_token: snapshot.refreshToken,
+              session_id: current.sessionId,
+              refresh_token: current.refreshToken,
             });
             return await controller.acceptSessionResponse(response, {
               clearOnMeFailure: 'auth-invalidating',
             });
+          } catch (error) {
+            input.state.setAuthenticatedLocal(current);
+            throw error;
+          }
+        };
+
+        refreshPromise = (async () => {
+          try {
+            return await (input.withRefreshLock
+              ? input.withRefreshLock(refreshCurrentSession)
+              : refreshCurrentSession());
           } catch (error) {
             if (isSessionSupersededError(error)) {
               const recoveryPromise = startSupersededRecovery(snapshot);
@@ -602,6 +656,29 @@ function createRuntime() {
       input.state.setAnonymousLocal();
     }
 
+    function newerUsableSharedSession(
+      snapshot: SessionSnapshot,
+      shared: PersistedSdkState | null | undefined,
+    ) {
+      if (
+        !shared?.sessionId ||
+        !shared.refreshToken ||
+        !shared.accessToken ||
+        !hasSharedSessionChanged(snapshot, shared) ||
+        needsRefresh(shared, input.now())
+      ) {
+        return null;
+      }
+
+      return {
+        sessionId: shared.sessionId,
+        accessToken: shared.accessToken,
+        refreshToken: shared.refreshToken,
+        receivedAt: shared.receivedAt ?? new Date(input.now()).toISOString(),
+        expiresAt: shared.expiresAt ?? new Date(input.now()).toISOString(),
+      };
+    }
+
     function adoptRecoveredSharedState(snapshot: SessionSnapshot) {
       const shared = input.readSharedState?.();
 
@@ -613,14 +690,10 @@ function createRuntime() {
         return 'none';
       }
 
-      if (shared.accessToken && !needsRefresh(shared, input.now())) {
-        input.state.setAuthenticated({
-          sessionId: shared.sessionId,
-          accessToken: shared.accessToken,
-          refreshToken: shared.refreshToken,
-          receivedAt: shared.receivedAt ?? new Date(input.now()).toISOString(),
-          expiresAt: shared.expiresAt ?? new Date(input.now()).toISOString(),
-        });
+      const adopted = newerUsableSharedSession(snapshot, shared);
+
+      if (adopted) {
+        input.state.setAuthenticated(adopted);
         return 'usable';
       }
 
@@ -856,6 +929,7 @@ function createRuntime() {
         readPersistedSdkState(input.storage, storageKey),
       recoveryTimeoutMs: input.recoveryTimeoutMs,
       state,
+      withRefreshLock: input.withRefreshLock,
       // @ts-expect-error preserve extracted helper signature
       waitForExternalStorage(timeoutMs) {
         return new Promise<void>((resolve) => {
@@ -939,6 +1013,17 @@ function createRuntime() {
       getDefaultStorage: () => browser.localStorage,
     });
 
+    const lockManager: BrowserLockManager | undefined =
+      input.lockManager ??
+      (browser.navigator?.locks as BrowserLockManager | undefined);
+    const withRefreshLock = lockManager
+      ? <T>(operation: () => Promise<T>) =>
+          lockManager.request(
+            `${storageKey}:refresh`,
+            { mode: 'exclusive' },
+            operation,
+          )
+      : undefined;
     const sdk = createAuthMiniInternal({
       baseUrl: normalizedBaseUrl,
       fetch: resolveFetch(input.fetch),
@@ -949,6 +1034,7 @@ function createRuntime() {
       storage,
       storageKey,
       storageSync: createBrowserStorageSync(browser, storage, storageKey),
+      withRefreshLock,
     });
 
     let coordinators = browserRefreshCoordinators.get(storage);
