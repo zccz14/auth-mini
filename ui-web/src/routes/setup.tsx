@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Ed25519Keypair } from '@/components/app/ed25519-keypair';
 import {
   Card,
   CardContent,
@@ -99,18 +100,7 @@ export function SetupRoute() {
 
             {privateKey ? (
               <div className="grid gap-4">
-                <label className="grid gap-2 text-sm font-medium text-slate-700">
-                  <span>{t('common.privateKey')}</span>
-                  <textarea
-                    readOnly
-                    className="min-h-24 rounded-md border border-slate-200 bg-slate-50 p-3 font-mono text-sm text-slate-900"
-                    value={privateKey}
-                  />
-                </label>
-                <label className="grid gap-2 text-sm font-medium text-slate-700">
-                  <span>{t('common.publicKey')}</span>
-                  <Input readOnly value={publicKey} />
-                </label>
+                <Ed25519Keypair publicKey={publicKey} seed={privateKey} />
                 <label className="flex items-center gap-2 text-sm text-slate-700">
                   <input
                     type="checkbox"

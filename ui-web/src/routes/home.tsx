@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Ed25519Keypair } from '@/components/app/ed25519-keypair';
 import {
   Card,
   CardContent,
@@ -419,18 +420,17 @@ export function HomeRoute() {
               </Button>
             </div>
             {privateKey ? (
-              <textarea
-                readOnly
-                className="min-h-20 w-full max-w-full rounded-md border border-slate-200 bg-slate-50 p-3 font-mono text-sm"
-                value={privateKey}
-              />
+              <Ed25519Keypair publicKey={publicKey} seed={privateKey} />
             ) : null}
-            <Input
-              aria-label={t('home.publicKey')}
-              placeholder={t('common.publicKey')}
-              value={publicKey}
-              onChange={(event) => setPublicKey(event.currentTarget.value)}
-            />
+            <label className="grid gap-2 text-sm font-medium text-slate-700">
+              <span>{t('home.publicKey')}</span>
+              <Input
+                aria-label={t('home.publicKey')}
+                placeholder={t('common.publicKey')}
+                value={publicKey}
+                onChange={(event) => setPublicKey(event.currentTarget.value)}
+              />
+            </label>
           </form>
           <CredentialList
             deletePath={(id) => '/ed25519/credentials/' + id}
