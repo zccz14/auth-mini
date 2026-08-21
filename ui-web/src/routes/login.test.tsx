@@ -79,7 +79,7 @@ vi.mock('@/lib/demo-sdk', () => ({
 vi.mock('@/lib/demo-ed25519', () => ({
   deriveEd25519PublicKey: vi.fn(() => Promise.resolve('public-key')),
   signEd25519Challenge: vi.fn(() => Promise.resolve('signature-1')),
-  validateBase64Url32: vi.fn(() => ''),
+  validateEd25519PrivateKey: vi.fn(() => ''),
 }));
 
 vi.mock('@/lib/login-callback', async (importOriginal) => {
@@ -409,7 +409,9 @@ describe('LoginRoute', () => {
 
     await user.click(screen.getByRole('tab', { name: 'ED25519' }));
     await user.type(
-      screen.getByLabelText('Seed (base64url 32-byte)'),
+      screen.getByLabelText(
+        'Private key (base58, 64 bytes, Solana-compatible)',
+      ),
       '7rANewlCLceTsUo9feN0DLjnu-ayYsdhkVWvHT4FelM',
     );
     await user.click(await expectButtonEnabled('Sign in with ED25519'));
