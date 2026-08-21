@@ -183,14 +183,15 @@ describe('sdk d.ts build artifact', () => {
     expect(runtimeOutput).toContain("from '../generated/api/client/index.js'");
   });
 
-  it('emits device sdk module declarations with seed input only', () => {
+  it('emits device sdk module declarations with Solana private-key input and legacy seed compatibility', () => {
     const output = readDeviceModuleDeclaration();
     const sharedTypes = readSharedTypesDeclaration();
     const errors = readSdkErrorsDeclaration();
 
     expect(output).toContain('export declare function createDeviceSdk');
     expect(output).toContain('DeviceSdkApi');
-    expect(sharedTypes).toContain('privateKeySeed: string');
+    expect(sharedTypes).toContain('privateKey?: string');
+    expect(sharedTypes).toContain('privateKeySeed?: string');
     expect(sharedTypes).not.toContain('DevicePrivateKeyJwk');
     expect(sharedTypes).not.toContain('privateKey: DevicePrivateKeyJwk');
     expect(sharedTypes).toContain('dispose(): Promise<void>');

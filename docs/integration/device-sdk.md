@@ -1,6 +1,6 @@
 # Device SDK integration
 
-Use `auth-mini/sdk/device` for Node.js clients (or other runtimes that provide Node's `node:crypto` APIs) that hold an Ed25519 private key seed locally and want an isolated memory-only session.
+Use `auth-mini/sdk/device` for Node.js clients (or other runtimes that provide Node's `node:crypto` APIs) that hold a Solana-compatible Ed25519 private key locally and want an isolated memory-only session.
 
 For the low-level HTTP API contract, see `openapi.yaml` and [`auth-mini/sdk/api`](./api-sdk.md).
 This guide covers higher-level runtime behavior for the device SDK only.
@@ -12,7 +12,7 @@ import { createDeviceSdk } from 'auth-mini/sdk/device';
 
 const sdk = createDeviceSdk({
   serverBaseUrl: 'https://auth.example.com',
-  privateKeySeed: '7rANewlCLceTsUo9feN0DLjnu-ayYsdhkVWvHT4FelM',
+  privateKey: '<base58 64-byte Solana-compatible private key>',
 });
 
 await sdk.ready;
@@ -21,11 +21,17 @@ console.log(sdk.session.getState().status);
 await sdk.dispose();
 ```
 
+## Solana-compatible private key format
+
+New device clients use `privateKey`: a canonical base58 64-byte Ed25519 private key with bytes `[seed || public key]`, matching the Solana keypair secret-key convention. The SDK verifies that the public-key suffix matches the key derived from the seed before it signs anything. Auth Mini registers and stores only the base58 32-byte public key; it never receives the private key.
+
+`privateKeySeed` remains a deprecated compatibility input for existing published clients that use a base64url 32-byte seed. New clients must use `privateKey`.
+
 ## Auto-login lifecycle
 
 `createDeviceSdk(...)` starts the device sign-in flow immediately:
 
-1. decode the configured `privateKeySeed` and derive the Ed25519 key pair locally
+1. decode the configured base58 `privateKey`, verify its 64-byte `[seed || public key]` form, and derive the Ed25519 key pair locally
 2. `POST /ed25519/start` with the derived `public_key`
 3. sign the returned challenge locally
 4. `POST /ed25519/verify` with the `request_id` and signature payload

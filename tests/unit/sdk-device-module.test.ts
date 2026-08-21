@@ -97,13 +97,14 @@ describe('device module sdk', () => {
       throw new Error(`Unhandled path: ${url.pathname}`);
     });
 
-    const privateKeySeed = createDevicePrivateKeySeed();
+    const privateKey =
+      '5mnTAnb1mw5coonkre3StmVNnU3yo4AnfHbnfXE1VJrkYEMkJU9BUtwWuZX8DkPBZcxHMC2mNUTRMjv2FUZPqjt3';
     const expectedPublicKey = deriveDevicePublicKey(
-      deriveDevicePrivateKey(privateKeySeed),
+      deriveDevicePrivateKey(privateKey),
     );
     const sdk = createDeviceSdk({
       serverBaseUrl: 'https://auth.example.com',
-      privateKeySeed,
+      privateKey,
       fetch,
       now: () => Date.parse('2026-04-12T00:00:00.000Z'),
     });

@@ -31,7 +31,7 @@ export function SetupRoute() {
 
     try {
       const keypair = await generateDemoEd25519Keypair();
-      setPrivateKey(keypair.seed);
+      setPrivateKey(keypair.privateKey);
       setPublicKey(keypair.publicKey);
       setSaved(false);
     } catch (cause) {
@@ -100,7 +100,7 @@ export function SetupRoute() {
 
             {privateKey ? (
               <div className="grid gap-4">
-                <Ed25519Keypair publicKey={publicKey} seed={privateKey} />
+                <Ed25519Keypair publicKey={publicKey} privateKey={privateKey} />
                 <label className="flex items-center gap-2 text-sm text-slate-700">
                   <input
                     type="checkbox"

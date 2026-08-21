@@ -3,7 +3,7 @@ import { encodeBase64Url } from '../../src/shared/crypto.js';
 
 const FIXTURES = {
   default: {
-    publicKey: 'jt2HpVJxALeSteTe7QlqBRiOxVeloHMMImehYhZc9Rg',
+    publicKey: 'AcgpHPzkFVqzArwariZ6PaMQLoZ6txHYeModrMB1hwiw',
     privateJwk: {
       crv: 'Ed25519',
       d: '7rANewlCLceTsUo9feN0DLjnu-ayYsdhkVWvHT4FelM',
@@ -12,7 +12,7 @@ const FIXTURES = {
     },
   },
   alternate: {
-    publicKey: 'SRCRzoCPb2EoiIhZLDATWYHeo9xPYiZh6rkoDfocHuY',
+    publicKey: '5vDR8tKS9mz5p3YZ4yBeqKJhD5r8jC5siZeMhJsMzvfo',
     privateJwk: {
       crv: 'Ed25519',
       d: 'vM_36GgPQ57cHRKv_KM9r4JnejllPus0jPuupS-tJak',

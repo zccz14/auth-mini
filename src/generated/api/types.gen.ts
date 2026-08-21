@@ -26,6 +26,9 @@ export type AdminConfigRequest = {
 
 export type AdminSetupEd25519Input = {
     name: string;
+    /**
+     * Canonical base58-encoded 32-byte Ed25519 public key.
+     */
     public_key: string;
 };
 
@@ -215,6 +218,9 @@ export type Ed25519CredentialUpdateRequest = {
 };
 
 export type Ed25519StartRequest = {
+    /**
+     * Canonical base58-encoded 32-byte Ed25519 public key. Legacy registered base64url public keys remain accepted only for authentication.
+     */
     public_key: string;
 };
 

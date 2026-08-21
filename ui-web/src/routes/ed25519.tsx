@@ -5,6 +5,7 @@ import {
   useState,
   type FormEvent,
 } from 'react';
+import { Ed25519Keypair } from '@/components/app/ed25519-keypair';
 import { FlowCard } from '@/components/app/flow-card';
 import { JsonPanel } from '@/components/app/json-panel';
 import { Button } from '@/components/ui/button';
@@ -15,7 +16,8 @@ import {
   deriveEd25519PublicKey,
   generateDemoEd25519Keypair,
   signEd25519Challenge,
-  validateBase64Url32,
+  validateEd25519PrivateKey,
+  validateSolanaPublicKey,
 } from '@/lib/demo-ed25519';
 
 type DemoMe = DemoCurrentUser;
@@ -24,9 +26,9 @@ export function Ed25519Route() {
   const { adoptDemoSession, config, sdk, session } = useDemo();
   const [credentialName, setCredentialName] = useState('');
   const [publicKey, setPublicKey] = useState('');
-  const [seed, setSeed] = useState('');
-  const [seedPublicKey, setSeedPublicKey] = useState('');
-  const [generatedSeed, setGeneratedSeed] = useState('');
+  const [privateKey, setPrivateKey] = useState('');
+  const [privateKeyPublicKey, setPrivateKeyPublicKey] = useState('');
+  const [generatedPrivateKey, setGeneratedPrivateKey] = useState('');
   const [generatedPublicKey, setGeneratedPublicKey] = useState('');
   const [pendingAction, setPendingAction] = useState<
     'generate' | 'register' | 'signin' | null
@@ -50,9 +52,10 @@ export function Ed25519Route() {
   const hasRegisterSession =
     session.authenticated && typeof session.accessToken === 'string';
   const registerPublicKeyError =
-    publicKey.trim() === '' ? '' : validateBase64Url32(publicKey);
-  const seedValidationError = validateBase64Url32(seed);
-  const seedError = seed.trim() === '' ? '' : seedValidationError;
+    publicKey.trim() === '' ? '' : validateSolanaPublicKey(publicKey);
+  const privateKeyValidationError = validateEd25519PrivateKey(privateKey);
+  const privateKeyError =
+    privateKey.trim() === '' ? '' : privateKeyValidationError;
   const canRegister =
     setupReady &&
     hasRegisterSession &&
@@ -61,7 +64,7 @@ export function Ed25519Route() {
     registerPublicKeyError === '' &&
     pendingAction === null;
   const canSignIn =
-    setupReady && seedValidationError === '' && pendingAction === null;
+    setupReady && privateKeyValidationError === '' && pendingAction === null;
 
   const loadMe = useCallback(
     async (options?: { warningMessage?: string }) => {
@@ -137,11 +140,11 @@ export function Ed25519Route() {
 
     try {
       const keypair = await generateDemoEd25519Keypair();
-      setGeneratedSeed(keypair.seed);
+      setGeneratedPrivateKey(keypair.privateKey);
       setGeneratedPublicKey(keypair.publicKey);
       setPublicKey(keypair.publicKey);
-      setSeed(keypair.seed);
-      setSeedPublicKey(keypair.publicKey);
+      setPrivateKey(keypair.privateKey);
+      setPrivateKeyPublicKey(keypair.publicKey);
     } catch (cause) {
       setRegisterError(formatDemoError(cause));
     } finally {
@@ -159,15 +162,16 @@ export function Ed25519Route() {
     setSignInError('');
 
     try {
-      const normalizedSeed = seed.trim();
-      const derivedPublicKey = await deriveEd25519PublicKey(normalizedSeed);
-      setSeedPublicKey(derivedPublicKey);
+      const normalizedPrivateKey = privateKey.trim();
+      const derivedPublicKey =
+        await deriveEd25519PublicKey(normalizedPrivateKey);
+      setPrivateKeyPublicKey(derivedPublicKey);
 
       const challenge = await sdk.ed25519.start({
         public_key: derivedPublicKey,
       });
       const signature = await signEd25519Challenge(
-        normalizedSeed,
+        normalizedPrivateKey,
         challenge.challenge,
       );
       const result = await sdk.ed25519.verify({
@@ -236,9 +240,9 @@ export function Ed25519Route() {
             </label>
 
             <label className="grid gap-2 text-sm font-medium text-slate-700">
-              <span>Public key (base64url 32-byte)</span>
+              <span>Public key (base58, 32 bytes)</span>
               <Input
-                aria-label="Public key (base64url 32-byte)"
+                aria-label="Public key (base58, 32 bytes)"
                 value={publicKey}
                 onChange={(event) => setPublicKey(event.currentTarget.value)}
                 placeholder="jt2HpVJxALeSteTe7QlqBRiOxVeloHMMImehYhZc9Rg"
@@ -273,22 +277,12 @@ export function Ed25519Route() {
             </div>
           </form>
 
-          <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 md:grid-cols-2">
-            <div className="space-y-1">
-              <div className="font-medium text-slate-950">Generated seed</div>
-              <div className="break-all font-mono text-xs">
-                {generatedSeed || 'None generated yet.'}
-              </div>
-            </div>
-            <div className="space-y-1">
-              <div className="font-medium text-slate-950">
-                Generated public key
-              </div>
-              <div className="break-all font-mono text-xs">
-                {generatedPublicKey || 'None generated yet.'}
-              </div>
-            </div>
-          </div>
+          {generatedPrivateKey ? (
+            <Ed25519Keypair
+              publicKey={generatedPublicKey}
+              privateKey={generatedPrivateKey}
+            />
+          ) : null}
 
           {registerError ? (
             <p className="text-sm text-rose-600">{registerError}</p>
@@ -306,29 +300,29 @@ export function Ed25519Route() {
 
           <form className="space-y-4" onSubmit={handleSignIn}>
             <label className="grid gap-2 text-sm font-medium text-slate-700">
-              <span>Seed (base64url 32-byte)</span>
+              <span>Private key (base58, 64 bytes, Solana-compatible)</span>
               <Input
-                aria-label="Seed (base64url 32-byte)"
-                value={seed}
-                onChange={(event) => setSeed(event.currentTarget.value)}
-                placeholder="7rANewlCLceTsUo9feN0DLjnu-ayYsdhkVWvHT4FelM"
+                aria-label="Private key (base58, 64 bytes, Solana-compatible)"
+                value={privateKey}
+                onChange={(event) => setPrivateKey(event.currentTarget.value)}
+                placeholder="Solana-compatible base58 private key"
               />
             </label>
 
-            {seedError ? (
-              <p className="text-sm text-rose-600">{seedError}</p>
+            {privateKeyError ? (
+              <p className="text-sm text-rose-600">{privateKeyError}</p>
             ) : null}
 
             <div className="flex flex-wrap gap-3">
               <Button
                 type="button"
-                disabled={generatedSeed === '' || pendingAction !== null}
+                disabled={generatedPrivateKey === '' || pendingAction !== null}
                 onClick={() => {
-                  setSeed(generatedSeed);
-                  setSeedPublicKey(generatedPublicKey);
+                  setPrivateKey(generatedPrivateKey);
+                  setPrivateKeyPublicKey(generatedPublicKey);
                 }}
               >
-                Use current generated seed
+                Use current generated private key
               </Button>
               <Button type="submit" disabled={!canSignIn}>
                 {pendingAction === 'signin'
@@ -341,7 +335,7 @@ export function Ed25519Route() {
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
             <div className="font-medium text-slate-950">Derived public key</div>
             <div className="mt-1 break-all font-mono text-xs">
-              {seedPublicKey || 'No seed-derived public key yet.'}
+              {privateKeyPublicKey || 'No private-key-derived public key yet.'}
             </div>
           </div>
 
