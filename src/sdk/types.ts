@@ -76,7 +76,10 @@ export type Listener = (state: SessionSnapshot) => void;
 
 export type DeviceSdkOptions = {
   serverBaseUrl: string;
-  privateKeySeed: string;
+  /** Solana-compatible base58 64-byte private key: [seed || public key]. */
+  privateKey?: string;
+  /** @deprecated Legacy base64url 32-byte seed. Use privateKey. */
+  privateKeySeed?: string;
   fetch?: FetchLike;
   now?: () => number;
 };

@@ -164,7 +164,7 @@ Initialize the administrator Ed25519 credential from the demo setup screen, or c
 ```bash
 curl -X PUT http://127.0.0.1:7777/admin/setup \
   -H 'content-type: application/json' \
-  -d '{"admin_ed25519":{"name":"ops laptop","public_key":"<base64url-ed25519-public-key>"}}'
+  -d '{"admin_ed25519":{"name":"ops laptop","public_key":"<base58-ed25519-public-key>"}}'
 ```
 
 After admin sign-in, configure the externally visible issuer, passkey RP ID, and optional SMTP settings from the admin configuration page or `/admin/config`. The issuer is stored at `app_meta.issuer`, and passkey registration/login use the single `app_meta.rp_id`; the WebAuthn origin is the Auth Mini server origin derived from the issuer. SMTP is not required for bootstrap, the SMTP password is never returned, and `admin_ed25519` can create an admin user without an email address for later Ed25519 login. An Ed25519 session may register that user's first PassKey; after one is stored, additional PassKey registration requires an email OTP or WebAuthn session. HTTP CORS is served with `Access-Control-Allow-Origin: *`, so downstream apps need to manage that exposure carefully.
@@ -192,7 +192,7 @@ import { createDeviceSdk } from 'auth-mini/sdk/device';
 
 const sdk = createDeviceSdk({
   serverBaseUrl: 'https://auth.your-domain.com',
-  privateKeySeed: '7rANewlCLceTsUo9feN0DLjnu-ayYsdhkVWvHT4FelM',
+  privateKey: '<base58 64-byte Solana-compatible private key>',
 });
 
 await sdk.ready;

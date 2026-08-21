@@ -2,7 +2,11 @@ import { createSdkError } from './errors.js';
 import { createHttpClient } from './http.js';
 import { createSessionController, normalizeTokenResponse } from './session.js';
 import { createStateStore } from './state.js';
-import { authenticateDevice, deriveDevicePrivateKey } from './device-auth.js';
+import {
+  authenticateDevice,
+  deriveDevicePrivateKey,
+  deriveLegacyDevicePrivateKey,
+} from './device-auth.js';
 import type {
   DeviceSdkApi,
   DeviceSdkOptions,
@@ -104,7 +108,9 @@ export function createDeviceSdk(options: DeviceSdkOptions): DeviceSdkApi {
     baseUrl: options.serverBaseUrl,
     fetch,
   });
-  const privateKey = deriveDevicePrivateKey(options.privateKeySeed);
+  const privateKey = options.privateKey
+    ? deriveDevicePrivateKey(options.privateKey)
+    : deriveLegacyDevicePrivateKey(options.privateKeySeed ?? '');
   const now = options.now ?? (() => Date.now());
   const session = createSessionController({
     http,

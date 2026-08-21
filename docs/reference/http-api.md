@@ -45,7 +45,7 @@ Request body:
 {
   "admin_ed25519": {
     "name": "ops laptop",
-    "public_key": "<base64url-ed25519-public-key>"
+    "public_key": "<base58-ed25519-public-key>"
   }
 }
 ```
@@ -62,7 +62,7 @@ Example response:
   "admin_ed25519": {
     "id": "credential-id",
     "name": "ops laptop",
-    "public_key": "<base64url-ed25519-public-key>",
+    "public_key": "<base58-ed25519-public-key>",
     "last_used_at": null,
     "created_at": "2026-06-30T00:00:00Z"
   },

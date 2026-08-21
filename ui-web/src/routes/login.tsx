@@ -27,7 +27,7 @@ import {
 import {
   deriveEd25519PublicKey,
   signEd25519Challenge,
-  validateBase64Url32,
+  validateEd25519PrivateKey,
 } from '@/lib/demo-ed25519';
 
 type LoginMethod = 'email' | 'ed25519';
@@ -49,7 +49,7 @@ export function LoginRoute() {
   const [method, setMethod] = useState<LoginMethod>('email');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
-  const [seed, setSeed] = useState('');
+  const [privateKey, setPrivateKey] = useState('');
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(
     null,
   );
@@ -58,7 +58,8 @@ export function LoginRoute() {
 
   const setupReady = config.status === 'ready' && Boolean(sdk);
   const passkeyConfigured = Boolean(setupState?.rp_id);
-  const seedError = seed.trim() === '' ? '' : validateBase64Url32(seed);
+  const privateKeyError =
+    privateKey.trim() === '' ? '' : validateEd25519PrivateKey(privateKey);
   const canStartEmail =
     setupReady &&
     request.status === 'ready' &&
@@ -73,8 +74,8 @@ export function LoginRoute() {
   const canUseEd25519 =
     setupReady &&
     request.status === 'ready' &&
-    seed.trim() !== '' &&
-    seedError === '' &&
+    privateKey.trim() !== '' &&
+    privateKeyError === '' &&
     pendingAction === null;
   const canUsePasskey =
     setupReady &&
@@ -145,13 +146,13 @@ export function LoginRoute() {
     }
 
     await runLogin('ed25519', async () => {
-      const normalizedSeed = seed.trim();
-      const publicKey = await deriveEd25519PublicKey(normalizedSeed);
+      const normalizedPrivateKey = privateKey.trim();
+      const publicKey = await deriveEd25519PublicKey(normalizedPrivateKey);
       const challenge = await sdk.ed25519.start({
         public_key: publicKey,
       });
       const signature = await signEd25519Challenge(
-        normalizedSeed,
+        normalizedPrivateKey,
         challenge.challenge,
       );
       const tokens = await sdk.ed25519.verify({
@@ -327,16 +328,18 @@ export function LoginRoute() {
               <TabsContent value="ed25519" className="space-y-4">
                 <form className="space-y-3" onSubmit={handleEd25519}>
                   <label className="grid gap-2 text-sm font-medium text-slate-700">
-                    <span>{t('common.seed')}</span>
+                    <span>{t('common.privateKey')}</span>
                     <Input
-                      aria-label={t('common.seed')}
-                      value={seed}
-                      onChange={(event) => setSeed(event.currentTarget.value)}
-                      placeholder="7rANewlCLceTsUo9feN0DLjnu-ayYsdhkVWvHT4FelM"
+                      aria-label={t('common.privateKey')}
+                      value={privateKey}
+                      onChange={(event) =>
+                        setPrivateKey(event.currentTarget.value)
+                      }
+                      placeholder="Solana-compatible base58 private key"
                     />
                   </label>
-                  {seedError ? (
-                    <p className="text-sm text-rose-600">{seedError}</p>
+                  {privateKeyError ? (
+                    <p className="text-sm text-rose-600">{privateKeyError}</p>
                   ) : null}
                   <Button
                     className="w-full"

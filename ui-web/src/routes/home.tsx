@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { useDemo } from '@/app/providers/demo-provider';
 import {
   generateDemoEd25519Keypair,
-  validateBase64Url32,
+  validateSolanaPublicKey,
 } from '@/lib/demo-ed25519';
 import { useI18n } from '@/lib/i18n';
 import type { DemoCurrentUser } from '@/lib/demo-sdk';
@@ -193,7 +193,7 @@ export function HomeRoute() {
 
     try {
       const keypair = await generateDemoEd25519Keypair();
-      setPrivateKey(keypair.seed);
+      setPrivateKey(keypair.privateKey);
       setPublicKey(keypair.publicKey);
     } catch (cause) {
       setCredentialError(
@@ -206,7 +206,8 @@ export function HomeRoute() {
 
   async function registerEd25519(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!sdk || validateBase64Url32(publicKey) || !ed25519Name.trim()) return;
+    if (!sdk || validateSolanaPublicKey(publicKey) || !ed25519Name.trim())
+      return;
     setPendingCredential('register-ed25519');
     setCredentialError('');
 
@@ -410,7 +411,7 @@ export function HomeRoute() {
                 type="submit"
                 disabled={
                   !publicKey ||
-                  Boolean(validateBase64Url32(publicKey)) ||
+                  Boolean(validateSolanaPublicKey(publicKey)) ||
                   pendingCredential !== null
                 }
               >
@@ -420,7 +421,7 @@ export function HomeRoute() {
               </Button>
             </div>
             {privateKey ? (
-              <Ed25519Keypair publicKey={publicKey} seed={privateKey} />
+              <Ed25519Keypair publicKey={publicKey} privateKey={privateKey} />
             ) : null}
             <label className="grid gap-2 text-sm font-medium text-slate-700">
               <span>{t('home.publicKey')}</span>

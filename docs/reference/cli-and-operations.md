@@ -43,7 +43,7 @@ Initialize the admin Ed25519 credential with loopback-only `PUT /admin/setup`, t
 ```bash
 curl -X PUT http://127.0.0.1:7777/admin/setup \
   -H 'content-type: application/json' \
-  -d '{"admin_ed25519":{"name":"ops laptop","public_key":"<base64url-ed25519-public-key>"}}'
+  -d '{"admin_ed25519":{"name":"ops laptop","public_key":"<base58-ed25519-public-key>"}}'
 ```
 
 The required `admin_ed25519` value creates an admin user without an email address. Use that key for later Ed25519 admin login.

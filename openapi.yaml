@@ -907,7 +907,9 @@ components:
           minLength: 1
         public_key:
           type: string
-          minLength: 1
+          description: Canonical base58-encoded 32-byte Ed25519 public key.
+          minLength: 32
+          maxLength: 44
     AdminSetupSmtpInput:
       type: object
       additionalProperties: false
@@ -1458,8 +1460,9 @@ components:
       properties:
         public_key:
           type: string
-          minLength: 43
-          maxLength: 43
+          description: Canonical base58-encoded 32-byte Ed25519 public key. Legacy registered base64url public keys remain accepted only for authentication.
+          minLength: 32
+          maxLength: 44
     Ed25519ChallengeResponse:
       type: object
       additionalProperties: false

@@ -66,7 +66,7 @@ pub(crate) fn parse_credential_create_request(
 pub(crate) fn validate_credential_create_request(
     request: &CredentialCreateRequest,
 ) -> Result<(), serde_json::Error> {
-    if !request.name.is_empty() && base64url_decoded_len(&request.public_key) == Some(32) {
+    if !request.name.is_empty() && base58_decode_32(&request.public_key).is_some() {
         return Ok(());
     }
 
@@ -90,7 +90,7 @@ pub(crate) fn parse_start_authentication_request(
 ) -> Result<StartAuthenticationRequest, serde_json::Error> {
     let request: StartAuthenticationRequest = serde_json::from_str(body)?;
 
-    if base64url_decoded_len(&request.public_key) == Some(32) {
+    if decode_public_key(&request.public_key).is_some() {
         return Ok(request);
     }
 
@@ -359,7 +359,8 @@ fn verify_challenge_signature(
     public_key: &str,
     signature: &str,
 ) -> Result<(), VerifyAuthenticationError> {
-    let public_key = base64url_decode(public_key)?;
+    let public_key = decode_public_key(public_key)
+        .ok_or(VerifyAuthenticationError::InvalidEd25519Authentication)?;
     let signature = base64url_decode(signature)?;
     let public_key: [u8; 32] = public_key
         .try_into()
@@ -374,6 +375,24 @@ fn verify_challenge_signature(
     verifying_key
         .verify(challenge.as_bytes(), &signature)
         .map_err(|_| VerifyAuthenticationError::InvalidEd25519Authentication)
+}
+
+fn base58_decode_32(value: &str) -> Option<[u8; 32]> {
+    let decoded = bs58::decode(value).into_vec().ok()?;
+    let public_key: [u8; 32] = decoded.try_into().ok()?;
+    (bs58::encode(public_key).into_string() == value).then_some(public_key)
+}
+
+fn decode_public_key(value: &str) -> Option<Vec<u8>> {
+    base58_decode_32(value)
+        .map(|key| key.to_vec())
+        // COMPATIBILITY: Credentials registered by Auth Mini <=0.4.5 store a
+        // base64url 32-byte public key. Keep accepting that exact legacy encoding
+        // for existing credentials until those published clients are retired.
+        .or_else(|| {
+            let decoded = base64url_decode(value).ok()?;
+            (decoded.len() == 32).then_some(decoded)
+        })
 }
 
 fn base64url_decoded_len(value: &str) -> Option<usize> {
@@ -548,20 +567,35 @@ mod tests {
     #[test]
     fn parses_credential_create_request_contract() {
         let request = parse_credential_create_request(
-            r#"{"name":"Laptop","public_key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#,
+            r#"{"name":"Laptop","public_key":"AcgpHPzkFVqzArwariZ6PaMQLoZ6txHYeModrMB1hwiw"}"#,
         )
         .expect("request parses");
 
         assert_eq!(request.name, "Laptop");
-        assert_eq!(request.public_key.len(), 43);
+        assert_eq!(
+            request.public_key,
+            "AcgpHPzkFVqzArwariZ6PaMQLoZ6txHYeModrMB1hwiw"
+        );
         parse_credential_create_request(
             r#"{"name":"Laptop","public_key":"not-a-valid-ed25519-public-key"}"#,
         )
         .expect_err("malformed public key rejects");
         parse_credential_create_request(
-            r#"{"name":"","public_key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#,
+            r#"{"name":"","public_key":"AcgpHPzkFVqzArwariZ6PaMQLoZ6txHYeModrMB1hwiw"}"#,
         )
         .expect_err("empty name rejects");
+    }
+
+    #[test]
+    fn accepts_a_solana_base58_public_key_and_keeps_legacy_start_compatibility() {
+        let solana_public_key = "AcgpHPzkFVqzArwariZ6PaMQLoZ6txHYeModrMB1hwiw";
+        assert_eq!(base58_decode_32(solana_public_key).unwrap().len(), 32);
+        parse_start_authentication_request(&format!(r#"{{"public_key":"{solana_public_key}"}}"#))
+            .expect("Solana public key starts authentication");
+        parse_start_authentication_request(
+            r#"{"public_key":"jt2HpVJxALeSteTe7QlqBRiOxVeloHMMImehYhZc9Rg"}"#,
+        )
+        .expect("legacy base64url public key stays compatible");
     }
 
     #[test]
