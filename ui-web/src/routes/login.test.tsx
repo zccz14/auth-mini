@@ -409,7 +409,9 @@ describe('LoginRoute', () => {
 
     await user.click(screen.getByRole('tab', { name: 'ED25519' }));
     await user.type(
-      screen.getByLabelText('Seed (base64url 32-byte)'),
+      screen.getByLabelText(
+        'Private key (base58, 64 bytes, Solana-compatible)',
+      ),
       '7rANewlCLceTsUo9feN0DLjnu-ayYsdhkVWvHT4FelM',
     );
     await user.click(await expectButtonEnabled('Sign in with ED25519'));
