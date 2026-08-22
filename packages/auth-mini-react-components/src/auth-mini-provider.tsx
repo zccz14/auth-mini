@@ -17,6 +17,7 @@ import {
 import {
   AuthMiniCallbackError,
   getAuthMiniLoginStateKey,
+  resolveAuthMiniAudience,
   getAuthMiniLoginUrl,
   readAuthMiniRedirectCallback,
 } from './auth-callback.js';
@@ -98,7 +99,7 @@ export function AuthMiniProvider({
       window.location.assign(
         getAuthMiniLoginUrl({
           authMiniBaseUrl,
-          audience: audienceRef.current,
+          audience: resolveAuthMiniAudience(audienceRef.current),
           callbackUrl: returnTo,
           state,
         }),

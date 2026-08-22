@@ -36,6 +36,23 @@ export function getAuthMiniSecurityUrl(authMiniBaseUrl: string): string {
   return url.toString();
 }
 
+export function resolveAuthMiniAudience(
+  audience: string | undefined,
+  hostname: string = window.location.hostname,
+): string | undefined {
+  if (audience !== undefined) {
+    return audience;
+  }
+
+  return isLoopbackHostname(hostname)
+    ? hostname.replace(/^\[|\]$/g, '')
+    : undefined;
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  return ['localhost', '127.0.0.1', '::1', '[::1]'].includes(hostname);
+}
+
 export function getAuthMiniLoginUrl(input: {
   authMiniBaseUrl: string;
   audience?: string;

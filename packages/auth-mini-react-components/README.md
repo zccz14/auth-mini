@@ -145,14 +145,14 @@ Mini session.
 
 ## AuthMiniProvider props
 
-| Prop                  | Description                                                                                                      |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `authMiniBaseUrl`     | Required Auth Mini issuer/server base URL.                                                                       |
-| `callbackUrl`         | Callback URL string or lazy callback; defaults to the current browser URL.                                       |
-| `audience`            | Explicit audience for loopback callbacks only.                                                                   |
-| `autoRedirectToLogin` | Required. `true` redirects anonymous sessions after callback processing; `false` leaves them in the application. |
-| `onAuthStateChange`   | Receives every Browser SDK session snapshot.                                                                     |
-| `onAuthError`         | Receives callback, SDK, or redirect-preparation errors.                                                          |
+| Prop                  | Description                                                                                                              |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `authMiniBaseUrl`     | Required Auth Mini issuer/server base URL.                                                                               |
+| `callbackUrl`         | Callback URL string or lazy callback; defaults to the current browser URL.                                               |
+| `audience`            | Optional explicit audience. When omitted, loopback callback hosts automatically use their hostname; explicit values win. |
+| `autoRedirectToLogin` | Required. `true` redirects anonymous sessions after callback processing; `false` leaves them in the application.         |
+| `onAuthStateChange`   | Receives every Browser SDK session snapshot.                                                                             |
+| `onAuthError`         | Receives callback, SDK, or redirect-preparation errors.                                                                  |
 
 ## useAuthMini
 
