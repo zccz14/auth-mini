@@ -78,12 +78,13 @@ Authentication options are username-less and intentionally omit `allowCredential
     "challenge": "<base64url>",
     "rpId": "example.com",
     "timeout": 300000,
-    "userVerification": "preferred"
+    "userVerification": "required"
   }
 }
 ```
 
 Registration and authentication use the same configured RP ID. Because authentication does not supply `allowCredentials`, the browser or authenticator must discover the credential for that RP.
+Authentication requests `userVerification: "required"`, matching the verification policy stored in the server-side ceremony state. Clients must complete local user verification, such as biometrics or a device passcode, rather than returning only a user-presence assertion.
 
 ## `rp_id` constraints
 

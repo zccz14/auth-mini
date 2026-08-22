@@ -367,6 +367,11 @@ pub(crate) fn authentication_options(
         .get("challenge")
         .cloned()
         .ok_or(AuthenticationOptionsError::InvalidRequest)?;
+    let user_verification = public_key
+        .get("userVerification")
+        .cloned()
+        .filter(|value| value == "required")
+        .ok_or(AuthenticationOptionsError::InvalidRequest)?;
     let expires_at = (Utc::now() + ChronoDuration::seconds(WEBAUTHN_CHALLENGE_SECONDS))
         .to_rfc3339_opts(SecondsFormat::Millis, true);
 
@@ -392,7 +397,7 @@ pub(crate) fn authentication_options(
             "challenge": challenge,
             "rpId": resolved.rp_id,
             "timeout": 300000,
-            "userVerification": "preferred"
+            "userVerification": user_verification
         }
     }))
 }
@@ -1220,7 +1225,7 @@ mod tests {
 
         assert_eq!(body["publicKey"]["rpId"], "example.com");
         assert_eq!(body["publicKey"]["timeout"], 300000);
-        assert_eq!(body["publicKey"]["userVerification"], "preferred");
+        assert_eq!(body["publicKey"]["userVerification"], "required");
         assert!(body["publicKey"].get("allowCredentials").is_none());
         assert_ne!(
             stored.1,

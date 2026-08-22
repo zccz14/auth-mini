@@ -73,14 +73,25 @@ describe('sdk webauthn flows', () => {
 
   it('starts passkey authenticate with server-configured rp_id', async () => {
     const fetch = createWebauthnRequestRecorder();
+    let browserPublicKey: PublicKeyCredentialRequestOptions | undefined;
+    const fakeCredentials = fakeNavigatorCredentials();
     const sdk = createWebauthnSdkForTest({
       fetch,
-      navigatorCredentials: fakeNavigatorCredentials(),
+      navigatorCredentials: {
+        async get(options?: CredentialRequestOptions) {
+          browserPublicKey = options?.publicKey;
+          return fakeCredentials.get(options);
+        },
+      },
     });
 
     await sdk.passkey.authenticate();
 
     expect(readJsonBody(fetch, '/webauthn/authenticate/options')).toEqual({});
+    expect(browserPublicKey).toMatchObject({
+      rpId: 'auth.example.com',
+      userVerification: 'required',
+    });
   });
 
   it('passes the login target only to passkey verification', async () => {

@@ -207,10 +207,12 @@ Response shape:
     "challenge": "...",
     "rpId": "example.com",
     "timeout": 300000,
-    "userVerification": "preferred"
+    "userVerification": "required"
   }
 }
 ```
+
+The authentication request requires user verification, matching the server-side ceremony state. Assertions that only report user presence are rejected.
 
 ### `POST /webauthn/authenticate/verify`
 
