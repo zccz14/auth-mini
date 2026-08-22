@@ -287,7 +287,7 @@ export type PublicKeyCredentialRequestOptionsJson = {
     challenge: string;
     rpId: string;
     timeout: number;
-    userVerification: string;
+    userVerification: 'required';
     [key: string]: unknown;
 };
 

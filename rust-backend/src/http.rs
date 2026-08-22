@@ -3145,7 +3145,7 @@ mod tests {
         assert_eq!(response.status, 200);
         assert_eq!(body["publicKey"]["rpId"], "example.com");
         assert_eq!(body["publicKey"]["timeout"], 300000);
-        assert_eq!(body["publicKey"]["userVerification"], "preferred");
+        assert_eq!(body["publicKey"]["userVerification"], "required");
         assert!(body["publicKey"].get("allowCredentials").is_none());
         assert_eq!(stored.0, "authenticate");
         assert_eq!(stored.1, None);

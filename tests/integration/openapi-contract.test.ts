@@ -201,6 +201,12 @@ describe('openapi contract', () => {
     expect(
       document.components?.schemas?.PublicKeyCredentialRequestOptionsJson
         ?.properties,
+    ).toMatchObject({
+      userVerification: { type: 'string', const: 'required' },
+    });
+    expect(
+      document.components?.schemas?.PublicKeyCredentialRequestOptionsJson
+        ?.properties,
     ).not.toHaveProperty('allowCredentials');
   });
 });

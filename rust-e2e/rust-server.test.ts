@@ -505,6 +505,7 @@ describe.sequential('rust external server e2e smoke', () => {
     expect(authOptions.publicKey).toMatchObject({
       challenge: expect.any(String),
       rpId: webauthnRpId,
+      userVerification: 'required',
     });
     expect(authOptions.publicKey).not.toHaveProperty('allowCredentials');
 
@@ -594,6 +595,7 @@ type WebauthnAuthenticationOptionsResponse = {
   publicKey: {
     challenge: string;
     rpId: string;
+    userVerification: 'required';
     allowCredentials?: unknown;
   };
 };

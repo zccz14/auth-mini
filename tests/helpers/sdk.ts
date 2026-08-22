@@ -375,7 +375,7 @@ export function createWebauthnRequestRecorder() {
           challenge: 'AQIDBA',
           rpId: 'auth.example.com',
           timeout: 300000,
-          userVerification: 'preferred',
+          userVerification: 'required',
           allowCredentials: [
             {
               id: 'BQYHCA',
