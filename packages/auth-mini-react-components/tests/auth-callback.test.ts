@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   getAuthMiniLoginStateKey,
   getAuthMiniLoginUrl,
+  resolveAuthMiniAudience,
   getAuthMiniSecurityUrl,
   readAuthMiniRedirectCallback,
 } from '../src/auth-callback.js';
@@ -16,6 +17,40 @@ describe('Auth Mini redirect helpers', () => {
       }),
     ).toBe(
       'https://auth.example.test/web/#/login?redirect_uri=https%3A%2F%2Fapp.example.test%2Fauth%2Fcallback&state=state-123',
+    );
+  });
+
+  it.each([
+    ['localhost', 'localhost'],
+    ['127.0.0.1', '127.0.0.1'],
+    ['::1', '::1'],
+    ['[::1]', '::1'],
+  ])(
+    'derives the loopback audience without a port for %s',
+    (hostname, audience) => {
+      expect(resolveAuthMiniAudience(undefined, hostname)).toBe(audience);
+    },
+  );
+
+  it('keeps the explicit audience and omits automatic public-host audiences', () => {
+    expect(resolveAuthMiniAudience('explicit.example.test', 'localhost')).toBe(
+      'explicit.example.test',
+    );
+    expect(
+      resolveAuthMiniAudience(undefined, 'app.example.test'),
+    ).toBeUndefined();
+  });
+
+  it('uses the derived loopback audience in the login redirect without a port', () => {
+    expect(
+      getAuthMiniLoginUrl({
+        authMiniBaseUrl: 'https://auth.example.test',
+        callbackUrl: 'http://127.0.0.1:5173/auth/callback',
+        state: 'state-123',
+        audience: resolveAuthMiniAudience(undefined, '127.0.0.1'),
+      }),
+    ).toBe(
+      'https://auth.example.test/web/#/login?redirect_uri=http%3A%2F%2F127.0.0.1%3A5173%2Fauth%2Fcallback&state=state-123&aud=127.0.0.1',
     );
   });
 
