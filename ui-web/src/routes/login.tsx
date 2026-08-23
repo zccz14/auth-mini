@@ -401,7 +401,7 @@ function LoginDestination({
           <span>
             {t('login.destination.requestingAudience')}{' '}
             <strong className="break-all font-semibold">
-              {request.target.audience}
+              {(request.target.audiences ?? [request.target.audience]).join(', ')}
             </strong>
           </span>
         </AlertDescription>
@@ -414,7 +414,7 @@ function LoginDestination({
       <AlertTitle>{t('login.destination.remote')}</AlertTitle>
       <AlertDescription className="mt-2">
         <Badge className="max-w-full break-all text-sm">
-          {request.target.audience}
+          {(request.target.audiences ?? [request.target.audience]).join(', ')}
         </Badge>
       </AlertDescription>
     </Alert>

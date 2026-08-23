@@ -93,14 +93,14 @@ vi.mock('@/lib/login-callback', async (importOriginal) => {
 
 function loginPath(
   redirectUri = 'https://app.example.com/callback',
-  audience?: string,
+  audiences?: string[],
 ) {
   const params = new URLSearchParams({
     redirect_uri: redirectUri,
     state: 'state-1',
   });
-  if (audience) {
-    params.set('aud', audience);
+  if (audiences) {
+    params.set('audiences', JSON.stringify(audiences));
   }
   return `/login?${params.toString()}`;
 }
@@ -249,14 +249,14 @@ describe('LoginRoute', () => {
 
   it('identifies a local app and its requested audience in both languages', async () => {
     const user = userEvent.setup();
-    renderLogin(loginPath('http://localhost:5173/callback', 'app.ntnl.io'));
+    renderLogin(loginPath('http://localhost:5173/callback', ['localhost', 'app.ntnl.io']));
 
     expect(
       await screen.findByText('Local development app'),
     ).toBeInTheDocument();
     expect(screen.getByText('localhost:5173')).toBeInTheDocument();
     expect(screen.getByText('Requesting access to')).toBeInTheDocument();
-    expect(screen.getByText('app.ntnl.io')).toBeInTheDocument();
+    expect(screen.getByText(/app\.ntnl\.io/)).toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText('Language'), 'zh-CN');
 
@@ -312,6 +312,7 @@ describe('LoginRoute', () => {
       email: 'user@example.com',
       code: '123456',
       redirect_uri: 'https://app.example.com/callback',
+      audiences: ['app.example.com'],
     });
     expect(sdkMocks.sendLoginCallback).toHaveBeenCalledWith(
       'https://app.example.com/callback#access_token=jwt-email&token_type=Bearer&session_id=session-email&refresh_token=refresh-email&expires_in=3600&expires_at=2026-06-30T01%3A00%3A00.000Z&state=state-1',
@@ -363,6 +364,7 @@ describe('LoginRoute', () => {
 
     expect(sdkMocks.passkeyAuthenticate).toHaveBeenCalledWith({
       redirect_uri: 'https://app.example.com/callback',
+      audiences: ['app.example.com'],
     });
     expect(sdkMocks.clearLocal).toHaveBeenCalledTimes(1);
     expect(sdkMocks.sendLoginCallback).toHaveBeenCalledWith(
@@ -423,6 +425,7 @@ describe('LoginRoute', () => {
       request_id: 'request-1',
       signature: 'signature-1',
       redirect_uri: 'https://app.example.com/#/callback?next=%2Fapp',
+      audiences: ['app.example.com'],
     });
     expect(sdkMocks.persistDemoSession).not.toHaveBeenCalled();
     expect(sdkMocks.clearLocal).toHaveBeenCalledTimes(1);
@@ -489,7 +492,7 @@ describe('LoginRoute', () => {
       expiresAt: '2026-06-30T01:00:00.000Z',
     });
 
-    renderLogin(loginPath('http://127.0.0.1:4173/callback', 'app.ntnl.io'));
+    renderLogin(loginPath('http://127.0.0.1:4173/callback', ['127.0.0.1', 'app.ntnl.io']));
 
     await user.type(screen.getByLabelText('Email address'), 'user@example.com');
     await user.click(await expectButtonEnabled('Send email code'));
@@ -500,7 +503,7 @@ describe('LoginRoute', () => {
       email: 'user@example.com',
       code: '123456',
       redirect_uri: 'http://127.0.0.1:4173/callback',
-      aud: 'app.ntnl.io',
+      audiences: ['127.0.0.1', 'app.ntnl.io'],
     });
   });
 });
