@@ -89,7 +89,7 @@ pub(crate) fn audiences_from_claim(
     value: &serde_json::Value,
 ) -> Result<Vec<String>, AudienceError> {
     match value {
-        serde_json::Value::String(value) => normalize_audiences(&[value.clone()]),
+        serde_json::Value::String(value) => normalize_audiences(std::slice::from_ref(value)),
         serde_json::Value::Array(values) => normalize_audiences(
             &values
                 .iter()
