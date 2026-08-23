@@ -34,6 +34,7 @@ pub struct AuthMiniPrincipal {
     pub subject: String,
     pub session_id: String,
     pub audience: String,
+    pub audiences: Vec<String>,
     pub authentication_methods: Vec<String>,
     pub issued_at: i64,
     pub expires_at: i64,
@@ -113,6 +114,28 @@ impl AuthMiniLayer {
         Ok(Self { verifier })
     }
 
+    /// Fetches and validates issuer JWKS for tokens containing any supplied audience.
+    pub async fn from_issuer_audiences(
+        issuer: impl AsRef<str>,
+        audiences: impl IntoIterator<Item = String>,
+        policy: JwksCachePolicy,
+    ) -> Result<Self, AuthMiniError> {
+        let verifier =
+            AuthMiniVerifier::from_issuer_audiences(issuer.as_ref(), audiences, policy).await?;
+        Ok(Self { verifier })
+    }
+
+    /// Begins background JWKS warming for tokens containing any supplied audience.
+    pub fn from_issuer_audiences_background(
+        issuer: impl AsRef<str>,
+        audiences: impl IntoIterator<Item = String>,
+        policy: JwksCachePolicy,
+    ) -> Result<Self, AuthMiniError> {
+        let verifier =
+            AuthMiniVerifier::from_issuer_audiences_background(issuer.as_ref(), audiences, policy)?;
+        Ok(Self { verifier })
+    }
+
     /// Returns the shared verifier backing this layer.
     pub fn verifier(&self) -> AuthMiniVerifier {
         self.verifier.clone()
@@ -178,7 +201,7 @@ pub struct AuthMiniVerifier {
 
 struct VerifierInner {
     issuer: String,
-    audience: String,
+    audiences: Vec<String>,
     jwks_url: Url,
     policy: JwksCachePolicy,
     client: reqwest::Client,
@@ -213,7 +236,7 @@ impl AuthMiniVerifier {
         audience: String,
         policy: JwksCachePolicy,
     ) -> Result<Self, AuthMiniError> {
-        let verifier = Self::new(issuer, audience, policy)?;
+        let verifier = Self::new(issuer, vec![audience], policy)?;
         verifier.refresh_now().await?;
         verifier.start_poller();
         Ok(verifier)
@@ -228,7 +251,7 @@ impl AuthMiniVerifier {
         audience: String,
         policy: JwksCachePolicy,
     ) -> Result<Self, AuthMiniError> {
-        let verifier = Self::new(issuer, audience, policy)?;
+        let verifier = Self::new(issuer, vec![audience], policy)?;
         let refresh = verifier.clone();
         tokio::spawn(async move {
             let _ = refresh.refresh_now().await;
@@ -237,8 +260,40 @@ impl AuthMiniVerifier {
         Ok(verifier)
     }
 
-    fn new(issuer: &str, audience: String, policy: JwksCachePolicy) -> Result<Self, AuthMiniError> {
-        if audience.is_empty()
+    /// Builds a verifier after successfully warming its JWKS cache for any supplied audience.
+    pub async fn from_issuer_audiences(
+        issuer: &str,
+        audiences: impl IntoIterator<Item = String>,
+        policy: JwksCachePolicy,
+    ) -> Result<Self, AuthMiniError> {
+        let verifier = Self::new(issuer, audiences.into_iter().collect(), policy)?;
+        verifier.refresh_now().await?;
+        verifier.start_poller();
+        Ok(verifier)
+    }
+
+    /// Begins background JWKS warming for any supplied audience.
+    pub fn from_issuer_audiences_background(
+        issuer: &str,
+        audiences: impl IntoIterator<Item = String>,
+        policy: JwksCachePolicy,
+    ) -> Result<Self, AuthMiniError> {
+        let verifier = Self::new(issuer, audiences.into_iter().collect(), policy)?;
+        let refresh = verifier.clone();
+        tokio::spawn(async move {
+            let _ = refresh.refresh_now().await;
+        });
+        verifier.start_poller();
+        Ok(verifier)
+    }
+
+    fn new(
+        issuer: &str,
+        audiences: Vec<String>,
+        policy: JwksCachePolicy,
+    ) -> Result<Self, AuthMiniError> {
+        let audiences = normalize_audiences(audiences)?;
+        if audiences.is_empty()
             || policy.max_stale < policy.refresh_after
             || policy.poll_interval.is_zero()
         {
@@ -253,7 +308,7 @@ impl AuthMiniVerifier {
         Ok(Self {
             inner: Arc::new(VerifierInner {
                 issuer,
-                audience,
+                audiences,
                 jwks_url,
                 policy,
                 client,
@@ -274,7 +329,7 @@ impl AuthMiniVerifier {
         let key = self.verifying_key(&parsed.kid).await?;
         key.verify(parsed.signing_input.as_bytes(), &parsed.signature)
             .map_err(|_| AuthMiniError::InvalidToken)?;
-        parsed.principal(&self.inner.issuer, &self.inner.audience)
+        parsed.principal(&self.inner.issuer, &self.inner.audiences)
     }
 
     async fn verifying_key(&self, kid: &str) -> Result<VerifyingKey, AuthMiniError> {
@@ -636,12 +691,12 @@ impl ParsedToken {
     fn principal(
         self,
         expected_issuer: &str,
-        expected_audience: &str,
+        expected_audiences: &[String],
     ) -> Result<AuthMiniPrincipal, AuthMiniError> {
         let subject = required_string(&self.claims, "sub")?;
         let session_id = required_string(&self.claims, "sid")?;
         let issuer = required_string(&self.claims, "iss")?;
-        let audience = required_string(&self.claims, "aud")?;
+        let audiences = required_audiences(&self.claims)?;
         let token_type = required_string(&self.claims, "typ")?;
         let issued_at = required_number(&self.claims, "iat")?;
         let expires_at = required_number(&self.claims, "exp")?;
@@ -664,7 +719,9 @@ impl ParsedToken {
             Some(value) => Some(value.as_i64().ok_or(AuthMiniError::InvalidToken)?),
         };
         if issuer != expected_issuer
-            || audience != expected_audience
+            || !audiences
+                .iter()
+                .any(|audience| expected_audiences.contains(audience))
             || token_type != "access"
             || expires_at <= now
             || issued_at > now.saturating_add(60)
@@ -682,7 +739,12 @@ impl ParsedToken {
         Ok(AuthMiniPrincipal {
             subject: subject.to_string(),
             session_id: session_id.to_string(),
-            audience: audience.to_string(),
+            audience: expected_audiences
+                .iter()
+                .find(|expected| audiences.contains(expected))
+                .cloned()
+                .ok_or(AuthMiniError::InvalidToken)?,
+            audiences,
             authentication_methods: authentication_methods
                 .into_iter()
                 .map(ToOwned::to_owned)
@@ -706,6 +768,39 @@ fn decode_json_segment<T: serde::de::DeserializeOwned>(segment: &str) -> Result<
         .decode(segment)
         .map_err(|_| AuthMiniError::InvalidToken)?;
     serde_json::from_slice(&bytes).map_err(|_| AuthMiniError::InvalidToken)
+}
+
+fn normalize_audiences(mut audiences: Vec<String>) -> Result<Vec<String>, AuthMiniError> {
+    if audiences.iter().any(|audience| audience.is_empty()) {
+        return Err(AuthMiniError::InvalidIssuer);
+    }
+    audiences.sort();
+    audiences.dedup();
+    (!audiences.is_empty())
+        .then_some(audiences)
+        .ok_or(AuthMiniError::InvalidIssuer)
+}
+
+fn required_audiences(value: &serde_json::Value) -> Result<Vec<String>, AuthMiniError> {
+    let audiences = match value.get("aud") {
+        Some(serde_json::Value::String(audience)) => vec![audience.to_owned()],
+        Some(serde_json::Value::Array(values)) => values
+            .iter()
+            .map(|value| {
+                value
+                    .as_str()
+                    .map(str::to_owned)
+                    .ok_or(AuthMiniError::InvalidToken)
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+        _ => return Err(AuthMiniError::InvalidToken),
+    };
+    let mut audiences = audiences;
+    audiences.sort();
+    audiences.dedup();
+    (!audiences.is_empty() && audiences.iter().all(|audience| !audience.is_empty()))
+        .then_some(audiences)
+        .ok_or(AuthMiniError::InvalidToken)
 }
 
 fn required_string<'a>(value: &'a serde_json::Value, key: &str) -> Result<&'a str, AuthMiniError> {
@@ -1341,5 +1436,37 @@ mod tests {
         assert!(normalize_issuer("http://192.0.2.1:7777").is_err());
         assert!(normalize_issuer("https://auth.example.com/tenant").is_err());
         assert!(normalize_issuer("https://auth.example.com?tenant=one").is_err());
+    }
+}
+
+#[cfg(test)]
+mod multi_audience_tests {
+    use super::*;
+    use ed25519_dalek::{Signer, SigningKey};
+    use serde_json::json;
+
+    #[test]
+    fn principal_accepts_membership_in_a_multi_audience_claim() {
+        let key = SigningKey::from_bytes(&[42; 32]);
+        let header = json!({"alg":"EdDSA","kid":"test"});
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_secs() as i64;
+        let payload = json!({"sub":"user","sid":"session","iss":"https://auth.example.com","aud":["1ex.ntnl.io","linkit.ntnl.io"],"typ":"access","iat":now,"exp":now+60,"amr":["email_otp"]});
+        let h = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header).expect("header"));
+        let p = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).expect("payload"));
+        let signature = key.sign(format!("{h}.{p}").as_bytes());
+        let token = format!("{h}.{p}.{}", URL_SAFE_NO_PAD.encode(signature.to_bytes()));
+        let parsed = ParsedToken::parse(&token).expect("token parses");
+        let principal = parsed
+            .principal("https://auth.example.com", &["linkit.ntnl.io".to_owned()])
+            .expect("linkit audience accepted");
+        assert_eq!(principal.audience, "linkit.ntnl.io");
+        assert_eq!(principal.audiences, vec!["1ex.ntnl.io", "linkit.ntnl.io"]);
+        let parsed = ParsedToken::parse(&token).expect("token parses");
+        assert!(parsed
+            .principal("https://auth.example.com", &["other.ntnl.io".to_owned()])
+            .is_err());
     }
 }

@@ -151,9 +151,13 @@ export type EmailVerifyRequest = {
      */
     redirect_uri?: string;
     /**
-     * Explicit normalized hostname audience. Required only when redirect_uri uses localhost, 127.0.0.1, or ::1; rejected otherwise.
+     * Legacy single normalized hostname audience. Cannot be combined with audiences.
      */
     aud?: string;
+    /**
+     * Canonical resource audience set. It must include the redirect URI hostname.
+     */
+    audiences?: Array<string>;
 };
 
 export type RefreshRequest = {
@@ -173,9 +177,9 @@ export type SessionSummary = {
     id: string;
     auth_method: string;
     /**
-     * Normalized hostname of the website signed in to by this session.
+     * Canonical resource audience or audience set for this session.
      */
-    aud: string;
+    aud: string | Array<string>;
     created_at: string;
     expires_at: string;
     ip: string | null;
@@ -237,9 +241,13 @@ export type Ed25519VerifyRequest = {
      */
     redirect_uri?: string;
     /**
-     * Explicit normalized hostname audience. Required only when redirect_uri uses localhost, 127.0.0.1, or ::1; rejected otherwise.
+     * Legacy single normalized hostname audience. Cannot be combined with audiences.
      */
     aud?: string;
+    /**
+     * Canonical resource audience set. It must include the redirect URI hostname.
+     */
+    audiences?: Array<string>;
 };
 
 export type WebauthnOptionsRequest = {
@@ -342,9 +350,13 @@ export type WebauthnAuthenticateVerifyRequest = {
      */
     redirect_uri?: string;
     /**
-     * Explicit normalized hostname audience. Required only when redirect_uri uses localhost, 127.0.0.1, or ::1; rejected otherwise.
+     * Legacy single normalized hostname audience. Cannot be combined with audiences.
      */
     aud?: string;
+    /**
+     * Canonical resource audience set. It must include the redirect URI hostname.
+     */
+    audiences?: Array<string>;
 };
 
 export type JwkPublicEd25519 = {

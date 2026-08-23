@@ -4,7 +4,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use crate::audience::issuer_audience;
+use crate::audience::{audiences_from_claim, issuer_audience, normalize_audiences};
 use crate::db::read_app_issuer;
 use crate::jwks::sign_access_token;
 
@@ -40,7 +40,7 @@ pub(crate) struct AuthContext {
     pub(crate) user_id: String,
     pub(crate) session_id: String,
     pub(crate) auth_method: String,
-    pub(crate) audience: String,
+    pub(crate) audiences: Vec<String>,
 }
 
 pub(crate) fn parse_refresh_request(body: &str) -> Result<RefreshRequest, serde_json::Error> {
@@ -61,10 +61,11 @@ pub(crate) fn mint_session_tokens_for_audience(
     user_id: &str,
     auth_method: &str,
     issuer: &str,
-    audience: &str,
+    audiences: &[String],
     ip: Option<&str>,
     user_agent: Option<&str>,
 ) -> rusqlite::Result<TokenPair> {
+    let audiences = normalize_audiences(audiences).map_err(|_| rusqlite::Error::InvalidQuery)?;
     let session_id = random_uuid(connection)?;
     let refresh_token = random_token(connection)?;
     let refresh_token_hash = hash_value(&refresh_token);
@@ -74,7 +75,7 @@ pub(crate) fn mint_session_tokens_for_audience(
     connection.execute(
         "INSERT INTO sessions (id, user_id, refresh_token_hash, auth_method, audience, ip, user_agent, expires_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-        params![session_id, user_id, refresh_token_hash, auth_method, audience, ip, user_agent, expires_at],
+        params![session_id, user_id, refresh_token_hash, auth_method, audiences_storage(&audiences)?, ip, user_agent, expires_at],
     )?;
 
     let access_token = sign_access_token(
@@ -82,7 +83,7 @@ pub(crate) fn mint_session_tokens_for_audience(
         user_id,
         &session_id,
         issuer,
-        audience,
+        &audiences,
         auth_method,
     )?;
 
@@ -103,14 +104,14 @@ pub(crate) fn mint_session_tokens(
     user_agent: Option<&str>,
 ) -> rusqlite::Result<TokenPair> {
     let issuer = read_app_issuer(connection).unwrap_or_else(|_| issuer.to_string());
-    let audience = issuer_audience(&issuer).unwrap_or_else(|_| issuer.clone());
+    let audiences = vec![issuer_audience(&issuer).unwrap_or_else(|_| issuer.clone())];
 
     mint_session_tokens_for_audience(
         connection,
         user_id,
         auth_method,
         &issuer,
-        &audience,
+        &audiences,
         ip,
         user_agent,
     )
@@ -163,7 +164,7 @@ pub(crate) fn refresh_session_tokens(
         &session.user_id,
         &session.id,
         issuer,
-        &session.audience,
+        &session.audiences,
         &session.auth_method,
     )
     .map_err(|_| SessionError::SessionInvalidated)?;
@@ -189,10 +190,9 @@ pub(crate) fn authenticate_access_token(
         .get("sid")
         .and_then(Value::as_str)
         .ok_or(SessionError::InvalidAccessToken)?;
-    let audience = payload
-        .get("aud")
-        .and_then(Value::as_str)
-        .ok_or(SessionError::InvalidAccessToken)?;
+    let audiences =
+        audiences_from_claim(payload.get("aud").ok_or(SessionError::InvalidAccessToken)?)
+            .map_err(|_| SessionError::InvalidAccessToken)?;
     let Some(session) =
         get_session(connection, session_id).map_err(|_| SessionError::InvalidAccessToken)?
     else {
@@ -201,7 +201,7 @@ pub(crate) fn authenticate_access_token(
 
     if session.expires_at <= now_text()
         || session.user_id != user_id
-        || session.audience != audience
+        || session.audiences != audiences
     {
         return Err(SessionError::InvalidAccessToken);
     }
@@ -210,7 +210,7 @@ pub(crate) fn authenticate_access_token(
         user_id: user_id.to_string(),
         session_id: session_id.to_string(),
         auth_method: session.auth_method,
-        audience: audience.to_string(),
+        audiences,
     })
 }
 
@@ -221,7 +221,7 @@ pub(crate) fn require_self_audience(
     let issuer = read_app_issuer(connection).map_err(|_| SessionError::InvalidAccessToken)?;
     let audience = issuer_audience(&issuer).map_err(|_| SessionError::InvalidAccessToken)?;
 
-    if auth.audience == audience {
+    if auth.audiences.iter().any(|value| value == &audience) {
         return Ok(());
     }
 
@@ -439,8 +439,18 @@ struct SessionRow {
     user_id: String,
     refresh_token_hash: String,
     auth_method: String,
-    audience: String,
+    audiences: Vec<String>,
     expires_at: String,
+}
+
+fn audiences_storage(audiences: &[String]) -> rusqlite::Result<String> {
+    serde_json::to_string(audiences).map_err(|_| rusqlite::Error::InvalidQuery)
+}
+
+fn audiences_from_storage(value: &str) -> rusqlite::Result<Vec<String>> {
+    let values =
+        serde_json::from_str::<Vec<String>>(value).unwrap_or_else(|_| vec![value.to_owned()]);
+    normalize_audiences(&values).map_err(|_| rusqlite::Error::InvalidQuery)
 }
 
 fn get_session(connection: &Connection, session_id: &str) -> rusqlite::Result<Option<SessionRow>> {
@@ -455,7 +465,7 @@ fn get_session(connection: &Connection, session_id: &str) -> rusqlite::Result<Op
                     user_id: row.get(1)?,
                     refresh_token_hash: row.get(2)?,
                     auth_method: row.get(3)?,
-                    audience: row.get(4)?,
+                    audiences: audiences_from_storage(&row.get::<_, String>(4)?)?,
                     expires_at: row.get(5)?,
                 })
             },
@@ -566,7 +576,7 @@ mod tests {
                 user_id: "user-1".to_string(),
                 session_id: "session-1".to_string(),
                 auth_method: "email_otp".to_string(),
-                audience: "auth-mini".to_string(),
+                audiences: vec!["auth-mini".to_string()],
             },
         )
         .expect("current user response builds");
@@ -623,5 +633,56 @@ mod tests {
                  );",
             )
             .expect("me response schema exists");
+    }
+}
+
+#[cfg(test)]
+mod multi_audience_tests {
+    use super::*;
+
+    #[test]
+    fn refresh_preserves_canonical_multi_audience_session() {
+        let connection = Connection::open_in_memory().expect("database opens");
+        connection.execute_batch(
+            "CREATE TABLE sessions (id TEXT PRIMARY KEY,user_id TEXT NOT NULL,refresh_token_hash TEXT NOT NULL,auth_method TEXT NOT NULL,audience TEXT NOT NULL,ip TEXT,user_agent TEXT,expires_at TEXT NOT NULL);
+             CREATE TABLE app_meta (id TEXT PRIMARY KEY,issuer TEXT NOT NULL,admin_user_id TEXT);
+             CREATE TABLE jwks_keys (id TEXT PRIMARY KEY,kid TEXT NOT NULL,alg TEXT NOT NULL,public_jwk TEXT NOT NULL,private_jwk TEXT NOT NULL);",
+        ).expect("schema creates");
+        connection
+            .execute(
+                "INSERT INTO app_meta(id,issuer) VALUES('APP','https://auth.example.com')",
+                [],
+            )
+            .expect("issuer inserts");
+        let audiences = vec!["linkit.ntnl.io".to_owned(), "1ex.ntnl.io".to_owned()];
+        let pair = mint_session_tokens_for_audience(
+            &connection,
+            "user-1",
+            "email_otp",
+            "https://auth.example.com",
+            &audiences,
+            None,
+            None,
+        )
+        .expect("session mints");
+        let payload = crate::jwks::verify_access_token(&connection, &pair.access_token)
+            .expect("access verifies");
+        assert_eq!(payload["aud"], json!(["1ex.ntnl.io", "linkit.ntnl.io"]));
+        let refreshed = refresh_session_tokens(
+            &connection,
+            &RefreshRequest {
+                session_id: pair.session_id,
+                refresh_token: pair.refresh_token,
+            },
+            "https://auth.example.com",
+        )
+        .expect("session refreshes");
+        let refreshed_payload =
+            crate::jwks::verify_access_token(&connection, &refreshed.access_token)
+                .expect("refresh verifies");
+        assert_eq!(
+            refreshed_payload["aud"],
+            json!(["1ex.ntnl.io", "linkit.ntnl.io"])
+        );
     }
 }

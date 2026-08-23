@@ -109,3 +109,28 @@ describe('Auth Mini redirect helpers', () => {
     );
   });
 });
+
+describe('多 audience 登录参数', () => {
+  it('规范化并要求 callback hostname 位于 audiences 中', async () => {
+    const { resolveAuthMiniAudiences, getAuthMiniLoginUrl } =
+      await import('../src/auth-callback.js');
+    expect(
+      resolveAuthMiniAudiences(
+        undefined,
+        ['LINKIT.NTNL.IO', '1ex.ntnl.io'],
+        '1ex.ntnl.io',
+      ),
+    ).toEqual(['1ex.ntnl.io', 'linkit.ntnl.io']);
+    expect(() =>
+      resolveAuthMiniAudiences(undefined, ['linkit.ntnl.io'], '1ex.ntnl.io'),
+    ).toThrow('callback hostname');
+    expect(
+      getAuthMiniLoginUrl({
+        authMiniBaseUrl: 'https://auth.example.test',
+        audiences: ['1ex.ntnl.io', 'linkit.ntnl.io'],
+        callbackUrl: 'https://1ex.ntnl.io/callback',
+        state: 'state',
+      }),
+    ).toContain('audiences=');
+  });
+});

@@ -133,7 +133,12 @@ describe('openapi contract', () => {
       ],
       properties: {
         auth_method: { type: 'string' },
-        aud: { type: 'string' },
+        aud: {
+          oneOf: [
+            { type: 'string' },
+            { type: 'array', items: { type: 'string' } },
+          ],
+        },
         ip: { type: ['string', 'null'] },
         user_agent: { type: ['string', 'null'] },
       },

@@ -11,7 +11,7 @@ use axum::routing::any;
 use axum::Router;
 use tokio::sync::Semaphore;
 
-use crate::audience::resolve_audience;
+use crate::audience::resolve_audiences;
 use crate::config::Config;
 use crate::db::{initialize_runtime_database, read_app_issuer};
 use crate::ed25519::{
@@ -614,10 +614,11 @@ fn handle_email_verify(request: &Request, config: &Config) -> io::Result<Respons
     };
     let connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
     let issuer = read_app_issuer(&connection).map_err(io::Error::other)?;
-    let audience = match resolve_audience(
+    let audiences = match resolve_audiences(
         &issuer,
         parsed.redirect_uri.as_deref(),
         parsed.aud.as_deref(),
+        parsed.audiences.as_deref(),
     ) {
         Ok(audience) => audience,
         Err(_) => return Ok(Response::json_error(400, "invalid_request")),
@@ -631,7 +632,7 @@ fn handle_email_verify(request: &Request, config: &Config) -> io::Result<Respons
                 &user_id,
                 "email_otp",
                 &issuer,
-                &audience,
+                &audiences,
                 request.client_ip().as_deref(),
                 request.header("User-Agent").as_deref(),
             )
@@ -895,10 +896,11 @@ fn handle_webauthn_authentication_verify(
     };
     let connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
     let issuer = read_app_issuer(&connection).map_err(io::Error::other)?;
-    let audience = match resolve_audience(
+    let audiences = match resolve_audiences(
         &issuer,
         parsed.redirect_uri.as_deref(),
         parsed.aud.as_deref(),
+        parsed.audiences.as_deref(),
     ) {
         Ok(audience) => audience,
         Err(_) => return Ok(Response::json_error(400, "invalid_request")),
@@ -911,7 +913,7 @@ fn handle_webauthn_authentication_verify(
                 &outcome.user_id,
                 "webauthn",
                 &issuer,
-                &audience,
+                &audiences,
                 request.client_ip().as_deref(),
                 request.header("User-Agent").as_deref(),
             )
@@ -952,10 +954,11 @@ fn handle_ed25519_verify(request: &Request, config: &Config) -> io::Result<Respo
     };
     let mut connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
     let issuer = read_app_issuer(&connection).map_err(io::Error::other)?;
-    let audience = match resolve_audience(
+    let audiences = match resolve_audiences(
         &issuer,
         parsed.redirect_uri.as_deref(),
         parsed.aud.as_deref(),
+        parsed.audiences.as_deref(),
     ) {
         Ok(audience) => audience,
         Err(_) => return Ok(Response::json_error(400, "invalid_request")),
@@ -965,7 +968,7 @@ fn handle_ed25519_verify(request: &Request, config: &Config) -> io::Result<Respo
         &mut connection,
         &parsed,
         &issuer,
-        &audience,
+        &audiences,
         request.client_ip().as_deref(),
         request.header("User-Agent").as_deref(),
     ) {
@@ -1738,7 +1741,7 @@ mod tests {
         assert_eq!(user_count, 1);
         assert_eq!(session_context.0.as_deref(), Some("198.51.100.20"));
         assert_eq!(session_context.1.as_deref(), Some("EmailAgent/1.0"));
-        assert_eq!(session_context.2, "portal.example.com");
+        assert_eq!(session_context.2, "[\"portal.example.com\"]");
         assert_eq!(payload["aud"], "portal.example.com");
     }
 
@@ -1758,7 +1761,7 @@ mod tests {
             "user-1",
             "email_otp",
             "https://app.example.com",
-            "api.example.com",
+            &["api.example.com".to_owned()],
             None,
             None,
         )
@@ -1814,7 +1817,7 @@ mod tests {
             "user-1",
             "email_otp",
             "https://app.example.com",
-            "api.example.com",
+            &["api.example.com".to_owned()],
             None,
             None,
         )

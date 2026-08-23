@@ -13,6 +13,7 @@ pub(crate) struct EmailVerifyRequest {
     pub(crate) code: String,
     pub(crate) redirect_uri: Option<String>,
     pub(crate) aud: Option<String>,
+    pub(crate) audiences: Option<Vec<String>>,
 }
 
 #[derive(Debug, PartialEq, Eq)]

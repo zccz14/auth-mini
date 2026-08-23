@@ -1270,9 +1270,14 @@ components:
             and ::1.
         aud:
           type: string
-          description: >-
-            Explicit normalized hostname audience. Required only when
-            redirect_uri uses localhost, 127.0.0.1, or ::1; rejected otherwise.
+          description: Legacy single normalized hostname audience. Cannot be combined with audiences.
+        audiences:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+          description: Canonical resource audience set. It must include the redirect URI hostname.
     RefreshRequest:
       type: object
       additionalProperties: false
@@ -1327,8 +1332,12 @@ components:
         auth_method:
           type: string
         aud:
-          type: string
-          description: Normalized hostname of the website signed in to by this session.
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+          description: Canonical resource audience or audience set for this session.
         created_at:
           type: string
           format: date-time
@@ -1497,9 +1506,14 @@ components:
             and ::1.
         aud:
           type: string
-          description: >-
-            Explicit normalized hostname audience. Required only when
-            redirect_uri uses localhost, 127.0.0.1, or ::1; rejected otherwise.
+          description: Legacy single normalized hostname audience. Cannot be combined with audiences.
+        audiences:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+          description: Canonical resource audience set. It must include the redirect URI hostname.
     WebauthnOptionsRequest:
       type: object
       additionalProperties: false
@@ -1756,9 +1770,14 @@ components:
             and ::1.
         aud:
           type: string
-          description: >-
-            Explicit normalized hostname audience. Required only when
-            redirect_uri uses localhost, 127.0.0.1, or ::1; rejected otherwise.
+          description: Legacy single normalized hostname audience. Cannot be combined with audiences.
+        audiences:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+          description: Canonical resource audience set. It must include the redirect URI hostname.
     JwkPublicEd25519:
       type: object
       additionalProperties: false

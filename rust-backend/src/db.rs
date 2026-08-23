@@ -3,7 +3,7 @@ use std::path::Path;
 
 use rusqlite::Connection;
 
-use crate::audience::issuer_audience;
+use crate::audience::{issuer_audience, normalize_audiences};
 use crate::jwks::bootstrap_keys;
 
 const SCHEMA_SQL: &str = include_str!("../../sql/schema.sql");
@@ -119,10 +119,30 @@ fn migrate_runtime_schema(connection: &mut Connection) -> rusqlite::Result<()> {
             [],
         )?;
     }
-    session_migration.execute(
-        "UPDATE sessions SET audience = ?1 WHERE audience IS NULL OR audience = ''",
-        [audience],
-    )?;
+    let mut statement = session_migration.prepare("SELECT id, audience FROM sessions")?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(statement);
+    for (id, stored) in rows {
+        let values = serde_json::from_str::<Vec<String>>(&stored).unwrap_or_else(|_| {
+            vec![if stored.is_empty() {
+                audience.clone()
+            } else {
+                stored
+            }]
+        });
+        let canonical = serde_json::to_string(
+            &normalize_audiences(&values).map_err(|_| rusqlite::Error::InvalidQuery)?,
+        )
+        .map_err(|_| rusqlite::Error::InvalidQuery)?;
+        session_migration.execute(
+            "UPDATE sessions SET audience=?1 WHERE id=?2",
+            [canonical, id],
+        )?;
+    }
     session_migration.commit()?;
     if !table_has_column(connection, "webauthn_challenges", "rp_name")? {
         connection.execute(
@@ -461,7 +481,7 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("migrated audience reads");
-        assert_eq!(audience, "auth.example.com");
+        assert_eq!(audience, "[\"auth.example.com\"]");
         connection
             .execute(
                 "INSERT INTO sessions
@@ -482,7 +502,7 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("backfilled audience reads");
-        assert_eq!(audience, "auth.example.com");
+        assert_eq!(audience, "[\"auth.example.com\"]");
     }
 
     #[test]
@@ -513,7 +533,7 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("audience reads");
-        assert_eq!(audience, "localhost");
+        assert_eq!(audience, "[\"localhost\"]");
     }
 
     #[test]

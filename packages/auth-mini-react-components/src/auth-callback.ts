@@ -36,17 +36,59 @@ export function getAuthMiniSecurityUrl(authMiniBaseUrl: string): string {
   return url.toString();
 }
 
+export function resolveAuthMiniAudiences(
+  audience: string | undefined,
+  audiences: readonly string[] | undefined,
+  hostname: string = window.location.hostname,
+): string[] | undefined {
+  if (audience !== undefined && audiences !== undefined) {
+    throw new Error(
+      'AuthMiniProvider cannot use audience and audiences together.',
+    );
+  }
+  const callbackAudience = hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  const values = audiences ?? (audience === undefined ? undefined : [audience]);
+  if (values === undefined) {
+    return isLoopbackHostname(hostname) ? [callbackAudience] : undefined;
+  }
+  const normalized = values.map(normalizeAudience);
+  if (normalized.some((value) => value === null)) {
+    throw new Error('AuthMiniProvider audiences must be non-empty hostnames.');
+  }
+  const result = normalized as string[];
+  if (new Set(result).size !== result.length) {
+    throw new Error('AuthMiniProvider audiences must not contain duplicates.');
+  }
+  if (!result.includes(callbackAudience)) {
+    throw new Error(
+      'AuthMiniProvider audiences must include the callback hostname.',
+    );
+  }
+  return [...result].sort();
+}
+
+/** @deprecated Use resolveAuthMiniAudiences. */
 export function resolveAuthMiniAudience(
   audience: string | undefined,
   hostname: string = window.location.hostname,
 ): string | undefined {
-  if (audience !== undefined) {
-    return audience;
-  }
+  return (
+    audience ??
+    (isLoopbackHostname(hostname)
+      ? hostname.replace(/^\[|\]$/g, '')
+      : undefined)
+  );
+}
 
-  return isLoopbackHostname(hostname)
-    ? hostname.replace(/^\[|\]$/g, '')
-    : undefined;
+function normalizeAudience(value: string): string | null {
+  if (
+    !value ||
+    value !== value.trim() ||
+    value.includes('/') ||
+    value.includes(':')
+  )
+    return null;
+  return value.replace(/\.$/, '').toLowerCase() || null;
 }
 
 function isLoopbackHostname(hostname: string): boolean {
@@ -56,6 +98,7 @@ function isLoopbackHostname(hostname: string): boolean {
 export function getAuthMiniLoginUrl(input: {
   authMiniBaseUrl: string;
   audience?: string;
+  audiences?: readonly string[];
   callbackUrl: string;
   state: string;
 }): string {
@@ -64,9 +107,14 @@ export function getAuthMiniLoginUrl(input: {
     redirect_uri: input.callbackUrl,
     state: input.state,
   });
-  if (input.audience) {
-    parameters.set('aud', input.audience);
+  if (input.audience && input.audiences) {
+    throw new Error(
+      'Auth Mini login cannot use audience and audiences together.',
+    );
   }
+  if (input.audience) parameters.set('aud', input.audience);
+  if (input.audiences)
+    parameters.set('audiences', JSON.stringify(input.audiences));
   url.hash = `/login?${parameters.toString()}`;
   return url.toString();
 }
