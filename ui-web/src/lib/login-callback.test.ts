@@ -34,12 +34,14 @@ describe('login callback helpers', () => {
       target: {
         kind: 'redirect',
         audience: 'app.example.com',
+        audiences: ['app.example.com'],
         redirectUri: 'https://app.example.com/callback',
       },
     });
     if (request.status === 'ready') {
       expect(authenticationTarget(request)).toEqual({
         redirect_uri: 'https://app.example.com/callback',
+        audiences: ['app.example.com'],
       });
     }
   });
@@ -58,13 +60,14 @@ describe('login callback helpers', () => {
     });
     expect(
       parseLoginRequest(
-        '?redirect_uri=http%3A%2F%2FLOCALHOST..%3A5173%2Fcallback&aud=app.example.com',
+        '?redirect_uri=http%3A%2F%2FLOCALHOST..%3A5173%2Fcallback&audiences=%5B%22localhost%22%2C%22app.example.com%22%5D',
       ),
     ).toMatchObject({
       status: 'ready',
       target: {
         kind: 'loopback',
-        audience: 'app.example.com',
+        audience: 'localhost',
+        audiences: ['localhost', 'app.example.com'],
       },
     });
   });
@@ -112,7 +115,7 @@ describe('login callback helpers', () => {
       ),
     ).toEqual({
       status: 'invalid',
-      error: 'aud is required for a loopback redirect_uri.',
+      error: 'aud or audiences is required for a loopback redirect_uri.',
     });
     expect(
       parseLoginRequest(
@@ -120,7 +123,7 @@ describe('login callback helpers', () => {
       ),
     ).toEqual({
       status: 'invalid',
-      error: 'aud must be a valid hostname without a scheme, port, or path.',
+      error: 'audiences must be unique hostnames without a scheme, port, or path.',
     });
     expect(
       parseLoginRequest(
@@ -128,7 +131,7 @@ describe('login callback helpers', () => {
       ),
     ).toEqual({
       status: 'invalid',
-      error: 'aud must be a valid hostname without a scheme, port, or path.',
+      error: 'audiences must be unique hostnames without a scheme, port, or path.',
     });
     expect(
       parseLoginRequest(
@@ -136,14 +139,14 @@ describe('login callback helpers', () => {
       ),
     ).toEqual({
       status: 'invalid',
-      error: 'aud must be a valid hostname without a scheme, port, or path.',
+      error: 'audiences must be unique hostnames without a scheme, port, or path.',
     });
   });
 
   it('accepts a bare IPv6 hostname as a loopback audience', () => {
     expect(
       parseLoginRequest(
-        '?redirect_uri=http%3A%2F%2Flocalhost%3A5173%2Fcallback&aud=%3A%3A1',
+        '?redirect_uri=http%3A%2F%2F%5B%3A%3A1%5D%3A5173%2Fcallback&aud=%3A%3A1',
       ),
     ).toMatchObject({
       status: 'ready',
@@ -160,7 +163,7 @@ describe('login callback helpers', () => {
     ['[::1]', '[::1]:5173'],
   ])('parses the loopback redirect %s', (hostname, displayHost) => {
     const request = parseLoginRequest(
-      `?redirect_uri=${encodeURIComponent(`http://${hostname}:5173/callback`)}&aud=APP.NTNL.IO`,
+      `?redirect_uri=${encodeURIComponent(`http://${hostname}:5173/callback`)}&audiences=${encodeURIComponent(JSON.stringify([hostname.replace(/^\[|\]$/g, '').toLowerCase(), 'APP.NTNL.IO']))}`,
     );
 
     expect(request).toEqual({
@@ -168,7 +171,8 @@ describe('login callback helpers', () => {
       state: null,
       target: {
         kind: 'loopback',
-        audience: 'app.ntnl.io',
+        audience: hostname.replace(/^\[|\]$/g, '').toLowerCase(),
+        audiences: [hostname.replace(/^\[|\]$/g, '').toLowerCase(), 'app.ntnl.io'],
         displayHost,
         redirectUri: `http://${displayHost}/callback`,
       },
@@ -176,7 +180,7 @@ describe('login callback helpers', () => {
     if (request.status === 'ready') {
       expect(authenticationTarget(request)).toEqual({
         redirect_uri: `http://${displayHost}/callback`,
-        aud: 'app.ntnl.io',
+        audiences: [hostname.replace(/^\[|\]$/g, '').toLowerCase(), 'app.ntnl.io'],
       });
     }
   });
@@ -202,6 +206,7 @@ describe('login callback helpers', () => {
       target: {
         kind: 'redirect',
         audience: 'app.example.com',
+        audiences: ['app.example.com'],
         redirectUri: 'https://app.example.com/callback',
       },
     });
