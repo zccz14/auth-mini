@@ -11,11 +11,13 @@ export type LoginRequest =
         | {
             kind: 'redirect';
             audience: string;
+            audiences?: string[];
             redirectUri: string;
           }
         | {
             kind: 'loopback';
             audience: string;
+            audiences?: string[];
             displayHost: string;
             redirectUri: string;
           };
@@ -53,10 +55,14 @@ export function parseLoginRequest(
       ? documentParams.get('aud')
       : null;
   const audience = audienceParam ?? '';
+  const audiencesParam =
+    params.get('audiences') ?? documentParams.get('audiences');
+  const audiences =
+    audiencesParam === null ? undefined : parseAudiences(audiencesParam);
   const state = params.get('state') ?? documentParams.get('state');
 
   if (!redirectUri) {
-    if (audienceParam !== null) {
+    if (audienceParam !== null || audiencesParam !== null) {
       return {
         status: 'invalid',
         error: 'aud requires a loopback redirect_uri.',
@@ -89,26 +95,50 @@ export function parseLoginRequest(
 
   const hostname = normalizeHostname(parsed.hostname);
   if (isLoopbackHostname(hostname)) {
-    const normalizedAudience = normalizeAudience(audience);
-    if (audienceParam === null) {
+    if (audienceParam !== null && audiencesParam !== null) {
       return {
         status: 'invalid',
-        error: 'aud is required for a loopback redirect_uri.',
+        error: 'aud and audiences cannot be combined.',
       };
     }
-    if (!normalizedAudience) {
+    if (audiences === null) {
       return {
         status: 'invalid',
-        error: 'aud must be a valid hostname without a scheme, port, or path.',
+        error: 'audiences must be a JSON array of hostnames.',
       };
     }
-
+    const requestedAudiences =
+      audiences ?? (audienceParam === null ? undefined : [audience]);
+    if (!requestedAudiences) {
+      return {
+        status: 'invalid',
+        error: 'aud or audiences is required for a loopback redirect_uri.',
+      };
+    }
+    const normalized = requestedAudiences.map(normalizeAudience);
+    if (
+      normalized.some((value) => value === null) ||
+      new Set(normalized).size !== normalized.length
+    ) {
+      return {
+        status: 'invalid',
+        error:
+          'audiences must be unique hostnames without a scheme, port, or path.',
+      };
+    }
+    if (!normalized.includes(hostname)) {
+      return {
+        status: 'invalid',
+        error: 'audiences must include the redirect hostname.',
+      };
+    }
     return {
       status: 'ready',
       state,
       target: {
         kind: 'loopback',
-        audience: normalizedAudience,
+        audience: hostname,
+        audiences: normalized as string[],
         displayHost: parsed.host,
         redirectUri: parsed.toString(),
       },
@@ -128,12 +158,26 @@ export function parseLoginRequest(
     };
   }
 
+  if (audiences === null) {
+    return {
+      status: 'invalid',
+      error: 'audiences must be a JSON array of hostnames.',
+    };
+  }
+  const requestedAudiences = audiences ?? [hostname];
+  if (!requestedAudiences.includes(hostname)) {
+    return {
+      status: 'invalid',
+      error: 'audiences must include the redirect hostname.',
+    };
+  }
   return {
     status: 'ready',
     state,
     target: {
       kind: 'redirect',
       audience: hostname,
+      audiences: requestedAudiences,
       redirectUri: parsed.toString(),
     },
   };
@@ -147,13 +191,44 @@ export function authenticationTarget(
   }
 
   if (request.target.kind === 'redirect') {
-    return { redirect_uri: request.target.redirectUri };
+    return request.target.audiences
+      ? {
+          redirect_uri: request.target.redirectUri,
+          audiences: request.target.audiences,
+        }
+      : { redirect_uri: request.target.redirectUri };
   }
 
-  return {
-    redirect_uri: request.target.redirectUri,
-    aud: request.target.audience,
-  };
+  return request.target.audiences
+    ? {
+        redirect_uri: request.target.redirectUri,
+        audiences: request.target.audiences,
+      }
+    : {
+        redirect_uri: request.target.redirectUri,
+        aud: request.target.audience,
+      };
+}
+
+function parseAudiences(value: string): string[] | null {
+  try {
+    const values = JSON.parse(value);
+    if (
+      !Array.isArray(values) ||
+      values.length === 0 ||
+      values.some((item) => typeof item !== 'string')
+    )
+      return null;
+    const normalized = values.map(normalizeAudience);
+    if (
+      normalized.some((item) => item === null) ||
+      new Set(normalized).size !== normalized.length
+    )
+      return null;
+    return normalized as string[];
+  } catch {
+    return null;
+  }
 }
 
 function isLoopbackHostname(hostname: string) {

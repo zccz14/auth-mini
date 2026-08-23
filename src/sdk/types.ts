@@ -56,7 +56,10 @@ export type EmailStartInput = GeneratedEmailStartInput;
 
 export type AuthenticationTargetInput = {
   redirect_uri?: string;
+  /** Legacy single audience. Cannot be combined with audiences. */
   aud?: string;
+  /** Explicit resource audiences. The callback hostname must be included. */
+  audiences?: string[];
 };
 
 export type EmailVerifyInput = GeneratedEmailVerifyInput;

@@ -47,6 +47,7 @@ pub(crate) struct AuthenticationVerifyRequest {
     credential: AuthenticationCredential,
     pub(crate) redirect_uri: Option<String>,
     pub(crate) aud: Option<String>,
+    pub(crate) audiences: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]

@@ -30,6 +30,7 @@ pub(crate) struct VerifyAuthenticationRequest {
     pub(crate) signature: String,
     pub(crate) redirect_uri: Option<String>,
     pub(crate) aud: Option<String>,
+    pub(crate) audiences: Option<Vec<String>>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -213,7 +214,7 @@ pub(crate) fn verify_authentication(
     connection: &mut Connection,
     request: &VerifyAuthenticationRequest,
     issuer: &str,
-    audience: &str,
+    audiences: &[String],
     ip: Option<&str>,
     user_agent: Option<&str>,
 ) -> Result<TokenPair, VerifyAuthenticationError> {
@@ -253,7 +254,7 @@ pub(crate) fn verify_authentication(
         &credential.user_id,
         "ed25519",
         issuer,
-        audience,
+        audiences,
         ip,
         user_agent,
     )
@@ -1057,9 +1058,10 @@ mod tests {
                 signature,
                 redirect_uri: None,
                 aud: None,
+                audiences: None,
             },
             "auth-mini",
-            "api.example.com",
+            &["api.example.com".to_owned()],
             None,
             Some("Agent/1.0"),
         )
@@ -1098,7 +1100,7 @@ mod tests {
         assert!(stored.1.is_some());
         assert_eq!(stored.2, "ed25519");
         assert_eq!(stored.3, Some("Agent/1.0".to_string()));
-        assert_eq!(stored.4, "api.example.com");
+        assert_eq!(stored.4, "[\"api.example.com\"]");
     }
 
     #[test]
@@ -1142,9 +1144,10 @@ mod tests {
                 signature,
                 redirect_uri: None,
                 aud: None,
+                audiences: None,
             },
             "auth-mini",
-            "auth-mini",
+            &["auth-mini".to_owned()],
             None,
             None,
         )
@@ -1209,9 +1212,10 @@ mod tests {
                 signature,
                 redirect_uri: None,
                 aud: None,
+                audiences: None,
             },
             "auth-mini",
-            "auth-mini",
+            &["auth-mini".to_owned()],
             None,
             None,
         )

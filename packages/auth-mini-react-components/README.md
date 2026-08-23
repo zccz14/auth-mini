@@ -145,14 +145,15 @@ Mini session.
 
 ## AuthMiniProvider props
 
-| Prop                  | Description                                                                                                              |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `authMiniBaseUrl`     | Required Auth Mini issuer/server base URL.                                                                               |
-| `callbackUrl`         | Callback URL string or lazy callback; defaults to the current browser URL.                                               |
-| `audience`            | Optional explicit audience. When omitted, loopback callback hosts automatically use their hostname; explicit values win. |
-| `autoRedirectToLogin` | Required. `true` redirects anonymous sessions after callback processing; `false` leaves them in the application.         |
-| `onAuthStateChange`   | Receives every Browser SDK session snapshot.                                                                             |
-| `onAuthError`         | Receives callback, SDK, or redirect-preparation errors.                                                                  |
+| Prop                  | Description                                                                                                                         |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `authMiniBaseUrl`     | Required Auth Mini issuer/server base URL.                                                                                          |
+| `callbackUrl`         | Callback URL string or lazy callback; defaults to the current browser URL.                                                          |
+| `audience`            | Legacy optional single audience. It cannot be combined with `audiences`.                                                            |
+| `audiences`           | Optional resource audience set. It must include the callback hostname; values are normalized, deduplicated and sorted before login. |
+| `autoRedirectToLogin` | Required. `true` redirects anonymous sessions after callback processing; `false` leaves them in the application.                    |
+| `onAuthStateChange`   | Receives every Browser SDK session snapshot.                                                                                        |
+| `onAuthError`         | Receives callback, SDK, or redirect-preparation errors.                                                                             |
 
 ## useAuthMini
 

@@ -17,7 +17,7 @@ import {
 import {
   AuthMiniCallbackError,
   getAuthMiniLoginStateKey,
-  resolveAuthMiniAudience,
+  resolveAuthMiniAudiences,
   getAuthMiniLoginUrl,
   readAuthMiniRedirectCallback,
 } from './auth-callback.js';
@@ -26,7 +26,10 @@ import { Toaster } from './components/ui/sonner.js';
 export type AuthMiniProviderProps = {
   authMiniBaseUrl: string;
   children: ReactNode;
+  /** Legacy single audience. Cannot be combined with audiences. */
   audience?: string;
+  /** Explicit resource audiences. Must include the callback hostname. */
+  audiences?: readonly string[];
   callbackUrl?: string | (() => string);
   autoRedirectToLogin: boolean;
   onAuthError?: (error: Error) => void;
@@ -62,6 +65,7 @@ const passkeyRegistrationPopupFeatures =
 export function AuthMiniProvider({
   authMiniBaseUrl,
   audience,
+  audiences,
   callbackUrl,
   autoRedirectToLogin,
   children,
@@ -72,6 +76,7 @@ export function AuthMiniProvider({
   const [session, setSession] = useState<SessionSnapshot | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const audienceRef = useLatest(audience);
+  const audiencesRef = useLatest(audiences);
   const callbackUrlRef = useLatest(callbackUrl);
   const autoRedirectToLoginRef = useLatest(autoRedirectToLogin);
   const errorHandlerRef = useLatest(onAuthError);
@@ -99,7 +104,11 @@ export function AuthMiniProvider({
       window.location.assign(
         getAuthMiniLoginUrl({
           authMiniBaseUrl,
-          audience: resolveAuthMiniAudience(audienceRef.current),
+          audiences: resolveAuthMiniAudiences(
+            audienceRef.current,
+            audiencesRef.current,
+            new URL(returnTo).hostname,
+          ),
           callbackUrl: returnTo,
           state,
         }),
@@ -107,7 +116,7 @@ export function AuthMiniProvider({
     } catch (cause) {
       reportError(cause);
     }
-  }, [audienceRef, authMiniBaseUrl, callbackUrlRef, reportError]);
+  }, [audienceRef, audiencesRef, authMiniBaseUrl, callbackUrlRef, reportError]);
 
   useEffect(() => {
     mountedRef.current = true;

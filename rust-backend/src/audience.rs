@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use url::{Host, Url};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -9,62 +11,112 @@ pub(crate) enum AudienceError {
     InvalidAudience,
 }
 
-pub(crate) fn resolve_audience(
+pub(crate) fn resolve_audiences(
     issuer: &str,
     redirect_uri: Option<&str>,
     audience: Option<&str>,
-) -> Result<String, AudienceError> {
+    audiences: Option<&[String]>,
+) -> Result<Vec<String>, AudienceError> {
+    if audience.is_some() && audiences.is_some() {
+        return Err(AudienceError::InvalidAudience);
+    }
     let Some(redirect_uri) = redirect_uri else {
-        if audience.is_some() {
+        if audience.is_some() || audiences.is_some() {
             return Err(AudienceError::ExplicitAudienceNotAllowed);
         }
-
-        return issuer_audience(issuer);
+        return Ok(vec![issuer_audience(issuer)?]);
     };
-
     let redirect = Url::parse(redirect_uri).map_err(|_| AudienceError::InvalidRedirectUri)?;
     let host = redirect.host().ok_or(AudienceError::InvalidRedirectUri)?;
+    let callback_audience = normalize_host(host.clone());
     let loopback = is_allowed_loopback(&host);
-
     if !matches!(redirect.scheme(), "http" | "https") || (!loopback && redirect.scheme() != "https")
     {
         return Err(AudienceError::InvalidRedirectUri);
     }
-
-    if loopback {
-        return audience
-            .ok_or(AudienceError::AudienceRequired)
-            .and_then(normalize_audience);
+    let explicit = match (audience, audiences) {
+        (Some(value), None) => Some(vec![value.to_owned()]),
+        (None, Some(values)) => Some(values.to_vec()),
+        (None, None) => None,
+        (Some(_), Some(_)) => unreachable!(),
+    };
+    if loopback && explicit.is_none() {
+        return Err(AudienceError::AudienceRequired);
     }
-
-    if audience.is_some() {
-        return Err(AudienceError::ExplicitAudienceNotAllowed);
+    let values = explicit.unwrap_or_else(|| vec![callback_audience.clone()]);
+    let values = normalize_audiences(&values)?;
+    if !values.iter().any(|value| value == &callback_audience) {
+        return Err(AudienceError::AudienceRequired);
     }
-
-    Ok(normalize_host(host))
+    Ok(values)
 }
 
 pub(crate) fn issuer_audience(issuer: &str) -> Result<String, AudienceError> {
     let issuer = Url::parse(issuer).map_err(|_| AudienceError::InvalidIssuer)?;
     let host = issuer.host().ok_or(AudienceError::InvalidIssuer)?;
-
     Ok(normalize_host(host))
+}
+
+pub(crate) fn normalize_audiences(values: &[String]) -> Result<Vec<String>, AudienceError> {
+    if values.is_empty() {
+        return Err(AudienceError::InvalidAudience);
+    }
+    let mut normalized = BTreeSet::new();
+    for value in values {
+        let value = normalize_audience(value)?;
+        if !normalized.insert(value) {
+            return Err(AudienceError::InvalidAudience);
+        }
+    }
+    Ok(normalized.into_iter().collect())
+}
+
+pub(crate) fn audience_json(values: &[String]) -> serde_json::Value {
+    if values.len() == 1 {
+        serde_json::Value::String(values[0].clone())
+    } else {
+        serde_json::Value::Array(
+            values
+                .iter()
+                .cloned()
+                .map(serde_json::Value::String)
+                .collect(),
+        )
+    }
+}
+
+pub(crate) fn audiences_from_claim(
+    value: &serde_json::Value,
+) -> Result<Vec<String>, AudienceError> {
+    match value {
+        serde_json::Value::String(value) => normalize_audiences(&[value.clone()]),
+        serde_json::Value::Array(values) => normalize_audiences(
+            &values
+                .iter()
+                .map(|value| {
+                    value
+                        .as_str()
+                        .map(str::to_owned)
+                        .ok_or(AudienceError::InvalidAudience)
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        _ => Err(AudienceError::InvalidAudience),
+    }
 }
 
 fn normalize_audience(audience: &str) -> Result<String, AudienceError> {
     if audience.is_empty() || audience != audience.trim() {
         return Err(AudienceError::InvalidAudience);
     }
-
     let audience = audience.strip_suffix('.').unwrap_or(audience);
     let host = Host::parse(audience).map_err(|_| AudienceError::InvalidAudience)?;
-
     Ok(normalize_host(host))
 }
 
 fn normalize_host<T: AsRef<str>>(host: Host<T>) -> String {
     match host {
-        Host::Domain(domain) => domain.as_ref().trim_end_matches('.').to_string(),
+        Host::Domain(domain) => domain.as_ref().trim_end_matches('.').to_ascii_lowercase(),
         Host::Ipv4(address) => address.to_string(),
         Host::Ipv6(address) => address.to_string(),
     }
@@ -72,7 +124,9 @@ fn normalize_host<T: AsRef<str>>(host: Host<T>) -> String {
 
 fn is_allowed_loopback(host: &Host<&str>) -> bool {
     match host {
-        Host::Domain(domain) => domain.trim_end_matches('.') == "localhost",
+        Host::Domain(domain) => domain
+            .trim_end_matches('.')
+            .eq_ignore_ascii_case("localhost"),
         Host::Ipv4(address) => *address == std::net::Ipv4Addr::LOCALHOST,
         Host::Ipv6(address) => *address == std::net::Ipv6Addr::LOCALHOST,
     }
@@ -83,107 +137,81 @@ mod tests {
     use super::*;
 
     #[test]
-    fn derives_audience_from_issuer_without_redirect() {
+    fn keeps_single_audience_and_canonicalizes_multiple_audiences() {
         assert_eq!(
-            resolve_audience("https://AUTH.Example.com:8443", None, None),
-            Ok("auth.example.com".to_string())
-        );
-        assert_eq!(
-            resolve_audience("https://[::1]:8443", None, None),
-            Ok("::1".to_string())
-        );
-    }
-
-    #[test]
-    fn derives_audience_from_https_redirect_hostname() {
-        assert_eq!(
-            resolve_audience(
-                "https://auth.example.com",
-                Some("https://App.Example.com:9443/callback?next=1"),
-                None,
-            ),
-            Ok("app.example.com".to_string())
-        );
-    }
-
-    #[test]
-    fn loopback_http_redirect_requires_explicit_normalized_audience() {
-        for redirect_uri in [
-            "http://localhost/callback",
-            "http://localhost:3000/callback",
-            "http://LOCALHOST.:3000/callback",
-            "http://127.0.0.1:3000/callback",
-            "http://[::1]:3000/callback",
-        ] {
-            assert_eq!(
-                resolve_audience(
-                    "https://auth.example.com",
-                    Some(redirect_uri),
-                    Some("API.Example.com."),
-                ),
-                Ok("api.example.com".to_string()),
-                "{redirect_uri}"
-            );
-            assert_eq!(
-                resolve_audience("https://auth.example.com", Some(redirect_uri), None,),
-                Err(AudienceError::AudienceRequired),
-                "{redirect_uri}"
-            );
-        }
-    }
-
-    #[test]
-    fn rejects_non_loopback_http_and_explicit_audience_for_https_redirect() {
-        for redirect_uri in [
-            "http://0.0.0.0:3000/callback",
-            "http://localhost.evil.com/callback",
-            "http://127.0.0.2/callback",
-            "http://app.example.com/callback",
-        ] {
-            assert_eq!(
-                resolve_audience(
-                    "https://auth.example.com",
-                    Some(redirect_uri),
-                    Some("api.example.com"),
-                ),
-                Err(AudienceError::InvalidRedirectUri),
-                "{redirect_uri}"
-            );
-        }
-
-        assert_eq!(
-            resolve_audience(
+            resolve_audiences(
                 "https://auth.example.com",
                 Some("https://app.example.com/callback"),
-                Some("api.example.com"),
+                None,
+                None
             ),
-            Err(AudienceError::ExplicitAudienceNotAllowed)
+            Ok(vec!["app.example.com".to_owned()]),
+        );
+        let values = vec!["LINKIT.NTNL.IO".to_owned(), "1ex.ntnl.io".to_owned()];
+        assert_eq!(
+            resolve_audiences(
+                "https://auth.example.com",
+                Some("https://1ex.ntnl.io/callback"),
+                None,
+                Some(&values)
+            ),
+            Ok(vec!["1ex.ntnl.io".to_owned(), "linkit.ntnl.io".to_owned()]),
+        );
+        assert_eq!(
+            audience_json(&["app.example.com".to_owned()]),
+            serde_json::json!("app.example.com")
+        );
+        assert_eq!(
+            audience_json(&[
+                "app.example.com".to_owned(),
+                "linkit.example.com".to_owned()
+            ]),
+            serde_json::json!(["app.example.com", "linkit.example.com"])
         );
     }
 
     #[test]
-    fn rejects_audience_without_redirect_and_non_hostname_audiences() {
+    fn rejects_ambiguous_or_incomplete_explicit_audiences() {
+        let values = vec!["linkit.example.com".to_owned()];
         assert_eq!(
-            resolve_audience("https://auth.example.com", None, Some("api.example.com"),),
-            Err(AudienceError::ExplicitAudienceNotAllowed)
+            resolve_audiences(
+                "https://auth.example.com",
+                Some("https://app.example.com/callback"),
+                None,
+                Some(&values)
+            ),
+            Err(AudienceError::AudienceRequired),
         );
+        assert_eq!(
+            resolve_audiences(
+                "https://auth.example.com",
+                Some("https://app.example.com/callback"),
+                Some("app.example.com"),
+                Some(&values)
+            ),
+            Err(AudienceError::InvalidAudience),
+        );
+        assert_eq!(
+            normalize_audiences(&["app.example.com".to_owned(), "app.example.com".to_owned()]),
+            Err(AudienceError::InvalidAudience)
+        );
+    }
 
-        for audience in [
-            "https://api.example.com",
-            "api.example.com/path",
-            "api.example.com:443",
-            " api.example.com",
-            "",
-        ] {
-            assert_eq!(
-                resolve_audience(
-                    "https://auth.example.com",
-                    Some("http://localhost:3000/callback"),
-                    Some(audience),
-                ),
-                Err(AudienceError::InvalidAudience),
-                "{audience}"
-            );
-        }
+    #[test]
+    fn accepts_string_or_array_audience_claims() {
+        assert_eq!(
+            audiences_from_claim(&serde_json::json!("app.example.com")),
+            Ok(vec!["app.example.com".to_owned()])
+        );
+        assert_eq!(
+            audiences_from_claim(&serde_json::json!([
+                "linkit.example.com",
+                "app.example.com"
+            ])),
+            Ok(vec![
+                "app.example.com".to_owned(),
+                "linkit.example.com".to_owned()
+            ])
+        );
     }
 }

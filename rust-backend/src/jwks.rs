@@ -73,7 +73,7 @@ pub(crate) fn sign_access_token(
     user_id: &str,
     session_id: &str,
     issuer: &str,
-    audience: &str,
+    audiences: &[String],
     auth_method: &str,
 ) -> rusqlite::Result<String> {
     bootstrap_keys(connection)?;
@@ -84,7 +84,7 @@ pub(crate) fn sign_access_token(
         "sub": user_id,
         "sid": session_id,
         "iss": issuer,
-        "aud": audience,
+        "aud": crate::audience::audience_json(audiences),
         "amr": [auth_method],
         "auth_admin": auth_admin,
         "typ": "access",
@@ -145,10 +145,10 @@ pub(crate) fn verify_access_token(connection: &Connection, token: &str) -> rusql
         .get("typ")
         .and_then(Value::as_str)
         .ok_or(rusqlite::Error::InvalidQuery)?;
-    let audience = payload
-        .get("aud")
-        .and_then(Value::as_str)
-        .ok_or(rusqlite::Error::InvalidQuery)?;
+    let audiences = crate::audience::audiences_from_claim(
+        payload.get("aud").ok_or(rusqlite::Error::InvalidQuery)?,
+    )
+    .map_err(|_| rusqlite::Error::InvalidQuery)?;
     let expected_issuer: String =
         connection.query_row("SELECT issuer FROM app_meta WHERE id = 'APP'", [], |row| {
             row.get(0)
@@ -157,7 +157,7 @@ pub(crate) fn verify_access_token(connection: &Connection, token: &str) -> rusql
     if exp <= Utc::now().timestamp()
         || issuer != expected_issuer
         || token_type != "access"
-        || audience.is_empty()
+        || audiences.is_empty()
     {
         return Err(rusqlite::Error::InvalidQuery);
     }
@@ -497,7 +497,7 @@ mod tests {
             "user-1",
             "session-1",
             "https://auth.example.com",
-            "app.example.com",
+            &["app.example.com".to_owned()],
             "email_otp",
         )
         .expect("token signs");
@@ -537,7 +537,7 @@ mod tests {
             "user-1",
             "session-1",
             "https://auth.example.com",
-            "app.example.com",
+            &["app.example.com".to_owned()],
             "email_otp",
         )
         .expect("token signs");
