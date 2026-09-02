@@ -23,6 +23,8 @@ Send `Authorization: Bearer <access_token>`.
 Access tokens issued by this API include an `amr` (Authentication Methods References) claim so downstream consumers can tell which sign-in method established the session. Current session-issuing flows produce `amr` values aligned with the completed login step, such as `email_otp` for email OTP sign-in, `webauthn` for passkey sign-in, and `ed25519` for registered device-key sign-in.
 
 - `GET /me`
+- `POST /me/email/start` sends an OTP to a new email for the authenticated user.
+- `POST /me/email/verify` verifies that OTP and changes the authenticated user email.
 - `POST /session/logout`
 - `POST /session/{session_id}/logout`
 - `GET /ed25519/credentials`

@@ -13,10 +13,12 @@ import {
   logoutPeerSession,
   refreshSession,
   rotateAdminJwks,
+  startCurrentUserEmailChange,
   startEd25519Authentication,
   startEmailAuth,
   updateAdminSetup,
   updateEd25519Credential,
+  verifyCurrentUserEmailChange,
   verifyEd25519Authentication,
   verifyEmailAuth,
   verifyWebauthnAuthentication,
@@ -72,6 +74,14 @@ export function createApiSdk(options: ApiSdkOptions) {
     me: {
       get: (request?: Parameters<typeof getCurrentUser>[0]) =>
         getCurrentUser({ ...(request ?? {}), client }),
+      email: {
+        startChange: (
+          request: Parameters<typeof startCurrentUserEmailChange>[0],
+        ) => startCurrentUserEmailChange({ ...request, client }),
+        verifyChange: (
+          request: Parameters<typeof verifyCurrentUserEmailChange>[0],
+        ) => verifyCurrentUserEmailChange({ ...request, client }),
+      },
     },
     session: {
       refresh: (request: Parameters<typeof refreshSession>[0]) =>

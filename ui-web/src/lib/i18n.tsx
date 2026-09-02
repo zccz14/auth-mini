@@ -101,7 +101,8 @@ export const en = {
   'home.description': 'Your current authentication state.',
   'home.userId': 'User ID',
   'home.sessionId': 'Session ID',
-  'home.emailDescription': 'Email OTP sign-in is managed from the login page.',
+  'home.emailDescription':
+    'Keep this verified address current. Changes require a code sent to the new address.',
   'home.passkeyDescription':
     'Register browser passkeys and remove old authenticators.',
   'home.ed25519Description':
@@ -113,6 +114,22 @@ export const en = {
   'home.loadingAccount': 'Loading account...',
   'home.emailVerified': 'Verified email is active.',
   'home.emailNotVerified': 'No verified email on this account.',
+  'home.newEmail': 'New email address',
+  'home.sendEmailChangeCode': 'Send verification code',
+  'home.sendingEmailChangeCode': 'Sending code...',
+  'home.emailChangeCode': 'Enter the code sent to',
+  'home.emailChangeOtp': 'Email change verification code',
+  'home.emailChangeCodeSent':
+    'A verification code was sent to the new email address.',
+  'home.confirmEmailChange': 'Confirm email change',
+  'home.confirmingEmailChange': 'Confirming change...',
+  'home.cancelEmailChange': 'Cancel',
+  'home.emailChangeSuccess': 'Your email address has been updated.',
+  'home.emailChangeStartError':
+    'Unable to send an email change verification code.',
+  'home.emailChangeVerifyError': 'Unable to verify the email change code.',
+  'home.emailAlreadyInUse': 'This email address is already in use.',
+  'home.invalidEmailChangeOtp': 'This verification code is invalid or expired.',
   'home.registerPasskey': 'Register passkey',
   'home.registering': 'Registering...',
   'passkeyRegistration.title': 'Register a PassKey',
@@ -224,8 +241,7 @@ export const zhCN: Record<TranslationKey, string> = {
   'common.publicKey': '公钥',
   'common.ed25519PublicKey': 'ED25519 公钥 — 可注册、可分享',
   'common.ed25519PrivateKey': 'ED25519 私钥 — Solana 兼容，必须保密',
-  'common.publicKeyHint':
-    'base58 编码的 32 字节公钥。Auth Mini 只会注册此值。',
+  'common.publicKeyHint': 'base58 编码的 32 字节公钥。Auth Mini 只会注册此值。',
   'common.privateKeyWarning':
     '这是 base58 编码的 64 字节 Solana 兼容私钥，包含公钥。切勿发送给服务端或粘贴到不受信任的应用。请保存到密码管理器或安全密钥存储。Auth Mini 永远不会接收它。',
   'common.copyPublicKey': '复制公钥',
@@ -290,7 +306,8 @@ export const zhCN: Record<TranslationKey, string> = {
   'home.description': '您当前的认证状态。',
   'home.userId': '用户 ID',
   'home.sessionId': '会话 ID',
-  'home.emailDescription': '请从登录页使用邮箱一次性验证码登录。',
+  'home.emailDescription':
+    '请保持已验证邮箱为最新状态；更改时需验证发送到新邮箱的验证码。',
   'home.passkeyDescription': '注册浏览器通行密钥，并移除旧的认证器。',
   'home.ed25519Description': '生成密钥、保存私钥，然后注册公钥。',
   'home.sessionsDescription':
@@ -300,6 +317,20 @@ export const zhCN: Record<TranslationKey, string> = {
   'home.loadingAccount': '正在加载账户...',
   'home.emailVerified': '已验证邮箱处于有效状态。',
   'home.emailNotVerified': '此账户没有已验证的邮箱。',
+  'home.newEmail': '新邮箱地址',
+  'home.sendEmailChangeCode': '发送验证码',
+  'home.sendingEmailChangeCode': '正在发送验证码...',
+  'home.emailChangeCode': '输入发送至以下地址的验证码',
+  'home.emailChangeOtp': '更改邮箱验证码',
+  'home.emailChangeCodeSent': '验证码已发送至新邮箱地址。',
+  'home.confirmEmailChange': '确认更改邮箱',
+  'home.confirmingEmailChange': '正在确认更改...',
+  'home.cancelEmailChange': '取消',
+  'home.emailChangeSuccess': '邮箱地址已更新。',
+  'home.emailChangeStartError': '无法发送更改邮箱验证码。',
+  'home.emailChangeVerifyError': '无法验证更改邮箱验证码。',
+  'home.emailAlreadyInUse': '该邮箱地址已被使用。',
+  'home.invalidEmailChangeOtp': '验证码无效或已过期。',
   'home.registerPasskey': '注册通行密钥',
   'home.registering': '正在注册...',
   'passkeyRegistration.title': '注册通行密钥',

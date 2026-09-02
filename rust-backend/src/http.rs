@@ -22,9 +22,12 @@ use crate::ed25519::{
     update_credential as update_ed25519_credential,
     verify_authentication as verify_ed25519_authentication, VerifyAuthenticationError,
 };
-use crate::email_start::{parse_email_start_request, start_email_auth, EmailStartError};
+use crate::email_start::{
+    parse_email_start_request, start_email_auth, start_email_change, EmailStartError,
+};
 use crate::email_verify::{
-    consume_email_verify_otp, parse_email_verify_request, EmailVerifyOutcome,
+    complete_email_change, consume_email_verify_otp, parse_email_change_verify_request,
+    parse_email_verify_request, EmailChangeVerifyOutcome, EmailVerifyOutcome,
 };
 use crate::jwks::{list_admin_keys, list_public_keys, rotate_keys};
 use crate::openapi::{read_openapi_json, read_openapi_yaml};
@@ -99,6 +102,8 @@ fn router(config: Config) -> Router {
         .route("/admin/resources", any(axum_request))
         .route("/email/start", any(axum_request))
         .route("/email/verify", any(axum_request))
+        .route("/me/email/start", any(axum_request))
+        .route("/me/email/verify", any(axum_request))
         .route("/session/refresh", any(axum_request))
         .route("/session/logout", any(axum_request))
         .route("/session/{session_id}/logout", any(axum_request))
@@ -256,6 +261,14 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
 
     if request.method == "POST" && request.path == "/email/verify" {
         return handle_email_verify(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "POST" && request.path == "/me/email/start" {
+        return handle_email_change_start(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "POST" && request.path == "/me/email/verify" {
+        return handle_email_change_verify(request, config).map(|response| cors(request, response));
     }
 
     if request.method == "POST" && request.path == "/session/refresh" {
@@ -599,6 +612,9 @@ fn handle_email_start(request: &Request, config: &Config) -> io::Result<Response
         Err(EmailStartError::SmtpTemporarilyUnavailable) => {
             Ok(Response::json_error(503, "smtp_temporarily_unavailable"))
         }
+        Err(EmailStartError::EmailAlreadyInUse) => {
+            Err(io::Error::other("email start returned an invalid state"))
+        }
         Err(EmailStartError::Database) => Err(io::Error::other("email start database error")),
     }
 }
@@ -639,6 +655,64 @@ fn handle_email_verify(request: &Request, config: &Config) -> io::Result<Respons
             .map_err(io::Error::other)?;
 
             Ok(Response::json_value(200, token_json(pair)))
+        }
+    }
+}
+
+fn handle_email_change_start(request: &Request, config: &Config) -> io::Result<Response> {
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    drop(connection);
+    let parsed = match parse_email_start_request(&request.body) {
+        Ok(parsed) => parsed,
+        Err(_) => return Ok(Response::json_error(400, "invalid_request")),
+    };
+    let Some(database) = &config.database else {
+        return Ok(Response::json_error(503, "smtp_not_configured"));
+    };
+
+    match start_email_change(&database.db_path, &auth.user_id, &parsed) {
+        Ok(()) => Ok(Response::json_value(200, serde_json::json!({ "ok": true }))),
+        Err(EmailStartError::SmtpNotConfigured) => {
+            Ok(Response::json_error(503, "smtp_not_configured"))
+        }
+        Err(EmailStartError::SmtpTemporarilyUnavailable) => {
+            Ok(Response::json_error(503, "smtp_temporarily_unavailable"))
+        }
+        Err(EmailStartError::EmailAlreadyInUse) => {
+            Ok(Response::json_error(409, "email_already_in_use"))
+        }
+        Err(EmailStartError::Database) => {
+            Err(io::Error::other("email change start database error"))
+        }
+    }
+}
+
+fn handle_email_change_verify(request: &Request, config: &Config) -> io::Result<Response> {
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    drop(connection);
+    let parsed = match parse_email_change_verify_request(&request.body) {
+        Ok(parsed) => parsed,
+        Err(_) => return Ok(Response::json_error(400, "invalid_request")),
+    };
+    let Some(database) = &config.database else {
+        return Ok(Response::json_error(501, "not_implemented"));
+    };
+
+    match complete_email_change(&database.db_path, &auth.user_id, &parsed)
+        .map_err(io::Error::other)?
+    {
+        EmailChangeVerifyOutcome::InvalidOtp => {
+            Ok(Response::json_error(401, "invalid_email_change_otp"))
+        }
+        EmailChangeVerifyOutcome::EmailAlreadyInUse => {
+            Ok(Response::json_error(409, "email_already_in_use"))
+        }
+        EmailChangeVerifyOutcome::EmailUpdated => {
+            Ok(Response::json_value(200, serde_json::json!({ "ok": true })))
         }
     }
 }
@@ -1213,6 +1287,7 @@ mod tests {
     use axum::body::Body;
     use axum::http::{header, Request as AxumRequest};
     use rusqlite::Connection;
+    use sha2::{Digest, Sha256};
     use tower::ServiceExt;
 
     use super::*;
@@ -1746,6 +1821,74 @@ mod tests {
     }
 
     #[test]
+    fn email_change_verify_updates_the_authenticated_self_user() {
+        let db_path = test_db_path("http-email-change-verify");
+        initialize_runtime_database(&db_path).expect("database initializes");
+        let connection = Connection::open(&db_path).expect("database opens");
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "old@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserts");
+        let code_hash = Sha256::digest(b"123456")
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        connection
+            .execute(
+                "INSERT INTO email_change_otps (user_id, email, code_hash, expires_at)
+                 VALUES (?1, ?2, ?3, ?4)",
+                (
+                    "user-1",
+                    "new@example.com",
+                    code_hash,
+                    "9999-01-01T00:00:00.000Z",
+                ),
+            )
+            .expect("email change otp inserts");
+        let pair = mint_session_tokens(
+            &connection,
+            "user-1",
+            "email_otp",
+            "http://localhost:7777",
+            None,
+            None,
+        )
+        .expect("self session mints");
+        drop(connection);
+        let config = Config {
+            database: Some(crate::DatabaseConfig {
+                db_path: db_path.clone(),
+            }),
+            ..Config::default()
+        };
+
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/me/email/verify".to_string(),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", pair.access_token),
+                )],
+                body: r#"{"email":"new@example.com","code":"123456"}"#.to_string(),
+            },
+            &config,
+        )
+        .expect("email change response builds");
+        let connection = Connection::open(db_path).expect("database reopens");
+        let email: String = connection
+            .query_row("SELECT email FROM users WHERE id = ?1", ["user-1"], |row| {
+                row.get(0)
+            })
+            .expect("updated email reads");
+
+        assert_eq!(response.status, 200);
+        assert_eq!(email, "new@example.com");
+    }
+
+    #[test]
     fn refreshes_session_tokens_over_http_boundary() {
         let db_path = test_db_path("http-refresh-session");
         let connection = Connection::open(&db_path).expect("database opens");
@@ -1834,6 +1977,8 @@ mod tests {
 
         for (method, path) in [
             ("GET", "/me"),
+            ("POST", "/me/email/start"),
+            ("POST", "/me/email/verify"),
             ("GET", "/ed25519/credentials"),
             ("GET", "/admin/jwks"),
         ] {

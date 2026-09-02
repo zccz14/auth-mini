@@ -3,6 +3,7 @@ import type {
   ApiSdk,
   ApiSdkOptions,
   Auth,
+  EmailChangeVerifyRequest,
   EmailStartRequest,
   MeResponse,
   RefreshRequest,
@@ -14,6 +15,10 @@ const auth: Auth = {
 };
 const emailStartRequest: EmailStartRequest = {
   email: 'user@example.com',
+};
+const emailChangeVerifyRequest: EmailChangeVerifyRequest = {
+  code: '123456',
+  email: 'new@example.com',
 };
 const refreshRequest: RefreshRequest = {
   refresh_token: 'refresh-token',
@@ -52,6 +57,8 @@ void auth;
 void me;
 void options;
 void sdk.email.start({ body: emailStartRequest });
+void sdk.me.email.startChange({ body: emailStartRequest });
+void sdk.me.email.verifyChange({ body: emailChangeVerifyRequest });
 void sdk.session.refresh({ body: refreshRequest });
 void sdk.jwks.list();
 void credentialId;

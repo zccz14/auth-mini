@@ -291,6 +291,96 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 error: invalid_email_otp
+  /me/email/start:
+    post:
+      tags:
+        - session
+      operationId: startCurrentUserEmailChange
+      summary: Send an OTP to a new email address for the authenticated user
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailStartRequest'
+      responses:
+        '200':
+          description: Email-change OTP delivery started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidAccessToken'
+        '409':
+          description: The requested email already belongs to an account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: email_already_in_use
+        '503':
+          description: SMTP is unavailable for this request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                smtp_not_configured:
+                  value:
+                    error: smtp_not_configured
+                smtp_temporarily_unavailable:
+                  value:
+                    error: smtp_temporarily_unavailable
+  /me/email/verify:
+    post:
+      tags:
+        - session
+      operationId: verifyCurrentUserEmailChange
+      summary: Verify an email-change OTP and update the authenticated user email
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailChangeVerifyRequest'
+      responses:
+        '200':
+          description: Email updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          description: Access token or email-change OTP is invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_access_token:
+                  value:
+                    error: invalid_access_token
+                invalid_email_change_otp:
+                  value:
+                    error: invalid_email_change_otp
+        '409':
+          description: The requested email already belongs to an account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: email_already_in_use
   /me:
     get:
       tags:
@@ -1278,6 +1368,20 @@ components:
           items:
             type: string
           description: Canonical resource audience set. It must include the redirect URI hostname.
+    EmailChangeVerifyRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - email
+        - code
+      properties:
+        email:
+          type: string
+          format: email
+        code:
+          type: string
+          pattern: ^\d{6}$
+          example: '123456'
     RefreshRequest:
       type: object
       additionalProperties: false

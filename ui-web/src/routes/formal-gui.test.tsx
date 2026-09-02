@@ -21,7 +21,10 @@ const sdk = {
   },
   ed25519: { register: vi.fn(), start: vi.fn(), verify: vi.fn() },
   email: { start: vi.fn(), verify: vi.fn() },
-  currentUser: { fetch: vi.fn() },
+  currentUser: {
+    email: { startChange: vi.fn(), verifyChange: vi.fn() },
+    fetch: vi.fn(),
+  },
   passkey: { authenticate: vi.fn(), register: vi.fn() },
   session: {
     getState: vi.fn(),
@@ -192,6 +195,57 @@ describe('formal GUI routes', () => {
     expect(container.querySelector('tbody td > span')).toHaveTextContent(
       'Session ID',
     );
+  });
+
+  it('changes the account email only after the new email OTP is verified', async () => {
+    const user = userEvent.setup();
+    sdk.currentUser.fetch.mockResolvedValue({
+      active_sessions: [],
+      ed25519_credentials: [],
+      email: 'user@example.com',
+      user_id: 'user-1',
+      webauthn_credentials: [],
+    });
+    sdk.currentUser.email.startChange.mockResolvedValue({ ok: true });
+    sdk.currentUser.email.verifyChange.mockResolvedValue({ ok: true });
+
+    renderRoute(<HomeRoute />);
+
+    await screen.findByText('Verified email is active.');
+    await user.type(
+      screen.getByLabelText('New email address'),
+      'new@example.com',
+    );
+    await user.click(
+      screen.getByRole('button', { name: 'Send verification code' }),
+    );
+
+    expect(sdk.currentUser.email.startChange).toHaveBeenCalledWith({
+      email: 'new@example.com',
+    });
+    expect(
+      await screen.findByText(
+        'A verification code was sent to the new email address.',
+      ),
+    ).toBeInTheDocument();
+
+    await user.type(
+      screen.getByLabelText('Email change verification code'),
+      '123456',
+    );
+    await user.click(
+      screen.getByRole('button', { name: 'Confirm email change' }),
+    );
+
+    await waitFor(() => {
+      expect(sdk.currentUser.email.verifyChange).toHaveBeenCalledWith({
+        code: '123456',
+        email: 'new@example.com',
+      });
+    });
+    expect(
+      await screen.findByText('Your email address has been updated.'),
+    ).toBeInTheDocument();
   });
 
   it('renders the administrator page', async () => {

@@ -212,6 +212,17 @@ fn assert_required_schema(connection: &Connection) -> rusqlite::Result<()> {
             ][..],
         ),
         (
+            "email_change_otps",
+            &[
+                "user_id",
+                "email",
+                "code_hash",
+                "expires_at",
+                "consumed_at",
+                "created_at",
+            ][..],
+        ),
+        (
             "smtp_configs",
             &[
                 "id",
