@@ -8,6 +8,8 @@ const contractOperations = [
   { path: '/email/start', methods: ['post'] },
   { path: '/email/verify', methods: ['post'] },
   { path: '/me', methods: ['get'] },
+  { path: '/me/email/start', methods: ['post'] },
+  { path: '/me/email/verify', methods: ['post'] },
   { path: '/session/refresh', methods: ['post'] },
   { path: '/session/logout', methods: ['post'] },
   { path: '/session/{session_id}/logout', methods: ['post'] },
@@ -269,6 +271,8 @@ const publicOperations = [
 
 const authenticatedOperations = [
   { path: '/me', method: 'get' },
+  { path: '/me/email/start', method: 'post' },
+  { path: '/me/email/verify', method: 'post' },
   { path: '/session/logout', method: 'post' },
   { path: '/session/{session_id}/logout', method: 'post' },
   { path: '/ed25519/credentials', method: 'get' },

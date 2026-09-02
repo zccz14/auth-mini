@@ -2,7 +2,7 @@ use std::io;
 use std::path::Path;
 
 use chrono::{SecondsFormat, Utc};
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -16,10 +16,24 @@ pub(crate) struct EmailVerifyRequest {
     pub(crate) audiences: Option<Vec<String>>,
 }
 
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct EmailChangeVerifyRequest {
+    pub(crate) email: String,
+    pub(crate) code: String,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum EmailVerifyOutcome {
     InvalidOtp,
     OtpConsumed { user_id: String },
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum EmailChangeVerifyOutcome {
+    InvalidOtp,
+    EmailUpdated,
+    EmailAlreadyInUse,
 }
 
 pub(crate) fn parse_email_verify_request(
@@ -39,6 +53,23 @@ pub(crate) fn parse_email_verify_request(
     )))
 }
 
+pub(crate) fn parse_email_change_verify_request(
+    body: &str,
+) -> Result<EmailChangeVerifyRequest, serde_json::Error> {
+    let mut request: EmailChangeVerifyRequest = serde_json::from_str(body)?;
+    let email = request.email.trim().to_lowercase();
+
+    if is_email_address(&email) && is_six_digit_code(&request.code) {
+        request.email = email;
+        return Ok(request);
+    }
+
+    Err(serde_json::Error::io(io::Error::new(
+        io::ErrorKind::InvalidInput,
+        "invalid email change verify request",
+    )))
+}
+
 pub(crate) fn consume_email_verify_otp(
     db_path: &Path,
     request: &EmailVerifyRequest,
@@ -47,6 +78,54 @@ pub(crate) fn consume_email_verify_otp(
     let connection = Connection::open(db_path)?;
 
     consume_email_verify_otp_with_now(&connection, request, &now)
+}
+
+pub(crate) fn complete_email_change(
+    db_path: &Path,
+    user_id: &str,
+    request: &EmailChangeVerifyRequest,
+) -> rusqlite::Result<EmailChangeVerifyOutcome> {
+    let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    let mut connection = Connection::open(db_path)?;
+
+    complete_email_change_with_now(&mut connection, user_id, request, &now)
+}
+
+fn complete_email_change_with_now(
+    connection: &mut Connection,
+    user_id: &str,
+    request: &EmailChangeVerifyRequest,
+    now: &str,
+) -> rusqlite::Result<EmailChangeVerifyOutcome> {
+    let transaction = connection.transaction()?;
+    let consumed = transaction.execute(
+        "UPDATE email_change_otps
+         SET consumed_at = ?1
+         WHERE user_id = ?2
+           AND email = ?3
+           AND code_hash = ?4
+           AND consumed_at IS NULL
+           AND expires_at > ?1",
+        params![now, user_id, request.email, hash_value(&request.code)],
+    )?;
+    if consumed == 0 {
+        return Ok(EmailChangeVerifyOutcome::InvalidOtp);
+    }
+
+    let updated = transaction.execute(
+        "UPDATE users
+         SET email = ?1, email_verified_at = ?2
+         WHERE id = ?3
+           AND NOT EXISTS (SELECT 1 FROM users WHERE email = ?1)",
+        params![request.email, now, user_id],
+    )?;
+    if updated == 0 {
+        return Ok(EmailChangeVerifyOutcome::EmailAlreadyInUse);
+    }
+
+    transaction.commit()?;
+
+    Ok(EmailChangeVerifyOutcome::EmailUpdated)
 }
 
 fn consume_email_verify_otp_with_now(
@@ -178,6 +257,100 @@ mod tests {
     fn rejects_unknown_email_verify_request_fields() {
         parse_email_verify_request(r#"{"email":"user@example.com","code":"123456","extra":true}"#)
             .expect_err("unknown fields are rejected");
+    }
+
+    #[test]
+    fn parses_email_change_verify_request_and_normalizes_email() {
+        let request =
+            parse_email_change_verify_request(r#"{"email":" New@Example.COM ","code":"123456"}"#)
+                .expect("valid request parses");
+
+        assert_eq!(request.email, "new@example.com");
+        parse_email_change_verify_request(r#"{"email":"new@example.com","code":"12345"}"#)
+            .expect_err("short code rejects");
+    }
+
+    #[test]
+    fn verifies_a_user_bound_otp_and_updates_only_that_users_email() {
+        let mut connection = test_connection("verifies-email-change");
+        insert_user(
+            &connection,
+            "user-1",
+            "old@example.com",
+            Some("2025-01-01T00:00:00.000Z"),
+        );
+        insert_email_change_otp(
+            &connection,
+            "user-1",
+            "new@example.com",
+            "123456",
+            "2026-01-01T00:00:00.000Z",
+            None,
+        );
+        let request =
+            parse_email_change_verify_request(r#"{"email":"new@example.com","code":"123456"}"#)
+                .expect("request parses");
+
+        let outcome = complete_email_change_with_now(
+            &mut connection,
+            "user-1",
+            &request,
+            "2025-01-01T00:00:00.000Z",
+        )
+        .expect("email change succeeds");
+
+        assert_eq!(outcome, EmailChangeVerifyOutcome::EmailUpdated);
+        assert_eq!(
+            user_id(&connection, "new@example.com").as_deref(),
+            Some("user-1")
+        );
+        assert_eq!(
+            email_change_consumed_at(&connection, "user-1").as_deref(),
+            Some("2025-01-01T00:00:00.000Z")
+        );
+    }
+
+    #[test]
+    fn leaves_otp_usable_when_another_user_claims_the_email_first() {
+        let mut connection = test_connection("rejects-taken-email-change");
+        insert_user(
+            &connection,
+            "user-1",
+            "old@example.com",
+            Some("2025-01-01T00:00:00.000Z"),
+        );
+        insert_user(
+            &connection,
+            "user-2",
+            "taken@example.com",
+            Some("2025-01-01T00:00:00.000Z"),
+        );
+        insert_email_change_otp(
+            &connection,
+            "user-1",
+            "taken@example.com",
+            "123456",
+            "2026-01-01T00:00:00.000Z",
+            None,
+        );
+        let request =
+            parse_email_change_verify_request(r#"{"email":"taken@example.com","code":"123456"}"#)
+                .expect("request parses");
+
+        let outcome = complete_email_change_with_now(
+            &mut connection,
+            "user-1",
+            &request,
+            "2025-01-01T00:00:00.000Z",
+        )
+        .expect("email change response builds");
+
+        assert_eq!(outcome, EmailChangeVerifyOutcome::EmailAlreadyInUse);
+        assert_eq!(
+            user_id(&connection, "old@example.com").as_deref(),
+            Some("user-1")
+        );
+        assert_eq!(email_change_consumed_at(&connection, "user-1"), None);
     }
 
     #[test]
@@ -353,6 +526,14 @@ mod tests {
                     email TEXT UNIQUE NOT NULL,
                     email_verified_at TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE email_change_otps (
+                    user_id TEXT PRIMARY KEY,
+                    email TEXT NOT NULL,
+                    code_hash TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    consumed_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );",
             )
             .expect("email_otps table exists");
@@ -395,6 +576,23 @@ mod tests {
             .expect("user inserted");
     }
 
+    fn insert_email_change_otp(
+        connection: &Connection,
+        user_id: &str,
+        email: &str,
+        code: &str,
+        expires_at: &str,
+        consumed_at: Option<&str>,
+    ) {
+        connection
+            .execute(
+                "INSERT INTO email_change_otps (user_id, email, code_hash, expires_at, consumed_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                (user_id, email, hash_value(code), expires_at, consumed_at),
+            )
+            .expect("email change otp inserted");
+    }
+
     fn consumed_at(connection: &Connection, email: &str) -> Option<String> {
         connection
             .query_row(
@@ -403,6 +601,16 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("consumed_at reads")
+    }
+
+    fn email_change_consumed_at(connection: &Connection, user_id: &str) -> Option<String> {
+        connection
+            .query_row(
+                "SELECT consumed_at FROM email_change_otps WHERE user_id = ?1",
+                [user_id],
+                |row| row.get(0),
+            )
+            .expect("email change consumed_at reads")
     }
 
     fn user_count(connection: &Connection, email: &str) -> i64 {

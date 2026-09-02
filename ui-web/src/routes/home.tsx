@@ -9,6 +9,11 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import {
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSlot,
+} from '@/components/ui/input-otp';
 import { useDemo } from '@/app/providers/demo-provider';
 import {
   generateDemoEd25519Keypair,
@@ -96,6 +101,32 @@ function truncateUserAgent(
   return value.length > 48 ? value.slice(0, 45) + '...' : value;
 }
 
+function formatEmailChangeError(
+  cause: unknown,
+  fallback: string,
+  t: (key: 'home.emailAlreadyInUse' | 'home.invalidEmailChangeOtp') => string,
+) {
+  if (
+    typeof cause === 'object' &&
+    cause !== null &&
+    'error' in cause &&
+    cause.error === 'email_already_in_use'
+  ) {
+    return t('home.emailAlreadyInUse');
+  }
+
+  if (
+    typeof cause === 'object' &&
+    cause !== null &&
+    'error' in cause &&
+    cause.error === 'invalid_email_change_otp'
+  ) {
+    return t('home.invalidEmailChangeOtp');
+  }
+
+  return cause instanceof Error ? cause.message : fallback;
+}
+
 export function HomeRoute() {
   const { config, sdk, session } = useDemo();
   const { t } = useI18n();
@@ -115,6 +146,16 @@ export function HomeRoute() {
   const [credentialError, setCredentialError] = useState('');
   const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
   const [sessionError, setSessionError] = useState('');
+  const [emailChangeEmail, setEmailChangeEmail] = useState('');
+  const [emailChangeCode, setEmailChangeCode] = useState('');
+  const [emailChangeStep, setEmailChangeStep] = useState<'start' | 'verify'>(
+    'start',
+  );
+  const [pendingEmailChange, setPendingEmailChange] = useState<
+    'start' | 'verify' | null
+  >(null);
+  const [emailChangeError, setEmailChangeError] = useState('');
+  const [emailChangeMessage, setEmailChangeMessage] = useState('');
 
   const loadMe = useCallback(
     async (options?: { warningMessage?: string }) => {
@@ -306,6 +347,77 @@ export function HomeRoute() {
     }
   }
 
+  async function startEmailChange(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const email = emailChangeEmail.trim();
+    if (!sdk || !me || !email || pendingEmailChange !== null) {
+      return;
+    }
+
+    setPendingEmailChange('start');
+    setEmailChangeError('');
+    setEmailChangeMessage('');
+
+    try {
+      await sdk.currentUser.email.startChange({ email });
+      setEmailChangeEmail(email);
+      setEmailChangeCode('');
+      setEmailChangeStep('verify');
+      setEmailChangeMessage(t('home.emailChangeCodeSent'));
+    } catch (cause) {
+      setEmailChangeError(
+        formatEmailChangeError(cause, t('home.emailChangeStartError'), t),
+      );
+    } finally {
+      setPendingEmailChange(null);
+    }
+  }
+
+  async function verifyEmailChange(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (
+      !sdk ||
+      !me ||
+      emailChangeCode.length !== 6 ||
+      pendingEmailChange !== null
+    ) {
+      return;
+    }
+
+    setPendingEmailChange('verify');
+    setEmailChangeError('');
+    setEmailChangeMessage('');
+
+    try {
+      await sdk.currentUser.email.verifyChange({
+        email: emailChangeEmail,
+        code: emailChangeCode,
+      });
+      await loadMe();
+      setEmailChangeEmail('');
+      setEmailChangeCode('');
+      setEmailChangeStep('start');
+      setEmailChangeMessage(t('home.emailChangeSuccess'));
+    } catch (cause) {
+      setEmailChangeError(
+        formatEmailChangeError(cause, t('home.emailChangeVerifyError'), t),
+      );
+    } finally {
+      setPendingEmailChange(null);
+    }
+  }
+
+  function cancelEmailChange() {
+    if (pendingEmailChange !== null) {
+      return;
+    }
+
+    setEmailChangeCode('');
+    setEmailChangeError('');
+    setEmailChangeMessage('');
+    setEmailChangeStep('start');
+  }
+
   const passkeys = me?.webauthn_credentials ?? [];
   const ed25519Credentials = me?.ed25519_credentials ?? [];
   const activeSessions = (me?.active_sessions ?? []) as ActiveSession[];
@@ -355,8 +467,97 @@ export function HomeRoute() {
           <CardTitle>{t('common.email')}</CardTitle>
           <CardDescription>{t('home.emailDescription')}</CardDescription>
         </CardHeader>
-        <CardContent className="text-sm text-slate-700">
-          {me?.email ? t('home.emailVerified') : t('home.emailNotVerified')}
+        <CardContent className="grid gap-4 text-sm text-slate-700">
+          <p>
+            {me?.email ? t('home.emailVerified') : t('home.emailNotVerified')}
+          </p>
+
+          {emailChangeStep === 'start' ? (
+            <form className="grid gap-3" onSubmit={startEmailChange}>
+              <label className="grid gap-2 font-medium text-slate-700">
+                <span>{t('home.newEmail')}</span>
+                <Input
+                  aria-label={t('home.newEmail')}
+                  autoComplete="email"
+                  inputMode="email"
+                  type="email"
+                  value={emailChangeEmail}
+                  onChange={(event) =>
+                    setEmailChangeEmail(event.currentTarget.value)
+                  }
+                />
+              </label>
+              <Button
+                className="w-full sm:w-fit"
+                disabled={
+                  !me || !emailChangeEmail.trim() || pendingEmailChange !== null
+                }
+                type="submit"
+              >
+                {pendingEmailChange === 'start'
+                  ? t('home.sendingEmailChangeCode')
+                  : t('home.sendEmailChangeCode')}
+              </Button>
+            </form>
+          ) : (
+            <form className="grid gap-3" onSubmit={verifyEmailChange}>
+              <div className="grid gap-1">
+                <span className="font-medium text-slate-700">
+                  {t('home.emailChangeCode')}
+                </span>
+                <span className="break-words text-slate-600">
+                  {emailChangeEmail}
+                </span>
+              </div>
+              <InputOTP
+                aria-label={t('home.emailChangeOtp')}
+                maxLength={6}
+                value={emailChangeCode}
+                onChange={setEmailChangeCode}
+              >
+                <InputOTPGroup>
+                  <InputOTPSlot index={0} />
+                  <InputOTPSlot index={1} />
+                  <InputOTPSlot index={2} />
+                  <InputOTPSlot index={3} />
+                  <InputOTPSlot index={4} />
+                  <InputOTPSlot index={5} />
+                </InputOTPGroup>
+              </InputOTP>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Button
+                  className="w-full sm:w-fit"
+                  disabled={
+                    emailChangeCode.length !== 6 || pendingEmailChange !== null
+                  }
+                  type="submit"
+                >
+                  {pendingEmailChange === 'verify'
+                    ? t('home.confirmingEmailChange')
+                    : t('home.confirmEmailChange')}
+                </Button>
+                <Button
+                  className="w-full bg-white text-slate-900 ring-1 ring-slate-300 hover:bg-slate-100 sm:w-fit"
+                  disabled={pendingEmailChange !== null}
+                  onClick={cancelEmailChange}
+                  type="button"
+                >
+                  {t('home.cancelEmailChange')}
+                </Button>
+              </div>
+            </form>
+          )}
+
+          {emailChangeMessage ? (
+            <p className="text-emerald-700" role="status">
+              {emailChangeMessage}
+            </p>
+          ) : null}
+          {emailChangeError ? (
+            <p className="text-rose-600" role="alert">
+              {emailChangeError}
+            </p>
+          ) : null}
         </CardContent>
       </Card>
 

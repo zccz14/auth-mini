@@ -160,6 +160,11 @@ export type EmailVerifyRequest = {
     audiences?: Array<string>;
 };
 
+export type EmailChangeVerifyRequest = {
+    email: string;
+    code: string;
+};
+
 export type RefreshRequest = {
     session_id: string;
     refresh_token: string;
@@ -747,6 +752,76 @@ export type VerifyEmailAuthResponses = {
 };
 
 export type VerifyEmailAuthResponse = VerifyEmailAuthResponses[keyof VerifyEmailAuthResponses];
+
+export type StartCurrentUserEmailChangeData = {
+    body: EmailStartRequest;
+    path?: never;
+    query?: never;
+    url: '/me/email/start';
+};
+
+export type StartCurrentUserEmailChangeErrors = {
+    /**
+     * Request body or path parameters do not match the route contract
+     */
+    400: ErrorResponse;
+    /**
+     * Missing, malformed, expired, or revoked access token
+     */
+    401: ErrorResponse;
+    /**
+     * The requested email already belongs to an account
+     */
+    409: ErrorResponse;
+    /**
+     * SMTP is unavailable for this request
+     */
+    503: ErrorResponse;
+};
+
+export type StartCurrentUserEmailChangeError = StartCurrentUserEmailChangeErrors[keyof StartCurrentUserEmailChangeErrors];
+
+export type StartCurrentUserEmailChangeResponses = {
+    /**
+     * Email-change OTP delivery started
+     */
+    200: OkResponse;
+};
+
+export type StartCurrentUserEmailChangeResponse = StartCurrentUserEmailChangeResponses[keyof StartCurrentUserEmailChangeResponses];
+
+export type VerifyCurrentUserEmailChangeData = {
+    body: EmailChangeVerifyRequest;
+    path?: never;
+    query?: never;
+    url: '/me/email/verify';
+};
+
+export type VerifyCurrentUserEmailChangeErrors = {
+    /**
+     * Request body or path parameters do not match the route contract
+     */
+    400: ErrorResponse;
+    /**
+     * Access token or email-change OTP is invalid
+     */
+    401: ErrorResponse;
+    /**
+     * The requested email already belongs to an account
+     */
+    409: ErrorResponse;
+};
+
+export type VerifyCurrentUserEmailChangeError = VerifyCurrentUserEmailChangeErrors[keyof VerifyCurrentUserEmailChangeErrors];
+
+export type VerifyCurrentUserEmailChangeResponses = {
+    /**
+     * Email updated
+     */
+    200: OkResponse;
+};
+
+export type VerifyCurrentUserEmailChangeResponse = VerifyCurrentUserEmailChangeResponses[keyof VerifyCurrentUserEmailChangeResponses];
 
 export type GetCurrentUserData = {
     body?: never;

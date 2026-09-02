@@ -123,6 +123,10 @@ export type DemoCurrentUser = MeResponse;
 
 type CurrentUserApi = {
   fetch(): Promise<DemoCurrentUser>;
+  email: {
+    startChange(input: { email: string }): Promise<{ ok: true }>;
+    verifyChange(input: { email: string; code: string }): Promise<{ ok: true }>;
+  };
 };
 
 export type DemoSdk = ReturnType<typeof createBrowserSdk> & {
@@ -344,6 +348,52 @@ export function createDemoSdk(serverBaseUrl: string): DemoSdk {
             await requireAccessToken(true),
           );
         }
+      },
+      email: {
+        async startChange(input) {
+          try {
+            return await postJson<{ ok: true }>(
+              '/me/email/start',
+              input,
+              await requireAccessToken(),
+            );
+          } catch (error) {
+            if (
+              !isRetryableAuthError(error) ||
+              !sdk.session.getState().refreshToken
+            ) {
+              throw error;
+            }
+
+            return await postJson<{ ok: true }>(
+              '/me/email/start',
+              input,
+              await requireAccessToken(true),
+            );
+          }
+        },
+        async verifyChange(input) {
+          try {
+            return await postJson<{ ok: true }>(
+              '/me/email/verify',
+              input,
+              await requireAccessToken(),
+            );
+          } catch (error) {
+            if (
+              !isRetryableAuthError(error) ||
+              !sdk.session.getState().refreshToken
+            ) {
+              throw error;
+            }
+
+            return await postJson<{ ok: true }>(
+              '/me/email/verify',
+              input,
+              await requireAccessToken(true),
+            );
+          }
+        },
       },
     },
     ed25519: {

@@ -24,6 +24,7 @@ pub(crate) struct EmailStartRequest {
 pub(crate) enum EmailStartError {
     SmtpNotConfigured,
     SmtpTemporarilyUnavailable,
+    EmailAlreadyInUse,
     Database,
 }
 
@@ -64,11 +65,29 @@ pub(crate) fn start_email_auth(
     start_email_auth_with_connection(&connection, request)
 }
 
+pub(crate) fn start_email_change(
+    db_path: &Path,
+    user_id: &str,
+    request: &EmailStartRequest,
+) -> Result<(), EmailStartError> {
+    let connection = Connection::open(db_path).map_err(|_| EmailStartError::Database)?;
+
+    start_email_change_with_connection(&connection, user_id, request)
+}
+
 fn start_email_auth_with_connection(
     connection: &Connection,
     request: &EmailStartRequest,
 ) -> Result<(), EmailStartError> {
     start_email_auth_with_mailer(connection, request, send_otp_mail)
+}
+
+fn start_email_change_with_connection(
+    connection: &Connection,
+    user_id: &str,
+    request: &EmailStartRequest,
+) -> Result<(), EmailStartError> {
+    start_email_change_with_mailer(connection, user_id, request, send_email_change_otp_mail)
 }
 
 fn start_email_auth_with_mailer<F>(
@@ -88,6 +107,41 @@ where
 
     if send_mail(&config, &request.email, &code).is_err() {
         invalidate_email_otp(connection, &request.email)?;
+        return Err(EmailStartError::SmtpTemporarilyUnavailable);
+    }
+
+    Ok(())
+}
+
+fn start_email_change_with_mailer<F>(
+    connection: &Connection,
+    user_id: &str,
+    request: &EmailStartRequest,
+    send_mail: F,
+) -> Result<(), EmailStartError>
+where
+    F: FnOnce(&SmtpConfig, &str, &str) -> Result<(), SmtpSendError>,
+{
+    let email_is_in_use: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM users WHERE email = ?1)",
+            [&request.email],
+            |row| row.get(0),
+        )
+        .map_err(|_| EmailStartError::Database)?;
+    if email_is_in_use {
+        return Err(EmailStartError::EmailAlreadyInUse);
+    }
+
+    let config = select_smtp_config(connection)?.ok_or(EmailStartError::SmtpNotConfigured)?;
+    let code = generate_otp_code(connection)?;
+    let expires_at =
+        (Utc::now() + Duration::seconds(OTP_SECONDS)).to_rfc3339_opts(SecondsFormat::Millis, true);
+
+    upsert_email_change_otp(connection, user_id, &request.email, &code, &expires_at)?;
+
+    if send_mail(&config, &request.email, &code).is_err() {
+        invalidate_email_change_otp(connection, user_id)?;
         return Err(EmailStartError::SmtpTemporarilyUnavailable);
     }
 
@@ -167,6 +221,30 @@ fn upsert_email_otp(
     Ok(())
 }
 
+fn upsert_email_change_otp(
+    connection: &Connection,
+    user_id: &str,
+    email: &str,
+    code: &str,
+    expires_at: &str,
+) -> Result<(), EmailStartError> {
+    connection
+        .execute(
+            "INSERT INTO email_change_otps (user_id, email, code_hash, expires_at, consumed_at)
+             VALUES (?1, ?2, ?3, ?4, NULL)
+             ON CONFLICT(user_id) DO UPDATE SET
+             email = excluded.email,
+             code_hash = excluded.code_hash,
+             expires_at = excluded.expires_at,
+             consumed_at = NULL,
+             created_at = CURRENT_TIMESTAMP",
+            params![user_id, email, hash_value(code), expires_at],
+        )
+        .map_err(|_| EmailStartError::Database)?;
+
+    Ok(())
+}
+
 fn invalidate_email_otp(connection: &Connection, email: &str) -> Result<(), EmailStartError> {
     let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
     connection
@@ -179,10 +257,49 @@ fn invalidate_email_otp(connection: &Connection, email: &str) -> Result<(), Emai
     Ok(())
 }
 
+fn invalidate_email_change_otp(
+    connection: &Connection,
+    user_id: &str,
+) -> Result<(), EmailStartError> {
+    let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    connection
+        .execute(
+            "UPDATE email_change_otps SET consumed_at = ?1 WHERE user_id = ?2",
+            params![now, user_id],
+        )
+        .map_err(|_| EmailStartError::Database)?;
+
+    Ok(())
+}
+
 fn send_otp_mail(config: &SmtpConfig, email: &str, code: &str) -> Result<(), SmtpSendError> {
     let transport = build_smtp_transport(config)?;
 
     send_mail_with_transport(&transport, &build_otp_message(config, email, code)?)
+}
+
+fn send_email_change_otp_mail(
+    config: &SmtpConfig,
+    email: &str,
+    code: &str,
+) -> Result<(), SmtpSendError> {
+    let transport = build_smtp_transport(config)?;
+    let from_address = config.from_email.parse()?;
+    let from = if config.from_name.is_empty() {
+        Mailbox::new(None, from_address)
+    } else {
+        Mailbox::new(Some(config.from_name.clone()), from_address)
+    };
+    let message = Message::builder()
+        .from(from)
+        .to(email.parse()?)
+        .subject("Confirm your auth-mini email change")
+        .body(format!(
+            "Your email change verification code is {code}. It expires in 10 minutes."
+        ))
+        .map_err(|error| Box::new(error) as SmtpSendError)?;
+
+    send_mail_with_transport(&transport, &message)
 }
 
 fn build_otp_message(
@@ -336,6 +453,70 @@ mod tests {
     }
 
     #[test]
+    fn creates_a_user_bound_email_change_otp_and_sends_a_distinct_message() {
+        let transport = StubTransport::new_ok();
+        let connection = Connection::open_in_memory().expect("database opens");
+        create_email_start_schema(&connection);
+        insert_smtp_config(&connection, 2525, false);
+        let request = EmailStartRequest {
+            email: "new@example.com".to_string(),
+        };
+
+        start_email_change_with_mailer(&connection, "user-1", &request, |config, email, code| {
+            let from_address = config.from_email.parse()?;
+            let message = Message::builder()
+                .from(Mailbox::new(Some(config.from_name.clone()), from_address))
+                .to(email.parse()?)
+                .subject("Confirm your auth-mini email change")
+                .body(format!("Your email change verification code is {code}."))
+                .map_err(|error| Box::new(error) as SmtpSendError)?;
+            send_mail_with_transport(&transport, &message)
+        })
+        .expect("email change start succeeds");
+
+        let row = connection
+            .query_row(
+                "SELECT email, code_hash, consumed_at FROM email_change_otps WHERE user_id = ?1",
+                ["user-1"],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                },
+            )
+            .expect("email change otp exists");
+
+        assert_eq!(row.0, "new@example.com");
+        assert_eq!(row.1.len(), 64);
+        assert!(row.2.is_none());
+        assert!(transport.messages()[0]
+            .1
+            .contains("Subject: Confirm your auth-mini email change"));
+    }
+
+    #[test]
+    fn rejects_an_email_that_already_belongs_to_an_account() {
+        let connection = Connection::open_in_memory().expect("database opens");
+        create_email_start_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email) VALUES (?1, ?2)",
+                ("user-2", "taken@example.com"),
+            )
+            .expect("user inserts");
+        let request = EmailStartRequest {
+            email: "taken@example.com".to_string(),
+        };
+
+        let error = start_email_change_with_connection(&connection, "user-1", &request)
+            .expect_err("occupied email rejects");
+
+        assert_eq!(error, EmailStartError::EmailAlreadyInUse);
+    }
+
+    #[test]
     fn invalidates_pending_otp_when_smtp_send_fails() {
         let transport = StubTransport::new_error();
         let connection = Connection::open_in_memory().expect("database opens");
@@ -405,6 +586,18 @@ mod tests {
             .execute_batch(
                 "CREATE TABLE email_otps (
                     email TEXT PRIMARY KEY,
+                    code_hash TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    consumed_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE users (
+                    id TEXT PRIMARY KEY,
+                    email TEXT UNIQUE
+                );
+                CREATE TABLE email_change_otps (
+                    user_id TEXT PRIMARY KEY,
+                    email TEXT NOT NULL,
                     code_hash TEXT NOT NULL,
                     expires_at TEXT NOT NULL,
                     consumed_at TEXT,
