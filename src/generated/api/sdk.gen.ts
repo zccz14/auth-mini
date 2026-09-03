@@ -2,7 +2,7 @@
 
 import { client } from './client.gen.js';
 import type { Client, Options as Options2, TDataShape } from './client/index.js';
-import type { CreateEd25519CredentialData, CreateEd25519CredentialErrors, CreateEd25519CredentialResponses, CreateWebauthnAuthenticationOptionsData, CreateWebauthnAuthenticationOptionsErrors, CreateWebauthnAuthenticationOptionsResponses, CreateWebauthnRegistrationOptionsData, CreateWebauthnRegistrationOptionsErrors, CreateWebauthnRegistrationOptionsResponses, DeleteEd25519CredentialData, DeleteEd25519CredentialErrors, DeleteEd25519CredentialResponses, DeleteWebauthnCredentialData, DeleteWebauthnCredentialErrors, DeleteWebauthnCredentialResponses, ExportAdminDatabaseData, ExportAdminDatabaseErrors, ExportAdminDatabaseResponses, GetAdminConfigData, GetAdminConfigErrors, GetAdminConfigResponses, GetAdminSetupData, GetAdminSetupErrors, GetAdminSetupResponses, GetAdminSystemResourcesData, GetAdminSystemResourcesErrors, GetAdminSystemResourcesResponses, GetCurrentUserData, GetCurrentUserErrors, GetCurrentUserResponses, GetOpenApiJsonData, GetOpenApiJsonResponses, GetOpenApiYamlData, GetOpenApiYamlResponses, ListAdminJwksData, ListAdminJwksErrors, ListAdminJwksResponses, ListAdminUsersData, ListAdminUsersErrors, ListAdminUsersResponses, ListEd25519CredentialsData, ListEd25519CredentialsErrors, ListEd25519CredentialsResponses, ListJwksData, ListJwksResponses, LogoutCurrentSessionData, LogoutCurrentSessionErrors, LogoutCurrentSessionResponses, LogoutPeerSessionData, LogoutPeerSessionErrors, LogoutPeerSessionResponses, RefreshSessionData, RefreshSessionErrors, RefreshSessionResponses, RotateAdminJwksData, RotateAdminJwksErrors, RotateAdminJwksResponses, StartCurrentUserEmailChangeData, StartCurrentUserEmailChangeErrors, StartCurrentUserEmailChangeResponses, StartEd25519AuthenticationData, StartEd25519AuthenticationErrors, StartEd25519AuthenticationResponses, StartEmailAuthData, StartEmailAuthErrors, StartEmailAuthResponses, UpdateAdminConfigData, UpdateAdminConfigErrors, UpdateAdminConfigResponses, UpdateAdminSetupData, UpdateAdminSetupErrors, UpdateAdminSetupResponses, UpdateEd25519CredentialData, UpdateEd25519CredentialErrors, UpdateEd25519CredentialResponses, VerifyCurrentUserEmailChangeData, VerifyCurrentUserEmailChangeErrors, VerifyCurrentUserEmailChangeResponses, VerifyEd25519AuthenticationData, VerifyEd25519AuthenticationErrors, VerifyEd25519AuthenticationResponses, VerifyEmailAuthData, VerifyEmailAuthErrors, VerifyEmailAuthResponses, VerifyWebauthnAuthenticationData, VerifyWebauthnAuthenticationErrors, VerifyWebauthnAuthenticationResponses, VerifyWebauthnRegistrationData, VerifyWebauthnRegistrationErrors, VerifyWebauthnRegistrationResponses } from './types.gen.js';
+import type { ApproveRemoteLoginData, ApproveRemoteLoginErrors, ApproveRemoteLoginResponses, ClaimRemoteLoginData, ClaimRemoteLoginErrors, ClaimRemoteLoginResponses, CreateEd25519CredentialData, CreateEd25519CredentialErrors, CreateEd25519CredentialResponses, CreateWebauthnAuthenticationOptionsData, CreateWebauthnAuthenticationOptionsErrors, CreateWebauthnAuthenticationOptionsResponses, CreateWebauthnRegistrationOptionsData, CreateWebauthnRegistrationOptionsErrors, CreateWebauthnRegistrationOptionsResponses, DeleteEd25519CredentialData, DeleteEd25519CredentialErrors, DeleteEd25519CredentialResponses, DeleteWebauthnCredentialData, DeleteWebauthnCredentialErrors, DeleteWebauthnCredentialResponses, DenyRemoteLoginData, DenyRemoteLoginErrors, DenyRemoteLoginResponses, ExchangeRemoteLoginData, ExchangeRemoteLoginErrors, ExchangeRemoteLoginResponses, ExportAdminDatabaseData, ExportAdminDatabaseErrors, ExportAdminDatabaseResponses, GetAdminConfigData, GetAdminConfigErrors, GetAdminConfigResponses, GetAdminSetupData, GetAdminSetupErrors, GetAdminSetupResponses, GetAdminSystemResourcesData, GetAdminSystemResourcesErrors, GetAdminSystemResourcesResponses, GetCurrentUserData, GetCurrentUserErrors, GetCurrentUserResponses, GetOpenApiJsonData, GetOpenApiJsonResponses, GetOpenApiYamlData, GetOpenApiYamlResponses, ListAdminJwksData, ListAdminJwksErrors, ListAdminJwksResponses, ListAdminUsersData, ListAdminUsersErrors, ListAdminUsersResponses, ListEd25519CredentialsData, ListEd25519CredentialsErrors, ListEd25519CredentialsResponses, ListJwksData, ListJwksResponses, ListPendingRemoteLoginsData, ListPendingRemoteLoginsErrors, ListPendingRemoteLoginsResponses, LogoutCurrentSessionData, LogoutCurrentSessionErrors, LogoutCurrentSessionResponses, LogoutPeerSessionData, LogoutPeerSessionErrors, LogoutPeerSessionResponses, RefreshSessionData, RefreshSessionErrors, RefreshSessionResponses, RotateAdminJwksData, RotateAdminJwksErrors, RotateAdminJwksResponses, StartCurrentUserEmailChangeData, StartCurrentUserEmailChangeErrors, StartCurrentUserEmailChangeResponses, StartEd25519AuthenticationData, StartEd25519AuthenticationErrors, StartEd25519AuthenticationResponses, StartEmailAuthData, StartEmailAuthErrors, StartEmailAuthResponses, StartRemoteLoginData, StartRemoteLoginErrors, StartRemoteLoginResponses, UpdateAdminConfigData, UpdateAdminConfigErrors, UpdateAdminConfigResponses, UpdateAdminSetupData, UpdateAdminSetupErrors, UpdateAdminSetupResponses, UpdateEd25519CredentialData, UpdateEd25519CredentialErrors, UpdateEd25519CredentialResponses, VerifyCurrentUserEmailChangeData, VerifyCurrentUserEmailChangeErrors, VerifyCurrentUserEmailChangeResponses, VerifyEd25519AuthenticationData, VerifyEd25519AuthenticationErrors, VerifyEd25519AuthenticationResponses, VerifyEmailAuthData, VerifyEmailAuthErrors, VerifyEmailAuthResponses, VerifyWebauthnAuthenticationData, VerifyWebauthnAuthenticationErrors, VerifyWebauthnAuthenticationResponses, VerifyWebauthnRegistrationData, VerifyWebauthnRegistrationErrors, VerifyWebauthnRegistrationResponses } from './types.gen.js';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -145,6 +145,70 @@ export const startCurrentUserEmailChange = <ThrowOnError extends boolean = false
 export const verifyCurrentUserEmailChange = <ThrowOnError extends boolean = false>(options: Options<VerifyCurrentUserEmailChangeData, ThrowOnError>) => (options.client ?? client).post<VerifyCurrentUserEmailChangeResponses, VerifyCurrentUserEmailChangeErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/me/email/verify',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Start a short-lived remote-browser login request
+ */
+export const startRemoteLogin = <ThrowOnError extends boolean = false>(options: Options<StartRemoteLoginData, ThrowOnError>) => (options.client ?? client).post<StartRemoteLoginResponses, StartRemoteLoginErrors, ThrowOnError>({
+    url: '/remote-login/start',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * List the authenticated user's claimed pending remote login requests
+ */
+export const listPendingRemoteLogins = <ThrowOnError extends boolean = false>(options?: Options<ListPendingRemoteLoginsData, ThrowOnError>) => (options?.client ?? client).get<ListPendingRemoteLoginsResponses, ListPendingRemoteLoginsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/remote-login/pending',
+    ...options
+});
+
+/**
+ * Claim a remote login request with its confirmation code
+ */
+export const claimRemoteLogin = <ThrowOnError extends boolean = false>(options: Options<ClaimRemoteLoginData, ThrowOnError>) => (options.client ?? client).post<ClaimRemoteLoginResponses, ClaimRemoteLoginErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/remote-login/claim',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Approve a claimed remote login request
+ */
+export const approveRemoteLogin = <ThrowOnError extends boolean = false>(options: Options<ApproveRemoteLoginData, ThrowOnError>) => (options.client ?? client).post<ApproveRemoteLoginResponses, ApproveRemoteLoginErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/remote-login/{request_id}/approve',
+    ...options
+});
+
+/**
+ * Deny a claimed remote login request
+ */
+export const denyRemoteLogin = <ThrowOnError extends boolean = false>(options: Options<DenyRemoteLoginData, ThrowOnError>) => (options.client ?? client).post<DenyRemoteLoginResponses, DenyRemoteLoginErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/remote-login/{request_id}/deny',
+    ...options
+});
+
+/**
+ * Exchange an approved remote login request for a standard session token pair
+ */
+export const exchangeRemoteLogin = <ThrowOnError extends boolean = false>(options: Options<ExchangeRemoteLoginData, ThrowOnError>) => (options.client ?? client).post<ExchangeRemoteLoginResponses, ExchangeRemoteLoginErrors, ThrowOnError>({
+    url: '/remote-login/{request_id}/exchange',
     ...options,
     headers: {
         'Content-Type': 'application/json',

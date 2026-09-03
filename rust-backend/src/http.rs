@@ -31,6 +31,12 @@ use crate::email_verify::{
 };
 use crate::jwks::{list_admin_keys, list_public_keys, rotate_keys};
 use crate::openapi::{read_openapi_json, read_openapi_yaml};
+use crate::remote_login::{
+    approve as approve_remote_login, claim as claim_remote_login, deny as deny_remote_login,
+    exchange as exchange_remote_login, list_pending as list_pending_remote_logins,
+    parse_claim_request, parse_exchange_request, parse_start_request as parse_remote_login_start,
+    start as start_remote_login, RemoteLoginError,
+};
 use crate::resources::ResourceMonitor;
 #[cfg(test)]
 use crate::session::mint_session_tokens;
@@ -102,6 +108,12 @@ fn router(config: Config) -> Router {
         .route("/admin/resources", any(axum_request))
         .route("/email/start", any(axum_request))
         .route("/email/verify", any(axum_request))
+        .route("/remote-login/start", any(axum_request))
+        .route("/remote-login/pending", any(axum_request))
+        .route("/remote-login/claim", any(axum_request))
+        .route("/remote-login/{request_id}/approve", any(axum_request))
+        .route("/remote-login/{request_id}/deny", any(axum_request))
+        .route("/remote-login/{request_id}/exchange", any(axum_request))
         .route("/me/email/start", any(axum_request))
         .route("/me/email/verify", any(axum_request))
         .route("/session/refresh", any(axum_request))
@@ -261,6 +273,33 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
 
     if request.method == "POST" && request.path == "/email/verify" {
         return handle_email_verify(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "POST" && request.path == "/remote-login/start" {
+        return handle_remote_login_start(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "GET" && request.path == "/remote-login/pending" {
+        return handle_remote_login_pending(request, config)
+            .map(|response| cors(request, response));
+    }
+
+    if request.method == "POST" && request.path == "/remote-login/claim" {
+        return handle_remote_login_claim(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "POST" && remote_login_request_id(request, "approve").is_some() {
+        return handle_remote_login_approve(request, config)
+            .map(|response| cors(request, response));
+    }
+
+    if request.method == "POST" && remote_login_request_id(request, "deny").is_some() {
+        return handle_remote_login_deny(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "POST" && remote_login_request_id(request, "exchange").is_some() {
+        return handle_remote_login_exchange(request, config)
+            .map(|response| cors(request, response));
     }
 
     if request.method == "POST" && request.path == "/me/email/start" {
@@ -617,6 +656,147 @@ fn handle_email_start(request: &Request, config: &Config) -> io::Result<Response
         }
         Err(EmailStartError::Database) => Err(io::Error::other("email start database error")),
     }
+}
+
+fn handle_remote_login_start(request: &Request, config: &Config) -> io::Result<Response> {
+    let parsed = match parse_remote_login_start(&request.body) {
+        Ok(parsed) => parsed,
+        Err(_) => return Ok(Response::json_error(400, "invalid_request")),
+    };
+    let Some(database) = &config.database else {
+        return Ok(Response::json_error(501, "not_implemented"));
+    };
+    let connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
+    let issuer = read_app_issuer(&connection).map_err(io::Error::other)?;
+    let audiences = match resolve_audiences(
+        &issuer,
+        parsed.redirect_uri.as_deref(),
+        parsed.aud.as_deref(),
+        parsed.audiences.as_deref(),
+    ) {
+        Ok(audiences) => audiences,
+        Err(_) => return Ok(Response::json_error(400, "invalid_request")),
+    };
+    match start_remote_login(&connection, parsed.redirect_uri.as_deref(), &audiences) {
+        Ok(value) => Ok(Response::json_value(200, value)),
+        Err(RemoteLoginError::InvalidRequest) => Ok(Response::json_error(400, "invalid_request")),
+        Err(RemoteLoginError::Unavailable) => {
+            Ok(Response::json_error(401, "remote_login_unavailable"))
+        }
+        Err(RemoteLoginError::Database) => {
+            Err(io::Error::other("remote login start database error"))
+        }
+    }
+}
+
+fn handle_remote_login_pending(request: &Request, config: &Config) -> io::Result<Response> {
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    match list_pending_remote_logins(&connection, &auth.user_id) {
+        Ok(value) => Ok(Response::json_value(200, value)),
+        Err(RemoteLoginError::Database) => {
+            Err(io::Error::other("remote login pending database error"))
+        }
+        Err(_) => Ok(Response::json_error(401, "remote_login_unavailable")),
+    }
+}
+
+fn handle_remote_login_claim(request: &Request, config: &Config) -> io::Result<Response> {
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    let claim = match parse_claim_request(&request.body) {
+        Ok(claim) => claim,
+        Err(_) => return Ok(Response::json_error(400, "invalid_request")),
+    };
+    match claim_remote_login(&connection, &auth.user_id, &claim.confirmation_code) {
+        Ok(value) => Ok(Response::json_value(200, value)),
+        Err(RemoteLoginError::Database) => {
+            Err(io::Error::other("remote login claim database error"))
+        }
+        Err(_) => Ok(Response::json_error(401, "remote_login_unavailable")),
+    }
+}
+
+fn handle_remote_login_approve(request: &Request, config: &Config) -> io::Result<Response> {
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    let Some(request_id) = remote_login_request_id(request, "approve") else {
+        return Ok(Response::json_error(400, "invalid_request"));
+    };
+    match approve_remote_login(&connection, request_id, &auth.user_id) {
+        Ok(()) => Ok(Response::json_value(200, serde_json::json!({ "ok": true }))),
+        Err(RemoteLoginError::Database) => {
+            Err(io::Error::other("remote login approve database error"))
+        }
+        Err(_) => Ok(Response::json_error(401, "remote_login_unavailable")),
+    }
+}
+
+fn handle_remote_login_deny(request: &Request, config: &Config) -> io::Result<Response> {
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    let Some(request_id) = remote_login_request_id(request, "deny") else {
+        return Ok(Response::json_error(400, "invalid_request"));
+    };
+    match deny_remote_login(&connection, request_id, &auth.user_id) {
+        Ok(()) => Ok(Response::json_value(200, serde_json::json!({ "ok": true }))),
+        Err(RemoteLoginError::Database) => {
+            Err(io::Error::other("remote login deny database error"))
+        }
+        Err(_) => Ok(Response::json_error(401, "remote_login_unavailable")),
+    }
+}
+
+fn handle_remote_login_exchange(request: &Request, config: &Config) -> io::Result<Response> {
+    let exchange = match parse_exchange_request(&request.body) {
+        Ok(exchange) => exchange,
+        Err(_) => return Ok(Response::json_error(400, "invalid_request")),
+    };
+    let Some(request_id) = remote_login_request_id(request, "exchange") else {
+        return Ok(Response::json_error(400, "invalid_request"));
+    };
+    if request_id != exchange.request_id {
+        return Ok(Response::json_error(400, "invalid_request"));
+    }
+    let Some(database) = &config.database else {
+        return Ok(Response::json_error(501, "not_implemented"));
+    };
+    let mut connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
+    let issuer = read_app_issuer(&connection).map_err(io::Error::other)?;
+    match exchange_remote_login(
+        &mut connection,
+        &exchange.request_id,
+        &exchange.exchange_code,
+        &issuer,
+        request.client_ip().as_deref(),
+        request.header("User-Agent").as_deref(),
+    ) {
+        Ok(pair) => Ok(Response::json_value(200, token_json(pair))),
+        Err(RemoteLoginError::Database) => {
+            Err(io::Error::other("remote login exchange database error"))
+        }
+        Err(_) => Ok(Response::json_error(401, "remote_login_unavailable")),
+    }
+}
+
+fn remote_login_request_id<'a>(request: &'a Request, action: &str) -> Option<&'a str> {
+    let path = request.path.strip_prefix("/remote-login/")?;
+    let (request_id, suffix) = path.split_once('/')?;
+    if suffix == action && is_uuid_like(request_id) {
+        return Some(request_id);
+    }
+    None
+}
+
+fn is_uuid_like(value: &str) -> bool {
+    value.len() == 36
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() || byte == b'-')
 }
 
 fn handle_email_verify(request: &Request, config: &Config) -> io::Result<Response> {
@@ -3866,6 +4046,191 @@ mod tests {
             .expect("preflight response returns");
         assert_eq!(preflight.status(), StatusCode::NO_CONTENT);
         assert_eq!(preflight.headers()["access-control-allow-origin"], "*");
+    }
+
+    #[test]
+    fn remote_login_approval_mints_one_standard_token_pair_without_echoing_exchange_code() {
+        let db_path = test_db_path("http-remote-login-approval");
+        initialize_runtime_database(&db_path).expect("database initializes");
+        let connection = Connection::open(&db_path).expect("database opens");
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES ('user-1', 'user@example.com', ?1)",
+                ["2026-09-03T00:00:00.000Z"],
+            )
+            .expect("user inserts");
+        connection
+            .execute(
+                "UPDATE app_meta SET issuer='https://auth.example.com' WHERE id='APP'",
+                [],
+            )
+            .expect("issuer updates");
+        let approver = mint_session_tokens_for_audience(
+            &connection,
+            "user-1",
+            "email_otp",
+            "https://auth.example.com",
+            &["auth.example.com".to_string()],
+            None,
+            None,
+        )
+        .expect("approver session mints");
+        drop(connection);
+        let config = Config {
+            database: Some(crate::DatabaseConfig {
+                db_path: db_path.clone(),
+            }),
+            ..Config::default()
+        };
+
+        let started = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/remote-login/start".to_string(),
+                headers: Vec::new(),
+                body: r#"{"redirect_uri":"https://openai.ntnl.io/auth/callback"}"#.to_string(),
+            },
+            &config,
+        )
+        .expect("remote login starts");
+        let started_json: serde_json::Value =
+            serde_json::from_str(&started.body_text()).expect("start JSON parses");
+        let request_id = started_json["request_id"]
+            .as_str()
+            .expect("request id")
+            .to_string();
+        let confirmation_code = started_json["confirmation_code"]
+            .as_str()
+            .expect("confirmation code")
+            .to_string();
+        let exchange_code = started_json["exchange_code"]
+            .as_str()
+            .expect("exchange code")
+            .to_string();
+        assert_eq!(started.status, 200);
+        assert!(!started.body_text().contains("refresh_token"));
+
+        let pending_exchange = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: format!("/remote-login/{request_id}/exchange"),
+                headers: Vec::new(),
+                body: serde_json::json!({
+                    "request_id": request_id,
+                    "exchange_code": exchange_code,
+                })
+                .to_string(),
+            },
+            &config,
+        )
+        .expect("pending exchange returns");
+        assert_eq!(
+            pending_exchange,
+            Response::json_error(401, "remote_login_unavailable")
+        );
+
+        let claim = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/remote-login/claim".to_string(),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", approver.access_token),
+                )],
+                body: serde_json::json!({ "confirmation_code": confirmation_code }).to_string(),
+            },
+            &config,
+        )
+        .expect("claim returns");
+        assert_eq!(claim.status, 200);
+
+        let pending = route_request(
+            &Request {
+                method: "GET".to_string(),
+                path: "/remote-login/pending".to_string(),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", approver.access_token),
+                )],
+                body: String::new(),
+            },
+            &config,
+        )
+        .expect("pending list returns");
+        assert_eq!(pending.status, 200);
+        assert!(pending.body_text().contains(&request_id));
+
+        let approved = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: format!("/remote-login/{request_id}/approve"),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", approver.access_token),
+                )],
+                body: String::new(),
+            },
+            &config,
+        )
+        .expect("approve returns");
+        assert_eq!(approved.status, 200);
+
+        let exchanged = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: format!("/remote-login/{request_id}/exchange"),
+                headers: Vec::new(),
+                body: serde_json::json!({
+                    "request_id": request_id,
+                    "exchange_code": exchange_code,
+                })
+                .to_string(),
+            },
+            &config,
+        )
+        .expect("exchange returns");
+        let exchanged_json: serde_json::Value =
+            serde_json::from_str(&exchanged.body_text()).expect("exchange JSON parses");
+        let connection = Connection::open(&db_path).expect("database opens");
+        let payload = crate::jwks::verify_access_token(
+            &connection,
+            exchanged_json["access_token"]
+                .as_str()
+                .expect("access token"),
+        )
+        .expect("agent access token verifies");
+        let stored_exchange_hash: String = connection
+            .query_row(
+                "SELECT exchange_code_hash FROM remote_login_requests WHERE id=?1",
+                [&request_id],
+                |row| row.get(0),
+            )
+            .expect("exchange hash reads");
+        assert_eq!(exchanged.status, 200);
+        assert!(exchanged_json["refresh_token"].is_string());
+        assert_eq!(payload["aud"], "openai.ntnl.io");
+        assert_eq!(payload["amr"], serde_json::json!(["agent_approval"]));
+        assert_ne!(stored_exchange_hash, exchange_code);
+
+        let replay = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: format!("/remote-login/{request_id}/exchange"),
+                headers: Vec::new(),
+                body: serde_json::json!({
+                    "request_id": request_id,
+                    "exchange_code": exchange_code,
+                })
+                .to_string(),
+            },
+            &config,
+        )
+        .expect("replay returns");
+        assert_eq!(
+            replay,
+            Response::json_error(401, "remote_login_unavailable")
+        );
+        assert!(!replay.body_text().contains(&exchange_code));
     }
 
     fn test_db_path(name: &str) -> PathBuf {
