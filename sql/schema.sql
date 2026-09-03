@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
   refresh_token_hash TEXT NOT NULL,
-  auth_method TEXT NOT NULL CHECK (auth_method IN ('email_otp', 'webauthn', 'ed25519')),
+  auth_method TEXT NOT NULL CHECK (auth_method IN ('email_otp', 'webauthn', 'ed25519', 'agent_approval')),
   audience TEXT NOT NULL DEFAULT '',
   ip TEXT,
   user_agent TEXT,
@@ -49,6 +49,22 @@ CREATE TABLE IF NOT EXISTS sessions (
   revoked_at TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS remote_login_requests (
+  id TEXT PRIMARY KEY,
+  exchange_code_hash TEXT NOT NULL,
+  confirmation_code_hash TEXT NOT NULL,
+  redirect_uri TEXT,
+  audience TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'denied', 'consumed', 'expired')),
+  approved_user_id TEXT,
+  expires_at TEXT NOT NULL,
+  approved_at TEXT,
+  denied_at TEXT,
+  consumed_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (approved_user_id) REFERENCES users(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS jwks_keys (

@@ -139,6 +139,38 @@ export type AdminEd25519CredentialSummary = {
     created_at: string;
 };
 
+export type RemoteLoginStartRequest = {
+    redirect_uri?: string;
+    aud?: string;
+    audiences?: Array<string>;
+};
+
+export type RemoteLoginStartResponse = {
+    request_id: string;
+    confirmation_code: string;
+    expires_at: string;
+};
+
+export type RemoteLoginClaimRequest = {
+    confirmation_code: string;
+};
+
+export type RemoteLoginRequestSummary = {
+    request_id: string;
+    redirect_uri: string | null;
+    audiences: Array<string>;
+    expires_at: string;
+    created_at: string;
+};
+
+export type RemoteLoginPendingResponse = {
+    requests: Array<RemoteLoginRequestSummary>;
+};
+
+export type RemoteLoginExchangeRequest = {
+    request_id: string;
+};
+
 export type EmailStartRequest = {
     email: string;
 };
@@ -408,11 +440,28 @@ export type AdminSetupSmtpInputWritable = {
     weight?: number;
 };
 
+export type RemoteLoginStartResponseWritable = {
+    request_id: string;
+    /**
+     * High-entropy code retained by the requesting browser and used once for exchange.
+     */
+    exchange_code: string;
+    confirmation_code: string;
+    expires_at: string;
+};
+
+export type RemoteLoginExchangeRequestWritable = {
+    request_id: string;
+    exchange_code: string;
+};
+
 export type WebauthnOptionsRequestWritable = {
     [key: string]: never;
 };
 
 export type CredentialId = string;
+
+export type RemoteLoginRequestId = string;
 
 export type GetAdminSetupData = {
     body?: never;
@@ -822,6 +871,170 @@ export type VerifyCurrentUserEmailChangeResponses = {
 };
 
 export type VerifyCurrentUserEmailChangeResponse = VerifyCurrentUserEmailChangeResponses[keyof VerifyCurrentUserEmailChangeResponses];
+
+export type StartRemoteLoginData = {
+    body: RemoteLoginStartRequest;
+    path?: never;
+    query?: never;
+    url: '/remote-login/start';
+};
+
+export type StartRemoteLoginErrors = {
+    /**
+     * Request body or path parameters do not match the route contract
+     */
+    400: ErrorResponse;
+};
+
+export type StartRemoteLoginError = StartRemoteLoginErrors[keyof StartRemoteLoginErrors];
+
+export type StartRemoteLoginResponses = {
+    /**
+     * Remote browser exchange and confirmation codes created
+     */
+    200: RemoteLoginStartResponse;
+};
+
+export type StartRemoteLoginResponse = StartRemoteLoginResponses[keyof StartRemoteLoginResponses];
+
+export type ListPendingRemoteLoginsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/remote-login/pending';
+};
+
+export type ListPendingRemoteLoginsErrors = {
+    /**
+     * Missing, malformed, expired, or revoked access token
+     */
+    401: ErrorResponse;
+};
+
+export type ListPendingRemoteLoginsError = ListPendingRemoteLoginsErrors[keyof ListPendingRemoteLoginsErrors];
+
+export type ListPendingRemoteLoginsResponses = {
+    /**
+     * Pending remote login requests
+     */
+    200: RemoteLoginPendingResponse;
+};
+
+export type ListPendingRemoteLoginsResponse = ListPendingRemoteLoginsResponses[keyof ListPendingRemoteLoginsResponses];
+
+export type ClaimRemoteLoginData = {
+    body: RemoteLoginClaimRequest;
+    path?: never;
+    query?: never;
+    url: '/remote-login/claim';
+};
+
+export type ClaimRemoteLoginErrors = {
+    /**
+     * Request body or path parameters do not match the route contract
+     */
+    400: ErrorResponse;
+    /**
+     * Access token or remote login confirmation is unavailable
+     */
+    401: ErrorResponse;
+};
+
+export type ClaimRemoteLoginError = ClaimRemoteLoginErrors[keyof ClaimRemoteLoginErrors];
+
+export type ClaimRemoteLoginResponses = {
+    /**
+     * Claimed pending remote login request
+     */
+    200: RemoteLoginRequestSummary;
+};
+
+export type ClaimRemoteLoginResponse = ClaimRemoteLoginResponses[keyof ClaimRemoteLoginResponses];
+
+export type ApproveRemoteLoginData = {
+    body?: never;
+    path: {
+        request_id: string;
+    };
+    query?: never;
+    url: '/remote-login/{request_id}/approve';
+};
+
+export type ApproveRemoteLoginErrors = {
+    /**
+     * Access token or remote login request is unavailable
+     */
+    401: ErrorResponse;
+};
+
+export type ApproveRemoteLoginError = ApproveRemoteLoginErrors[keyof ApproveRemoteLoginErrors];
+
+export type ApproveRemoteLoginResponses = {
+    /**
+     * Remote login approved
+     */
+    200: OkResponse;
+};
+
+export type ApproveRemoteLoginResponse = ApproveRemoteLoginResponses[keyof ApproveRemoteLoginResponses];
+
+export type DenyRemoteLoginData = {
+    body?: never;
+    path: {
+        request_id: string;
+    };
+    query?: never;
+    url: '/remote-login/{request_id}/deny';
+};
+
+export type DenyRemoteLoginErrors = {
+    /**
+     * Access token or remote login request is unavailable
+     */
+    401: ErrorResponse;
+};
+
+export type DenyRemoteLoginError = DenyRemoteLoginErrors[keyof DenyRemoteLoginErrors];
+
+export type DenyRemoteLoginResponses = {
+    /**
+     * Remote login denied
+     */
+    200: OkResponse;
+};
+
+export type DenyRemoteLoginResponse = DenyRemoteLoginResponses[keyof DenyRemoteLoginResponses];
+
+export type ExchangeRemoteLoginData = {
+    body: RemoteLoginExchangeRequestWritable;
+    path: {
+        request_id: string;
+    };
+    query?: never;
+    url: '/remote-login/{request_id}/exchange';
+};
+
+export type ExchangeRemoteLoginErrors = {
+    /**
+     * Request body or path parameters do not match the route contract
+     */
+    400: ErrorResponse;
+    /**
+     * Remote login is pending, denied, expired, consumed, or unavailable
+     */
+    401: ErrorResponse;
+};
+
+export type ExchangeRemoteLoginError = ExchangeRemoteLoginErrors[keyof ExchangeRemoteLoginErrors];
+
+export type ExchangeRemoteLoginResponses = {
+    /**
+     * Standard access and refresh token pair created
+     */
+    200: SessionTokenResponse;
+};
+
+export type ExchangeRemoteLoginResponse = ExchangeRemoteLoginResponses[keyof ExchangeRemoteLoginResponses];
 
 export type GetCurrentUserData = {
     body?: never;

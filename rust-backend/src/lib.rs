@@ -7,6 +7,7 @@ mod email_verify;
 mod http;
 mod jwks;
 mod openapi;
+mod remote_login;
 mod resources;
 mod session;
 mod setup;

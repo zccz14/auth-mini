@@ -150,6 +150,26 @@ fn migrate_runtime_schema(connection: &mut Connection) -> rusqlite::Result<()> {
             [],
         )?;
     }
+    if !sessions_allow_agent_approval(connection)? {
+        rebuild_sessions_with_agent_approval(connection)?;
+    }
+    connection.execute_batch(
+        "CREATE TABLE IF NOT EXISTS remote_login_requests (
+            id TEXT PRIMARY KEY,
+            exchange_code_hash TEXT NOT NULL,
+            confirmation_code_hash TEXT NOT NULL,
+            redirect_uri TEXT,
+            audience TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'denied', 'consumed', 'expired')),
+            approved_user_id TEXT,
+            expires_at TEXT NOT NULL,
+            approved_at TEXT,
+            denied_at TEXT,
+            consumed_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (approved_user_id) REFERENCES users(id) ON DELETE SET NULL
+        );",
+    )?;
 
     Ok(())
 }
@@ -194,6 +214,23 @@ fn assert_required_schema(connection: &Connection) -> rusqlite::Result<()> {
                 "user_agent",
                 "expires_at",
                 "revoked_at",
+                "created_at",
+            ][..],
+        ),
+        (
+            "remote_login_requests",
+            &[
+                "id",
+                "exchange_code_hash",
+                "confirmation_code_hash",
+                "redirect_uri",
+                "audience",
+                "status",
+                "approved_user_id",
+                "expires_at",
+                "approved_at",
+                "denied_at",
+                "consumed_at",
                 "created_at",
             ][..],
         ),
@@ -377,6 +414,44 @@ fn rebuild_users_with_nullable_email(connection: &Connection) -> rusqlite::Resul
     result
 }
 
+fn sessions_allow_agent_approval(connection: &Connection) -> rusqlite::Result<bool> {
+    let sql = connection
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='sessions'",
+            [],
+            |row| row.get::<_, Option<String>>(0),
+        )?
+        .unwrap_or_default();
+    Ok(sql.contains("agent_approval"))
+}
+
+fn rebuild_sessions_with_agent_approval(connection: &Connection) -> rusqlite::Result<()> {
+    connection.pragma_update(None, "foreign_keys", "OFF")?;
+    connection.pragma_update(None, "legacy_alter_table", "ON")?;
+    let result = connection.execute_batch(
+        "ALTER TABLE sessions RENAME TO sessions_old;
+         CREATE TABLE sessions (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            refresh_token_hash TEXT NOT NULL,
+            auth_method TEXT NOT NULL CHECK (auth_method IN ('email_otp', 'webauthn', 'ed25519', 'agent_approval')),
+            audience TEXT NOT NULL DEFAULT '',
+            ip TEXT,
+            user_agent TEXT,
+            expires_at TEXT NOT NULL,
+            revoked_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+         );
+         INSERT INTO sessions (id, user_id, refresh_token_hash, auth_method, audience, ip, user_agent, expires_at, revoked_at, created_at)
+            SELECT id, user_id, refresh_token_hash, auth_method, audience, ip, user_agent, expires_at, revoked_at, created_at FROM sessions_old;
+         DROP TABLE sessions_old;",
+    );
+    connection.pragma_update(None, "legacy_alter_table", "OFF")?;
+    connection.pragma_update(None, "foreign_keys", "ON")?;
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
@@ -391,6 +466,51 @@ mod tests {
 
         let connection = Connection::open(db_path).expect("database opens");
         assert_required_schema(&connection).expect("required schema is present");
+    }
+
+    #[test]
+    fn runtime_migrates_existing_sessions_to_allow_agent_approval() {
+        let db_path = test_db_path("agent-approval-session-migration");
+        let connection = Connection::open(&db_path).expect("database opens");
+        connection
+            .execute_batch(
+                "CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT UNIQUE, email_verified_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+                 CREATE TABLE sessions (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    refresh_token_hash TEXT NOT NULL,
+                    auth_method TEXT NOT NULL CHECK (auth_method IN ('email_otp', 'webauthn', 'ed25519')),
+                    audience TEXT NOT NULL DEFAULT '',
+                    ip TEXT,
+                    user_agent TEXT,
+                    expires_at TEXT NOT NULL,
+                    revoked_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                 );
+                 INSERT INTO users (id) VALUES ('user-1');
+                 INSERT INTO sessions (id, user_id, refresh_token_hash, auth_method, audience, expires_at)
+                    VALUES ('session-1', 'user-1', 'hash', 'email_otp', '[\"auth.example.com\"]', '2099-01-01T00:00:00.000Z');",
+            )
+            .expect("legacy schema initializes");
+        drop(connection);
+
+        initialize_runtime_database(&db_path).expect("runtime migration succeeds");
+        let connection = Connection::open(&db_path).expect("database opens");
+        connection
+            .execute(
+                "INSERT INTO sessions (id, user_id, refresh_token_hash, auth_method, audience, expires_at)
+                 VALUES ('session-agent', 'user-1', 'hash-agent', 'agent_approval', '[\"auth.example.com\"]', '2099-01-01T00:00:00.000Z')",
+                [],
+            )
+            .expect("agent approval session inserts");
+        let retained: String = connection
+            .query_row(
+                "SELECT auth_method FROM sessions WHERE id='session-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("legacy session reads");
+        assert_eq!(retained, "email_otp");
     }
 
     #[test]

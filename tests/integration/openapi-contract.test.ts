@@ -7,6 +7,12 @@ const contractOperations = [
   { path: '/openapi.json', methods: ['get'] },
   { path: '/email/start', methods: ['post'] },
   { path: '/email/verify', methods: ['post'] },
+  { path: '/remote-login/start', methods: ['post'] },
+  { path: '/remote-login/pending', methods: ['get'] },
+  { path: '/remote-login/claim', methods: ['post'] },
+  { path: '/remote-login/{request_id}/approve', methods: ['post'] },
+  { path: '/remote-login/{request_id}/deny', methods: ['post'] },
+  { path: '/remote-login/{request_id}/exchange', methods: ['post'] },
   { path: '/me', methods: ['get'] },
   { path: '/me/email/start', methods: ['post'] },
   { path: '/me/email/verify', methods: ['post'] },
@@ -261,6 +267,8 @@ const publicOperations = [
   { path: '/openapi.json', method: 'get' },
   { path: '/email/start', method: 'post' },
   { path: '/email/verify', method: 'post' },
+  { path: '/remote-login/start', method: 'post' },
+  { path: '/remote-login/{request_id}/exchange', method: 'post' },
   { path: '/session/refresh', method: 'post' },
   { path: '/ed25519/start', method: 'post' },
   { path: '/ed25519/verify', method: 'post' },
@@ -270,6 +278,10 @@ const publicOperations = [
 ] as const;
 
 const authenticatedOperations = [
+  { path: '/remote-login/pending', method: 'get' },
+  { path: '/remote-login/claim', method: 'post' },
+  { path: '/remote-login/{request_id}/approve', method: 'post' },
+  { path: '/remote-login/{request_id}/deny', method: 'post' },
   { path: '/me', method: 'get' },
   { path: '/me/email/start', method: 'post' },
   { path: '/me/email/verify', method: 'post' },
