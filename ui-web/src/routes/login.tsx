@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type FormEvent } from 'react';
+import { useEffect, useState, type CSSProperties, type FormEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useDemo } from '@/app/providers/demo-provider';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -31,7 +31,12 @@ import {
 } from '@/lib/demo-ed25519';
 
 type LoginMethod = 'email' | 'ed25519';
-type PendingAction = 'email-start' | 'email-verify' | 'passkey' | 'ed25519';
+type PendingAction =
+  | 'email-start'
+  | 'email-verify'
+  | 'passkey'
+  | 'ed25519'
+  | 'remote-login';
 
 const PASSKEY_REGISTRATION_PATH = '/passkey/register';
 
@@ -50,6 +55,12 @@ export function LoginRoute() {
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [privateKey, setPrivateKey] = useState('');
+  const [remoteLogin, setRemoteLogin] = useState<{
+    requestId: string;
+    exchangeCode: string;
+    confirmationCode: string;
+    expiresAt: string;
+  } | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(
     null,
   );
@@ -82,6 +93,8 @@ export function LoginRoute() {
     request.status === 'ready' &&
     passkeyConfigured &&
     pendingAction === null;
+  const canStartRemoteLogin =
+    setupReady && request.status === 'ready' && pendingAction === null;
   const brandName = setupState?.brand_name ?? 'auth-mini';
   const logoSrc = `${import.meta.env.BASE_URL}auth-mini-logo.png`;
   const issuerHostname = setupState ? issuerAudience(setupState.issuer) : null;
@@ -138,6 +151,53 @@ export function LoginRoute() {
       completeLogin(await sdk.passkey.authenticate(target ?? {})),
     );
   }
+
+  async function startRemoteLogin() {
+    if (!sdk || !canStartRemoteLogin || remoteLogin) {
+      return;
+    }
+
+    await runLogin('remote-login', async () => {
+      const started = await sdk.remoteLogin.start(target ?? {});
+      setRemoteLogin({
+        requestId: started.request_id,
+        exchangeCode: started.exchange_code,
+        confirmationCode: started.confirmation_code,
+        expiresAt: started.expires_at,
+      });
+    });
+  }
+
+  useEffect(() => {
+    if (!sdk || !remoteLogin) {
+      return;
+    }
+
+    let active = true;
+    const poll = async () => {
+      try {
+        const tokens = await sdk.remoteLogin.exchange({
+          request_id: remoteLogin.requestId,
+          exchange_code: remoteLogin.exchangeCode,
+        });
+        if (active) {
+          await completeLogin(tokens);
+        }
+      } catch (cause) {
+        if (!active || !isAuthorizationPending(cause)) {
+          setRemoteLogin(null);
+          setError(formatLoginError(cause, t('login.signInError')));
+        }
+      }
+    };
+
+    void poll();
+    const interval = window.setInterval(() => void poll(), 2000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [remoteLogin, sdk, t]);
 
   async function handleEd25519(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -248,6 +308,40 @@ export function LoginRoute() {
                 <AlertDescription>{request.error}</AlertDescription>
               </Alert>
             ) : null}
+
+            {remoteLogin ? (
+              <Alert className="border-sky-200 bg-sky-50 text-sky-950">
+                <AlertTitle>{t('login.remote.waitingTitle')}</AlertTitle>
+                <AlertDescription className="mt-2 space-y-2">
+                  <p>{t('login.remote.waitingDescription')}</p>
+                  <p className="text-xs text-sky-800">
+                    {t('login.remote.code')}
+                  </p>
+                  <code className="block w-fit rounded bg-white px-2 py-1 font-mono text-base font-semibold tracking-widest text-sky-950">
+                    {remoteLogin.confirmationCode}
+                  </code>
+                  <p className="text-xs text-sky-800">
+                    {t('login.remote.expiresAt').replace(
+                      '{time}',
+                      new Intl.DateTimeFormat(undefined, {
+                        dateStyle: 'short',
+                        timeStyle: 'short',
+                      }).format(new Date(remoteLogin.expiresAt)),
+                    )}
+                  </p>
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <Button
+                className="w-full bg-white text-slate-900 ring-1 ring-slate-300 hover:bg-slate-100"
+                disabled={!canStartRemoteLogin}
+                onClick={() => void startRemoteLogin()}
+              >
+                {pendingAction === 'remote-login'
+                  ? t('login.remote.starting')
+                  : t('login.remote.start')}
+              </Button>
+            )}
 
             {passkeyConfigured ? (
               <Button
@@ -418,6 +512,16 @@ function LoginDestination({
         </Badge>
       </AlertDescription>
     </Alert>
+  );
+}
+
+function isAuthorizationPending(cause: unknown) {
+  return (
+    typeof cause === 'object' &&
+    cause !== null &&
+    'error' in cause &&
+    (cause.error === 'authorization_pending' ||
+      cause.error === 'remote_login_unavailable')
   );
 }
 
