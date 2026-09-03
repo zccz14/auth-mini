@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Ed25519Keypair } from '@/components/app/ed25519-keypair';
+import { RemoteLoginApprovals } from '@/components/app/remote-login-approvals';
 import {
   Card,
   CardContent,
@@ -560,6 +561,8 @@ export function HomeRoute() {
           ) : null}
         </CardContent>
       </Card>
+
+      <RemoteLoginApprovals authenticated={session.authenticated} sdk={sdk} />
 
       <Card>
         <CardHeader>

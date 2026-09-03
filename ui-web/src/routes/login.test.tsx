@@ -35,6 +35,8 @@ const sdkMocks = vi.hoisted(() => {
   const ed25519Start = vi.fn();
   const ed25519Verify = vi.fn();
   const setupFetch = vi.fn();
+  const remoteStart = vi.fn();
+  const remoteExchange = vi.fn();
   const clearLocal = vi.fn();
 
   return {
@@ -47,6 +49,7 @@ const sdkMocks = vi.hoisted(() => {
         verify: ed25519Verify,
       },
       currentUser: { fetch: vi.fn() },
+      remoteLogin: { start: remoteStart, exchange: remoteExchange },
       passkey: { register: passkeyRegister, authenticate: passkeyAuthenticate },
       session: {
         getState: () => sessionState.current,
@@ -64,6 +67,8 @@ const sdkMocks = vi.hoisted(() => {
     ed25519Start,
     ed25519Verify,
     setupFetch,
+    remoteStart,
+    remoteExchange,
     clearLocal,
     persistDemoSession: vi.fn(),
     sendLoginCallback: vi.fn(),
@@ -161,6 +166,8 @@ describe('LoginRoute', () => {
     sdkMocks.ed25519Start.mockReset();
     sdkMocks.ed25519Verify.mockReset();
     sdkMocks.setupFetch.mockReset();
+    sdkMocks.remoteStart.mockReset();
+    sdkMocks.remoteExchange.mockReset();
     sdkMocks.clearLocal.mockReset();
     sdkMocks.setupFetch.mockResolvedValue({
       admin_ed25519: null,
@@ -224,6 +231,30 @@ describe('LoginRoute', () => {
     expect(
       await screen.findByRole('heading', { name: 'Sign in' }),
     ).toBeInTheDocument();
+  });
+
+  it('starts an other-device approval request and shows its confirmation code', async () => {
+    const user = userEvent.setup();
+    sdkMocks.remoteStart.mockResolvedValue({
+      confirmation_code: 'A1B2C3D4',
+      exchange_code: 'a'.repeat(64),
+      expires_at: '2026-09-03T01:00:00.000Z',
+      request_id: '00000000-0000-4000-8000-000000000001',
+    });
+    sdkMocks.remoteExchange.mockRejectedValue({ error: 'authorization_pending' });
+
+    renderLogin();
+
+    await user.click(
+      await expectButtonEnabled('Approve on another device'),
+    );
+
+    expect(await screen.findByText('Waiting for approval')).toBeInTheDocument();
+    expect(screen.getByText('A1B2C3D4')).toBeInTheDocument();
+    expect(sdkMocks.remoteStart).toHaveBeenCalledWith({
+      audiences: ['app.example.com'],
+      redirect_uri: 'https://app.example.com/callback',
+    });
   });
 
   it('always identifies the HTTPS application domain', async () => {

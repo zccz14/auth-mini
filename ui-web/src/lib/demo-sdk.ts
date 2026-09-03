@@ -121,6 +121,35 @@ type AdminApi = {
 
 export type DemoCurrentUser = MeResponse;
 
+export type RemoteLoginStart = {
+  request_id: string;
+  exchange_code: string;
+  confirmation_code: string;
+  expires_at: string;
+};
+
+export type RemoteLoginRequest = {
+  request_id: string;
+  audiences: string[];
+  expires_at: string;
+};
+
+type RemoteLoginApi = {
+  start(input: {
+    redirect_uri?: string;
+    aud?: string;
+    audiences?: string[];
+  }): Promise<RemoteLoginStart>;
+  exchange(input: {
+    request_id: string;
+    exchange_code: string;
+  }): Promise<DemoSessionTokens>;
+  pending(): Promise<{ requests: RemoteLoginRequest[] }>;
+  claim(input: { confirmation_code: string }): Promise<RemoteLoginRequest>;
+  approve(requestId: string): Promise<{ ok: true }>;
+  deny(requestId: string): Promise<{ ok: true }>;
+};
+
 type CurrentUserApi = {
   fetch(): Promise<DemoCurrentUser>;
   email: {
@@ -132,6 +161,7 @@ type CurrentUserApi = {
 export type DemoSdk = ReturnType<typeof createBrowserSdk> & {
   admin: AdminApi;
   currentUser: CurrentUserApi;
+  remoteLogin: RemoteLoginApi;
   ed25519: DemoEd25519Api;
 };
 
@@ -394,6 +424,44 @@ export function createDemoSdk(serverBaseUrl: string): DemoSdk {
             );
           }
         },
+      },
+    },
+    remoteLogin: {
+      start(input) {
+        return postJson<RemoteLoginStart>('/remote-login/start', input);
+      },
+      exchange(input) {
+        return postJson<DemoSessionTokens>(
+          `/remote-login/${input.request_id}/exchange`,
+          input,
+        );
+      },
+      async pending() {
+        return getJson<{ requests: RemoteLoginRequest[] }>(
+          '/remote-login/pending',
+          await requireAccessToken(),
+        );
+      },
+      async claim(input) {
+        return postJson<RemoteLoginRequest>(
+          '/remote-login/claim',
+          input,
+          await requireAccessToken(),
+        );
+      },
+      async approve(requestId) {
+        return postJson<{ ok: true }>(
+          `/remote-login/${requestId}/approve`,
+          {},
+          await requireAccessToken(),
+        );
+      },
+      async deny(requestId) {
+        return postJson<{ ok: true }>(
+          `/remote-login/${requestId}/deny`,
+          {},
+          await requireAccessToken(),
+        );
       },
     },
     ed25519: {
