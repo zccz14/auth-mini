@@ -269,7 +269,7 @@ function createRuntime() {
       setRecovering(next) {
         updateState({
           status: 'recovering',
-          authenticated: false,
+          authenticated: Boolean(next.accessToken),
           ...clonePersisted(next),
         });
       },
@@ -309,7 +309,7 @@ function createRuntime() {
       }
       return freezeSnapshot({
         status: 'recovering',
-        authenticated: false,
+        authenticated: Boolean(persisted.accessToken),
         ...persisted,
       });
     }
