@@ -31,6 +31,11 @@ vi.mock('auth-mini/sdk/browser', () => ({
   createBrowserSdk,
 }));
 
+vi.mock('jose', () => ({
+  createRemoteJWKSet: vi.fn(() => vi.fn()),
+  jwtVerify: vi.fn().mockResolvedValue({ payload: {} }),
+}));
+
 const recovering = {
   status: 'recovering' as const,
   authenticated: false,

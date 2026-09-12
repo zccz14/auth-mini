@@ -22,6 +22,11 @@ vi.mock('auth-mini/sdk/browser', () => ({
   createBrowserSdk: vi.fn(() => ({ session })),
 }));
 
+vi.mock('jose', () => ({
+  createRemoteJWKSet: vi.fn(() => vi.fn()),
+  jwtVerify: vi.fn().mockResolvedValue({ payload: {} }),
+}));
+
 const anonymous = {
   status: 'anonymous' as const,
   authenticated: false,

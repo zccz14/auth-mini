@@ -1,6 +1,6 @@
 {
   "name": "auth-mini-react-components",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "description": "Auth Mini sign-in and account-security controls for React and shadcn/ui.",
   "license": "MIT",
   "repository": {
@@ -45,6 +45,7 @@
     "@base-ui/react": "^1.6.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "jose": "^6.2.12",
     "lucide-react": "^1.30.0",
     "sonner": "^2.0.8",
     "tailwind-merge": "^3.6.0"
