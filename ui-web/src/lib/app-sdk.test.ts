@@ -1,5 +1,6 @@
+import type { AuthMiniApi, SessionSnapshot } from 'auth-mini/sdk/browser';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDemoSdk, persistDemoSession } from './demo-sdk';
+import { extendAppSdk } from './app-sdk';
 
 const sdkMocks = vi.hoisted(() => {
   const sessionState = {
@@ -11,7 +12,7 @@ const sdkMocks = vi.hoisted(() => {
       refreshToken: 'refresh-token',
       receivedAt: '2026-04-11T00:00:00.000Z',
       expiresAt: '2026-04-11T01:00:00.000Z',
-    },
+    } as SessionSnapshot,
   };
 
   const refresh = vi.fn(async () => {
@@ -29,7 +30,7 @@ const sdkMocks = vi.hoisted(() => {
     };
   });
 
-  const createBrowserSdk = vi.fn(() => ({
+  const sdk: AuthMiniApi = {
     email: { start: vi.fn(), verify: vi.fn() },
     passkey: { register: vi.fn(), authenticate: vi.fn() },
     session: {
@@ -37,21 +38,18 @@ const sdkMocks = vi.hoisted(() => {
       onChange: vi.fn(() => vi.fn()),
       refresh,
       logout: vi.fn(),
+      acceptRedirectCallback: vi.fn(),
+      clearLocal: vi.fn(),
     },
     webauthn: { register: vi.fn(), authenticate: vi.fn() },
-  }));
+  };
 
-  return { createBrowserSdk, refresh, sessionState };
+  return { sdk, refresh, sessionState };
 });
 
-vi.mock('auth-mini/sdk/browser', () => ({
-  createBrowserSdk: sdkMocks.createBrowserSdk,
-}));
-
-describe('createDemoSdk', () => {
+describe('extendAppSdk', () => {
   beforeEach(() => {
     vi.useRealTimers();
-    sdkMocks.createBrowserSdk.mockClear();
     sdkMocks.refresh.mockClear();
     sdkMocks.sessionState.current = {
       status: 'authenticated',
@@ -83,7 +81,7 @@ describe('createDemoSdk', () => {
     vi.stubGlobal('fetch', fetch);
 
     try {
-      const sdk = createDemoSdk('https://auth.example.com');
+      const sdk = extendAppSdk(sdkMocks.sdk, 'https://auth.example.com');
 
       await expect(
         sdk.ed25519.register({
@@ -111,31 +109,5 @@ describe('createDemoSdk', () => {
     } finally {
       vi.unstubAllGlobals();
     }
-  });
-
-  it('persists demo sessions without a cached me payload', () => {
-    const storage = window.localStorage;
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-04-11T00:00:00.000Z'));
-
-    persistDemoSession(storage, 'https://auth.example.com', {
-      session_id: 'session-1',
-      access_token: 'access-token',
-      refresh_token: 'refresh-token',
-      expires_in: 900,
-      token_type: 'Bearer',
-    });
-
-    const persisted = JSON.parse(
-      storage.getItem('auth-mini.sdk:https://auth.example.com/') ?? '',
-    );
-
-    expect(persisted).toEqual({
-      sessionId: 'session-1',
-      accessToken: 'access-token',
-      refreshToken: 'refresh-token',
-      receivedAt: '2026-04-11T00:00:00.000Z',
-      expiresAt: '2026-04-11T00:15:00.000Z',
-    });
   });
 });

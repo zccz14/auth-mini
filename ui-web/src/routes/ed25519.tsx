@@ -10,8 +10,8 @@ import { FlowCard } from '@/components/app/flow-card';
 import { JsonPanel } from '@/components/app/json-panel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useDemo } from '@/app/providers/demo-provider';
-import type { DemoCurrentUser } from '@/lib/demo-sdk';
+import { useApp } from '@/app/providers/app-provider';
+import type { AppCurrentUser } from '@/lib/app-sdk';
 import {
   deriveEd25519PublicKey,
   generateDemoEd25519Keypair,
@@ -20,10 +20,10 @@ import {
   validateSolanaPublicKey,
 } from '@/lib/demo-ed25519';
 
-type DemoMe = DemoCurrentUser;
+type DemoMe = AppCurrentUser;
 
 export function Ed25519Route() {
-  const { adoptDemoSession, config, sdk, session } = useDemo();
+  const { config, sdk, session } = useApp();
   const [credentialName, setCredentialName] = useState('');
   const [publicKey, setPublicKey] = useState('');
   const [privateKey, setPrivateKey] = useState('');
@@ -180,7 +180,7 @@ export function Ed25519Route() {
       });
 
       setLastResponses((current) => ({ ...current, signIn: result }));
-      await adoptDemoSession(result);
+      await sdk.session.acceptRedirectCallback(result);
     } catch (cause) {
       setSignInError(formatDemoError(cause));
       setLastResponses((current) => ({ ...current, signIn: cause }));

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { DemoSdk, AdminSystemResourcesSnapshot } from '@/lib/demo-sdk';
+import type { AppSdk, AdminSystemResourcesSnapshot } from '@/lib/app-sdk';
 import { useI18n } from '@/lib/i18n';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/card';
 
 type SystemResourcesCardProps = {
-  sdk: DemoSdk;
+  sdk: AppSdk;
 };
 
 export function SystemResourcesCard({ sdk }: SystemResourcesCardProps) {

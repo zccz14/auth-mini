@@ -1,13 +1,18 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { I18nProvider } from '@/lib/i18n';
 import { AppShell } from './app-shell';
 
-vi.mock('@/app/providers/demo-provider', () => ({
-  useDemo: () => ({
-    clearLocalAuthState: vi.fn(),
+const auth = vi.hoisted(() => ({ isReady: true, signOut: vi.fn() }));
+
+vi.mock('auth-mini-react-components', () => ({
+  useAuthMini: () => auth,
+}));
+
+vi.mock('@/app/providers/app-provider', () => ({
+  useApp: () => ({
     session: {
       accessToken: 'eyJhbGciOiJub25lIn0.eyJhdXRoX2FkbWluIjp0cnVlfQ.',
       authenticated: true,
@@ -37,6 +42,17 @@ function renderShell() {
 }
 
 describe('AppShell', () => {
+  beforeEach(() => {
+    auth.isReady = true;
+  });
+
+  it('waits for the shared session to recover before rendering protected routes', () => {
+    auth.isReady = false;
+    renderShell();
+    expect(screen.getByText('Loading auth-mini...')).toBeInTheDocument();
+    expect(screen.queryByText('Admin page')).not.toBeInTheDocument();
+  });
+
   it('uses the configured brand as the home link', async () => {
     const user = userEvent.setup();
     renderShell();

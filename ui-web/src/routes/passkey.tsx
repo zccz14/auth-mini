@@ -2,13 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { FlowCard } from '@/components/app/flow-card';
 import { JsonPanel } from '@/components/app/json-panel';
 import { Button } from '@/components/ui/button';
-import { useDemo } from '@/app/providers/demo-provider';
-import type { DemoCurrentUser } from '@/lib/demo-sdk';
+import { useApp } from '@/app/providers/app-provider';
+import type { AppCurrentUser } from '@/lib/app-sdk';
 
-type DemoMe = DemoCurrentUser;
+type DemoMe = AppCurrentUser;
 
 export function PasskeyRoute() {
-  const { config, sdk, session } = useDemo();
+  const { config, sdk, session } = useApp();
   const [pendingAction, setPendingAction] = useState<
     'register' | 'authenticate' | null
   >(null);

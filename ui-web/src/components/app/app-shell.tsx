@@ -1,8 +1,9 @@
 import { useState } from 'react';
+import { useAuthMini } from 'auth-mini-react-components';
 import { Link, NavLink, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
-import { useDemo } from '@/app/providers/demo-provider';
+import { useApp } from '@/app/providers/app-provider';
 import { LanguageSelect } from '@/components/app/language-select';
 import { useI18n } from '@/lib/i18n';
 
@@ -159,8 +160,8 @@ function SidebarLink({
 }
 
 export function AppShell() {
-  const { clearLocalAuthState, session, setupError, setupLoading, setupState } =
-    useDemo();
+  const { session, setupError, setupLoading, setupState } = useApp();
+  const { isReady, signOut } = useAuthMini();
   const { t } = useI18n();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -172,7 +173,7 @@ export function AppShell() {
   const setupPath = location.pathname === '/initialize';
   const loginPath = location.pathname === '/login';
 
-  if (setupLoading) {
+  if (setupLoading || !isReady) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 text-sm text-slate-600">
         {t('common.loadingAuthMini')}
@@ -330,7 +331,7 @@ export function AppShell() {
           {authenticated ? (
             <Button
               className="min-h-9 bg-white px-3 text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100"
-              onClick={() => void clearLocalAuthState()}
+              onClick={() => void signOut()}
             >
               {t('shell.signOut')}
             </Button>

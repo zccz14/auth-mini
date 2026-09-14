@@ -4,7 +4,7 @@ import {
   buildLoginCallbackUrl,
   issuerAudience,
   parseLoginRequest,
-  toDemoSessionTokens,
+  toAppSessionTokens,
 } from '@/lib/login-callback';
 
 describe('login callback helpers', () => {
@@ -123,7 +123,8 @@ describe('login callback helpers', () => {
       ),
     ).toEqual({
       status: 'invalid',
-      error: 'audiences must be unique hostnames without a scheme, port, or path.',
+      error:
+        'audiences must be unique hostnames without a scheme, port, or path.',
     });
     expect(
       parseLoginRequest(
@@ -131,7 +132,8 @@ describe('login callback helpers', () => {
       ),
     ).toEqual({
       status: 'invalid',
-      error: 'audiences must be unique hostnames without a scheme, port, or path.',
+      error:
+        'audiences must be unique hostnames without a scheme, port, or path.',
     });
     expect(
       parseLoginRequest(
@@ -139,7 +141,8 @@ describe('login callback helpers', () => {
       ),
     ).toEqual({
       status: 'invalid',
-      error: 'audiences must be unique hostnames without a scheme, port, or path.',
+      error:
+        'audiences must be unique hostnames without a scheme, port, or path.',
     });
   });
 
@@ -172,7 +175,10 @@ describe('login callback helpers', () => {
       target: {
         kind: 'loopback',
         audience: hostname.replace(/^\[|\]$/g, '').toLowerCase(),
-        audiences: [hostname.replace(/^\[|\]$/g, '').toLowerCase(), 'app.ntnl.io'],
+        audiences: [
+          hostname.replace(/^\[|\]$/g, '').toLowerCase(),
+          'app.ntnl.io',
+        ],
         displayHost,
         redirectUri: `http://${displayHost}/callback`,
       },
@@ -180,7 +186,10 @@ describe('login callback helpers', () => {
     if (request.status === 'ready') {
       expect(authenticationTarget(request)).toEqual({
         redirect_uri: `http://${displayHost}/callback`,
-        audiences: [hostname.replace(/^\[|\]$/g, '').toLowerCase(), 'app.ntnl.io'],
+        audiences: [
+          hostname.replace(/^\[|\]$/g, '').toLowerCase(),
+          'app.ntnl.io',
+        ],
       });
     }
   });
@@ -214,7 +223,7 @@ describe('login callback helpers', () => {
 
   it('converts browser session results for local demo login', () => {
     expect(
-      toDemoSessionTokens({
+      toAppSessionTokens({
         sessionId: 'session-1',
         accessToken: 'jwt-1',
         refreshToken: 'refresh-1',
