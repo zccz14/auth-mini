@@ -128,7 +128,16 @@ function formatEmailChangeError(
   return cause instanceof Error ? cause.message : fallback;
 }
 
-export function HomeRoute() {
+export type HomeSection =
+  | 'all'
+  | 'account'
+  | 'email'
+  | 'remote-login'
+  | 'passkey'
+  | 'ed25519'
+  | 'sessions';
+
+export function HomeRoute({ section = 'all' }: { section?: HomeSection } = {}) {
   const { config, sdk, session } = useDemo();
   const { t } = useI18n();
   const [me, setMe] = useState<Me | null>(null);
@@ -422,255 +431,272 @@ export function HomeRoute() {
   const passkeys = me?.webauthn_credentials ?? [];
   const ed25519Credentials = me?.ed25519_credentials ?? [];
   const activeSessions = (me?.active_sessions ?? []) as ActiveSession[];
+  const show = (target: Exclude<HomeSection, 'all'>) =>
+    section === 'all' || section === target;
 
   return (
     <div className="grid gap-4 sm:gap-5">
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('common.account')}</CardTitle>
-          <CardDescription>{t('home.description')}</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-2 text-sm text-slate-700">
-          <div>
-            {t('home.userId')}:{' '}
-            <span className="break-all font-mono">
-              {me?.user_id ?? t('common.loading')}
-            </span>
-          </div>
-          <div>
-            {t('common.email')}:{' '}
-            <span className="break-words">
-              {me?.email ?? t('home.noVerifiedEmail')}
-            </span>
-          </div>
-          <div>
-            {t('home.sessionId')}:{' '}
-            <span className="break-all font-mono">{session.sessionId}</span>
-          </div>
-          {loadingMe ? (
-            <p className="text-slate-600">{t('home.loadingAccount')}</p>
-          ) : null}
-          {meError ? (
-            <p className="break-words text-rose-600">{meError}</p>
-          ) : null}
-          {meWarning ? (
-            <p className="break-words text-amber-700">{meWarning}</p>
-          ) : null}
-        </CardContent>
-      </Card>
+      {show('account') ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('common.account')}</CardTitle>
+            <CardDescription>{t('home.description')}</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-2 text-sm text-slate-700">
+            <div>
+              {t('home.userId')}:{' '}
+              <span className="break-all font-mono">
+                {me?.user_id ?? t('common.loading')}
+              </span>
+            </div>
+            <div>
+              {t('common.email')}:{' '}
+              <span className="break-words">
+                {me?.email ?? t('home.noVerifiedEmail')}
+              </span>
+            </div>
+            <div>
+              {t('home.sessionId')}:{' '}
+              <span className="break-all font-mono">{session.sessionId}</span>
+            </div>
+            {loadingMe ? (
+              <p className="text-slate-600">{t('home.loadingAccount')}</p>
+            ) : null}
+            {meError ? (
+              <p className="break-words text-rose-600">{meError}</p>
+            ) : null}
+            {meWarning ? (
+              <p className="break-words text-amber-700">{meWarning}</p>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
 
-      {credentialError ? (
+      {credentialError && (show('passkey') || show('ed25519')) ? (
         <p className="break-words text-sm text-rose-600">{credentialError}</p>
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('common.email')}</CardTitle>
-          <CardDescription>{t('home.emailDescription')}</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 text-sm text-slate-700">
-          <p>
-            {me?.email ? t('home.emailVerified') : t('home.emailNotVerified')}
-          </p>
+      {show('email') ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('common.email')}</CardTitle>
+            <CardDescription>{t('home.emailDescription')}</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 text-sm text-slate-700">
+            <p>
+              {me?.email ? t('home.emailVerified') : t('home.emailNotVerified')}
+            </p>
 
-          {emailChangeStep === 'start' ? (
-            <form className="grid gap-3" onSubmit={startEmailChange}>
-              <label className="grid gap-2 font-medium text-slate-700">
-                <span>{t('home.newEmail')}</span>
-                <Input
-                  aria-label={t('home.newEmail')}
-                  autoComplete="email"
-                  inputMode="email"
-                  type="email"
-                  value={emailChangeEmail}
-                  onChange={(event) =>
-                    setEmailChangeEmail(event.currentTarget.value)
-                  }
-                />
-              </label>
-              <Button
-                className="w-full sm:w-fit"
-                disabled={
-                  !me || !emailChangeEmail.trim() || pendingEmailChange !== null
-                }
-                type="submit"
-              >
-                {pendingEmailChange === 'start'
-                  ? t('home.sendingEmailChangeCode')
-                  : t('home.sendEmailChangeCode')}
-              </Button>
-            </form>
-          ) : (
-            <form className="grid gap-3" onSubmit={verifyEmailChange}>
-              <div className="grid gap-1">
-                <span className="font-medium text-slate-700">
-                  {t('home.emailChangeCode')}
-                </span>
-                <span className="break-words text-slate-600">
-                  {emailChangeEmail}
-                </span>
-              </div>
-              <InputOTP
-                aria-label={t('home.emailChangeOtp')}
-                maxLength={6}
-                value={emailChangeCode}
-                onChange={setEmailChangeCode}
-              >
-                <InputOTPGroup>
-                  <InputOTPSlot index={0} />
-                  <InputOTPSlot index={1} />
-                  <InputOTPSlot index={2} />
-                  <InputOTPSlot index={3} />
-                  <InputOTPSlot index={4} />
-                  <InputOTPSlot index={5} />
-                </InputOTPGroup>
-              </InputOTP>
-              <div className="flex flex-col gap-3 sm:flex-row">
+            {emailChangeStep === 'start' ? (
+              <form className="grid gap-3" onSubmit={startEmailChange}>
+                <label className="grid gap-2 font-medium text-slate-700">
+                  <span>{t('home.newEmail')}</span>
+                  <Input
+                    aria-label={t('home.newEmail')}
+                    autoComplete="email"
+                    inputMode="email"
+                    type="email"
+                    value={emailChangeEmail}
+                    onChange={(event) =>
+                      setEmailChangeEmail(event.currentTarget.value)
+                    }
+                  />
+                </label>
                 <Button
                   className="w-full sm:w-fit"
                   disabled={
-                    emailChangeCode.length !== 6 || pendingEmailChange !== null
+                    !me ||
+                    !emailChangeEmail.trim() ||
+                    pendingEmailChange !== null
                   }
                   type="submit"
                 >
-                  {pendingEmailChange === 'verify'
-                    ? t('home.confirmingEmailChange')
-                    : t('home.confirmEmailChange')}
+                  {pendingEmailChange === 'start'
+                    ? t('home.sendingEmailChangeCode')
+                    : t('home.sendEmailChangeCode')}
+                </Button>
+              </form>
+            ) : (
+              <form className="grid gap-3" onSubmit={verifyEmailChange}>
+                <div className="grid gap-1">
+                  <span className="font-medium text-slate-700">
+                    {t('home.emailChangeCode')}
+                  </span>
+                  <span className="break-words text-slate-600">
+                    {emailChangeEmail}
+                  </span>
+                </div>
+                <InputOTP
+                  aria-label={t('home.emailChangeOtp')}
+                  maxLength={6}
+                  value={emailChangeCode}
+                  onChange={setEmailChangeCode}
+                >
+                  <InputOTPGroup>
+                    <InputOTPSlot index={0} />
+                    <InputOTPSlot index={1} />
+                    <InputOTPSlot index={2} />
+                    <InputOTPSlot index={3} />
+                    <InputOTPSlot index={4} />
+                    <InputOTPSlot index={5} />
+                  </InputOTPGroup>
+                </InputOTP>
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <Button
+                    className="w-full sm:w-fit"
+                    disabled={
+                      emailChangeCode.length !== 6 ||
+                      pendingEmailChange !== null
+                    }
+                    type="submit"
+                  >
+                    {pendingEmailChange === 'verify'
+                      ? t('home.confirmingEmailChange')
+                      : t('home.confirmEmailChange')}
+                  </Button>
+                  <Button
+                    className="w-full bg-white text-slate-900 ring-1 ring-slate-300 hover:bg-slate-100 sm:w-fit"
+                    disabled={pendingEmailChange !== null}
+                    onClick={cancelEmailChange}
+                    type="button"
+                  >
+                    {t('home.cancelEmailChange')}
+                  </Button>
+                </div>
+              </form>
+            )}
+
+            {emailChangeMessage ? (
+              <p className="text-emerald-700" role="status">
+                {emailChangeMessage}
+              </p>
+            ) : null}
+            {emailChangeError ? (
+              <p className="text-rose-600" role="alert">
+                {emailChangeError}
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {show('remote-login') ? (
+        <RemoteLoginApprovals authenticated={session.authenticated} sdk={sdk} />
+      ) : null}
+
+      {show('passkey') ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('common.passkey')}</CardTitle>
+            <CardDescription>{t('home.passkeyDescription')}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Button
+              disabled={pendingCredential !== null}
+              onClick={() => void registerPasskey()}
+            >
+              {pendingCredential === 'passkey'
+                ? t('home.registering')
+                : t('home.registerPasskey')}
+            </Button>
+            <CredentialList
+              deletePath={(id) => '/webauthn/credentials/' + id}
+              idKey="credential_id"
+              items={passkeys}
+              onDelete={deleteCredential}
+              pending={pendingCredential}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {show('ed25519') ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('common.ed25519')}</CardTitle>
+            <CardDescription>{t('home.ed25519Description')}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <form className="grid gap-3" onSubmit={registerEd25519}>
+              <Input
+                value={ed25519Name}
+                onChange={(event) => setEd25519Name(event.currentTarget.value)}
+              />
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Button
+                  className="w-full sm:w-auto"
+                  type="button"
+                  disabled={pendingCredential !== null}
+                  onClick={() => void generateEd25519()}
+                >
+                  {pendingCredential === 'generate-ed25519'
+                    ? t('setup.generating')
+                    : t('home.generateKey')}
                 </Button>
                 <Button
-                  className="w-full bg-white text-slate-900 ring-1 ring-slate-300 hover:bg-slate-100 sm:w-fit"
-                  disabled={pendingEmailChange !== null}
-                  onClick={cancelEmailChange}
-                  type="button"
+                  className="w-full sm:w-auto"
+                  type="submit"
+                  disabled={
+                    !publicKey ||
+                    Boolean(validateSolanaPublicKey(publicKey)) ||
+                    pendingCredential !== null
+                  }
                 >
-                  {t('home.cancelEmailChange')}
+                  {pendingCredential === 'register-ed25519'
+                    ? t('home.registering')
+                    : t('home.registerPublicKey')}
                 </Button>
               </div>
+              {privateKey ? (
+                <Ed25519Keypair publicKey={publicKey} privateKey={privateKey} />
+              ) : null}
+              <label className="grid gap-2 text-sm font-medium text-slate-700">
+                <span>{t('home.publicKey')}</span>
+                <Input
+                  aria-label={t('home.publicKey')}
+                  placeholder={t('common.publicKey')}
+                  value={publicKey}
+                  onChange={(event) => setPublicKey(event.currentTarget.value)}
+                />
+              </label>
             </form>
-          )}
-
-          {emailChangeMessage ? (
-            <p className="text-emerald-700" role="status">
-              {emailChangeMessage}
-            </p>
-          ) : null}
-          {emailChangeError ? (
-            <p className="text-rose-600" role="alert">
-              {emailChangeError}
-            </p>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      <RemoteLoginApprovals authenticated={session.authenticated} sdk={sdk} />
-
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('common.passkey')}</CardTitle>
-          <CardDescription>{t('home.passkeyDescription')}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Button
-            disabled={pendingCredential !== null}
-            onClick={() => void registerPasskey()}
-          >
-            {pendingCredential === 'passkey'
-              ? t('home.registering')
-              : t('home.registerPasskey')}
-          </Button>
-          <CredentialList
-            deletePath={(id) => '/webauthn/credentials/' + id}
-            idKey="credential_id"
-            items={passkeys}
-            onDelete={deleteCredential}
-            pending={pendingCredential}
-          />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('common.ed25519')}</CardTitle>
-          <CardDescription>{t('home.ed25519Description')}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <form className="grid gap-3" onSubmit={registerEd25519}>
-            <Input
-              value={ed25519Name}
-              onChange={(event) => setEd25519Name(event.currentTarget.value)}
+            <CredentialList
+              deletePath={(id) => '/ed25519/credentials/' + id}
+              idKey="id"
+              items={ed25519Credentials}
+              onDelete={deleteCredential}
+              pending={pendingCredential}
             />
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <Button
-                className="w-full sm:w-auto"
-                type="button"
-                disabled={pendingCredential !== null}
-                onClick={() => void generateEd25519()}
-              >
-                {pendingCredential === 'generate-ed25519'
-                  ? t('setup.generating')
-                  : t('home.generateKey')}
-              </Button>
-              <Button
-                className="w-full sm:w-auto"
-                type="submit"
-                disabled={
-                  !publicKey ||
-                  Boolean(validateSolanaPublicKey(publicKey)) ||
-                  pendingCredential !== null
-                }
-              >
-                {pendingCredential === 'register-ed25519'
-                  ? t('home.registering')
-                  : t('home.registerPublicKey')}
-              </Button>
-            </div>
-            {privateKey ? (
-              <Ed25519Keypair publicKey={publicKey} privateKey={privateKey} />
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {show('sessions') ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('home.activeSessions')}</CardTitle>
+            <CardDescription>{t('home.sessionsDescription')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {sessionError ? (
+              <p className="mb-4 break-words text-sm text-rose-600">
+                {sessionError}
+              </p>
             ) : null}
-            <label className="grid gap-2 text-sm font-medium text-slate-700">
-              <span>{t('home.publicKey')}</span>
-              <Input
-                aria-label={t('home.publicKey')}
-                placeholder={t('common.publicKey')}
-                value={publicKey}
-                onChange={(event) => setPublicKey(event.currentTarget.value)}
+            {meError ? null : activeSessions.length === 0 ? (
+              <p className="text-sm text-slate-600">
+                {t('home.noActiveSessions')}
+              </p>
+            ) : (
+              <ActiveSessionsTable
+                onKick={kickSession}
+                pendingSessionId={pendingSessionId}
+                rows={activeSessions}
               />
-            </label>
-          </form>
-          <CredentialList
-            deletePath={(id) => '/ed25519/credentials/' + id}
-            idKey="id"
-            items={ed25519Credentials}
-            onDelete={deleteCredential}
-            pending={pendingCredential}
-          />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('home.activeSessions')}</CardTitle>
-          <CardDescription>{t('home.sessionsDescription')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {sessionError ? (
-            <p className="mb-4 break-words text-sm text-rose-600">
-              {sessionError}
-            </p>
-          ) : null}
-          {meError ? null : activeSessions.length === 0 ? (
-            <p className="text-sm text-slate-600">
-              {t('home.noActiveSessions')}
-            </p>
-          ) : (
-            <ActiveSessionsTable
-              onKick={kickSession}
-              pendingSessionId={pendingSessionId}
-              rows={activeSessions}
-            />
-          )}
-        </CardContent>
-      </Card>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }
