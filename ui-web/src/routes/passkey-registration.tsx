@@ -1,6 +1,6 @@
 import { useState, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useDemo } from '@/app/providers/demo-provider';
+import { useApp } from '@/app/providers/app-provider';
 import { LanguageSelect } from '@/components/app/language-select';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,7 @@ const LOGIN_PATH = '/login?return_to=%2Fpasskey%2Fregister';
 export function PasskeyRegistrationRoute() {
   const navigate = useNavigate();
   const { config, sdk, session, setupError, setupLoading, setupState } =
-    useDemo();
+    useApp();
   const { t } = useI18n();
   const [pending, setPending] = useState(false);
   const [registered, setRegistered] = useState(false);

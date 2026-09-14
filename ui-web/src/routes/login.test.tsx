@@ -38,9 +38,11 @@ const sdkMocks = vi.hoisted(() => {
   const remoteStart = vi.fn();
   const remoteExchange = vi.fn();
   const clearLocal = vi.fn();
+  const acceptRedirectCallback = vi.fn();
+  const listeners = new Set<(state: MockSessionState) => void>();
 
   return {
-    createDemoSdk: vi.fn(() => ({
+    createBrowserSdk: vi.fn(() => ({
       admin: { setup: { fetch: setupFetch } },
       email: { start: emailStart, verify: emailVerify },
       ed25519: {
@@ -53,7 +55,11 @@ const sdkMocks = vi.hoisted(() => {
       passkey: { register: passkeyRegister, authenticate: passkeyAuthenticate },
       session: {
         getState: () => sessionState.current,
-        onChange: vi.fn(() => vi.fn()),
+        onChange: vi.fn((listener: (state: MockSessionState) => void) => {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        }),
+        acceptRedirectCallback,
         refresh: vi.fn(),
         logout: vi.fn(),
         clearLocal,
@@ -70,15 +76,19 @@ const sdkMocks = vi.hoisted(() => {
     remoteStart,
     remoteExchange,
     clearLocal,
-    persistDemoSession: vi.fn(),
+    acceptRedirectCallback,
+    listeners,
     sendLoginCallback: vi.fn(),
     sessionState,
   };
 });
 
-vi.mock('@/lib/demo-sdk', () => ({
-  createDemoSdk: sdkMocks.createDemoSdk,
-  persistDemoSession: sdkMocks.persistDemoSession,
+vi.mock('auth-mini/sdk/browser', () => ({
+  createBrowserSdk: sdkMocks.createBrowserSdk,
+}));
+
+vi.mock('@/lib/app-sdk', () => ({
+  extendAppSdk: (sdk: unknown) => sdk,
 }));
 
 vi.mock('@/lib/demo-ed25519', () => ({
@@ -158,7 +168,8 @@ describe('LoginRoute', () => {
   beforeEach(() => {
     window.history.pushState({}, '', '/');
     localStorage.clear();
-    sdkMocks.createDemoSdk.mockClear();
+    sdkMocks.createBrowserSdk.mockClear();
+    sdkMocks.listeners.clear();
     sdkMocks.emailStart.mockReset();
     sdkMocks.emailVerify.mockReset();
     sdkMocks.passkeyAuthenticate.mockReset();
@@ -178,22 +189,22 @@ describe('LoginRoute', () => {
       rp_id: 'auth.example.com',
       smtp: null,
     });
-    sdkMocks.persistDemoSession.mockReset();
-    sdkMocks.persistDemoSession.mockImplementation(
-      (_storage, _baseUrl, tokens) => {
-        sdkMocks.sessionState.current = {
-          status: 'authenticated',
-          authenticated: true,
-          sessionId: tokens.session_id,
-          accessToken: tokens.access_token,
-          refreshToken: tokens.refresh_token,
-          receivedAt: new Date(Date.now()).toISOString(),
-          expiresAt: new Date(
-            Date.now() + tokens.expires_in * 1000,
-          ).toISOString(),
-        };
-      },
-    );
+    sdkMocks.acceptRedirectCallback.mockReset();
+    sdkMocks.acceptRedirectCallback.mockImplementation(async (tokens) => {
+      sdkMocks.sessionState.current = {
+        status: 'authenticated',
+        authenticated: true,
+        sessionId: tokens.session_id,
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        receivedAt: new Date(Date.now()).toISOString(),
+        expiresAt: new Date(
+          Date.now() + tokens.expires_in * 1000,
+        ).toISOString(),
+      };
+      for (const listener of sdkMocks.listeners)
+        listener(sdkMocks.sessionState.current);
+    });
     sdkMocks.sendLoginCallback.mockReset();
     sdkMocks.sessionState.current = {
       status: 'anonymous',
@@ -241,13 +252,13 @@ describe('LoginRoute', () => {
       expires_at: '2026-09-03T01:00:00.000Z',
       request_id: '00000000-0000-4000-8000-000000000001',
     });
-    sdkMocks.remoteExchange.mockRejectedValue({ error: 'authorization_pending' });
+    sdkMocks.remoteExchange.mockRejectedValue({
+      error: 'authorization_pending',
+    });
 
     renderLogin();
 
-    await user.click(
-      await expectButtonEnabled('Approve on another device'),
-    );
+    await user.click(await expectButtonEnabled('Approve on another device'));
 
     expect(await screen.findByText('Waiting for approval')).toBeInTheDocument();
     expect(screen.getByText('A1B2C3D4')).toBeInTheDocument();
@@ -280,7 +291,9 @@ describe('LoginRoute', () => {
 
   it('identifies a local app and its requested audience in both languages', async () => {
     const user = userEvent.setup();
-    renderLogin(loginPath('http://localhost:5173/callback', ['localhost', 'app.ntnl.io']));
+    renderLogin(
+      loginPath('http://localhost:5173/callback', ['localhost', 'app.ntnl.io']),
+    );
 
     expect(
       await screen.findByText('Local development app'),
@@ -458,7 +471,7 @@ describe('LoginRoute', () => {
       redirect_uri: 'https://app.example.com/#/callback?next=%2Fapp',
       audiences: ['app.example.com'],
     });
-    expect(sdkMocks.persistDemoSession).not.toHaveBeenCalled();
+    expect(sdkMocks.acceptRedirectCallback).not.toHaveBeenCalled();
     expect(sdkMocks.clearLocal).toHaveBeenCalledTimes(1);
     expect(sdkMocks.sendLoginCallback).toHaveBeenCalledWith(
       'https://app.example.com/#/callback?next=%2Fapp&access_token=jwt-ed25519&token_type=Bearer&session_id=session-ed25519&refresh_token=refresh-ed25519&expires_in=900&expires_at=2026-06-30T00%3A15%3A00.000Z&state=state-1',
@@ -485,17 +498,13 @@ describe('LoginRoute', () => {
     await typeOneTimeCode(user, '123456');
     await user.click(await expectButtonEnabled('Verify and continue'));
 
-    expect(sdkMocks.persistDemoSession).toHaveBeenCalledWith(
-      localStorage,
-      'http://localhost:3000/',
-      {
-        session_id: 'session-local',
-        access_token: 'jwt-local',
-        refresh_token: 'refresh-local',
-        expires_in: 3600,
-        token_type: 'Bearer',
-      },
-    );
+    expect(sdkMocks.acceptRedirectCallback).toHaveBeenCalledWith({
+      session_id: 'session-local',
+      access_token: 'jwt-local',
+      refresh_token: 'refresh-local',
+      expires_in: 3600,
+      token_type: 'Bearer',
+    });
     expect(sdkMocks.emailVerify).toHaveBeenCalledWith({
       email: 'user@example.com',
       code: '123456',
@@ -523,7 +532,9 @@ describe('LoginRoute', () => {
       expiresAt: '2026-06-30T01:00:00.000Z',
     });
 
-    renderLogin(loginPath('http://127.0.0.1:4173/callback', ['127.0.0.1', 'app.ntnl.io']));
+    renderLogin(
+      loginPath('http://127.0.0.1:4173/callback', ['127.0.0.1', 'app.ntnl.io']),
+    );
 
     await user.type(screen.getByLabelText('Email address'), 'user@example.com');
     await user.click(await expectButtonEnabled('Send email code'));

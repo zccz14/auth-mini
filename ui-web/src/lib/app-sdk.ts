@@ -1,4 +1,4 @@
-import { createBrowserSdk } from 'auth-mini/sdk/browser';
+import type { AuthMiniApi } from 'auth-mini/sdk/browser';
 import type { MeResponse } from 'auth-mini/sdk/api';
 
 type DemoEd25519Api = {
@@ -12,7 +12,7 @@ type DemoEd25519Api = {
     signature: string;
     redirect_uri?: string;
     aud?: string;
-  }): Promise<DemoSessionTokens>;
+  }): Promise<AppSessionTokens>;
 };
 
 export type AdminSetupState = {
@@ -119,7 +119,7 @@ type AdminApi = {
   databaseUrl(): string;
 };
 
-export type DemoCurrentUser = MeResponse;
+export type AppCurrentUser = MeResponse;
 
 export type RemoteLoginStart = {
   request_id: string;
@@ -143,7 +143,7 @@ type RemoteLoginApi = {
   exchange(input: {
     request_id: string;
     exchange_code: string;
-  }): Promise<DemoSessionTokens>;
+  }): Promise<AppSessionTokens>;
   pending(): Promise<{ requests: RemoteLoginRequest[] }>;
   claim(input: { confirmation_code: string }): Promise<RemoteLoginRequest>;
   approve(requestId: string): Promise<{ ok: true }>;
@@ -151,21 +151,21 @@ type RemoteLoginApi = {
 };
 
 type CurrentUserApi = {
-  fetch(): Promise<DemoCurrentUser>;
+  fetch(): Promise<AppCurrentUser>;
   email: {
     startChange(input: { email: string }): Promise<{ ok: true }>;
     verifyChange(input: { email: string; code: string }): Promise<{ ok: true }>;
   };
 };
 
-export type DemoSdk = ReturnType<typeof createBrowserSdk> & {
+export type AppSdk = AuthMiniApi & {
   admin: AdminApi;
   currentUser: CurrentUserApi;
   remoteLogin: RemoteLoginApi;
   ed25519: DemoEd25519Api;
 };
 
-export type DemoSessionTokens = {
+export type AppSessionTokens = {
   session_id: string;
   access_token: string;
   refresh_token: string;
@@ -173,39 +173,7 @@ export type DemoSessionTokens = {
   token_type: 'Bearer';
 };
 
-function browserSdkStorageKey(baseUrl: string): string {
-  const url = new URL(baseUrl);
-  url.search = '';
-  url.hash = '';
-  url.pathname = url.pathname.endsWith('/') ? url.pathname : `${url.pathname}/`;
-  return `auth-mini.sdk:${url.toString()}`;
-}
-
-export function persistDemoSession(
-  storage: Storage,
-  serverBaseUrl: string,
-  tokens: DemoSessionTokens,
-) {
-  const receivedAt = new Date().toISOString();
-  const expiresAt = new Date(
-    Date.now() + tokens.expires_in * 1000,
-  ).toISOString();
-
-  storage.setItem(
-    browserSdkStorageKey(serverBaseUrl),
-    JSON.stringify({
-      sessionId: tokens.session_id,
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      receivedAt,
-      expiresAt,
-    }),
-  );
-}
-
-export function createDemoSdk(serverBaseUrl: string): DemoSdk {
-  const sdk = createBrowserSdk(serverBaseUrl);
-
+export function extendAppSdk(sdk: AuthMiniApi, serverBaseUrl: string): AppSdk {
   function isRetryableAuthError(error: unknown): boolean {
     return (
       typeof error === 'object' &&
@@ -364,7 +332,7 @@ export function createDemoSdk(serverBaseUrl: string): DemoSdk {
         const accessToken = await requireAccessToken();
 
         try {
-          return await getJson<DemoCurrentUser>('/me', accessToken);
+          return await getJson<AppCurrentUser>('/me', accessToken);
         } catch (error) {
           if (
             !isRetryableAuthError(error) ||
@@ -373,7 +341,7 @@ export function createDemoSdk(serverBaseUrl: string): DemoSdk {
             throw error;
           }
 
-          return await getJson<DemoCurrentUser>(
+          return await getJson<AppCurrentUser>(
             '/me',
             await requireAccessToken(true),
           );
@@ -431,7 +399,7 @@ export function createDemoSdk(serverBaseUrl: string): DemoSdk {
         return postJson<RemoteLoginStart>('/remote-login/start', input);
       },
       exchange(input) {
-        return postJson<DemoSessionTokens>(
+        return postJson<AppSessionTokens>(
           `/remote-login/${input.request_id}/exchange`,
           input,
         );
@@ -499,7 +467,7 @@ export function createDemoSdk(serverBaseUrl: string): DemoSdk {
         );
       },
       verify(input: { request_id: string; signature: string }) {
-        return postJson<DemoSessionTokens>('/ed25519/verify', input);
+        return postJson<AppSessionTokens>('/ed25519/verify', input);
       },
     },
   };

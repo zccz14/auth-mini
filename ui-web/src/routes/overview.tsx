@@ -6,7 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { useDemo } from '@/app/providers/demo-provider';
+import { useApp } from '@/app/providers/app-provider';
 import { useI18n } from '@/lib/i18n';
 
 type IconName = 'account' | 'email' | 'security' | 'sessions' | 'remote';
@@ -61,7 +61,7 @@ function Icon({ name }: { name: IconName }) {
 }
 
 export function OverviewRoute() {
-  const { session, setupState } = useDemo();
+  const { session, setupState } = useApp();
   const { t } = useI18n();
   const brandName = setupState?.brand_name ?? 'auth-mini';
   const destinations = [

@@ -1,10 +1,10 @@
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { useDemo } from '@/app/providers/demo-provider';
+import { useApp } from '@/app/providers/app-provider';
 import { useI18n } from '@/lib/i18n';
 
 export function StatusBanner() {
-  const { config, sdk } = useDemo();
+  const { config, sdk } = useApp();
   const { t } = useI18n();
 
   return (

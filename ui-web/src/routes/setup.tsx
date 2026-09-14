@@ -9,12 +9,12 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { useDemo } from '@/app/providers/demo-provider';
+import { useApp } from '@/app/providers/app-provider';
 import { generateDemoEd25519Keypair } from '@/lib/demo-ed25519';
 import { useI18n } from '@/lib/i18n';
 
 export function SetupRoute() {
-  const { reloadSetupState, sdk } = useDemo();
+  const { reloadSetupState, sdk } = useApp();
   const { t } = useI18n();
   const [name, setName] = useState(() => t('setup.defaultCredentialName'));
   const [privateKey, setPrivateKey] = useState('');

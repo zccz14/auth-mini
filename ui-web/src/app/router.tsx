@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from '@/components/app/app-shell';
-import { DemoProvider } from '@/app/providers/demo-provider';
+import { AppProvider } from '@/app/providers/app-provider';
 import { AdminRoute } from '@/routes/admin';
 import { HomeRoute } from '@/routes/home';
 import { OverviewRoute } from '@/routes/overview';
@@ -12,7 +12,7 @@ import { I18nProvider } from '@/lib/i18n';
 export function AppRouter() {
   return (
     <I18nProvider>
-      <DemoProvider>
+      <AppProvider>
         <Routes>
           <Route path="/login" element={<LoginRoute />} />
           <Route
@@ -44,7 +44,7 @@ export function AppRouter() {
           </Route>
           <Route path="*" element={<Navigate replace to="/" />} />
         </Routes>
-      </DemoProvider>
+      </AppProvider>
     </I18nProvider>
   );
 }

@@ -36,11 +36,13 @@ const sdk = {
 
 const reloadSetupState = vi.hoisted(() => vi.fn());
 
-vi.mock('@/app/providers/demo-provider', () => ({
-  DemoProvider: ({ children }: { children: ReactNode }) => children,
-  useDemo: () => ({
-    adoptDemoSession: vi.fn(),
-    clearLocalAuthState: vi.fn(),
+vi.mock('auth-mini-react-components', () => ({
+  useAuthMini: () => ({ isReady: true, signOut: vi.fn() }),
+}));
+
+vi.mock('@/app/providers/app-provider', () => ({
+  AppProvider: ({ children }: { children: ReactNode }) => children,
+  useApp: () => ({
     config: {
       resolvedServerBaseUrl: 'https://auth.example.com/',
       serverBaseUrl: '..',

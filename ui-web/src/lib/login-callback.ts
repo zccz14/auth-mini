@@ -1,4 +1,4 @@
-import type { DemoSessionTokens } from '@/lib/demo-sdk';
+import type { AppSessionTokens } from '@/lib/app-sdk';
 
 export type LoginRequest =
   | {
@@ -36,7 +36,7 @@ export type LoginCallbackTokens =
       sessionId: string;
       tokenType?: string;
     }
-  | DemoSessionTokens;
+  | AppSessionTokens;
 
 export function parseLoginRequest(
   routeSearch: string,
@@ -272,9 +272,9 @@ function normalizeHostname(hostname: string) {
   return withoutIpv6Brackets.toLowerCase().replace(/\.+$/, '');
 }
 
-export function toDemoSessionTokens(
+export function toAppSessionTokens(
   tokens: LoginCallbackTokens,
-): DemoSessionTokens {
+): AppSessionTokens {
   if ('accessToken' in tokens) {
     if (!tokens.accessToken) {
       throw new Error('Login did not return an access token.');

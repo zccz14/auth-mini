@@ -3,10 +3,10 @@ import { FlowCard } from '@/components/app/flow-card';
 import { JsonPanel } from '@/components/app/json-panel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useDemo } from '@/app/providers/demo-provider';
+import { useApp } from '@/app/providers/app-provider';
 
 export function EmailRoute() {
-  const { config, sdk, session } = useDemo();
+  const { config, sdk, session } = useApp();
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [pendingAction, setPendingAction] = useState<'start' | 'verify' | null>(

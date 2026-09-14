@@ -8,17 +8,17 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { useDemo } from '@/app/providers/demo-provider';
+import { useApp } from '@/app/providers/app-provider';
 import type {
   AdminConfigInput,
   AdminJwkSlot,
   AdminSetupState,
-} from '@/lib/demo-sdk';
+} from '@/lib/app-sdk';
 import { useI18n } from '@/lib/i18n';
 import { SystemResourcesCard } from '@/components/app/system-resources-card';
 
 export function AdminRoute() {
-  const { reloadSetupState, sdk, session } = useDemo();
+  const { reloadSetupState, sdk, session } = useApp();
   const { t } = useI18n();
   const [settings, setSettings] = useState<AdminSetupState | null>(null);
   const [jwkSlots, setJwkSlots] = useState<AdminJwkSlot[]>([]);

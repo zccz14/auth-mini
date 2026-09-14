@@ -15,15 +15,15 @@ import {
   InputOTPGroup,
   InputOTPSlot,
 } from '@/components/ui/input-otp';
-import { useDemo } from '@/app/providers/demo-provider';
+import { useApp } from '@/app/providers/app-provider';
 import {
   generateDemoEd25519Keypair,
   validateSolanaPublicKey,
 } from '@/lib/demo-ed25519';
 import { useI18n } from '@/lib/i18n';
-import type { DemoCurrentUser } from '@/lib/demo-sdk';
+import type { AppCurrentUser } from '@/lib/app-sdk';
 
-type Me = DemoCurrentUser;
+type Me = AppCurrentUser;
 type SessionCapability = 'manageable' | 'not-manageable' | 'legacy-token';
 type ActiveSession = {
   id: string;
@@ -138,7 +138,7 @@ export type HomeSection =
   | 'sessions';
 
 export function HomeRoute({ section = 'all' }: { section?: HomeSection } = {}) {
-  const { config, sdk, session } = useDemo();
+  const { config, sdk, session } = useApp();
   const { t } = useI18n();
   const [me, setMe] = useState<Me | null>(null);
   const [loadingMe, setLoadingMe] = useState(false);

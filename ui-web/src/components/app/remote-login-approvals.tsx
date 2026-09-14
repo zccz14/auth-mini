@@ -3,14 +3,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useI18n } from '@/lib/i18n';
-import type { DemoSdk, RemoteLoginRequest } from '@/lib/demo-sdk';
+import type { AppSdk, RemoteLoginRequest } from '@/lib/app-sdk';
 
 export function RemoteLoginApprovals({
   authenticated,
   sdk,
 }: {
   authenticated: boolean;
-  sdk: DemoSdk | null;
+  sdk: AppSdk | null;
 }) {
   const { t } = useI18n();
   const [code, setCode] = useState('');

@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useDemo } from '@/app/providers/demo-provider';
+import { useApp } from '@/app/providers/app-provider';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -20,7 +20,7 @@ import {
   issuerAudience,
   parseLoginRequest,
   sendLoginCallback,
-  toDemoSessionTokens,
+  toAppSessionTokens,
   type LoginCallbackTokens,
   type LoginRequest,
 } from '@/lib/login-callback';
@@ -43,7 +43,7 @@ const PASSKEY_REGISTRATION_PATH = '/passkey/register';
 export function LoginRoute() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { adoptDemoSession, config, sdk, setupState } = useDemo();
+  const { config, sdk, setupState } = useApp();
   const { t } = useI18n();
   const request = parseLoginRequest(location.search, window.location.search);
   const selfLoginReturnPath =
@@ -230,8 +230,10 @@ export function LoginRoute() {
       return;
     }
 
+    if (!sdk) return;
+
     if (request.target.kind === 'self') {
-      await adoptDemoSession(toDemoSessionTokens(tokens));
+      await sdk.session.acceptRedirectCallback(toAppSessionTokens(tokens));
       setMessage(t('login.signedIn'));
       navigate(selfLoginReturnPath);
       return;
@@ -495,7 +497,9 @@ function LoginDestination({
           <span>
             {t('login.destination.requestingAudience')}{' '}
             <strong className="break-all font-semibold">
-              {(request.target.audiences ?? [request.target.audience]).join(', ')}
+              {(request.target.audiences ?? [request.target.audience]).join(
+                ', ',
+              )}
             </strong>
           </span>
         </AlertDescription>
