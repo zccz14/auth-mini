@@ -197,6 +197,28 @@ describe('formal GUI routes', () => {
     );
   });
 
+  it('renders each home card as an isolated route section', async () => {
+    sdk.currentUser.fetch.mockResolvedValue({
+      active_sessions: [],
+      ed25519_credentials: [],
+      email: 'user@example.com',
+      user_id: 'user-1',
+      webauthn_credentials: [],
+    });
+
+    renderRoute(<HomeRoute section="sessions" />);
+
+    expect(
+      await screen.findByRole('heading', { name: 'Active Sessions' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Email' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'PassKey' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('changes the account email only after the new email OTP is verified', async () => {
     const user = userEvent.setup();
     sdk.currentUser.fetch.mockResolvedValue({
