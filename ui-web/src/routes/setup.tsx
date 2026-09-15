@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useApp } from '@/app/providers/app-provider';
-import { generateDemoEd25519Keypair } from '@/lib/demo-ed25519';
+import { generateEd25519Keypair } from '@/lib/ed25519';
 import { useI18n } from '@/lib/i18n';
 
 export function SetupRoute() {
@@ -30,7 +30,7 @@ export function SetupRoute() {
     setError('');
 
     try {
-      const keypair = await generateDemoEd25519Keypair();
+      const keypair = await generateEd25519Keypair();
       setPrivateKey(keypair.privateKey);
       setPublicKey(keypair.publicKey);
       setSaved(false);

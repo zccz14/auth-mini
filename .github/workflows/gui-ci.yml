@@ -1,4 +1,4 @@
-name: Demo CI
+name: GUI CI
 
 on:
   pull_request:
@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  demo:
+  gui:
     runs-on: ubuntu-latest
 
     steps:
@@ -35,11 +35,11 @@ jobs:
       - name: Install ui-web dependencies
         run: npm --prefix ui-web ci
 
-      - name: Build demo
-        run: npm run demo:build
+      - name: Build GUI
+        run: npm run gui:build
 
-      - name: Typecheck demo
-        run: npm run demo:typecheck
+      - name: Typecheck GUI
+        run: npm run gui:typecheck
 
-      - name: Test demo
+      - name: Test GUI
         run: npm --prefix ui-web test

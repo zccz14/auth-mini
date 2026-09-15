@@ -91,7 +91,7 @@ vi.mock('@/lib/app-sdk', () => ({
   extendAppSdk: (sdk: unknown) => sdk,
 }));
 
-vi.mock('@/lib/demo-ed25519', () => ({
+vi.mock('@/lib/ed25519', () => ({
   deriveEd25519PublicKey: vi.fn(() => Promise.resolve('public-key')),
   signEd25519Challenge: vi.fn(() => Promise.resolve('signature-1')),
   validateEd25519PrivateKey: vi.fn(() => ''),
@@ -217,7 +217,7 @@ describe('LoginRoute', () => {
     };
   });
 
-  it('renders as a popup login page outside the demo shell', async () => {
+  it('renders as a popup login page outside the app shell', async () => {
     renderLogin();
 
     expect(

@@ -16,10 +16,7 @@ import {
   InputOTPSlot,
 } from '@/components/ui/input-otp';
 import { useApp } from '@/app/providers/app-provider';
-import {
-  generateDemoEd25519Keypair,
-  validateSolanaPublicKey,
-} from '@/lib/demo-ed25519';
+import { generateEd25519Keypair, validateSolanaPublicKey } from '@/lib/ed25519';
 import { useI18n } from '@/lib/i18n';
 import type { AppCurrentUser } from '@/lib/app-sdk';
 
@@ -138,7 +135,7 @@ export type HomeSection =
   | 'sessions';
 
 export function HomeRoute({ section = 'all' }: { section?: HomeSection } = {}) {
-  const { config, sdk, session } = useApp();
+  const { serverBaseUrl, sdk, session } = useApp();
   const { t } = useI18n();
   const [me, setMe] = useState<Me | null>(null);
   const [loadingMe, setLoadingMe] = useState(false);
@@ -172,7 +169,7 @@ export function HomeRoute({ section = 'all' }: { section?: HomeSection } = {}) {
       const requestId = loadMeRequestIdRef.current + 1;
       loadMeRequestIdRef.current = requestId;
 
-      if (!sdk || config.status !== 'ready' || !session.authenticated) {
+      if (!sdk || !session.authenticated) {
         setMe(null);
         setMeError('');
         setMeWarning('');
@@ -214,7 +211,7 @@ export function HomeRoute({ section = 'all' }: { section?: HomeSection } = {}) {
         }
       }
     },
-    [config.status, sdk, session.authenticated, session.sessionId, t],
+    [sdk, session.authenticated, session.sessionId, t],
   );
 
   useEffect(() => {
@@ -243,7 +240,7 @@ export function HomeRoute({ section = 'all' }: { section?: HomeSection } = {}) {
     setCredentialError('');
 
     try {
-      const keypair = await generateDemoEd25519Keypair();
+      const keypair = await generateEd25519Keypair();
       setPrivateKey(keypair.privateKey);
       setPublicKey(keypair.publicKey);
     } catch (cause) {
@@ -284,13 +281,10 @@ export function HomeRoute({ section = 'all' }: { section?: HomeSection } = {}) {
     setCredentialError('');
 
     try {
-      const response = await fetch(
-        new URL(path, config.resolvedServerBaseUrl),
-        {
-          method: 'DELETE',
-          headers: { authorization: 'Bearer ' + session.accessToken },
-        },
-      );
+      const response = await fetch(new URL(path, serverBaseUrl), {
+        method: 'DELETE',
+        headers: { authorization: 'Bearer ' + session.accessToken },
+      });
       if (!response.ok) {
         throw new Error(t('home.deleteFailed'));
       }
@@ -309,7 +303,7 @@ export function HomeRoute({ section = 'all' }: { section?: HomeSection } = {}) {
       return;
     }
 
-    if (!sdk || !session.accessToken || config.status !== 'ready') {
+    if (!sdk || !session.accessToken) {
       setSessionError(t('home.kickError'));
       return;
     }
@@ -333,10 +327,7 @@ export function HomeRoute({ section = 'all' }: { section?: HomeSection } = {}) {
       }
 
       const response = await fetch(
-        new URL(
-          '/session/' + sessionId + '/logout',
-          config.resolvedServerBaseUrl,
-        ),
+        new URL('/session/' + sessionId + '/logout', serverBaseUrl),
         {
           method: 'POST',
           headers: { authorization: 'Bearer ' + accessToken },

@@ -7,15 +7,15 @@ function readRepoFile(path: string) {
 }
 
 describe('ui-web release contract', () => {
-  it('keeps demo:build as the root-first release entrypoint', () => {
+  it('keeps gui:build as the root-first release entrypoint', () => {
     const packageJson = JSON.parse(readRepoFile('package.json')) as {
       scripts?: Record<string, string>;
     };
 
-    expect(packageJson.scripts?.['demo:build']).toBe(
+    expect(packageJson.scripts?.['gui:build']).toBe(
       'npm run build && npm --prefix ui-web run build',
     );
-    expect(packageJson.scripts?.['demo:build:web']).toBe(
+    expect(packageJson.scripts?.['gui:build:embedded']).toBe(
       'npm run build && npm --prefix ui-web run build:web && node scripts/build-web-assets-archive.mjs',
     );
   });
@@ -32,7 +32,7 @@ describe('ui-web release contract', () => {
       'ui-web/package-lock.json',
       'run: npm ci',
       'run: npm --prefix ui-web ci',
-      'run: npm run demo:build:web',
+      'run: npm run gui:build:embedded',
       'cargo build --manifest-path rust-backend/Cargo.toml --release',
     ];
     const sequenceIndexes = expectedSequence.map((snippet) =>
@@ -75,7 +75,7 @@ describe('ui-web release contract', () => {
     ).toBeGreaterThan(0);
   });
 
-  it('documents docs as canonical and ui-web as the interactive demo source', () => {
+  it('documents docs as canonical and ui-web as the web GUI source', () => {
     const readme = readRepoFile('README.md');
     const docsSectionStart = readme.indexOf('## Docs and next steps');
 
@@ -87,33 +87,31 @@ describe('ui-web release contract', () => {
       docsSectionEnd === -1 ? undefined : docsSectionEnd,
     );
 
-    expect(readme).not.toMatch(/\[`demo\/`\]\(demo\/\)/);
     expect(docsSection).toMatch(
       /`docs\/`[\s\S]*canonical static reference source/i,
     );
-    expect(docsSection).toMatch(
-      /`ui-web\/`[\s\S]*current interactive demo source/i,
-    );
+    expect(docsSection).toMatch(/`ui-web\/`[\s\S]*web GUI source/i);
     expect(docsSection).toContain(
       'the Rust release binary embeds it under `/web/`',
     );
   });
 
-  it('documents the embedded demo without origin override links or /demo/ paths', () => {
+  it('documents the same-server embedded GUI and build commands', () => {
     const readme = readRepoFile('README.md');
     const browserSdkDoc = readRepoFile('docs/integration/browser-sdk.md');
 
     expect(readme).not.toContain('auth-mini.zccz14.com');
-    expect(readme).not.toContain('[Live demo]');
     expect(readme).not.toContain('auth-origin=');
     expect(readme).not.toContain('sdk-origin=');
 
     expect(browserSdkDoc).toContain('relative base URL `..`');
+    expect(browserSdkDoc).toContain('AuthMiniProvider');
+    expect(browserSdkDoc).toContain('npm run gui:build:embedded');
+    expect(browserSdkDoc).toContain('npm run gui:dev');
     expect(browserSdkDoc).not.toContain('auth-origin=');
     expect(browserSdkDoc).not.toContain('sdk-origin=');
     expect(browserSdkDoc).not.toMatch(/import map/i);
     expect(browserSdkDoc).not.toContain('../dist/sdk/browser.js');
     expect(browserSdkDoc).toContain('https://auth.example.com/web/');
-    expect(browserSdkDoc).not.toMatch(/https?:\/\/[^\s)`]+\/demo\/(?:\?|\b)/);
   });
 });

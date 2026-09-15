@@ -19,7 +19,7 @@ import { createBrowserSdk } from 'auth-mini/sdk/browser';
 const sdk = createBrowserSdk('https://auth.example.com');
 ```
 
-The current `ui-web/` app follows that module path as a Vite + React bundle. It imports `auth-mini/sdk/browser` at build time, mounts under a `HashRouter`, and the embedded `/web` GUI uses the same Rust server by resolving the relative base URL `..` from `window.location.href` before creating the SDK. The published demo now uses the bundled app entrypoint instead of any hand-wired browser bundle path.
+Auth Mini's `ui-web/` GUI is a Vite + React application mounted under a `HashRouter`. It uses `AuthMiniProvider` from `auth-mini-react-components` as the shared Browser SDK and session owner. The embedded `/web/` GUI uses the same Rust server by resolving the relative base URL `..` from `window.location.href`. The app context extends the Provider's SDK with account-management and administration APIs.
 
 Browser SDK persistence semantics remain browser-only: the maintained browser module path uses browser storage and browser-oriented recovery behavior. The new device SDK does not change those semantics.
 
@@ -101,15 +101,17 @@ async function signInWithPasskey() {
 - Refreshing is local transient state: it never writes an older token pair back to shared browser storage. When Web Locks is unavailable, the browser SDK retains `session_superseded` recovery as a compatibility fallback rather than pretending a localStorage lease is a mutex.
 - That coordination shares session tokens/status only; account/profile data remains outside the high-level browser SDK contract.
 
-## Demo deployment guidance
+## GUI development and deployment
 
-`ui-web/` is the interactive browser-flow demo source. `docs/` remains the canonical static reference source.
+`ui-web/` is the Auth Mini web GUI source. `docs/` remains the canonical static reference source.
 
-The embedded `/web` GUI no longer accepts an auth-server-origin override. It always calls the same Rust server that served the GUI by resolving the relative base URL `..`.
+The embedded `/web/` GUI calls the same Rust server that served it by resolving the relative base URL `..`.
 
-The Rust release workflow builds the demo with the root-level `demo:build:web` script and embeds the resulting assets in the release binary. The same auth-mini server serves the GUI at `/web/`.
+The Rust release workflow builds the GUI with the root-level `gui:build:embedded` script and embeds the resulting assets in the release binary. The same auth-mini server serves the GUI at `/web/`.
 
-- Treat `ui-web/` as the source for the interactive demo and `ui-web/dist` as the build artifact.
+- Use `npm run gui:dev` for local GUI development and `npm run gui:typecheck` to check its types.
+- Use `npm run gui:build` to build the GUI into `ui-web/dist`.
+- Use `npm run gui:build:embedded` to build `rust-backend/web` and regenerate the checked-in `rust-backend/web-assets.bin.gz` archive for Cargo builds.
 - Configure the issuer to the final Auth Mini server origin and set `rp_id` to that host or a valid parent domain.
 - If a downstream app serves its own frontend separately from auth-mini, it should redirect users to the Auth Mini page for browser sign-in; the built-in `/web` GUI is same-server only.
 

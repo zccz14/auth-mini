@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   deriveEd25519PublicKey,
-  generateDemoEd25519Keypair,
+  generateEd25519Keypair,
   parseEd25519PrivateKey,
   validateEd25519PrivateKey,
   validateSolanaPublicKey,
-} from './demo-ed25519';
+} from './ed25519';
 
-describe('demo-ed25519', () => {
+describe('ed25519', () => {
   it('generates a Solana-compatible base58 private key containing its public key', async () => {
-    const keypair = await generateDemoEd25519Keypair();
+    const keypair = await generateEd25519Keypair();
     expect(validateSolanaPublicKey(keypair.publicKey)).toBe('');
     expect(validateEd25519PrivateKey(keypair.privateKey)).toBe('');
     await expect(deriveEd25519PublicKey(keypair.privateKey)).resolves.toBe(
@@ -18,7 +18,7 @@ describe('demo-ed25519', () => {
   });
 
   it('rejects extended private keys whose public-key suffix does not match the seed', async () => {
-    const keypair = await generateDemoEd25519Keypair();
+    const keypair = await generateEd25519Keypair();
     const last = keypair.privateKey.at(-1)!;
     const tampered =
       keypair.privateKey.slice(0, -1) + (last === '1' ? '2' : '1');

@@ -159,7 +159,7 @@ For deployment, the CLI only accepts the bind host, bind port, and database path
 auth-mini --host 127.0.0.1 --port 7777 --db ./auth-mini.sqlite
 ```
 
-Initialize the administrator Ed25519 credential from the demo setup screen, or call the loopback-only admin setup API from the machine running auth-mini:
+Initialize the administrator Ed25519 credential from the GUI initialization page, or call the loopback-only admin setup API from the machine running auth-mini:
 
 ```bash
 curl -X PUT http://127.0.0.1:7777/admin/setup \
@@ -229,7 +229,7 @@ From there, typical integration looks like this:
 
 ## Docs and next steps
 
-`docs/` is the canonical static reference source. `ui-web/` is the current interactive demo source, and the Rust release binary embeds it under `/web/` so the same server can serve the browser flows end-to-end.
+`docs/` is the canonical static reference source. `ui-web/` is the web GUI source, and the Rust release binary embeds it under `/web/` so the same server serves sign-in, account settings, and administration.
 
 ### Integration guides
 

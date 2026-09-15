@@ -71,11 +71,11 @@ jobs:
       - name: Install root dependencies
         run: npm ci
 
-      - name: Install demo dependencies
+      - name: Install GUI dependencies
         run: npm --prefix ui-web ci
 
       - name: Build embedded web assets
-        run: npm run demo:build:web
+        run: npm run gui:build:embedded
 
       - name: Build release binary
         run: cargo build --manifest-path rust-backend/Cargo.toml --release --locked --target ${{ matrix.target }} --target-dir rust-backend/target

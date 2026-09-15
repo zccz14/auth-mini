@@ -1,7 +1,7 @@
 import type { AuthMiniApi } from 'auth-mini/sdk/browser';
 import type { MeResponse } from 'auth-mini/sdk/api';
 
-type DemoEd25519Api = {
+type Ed25519Api = {
   register(input: { name: string; public_key: string }): Promise<unknown>;
   start(input: { public_key: string }): Promise<{
     request_id: string;
@@ -162,7 +162,7 @@ export type AppSdk = AuthMiniApi & {
   admin: AdminApi;
   currentUser: CurrentUserApi;
   remoteLogin: RemoteLoginApi;
-  ed25519: DemoEd25519Api;
+  ed25519: Ed25519Api;
 };
 
 export type AppSessionTokens = {
