@@ -7,7 +7,7 @@ import {
   type PropsWithChildren,
 } from 'react';
 import { AuthMiniProvider, useAuthMini } from 'auth-mini-react-components';
-import { getInitialDemoConfig } from '@/lib/demo-config';
+import { resolveServerBaseUrl } from '@/lib/app-config';
 import { extendAppSdk, type AdminSetupState, type AppSdk } from '@/lib/app-sdk';
 
 const ANONYMOUS_SESSION = {
@@ -20,9 +20,7 @@ const ANONYMOUS_SESSION = {
   expiresAt: null,
 } as const;
 
-type AppConfig = ReturnType<typeof getInitialDemoConfig>;
 type AppContextValue = {
-  config: AppConfig;
   sdk: AppSdk | null;
   setupState: AdminSetupState | null;
   setupLoading: boolean;
@@ -33,31 +31,25 @@ type AppContextValue = {
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: PropsWithChildren) {
-  const [config] = useState(() =>
-    getInitialDemoConfig({
-      pageHref: window.location.href,
-      pageOrigin: window.location.origin,
-    }),
+  const [serverBaseUrl] = useState(() =>
+    resolveServerBaseUrl(window.location.href),
   );
 
   return (
     <AuthMiniProvider
-      authMiniBaseUrl={config.resolvedServerBaseUrl}
+      authMiniBaseUrl={serverBaseUrl}
       autoRedirectToLogin={false}
     >
-      <AppServicesProvider config={config}>{children}</AppServicesProvider>
+      <AppServicesProvider>{children}</AppServicesProvider>
     </AuthMiniProvider>
   );
 }
 
-function AppServicesProvider({
-  children,
-  config,
-}: PropsWithChildren<{ config: AppConfig }>) {
-  const { sdk: browserSdk } = useAuthMini();
+function AppServicesProvider({ children }: PropsWithChildren) {
+  const { sdk: browserSdk, authMiniBaseUrl } = useAuthMini();
   const sdk = useMemo(
-    () => browserSdk && extendAppSdk(browserSdk, config.resolvedServerBaseUrl),
-    [browserSdk, config.resolvedServerBaseUrl],
+    () => browserSdk && extendAppSdk(browserSdk, authMiniBaseUrl),
+    [browserSdk, authMiniBaseUrl],
   );
   const [setupState, setSetupState] = useState<AdminSetupState | null>(null);
   const [setupLoading, setSetupLoading] = useState(true);
@@ -95,7 +87,6 @@ function AppServicesProvider({
   return (
     <AppContext.Provider
       value={{
-        config,
         sdk,
         setupState,
         setupLoading,
@@ -111,8 +102,12 @@ function AppServicesProvider({
 }
 
 export function useApp() {
-  const { session } = useAuthMini();
+  const { session, authMiniBaseUrl } = useAuthMini();
   const value = useContext(AppContext);
   if (!value) throw new Error('useApp must be used inside AppProvider');
-  return { ...value, session: session ?? ANONYMOUS_SESSION };
+  return {
+    ...value,
+    serverBaseUrl: authMiniBaseUrl,
+    session: session ?? ANONYMOUS_SESSION,
+  };
 }

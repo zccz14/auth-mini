@@ -1,6 +1,6 @@
 {
   "name": "auth-mini",
-  "version": "0.4.9",
+  "version": "0.4.10",
   "description": "Minimal, opinionated auth server for apps that just need auth.",
   "license": "MIT",
   "repository": {
@@ -42,10 +42,10 @@
     "check:release-version": "node scripts/check-release-version.mjs",
     "test": "npm run typecheck && npm run test:unit && npm run test:integration",
     "test:unit": "node scripts/run-tests.js",
-    "demo:build": "npm run build && npm --prefix ui-web run build",
-    "demo:build:web": "npm run build && npm --prefix ui-web run build:web && node scripts/build-web-assets-archive.mjs",
-    "demo:dev": "node scripts/dev-ui-web.mjs",
-    "demo:typecheck": "npm --prefix ui-web run typecheck",
+    "gui:build": "npm run build && npm --prefix ui-web run build",
+    "gui:build:embedded": "npm run build && npm --prefix ui-web run build:web && node scripts/build-web-assets-archive.mjs",
+    "gui:dev": "node scripts/dev-ui-web.mjs",
+    "gui:typecheck": "npm --prefix ui-web run typecheck",
     "test:integration": "npm run build && vitest run tests/integration",
     "test:rust-e2e": "CARGO_HOME=$PWD/.cargo-home cargo build --manifest-path rust-backend/Cargo.toml && vitest run rust-e2e",
     "gco:main": "git fetch && git checkout origin/main",

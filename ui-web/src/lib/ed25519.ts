@@ -168,7 +168,7 @@ export async function signEd25519Challenge(
   return encodeBase64Url(signature);
 }
 
-export async function generateDemoEd25519Keypair(): Promise<{
+export async function generateEd25519Keypair(): Promise<{
   privateKey: string;
   publicKey: string;
 }> {

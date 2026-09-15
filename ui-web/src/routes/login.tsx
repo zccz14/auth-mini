@@ -28,7 +28,7 @@ import {
   deriveEd25519PublicKey,
   signEd25519Challenge,
   validateEd25519PrivateKey,
-} from '@/lib/demo-ed25519';
+} from '@/lib/ed25519';
 
 type LoginMethod = 'email' | 'ed25519';
 type PendingAction =
@@ -43,7 +43,7 @@ const PASSKEY_REGISTRATION_PATH = '/passkey/register';
 export function LoginRoute() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { config, sdk, setupState } = useApp();
+  const { sdk, setupState } = useApp();
   const { t } = useI18n();
   const request = parseLoginRequest(location.search, window.location.search);
   const selfLoginReturnPath =
@@ -67,34 +67,34 @@ export function LoginRoute() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
-  const setupReady = config.status === 'ready' && Boolean(sdk);
+  const sdkReady = Boolean(sdk);
   const passkeyConfigured = Boolean(setupState?.rp_id);
   const privateKeyError =
     privateKey.trim() === '' ? '' : validateEd25519PrivateKey(privateKey);
   const canStartEmail =
-    setupReady &&
+    sdkReady &&
     request.status === 'ready' &&
     email.trim() !== '' &&
     pendingAction === null;
   const canVerifyEmail =
-    setupReady &&
+    sdkReady &&
     request.status === 'ready' &&
     email.trim() !== '' &&
     code.trim() !== '' &&
     pendingAction === null;
   const canUseEd25519 =
-    setupReady &&
+    sdkReady &&
     request.status === 'ready' &&
     privateKey.trim() !== '' &&
     privateKeyError === '' &&
     pendingAction === null;
   const canUsePasskey =
-    setupReady &&
+    sdkReady &&
     request.status === 'ready' &&
     passkeyConfigured &&
     pendingAction === null;
   const canStartRemoteLogin =
-    setupReady && request.status === 'ready' && pendingAction === null;
+    sdkReady && request.status === 'ready' && pendingAction === null;
   const brandName = setupState?.brand_name ?? 'auth-mini';
   const logoSrc = `${import.meta.env.BASE_URL}auth-mini-logo.png`;
   const issuerHostname = setupState ? issuerAudience(setupState.issuer) : null;
@@ -295,13 +295,6 @@ export function LoginRoute() {
                 issuerHostname={issuerHostname}
                 request={request}
               />
-            ) : null}
-
-            {config.status !== 'ready' ? (
-              <Alert className="border-amber-200 bg-amber-50 text-amber-900">
-                <AlertTitle>{t('login.serverNotConfigured')}</AlertTitle>
-                <AlertDescription>{config.configError}</AlertDescription>
-              </Alert>
             ) : null}
 
             {request.status === 'invalid' ? (

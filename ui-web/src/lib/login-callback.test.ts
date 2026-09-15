@@ -221,7 +221,7 @@ describe('login callback helpers', () => {
     });
   });
 
-  it('converts browser session results for local demo login', () => {
+  it('converts browser session results for self sign-in', () => {
     expect(
       toAppSessionTokens({
         sessionId: 'session-1',

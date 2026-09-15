@@ -21,7 +21,7 @@ vi.mock('./app/router', () => ({
   AppRouter: appRouterSpy,
 }));
 
-describe('demo bootstrap', () => {
+describe('GUI bootstrap', () => {
   beforeEach(() => {
     renderSpy.mockReset();
     createRootSpy.mockClear();

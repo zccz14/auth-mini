@@ -268,10 +268,6 @@ export const en = {
   'admin.walFile': 'WAL file',
   'admin.shmFile': 'SHM file',
   'admin.reclaimableSpace': 'Reclaimable space',
-  'status.backend': 'Backend status',
-  'status.connected': 'Connected to {url}',
-  'status.sdkReady': 'SDK ready',
-  'status.sdkIdle': 'SDK idle',
 } as const;
 
 type TranslationKey = keyof typeof en;
@@ -518,10 +514,6 @@ export const zhCN: Record<TranslationKey, string> = {
   'admin.walFile': 'WAL 文件',
   'admin.shmFile': 'SHM 文件',
   'admin.reclaimableSpace': '可回收空间',
-  'status.backend': '后端状态',
-  'status.connected': '已连接至 {url}',
-  'status.sdkReady': 'SDK 已就绪',
-  'status.sdkIdle': 'SDK 空闲',
 };
 
 const dictionaries: Record<Locale, Record<TranslationKey, string>> = {

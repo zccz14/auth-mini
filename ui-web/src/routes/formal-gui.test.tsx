@@ -43,11 +43,7 @@ vi.mock('auth-mini-react-components', () => ({
 vi.mock('@/app/providers/app-provider', () => ({
   AppProvider: ({ children }: { children: ReactNode }) => children,
   useApp: () => ({
-    config: {
-      resolvedServerBaseUrl: 'https://auth.example.com/',
-      serverBaseUrl: '..',
-      status: 'ready',
-    },
+    serverBaseUrl: 'https://auth.example.com/',
     reloadSetupState,
     sdk,
     session: {

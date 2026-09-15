@@ -262,7 +262,7 @@ esac
     }
   });
 
-  it('uses npm run build -- --watch for demo orchestration and backs it with a real sdk watch pipeline', () => {
+  it('uses npm run build -- --watch for GUI orchestration and backs it with a real sdk watch pipeline', () => {
     const testSource = readFileSync(new URL(import.meta.url), 'utf8');
     const legacyReadySignal = ['Watching for file', 'changes'].join(' ');
     const devScript = readFileSync(
@@ -280,7 +280,7 @@ esac
     };
 
     expect(packageJson.scripts?.build).toBe('node scripts/build-sdk.mjs');
-    expect(packageJson.scripts?.['demo:dev']).toBe(
+    expect(packageJson.scripts?.['gui:dev']).toBe(
       'node scripts/dev-ui-web.mjs',
     );
     expect(devScript).toContain('npm run build -- --watch');
@@ -299,14 +299,14 @@ esac
     expect(testSource).not.toContain(legacyReadySignal);
   });
 
-  it('keeps demo:typecheck scoped to the demo app only', () => {
+  it('keeps gui:typecheck scoped to the GUI only', () => {
     const packageJson = JSON.parse(
       readFileSync(resolve(process.cwd(), 'package.json'), 'utf8'),
     ) as {
       scripts?: Record<string, string>;
     };
 
-    expect(packageJson.scripts?.['demo:typecheck']).toBe(
+    expect(packageJson.scripts?.['gui:typecheck']).toBe(
       'npm --prefix ui-web run typecheck',
     );
   });
