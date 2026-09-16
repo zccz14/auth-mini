@@ -182,11 +182,10 @@ export function AuthMiniProvider({
             { ...latestSession, status: 'authenticated' },
             sessionClaims(payload),
           );
-        } catch (cause) {
+        } catch {
           if (!alive || verification !== next) return;
           verifiedAccessToken = null;
           publish({ ...latestSession, authenticated: false }, null);
-          reportError(cause);
         }
       };
       const synchronize = (next: SessionSnapshot) => {
