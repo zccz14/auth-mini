@@ -165,6 +165,20 @@ store. Multiple Provider instances in same-origin tabs inherit the Browser SDK's
 exclusive refresh coordination, so the Provider does not create its own token
 mutex.
 
+For a verified session, background refresh keeps the Context value and `session`
+view stable. Token-only rotation does not re-render consumers or change
+`status`, `isReady`, or `isAuthenticated`, including while the new JWT is being
+verified. The read-only `session` view exposes the latest verified tokens through
+getters. Read token fields when performing an action; a token string captured
+during render will not update itself. Use `sdk.session.onChange()` to explicitly
+subscribe to raw token changes. Login, logout, verification failures, and changes
+to identity or permission claims still notify React consumers.
+
+The Browser SDK refreshes a 15-minute access token after 10 minutes. The server's
+15-minute expiry is unchanged. `onAuthStateChange` still receives every raw SDK
+snapshot, including refresh events; application state updates inside this callback
+can independently cause renders.
+
 ## AuthMiniButton props
 
 `AuthMiniButton` must be rendered below `AuthMiniProvider` and inherits the

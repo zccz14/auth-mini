@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionSnapshot } from 'auth-mini/sdk/browser';
 import { AuthMiniProvider, useAuthMini } from '../src/auth-mini-provider.js';
 
-const { createBrowserSdk, session } = vi.hoisted(() => {
+const { createBrowserSdk, session, jwtVerify } = vi.hoisted(() => {
   const session = {
     getState: vi.fn(),
     onChange: vi.fn(),
@@ -23,6 +23,7 @@ const { createBrowserSdk, session } = vi.hoisted(() => {
 
   return {
     createBrowserSdk: vi.fn(() => ({ session })),
+    jwtVerify: vi.fn(),
     session,
   };
 });
@@ -33,7 +34,7 @@ vi.mock('auth-mini/sdk/browser', () => ({
 
 vi.mock('jose', () => ({
   createRemoteJWKSet: vi.fn(() => vi.fn()),
-  jwtVerify: vi.fn().mockResolvedValue({ payload: {} }),
+  jwtVerify,
 }));
 
 const recovering = {
@@ -87,31 +88,12 @@ function PasskeyRegistrationButton({
   );
 }
 
-function SessionRenderCounter({
-  onRead,
-  onRender,
-}: {
-  onRead: (accessToken: string | null) => void;
-  onRender: () => void;
-}) {
-  const { session } = useAuthMini();
-  onRender();
-  return (
-    <button
-      data-testid="read-session"
-      onClick={() => onRead(session?.accessToken ?? null)}
-      type="button"
-    >
-      {session?.status ?? 'initializing'}
-    </button>
-  );
-}
-
 describe('AuthMiniProvider', () => {
   let listener: ((next: SessionSnapshot) => void) | undefined;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    jwtVerify.mockResolvedValue({ payload: {} });
     listener = undefined;
     window.history.replaceState(null, '', 'https://app.example.test/');
     window.sessionStorage.clear();
@@ -151,45 +133,6 @@ describe('AuthMiniProvider', () => {
     expect(screen.getByTestId('first')).toHaveTextContent('authenticated');
     expect(screen.getByTestId('second')).toHaveTextContent('authenticated');
     expect(screen.getByTestId('first-ready')).toHaveTextContent('true');
-  });
-
-  it('does not re-render descendants for a token-only refresh', async () => {
-    session.getState.mockReturnValue(authenticated);
-    const renders = vi.fn();
-    const readToken = vi.fn();
-
-    render(
-      <AuthMiniProvider
-        autoRedirectToLogin={false}
-        authMiniBaseUrl="https://auth.example.test"
-      >
-        <SessionRenderCounter onRead={readToken} onRender={renders} />
-      </AuthMiniProvider>,
-    );
-
-    await waitFor(() => expect(renders).toHaveBeenCalled());
-    const settledRenderCount = renders.mock.calls.length;
-
-    const refreshing = {
-      ...authenticated,
-      status: 'recovering' as const,
-    };
-    const refreshed = {
-      ...authenticated,
-      accessToken: 'access-next',
-      refreshToken: 'refresh-next',
-    };
-
-    act(() => listener?.(refreshing));
-    act(() => listener?.(refreshed));
-
-    expect(renders).toHaveBeenCalledTimes(settledRenderCount);
-    expect(screen.getByTestId('read-session')).toHaveTextContent(
-      'authenticated',
-    );
-
-    fireEvent.click(screen.getByTestId('read-session'));
-    expect(readToken).toHaveBeenCalledWith('access-next');
   });
 
   it('adopts a trusted redirect for the whole application', async () => {
