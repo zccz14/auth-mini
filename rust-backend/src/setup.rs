@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use url::{Host, Url};
@@ -12,7 +14,7 @@ pub struct AdminSetupState {
     pub brand_background_image: String,
     pub admin_user_id: Option<String>,
     pub admin_ed25519: Option<AdminEd25519CredentialSummary>,
-    pub smtp: Option<SmtpConfigSummary>,
+    pub smtp: Option<Vec<SmtpConfigSummary>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -39,7 +41,7 @@ pub struct AdminConfigRequest {
     pub rp_id: String,
     pub brand_name: String,
     pub brand_background_image: String,
-    pub smtp: Option<SmtpConfigInput>,
+    pub smtp: Option<Vec<SmtpConfigInput>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -59,6 +61,8 @@ pub struct AdminEd25519CredentialSummary {
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct SmtpConfigInput {
+    #[serde(default)]
+    pub id: Option<i64>,
     pub host: String,
     pub port: i64,
     pub username: String,
@@ -101,7 +105,7 @@ pub fn read_admin_setup(connection: &Connection) -> Result<AdminSetupState, Setu
             .transpose()?
             .flatten(),
         admin_user_id,
-        smtp: first_smtp_config(connection)?,
+        smtp: all_smtp_configs(connection)?,
     })
 }
 
@@ -117,7 +121,7 @@ pub fn apply_admin_setup(
 }
 
 pub fn apply_admin_config(
-    connection: &Connection,
+    connection: &mut Connection,
     request: &AdminConfigRequest,
 ) -> Result<AdminSetupState, SetupError> {
     let issuer = normalize_allowed_origin(&request.issuer)?;
@@ -125,16 +129,18 @@ pub fn apply_admin_config(
     let brand_name = normalize_brand_name(&request.brand_name)?;
     let brand_background_image = request.brand_background_image.trim();
     validate_rp_id_for_issuer(&issuer, &rp_id)?;
+    let transaction = connection.transaction().map_err(|_| SetupError::Database)?;
     update_app_config(
-        connection,
+        &transaction,
         &issuer,
         &rp_id,
         &brand_name,
         brand_background_image,
     )?;
     if let Some(smtp) = &request.smtp {
-        upsert_smtp_config(connection, smtp)?;
+        replace_smtp_configs(&transaction, smtp)?;
     }
+    transaction.commit().map_err(|_| SetupError::Database)?;
     read_admin_setup(connection)
 }
 
@@ -286,35 +292,63 @@ fn admin_ed25519_summary(
         .map_err(|_| SetupError::Database)
 }
 
-fn first_smtp_config(connection: &Connection) -> Result<Option<SmtpConfigSummary>, SetupError> {
-    connection
-        .query_row(
-            "SELECT id, host, port, username, from_email, from_name, secure, is_active, weight FROM smtp_configs ORDER BY id ASC LIMIT 1",
-            [],
-            map_smtp_summary_row,
+fn all_smtp_configs(connection: &Connection) -> Result<Option<Vec<SmtpConfigSummary>>, SetupError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT id, host, port, username, from_email, from_name, secure, is_active, weight
+             FROM smtp_configs ORDER BY id ASC",
         )
-        .optional()
-        .map_err(|_| SetupError::Database)
-}
-
-fn upsert_smtp_config(connection: &Connection, input: &SmtpConfigInput) -> Result<(), SetupError> {
-    validate_smtp_config(input)?;
-    let id = connection
-        .query_row(
-            "SELECT id FROM smtp_configs ORDER BY id ASC LIMIT 1",
-            [],
-            |row| row.get::<_, i64>(0),
-        )
-        .optional()
+        .map_err(|_| SetupError::Database)?;
+    let rows = statement
+        .query_map([], map_smtp_summary_row)
+        .map_err(|_| SetupError::Database)?;
+    let configs = rows
+        .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|_| SetupError::Database)?;
 
-    match id {
-        Some(id) => update_smtp_config(connection, id, input),
-        None => {
-            validate_smtp_password(input)?;
-            insert_smtp_config(connection, input)
+    if configs.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(configs))
+    }
+}
+
+fn replace_smtp_configs(
+    connection: &Connection,
+    inputs: &[SmtpConfigInput],
+) -> Result<(), SetupError> {
+    let existing_ids = connection
+        .prepare("SELECT id FROM smtp_configs")
+        .map_err(|_| SetupError::Database)?
+        .query_map([], |row| row.get::<_, i64>(0))
+        .map_err(|_| SetupError::Database)?
+        .collect::<rusqlite::Result<HashSet<_>>>()
+        .map_err(|_| SetupError::Database)?;
+    let mut retained_ids = HashSet::with_capacity(inputs.len());
+
+    for input in inputs {
+        validate_smtp_config(input)?;
+        match input.id {
+            Some(id) => {
+                if !existing_ids.contains(&id) || !retained_ids.insert(id) {
+                    return Err(SetupError::InvalidRequest);
+                }
+                update_smtp_config(connection, id, input)?;
+            }
+            None => {
+                validate_smtp_password(input)?;
+                insert_smtp_config(connection, input)?;
+            }
         }
     }
+
+    for id in existing_ids.difference(&retained_ids) {
+        connection
+            .execute("DELETE FROM smtp_configs WHERE id = ?1", [id])
+            .map_err(|_| SetupError::Database)?;
+    }
+
+    Ok(())
 }
 
 fn insert_smtp_config(connection: &Connection, input: &SmtpConfigInput) -> Result<(), SetupError> {
@@ -523,13 +557,14 @@ mod tests {
 
     #[test]
     fn admin_setup_writes_rp_id_and_smtp_without_returning_password() {
-        let connection = test_connection("setup-roundtrip");
+        let mut connection = test_connection("setup-roundtrip");
         let request = AdminConfigRequest {
             issuer: "https://auth.example.com".to_string(),
             rp_id: "EXAMPLE.com.".to_string(),
             brand_name: "Example Login".to_string(),
             brand_background_image: "https://cdn.example.com/login.jpg".to_string(),
-            smtp: Some(SmtpConfigInput {
+            smtp: Some(vec![SmtpConfigInput {
+                id: None,
                 host: "smtp.example.com".to_string(),
                 port: 587,
                 username: "mailer".to_string(),
@@ -538,10 +573,10 @@ mod tests {
                 from_name: "Auth Mini".to_string(),
                 secure: true,
                 weight: 2,
-            }),
+            }]),
         };
 
-        let state = apply_admin_config(&connection, &request).expect("setup applies");
+        let state = apply_admin_config(&mut connection, &request).expect("setup applies");
 
         assert_eq!(state.issuer, "https://auth.example.com");
         assert_eq!(state.rp_id, "example.com");
@@ -551,7 +586,7 @@ mod tests {
             "https://cdn.example.com/login.jpg"
         );
         assert_eq!(
-            state.smtp.as_ref().expect("smtp exists").host,
+            state.smtp.as_ref().expect("smtp exists")[0].host,
             "smtp.example.com"
         );
         let body = serde_json::to_string(&state).expect("state serializes");
@@ -560,29 +595,31 @@ mod tests {
 
     #[test]
     fn admin_setup_updates_existing_smtp_config() {
-        let connection = test_connection("setup-update");
+        let mut connection = test_connection("setup-update");
         let mut request = valid_request();
-        apply_admin_config(&connection, &request).expect("initial setup applies");
-        request.smtp.as_mut().expect("smtp exists").host = "smtp-2.example.com".to_string();
+        apply_admin_config(&mut connection, &request).expect("initial setup applies");
+        request.smtp.as_mut().expect("smtp exists")[0].id = Some(1);
+        request.smtp.as_mut().expect("smtp exists")[0].host = "smtp-2.example.com".to_string();
 
-        let state = apply_admin_config(&connection, &request).expect("setup updates");
+        let state = apply_admin_config(&mut connection, &request).expect("setup updates");
 
-        assert_eq!(state.smtp.as_ref().expect("smtp exists").id, 1);
+        assert_eq!(state.smtp.as_ref().expect("smtp exists")[0].id, 1);
         assert_eq!(
-            state.smtp.as_ref().expect("smtp exists").host,
+            state.smtp.as_ref().expect("smtp exists")[0].host,
             "smtp-2.example.com"
         );
     }
 
     #[test]
     fn admin_setup_keeps_existing_smtp_password_when_update_password_is_blank() {
-        let connection = test_connection("setup-update-blank-password");
+        let mut connection = test_connection("setup-update-blank-password");
         let mut request = valid_request();
-        apply_admin_config(&connection, &request).expect("initial setup applies");
-        request.smtp.as_mut().expect("smtp exists").password = String::new();
-        request.smtp.as_mut().expect("smtp exists").host = "smtp-2.example.com".to_string();
+        apply_admin_config(&mut connection, &request).expect("initial setup applies");
+        request.smtp.as_mut().expect("smtp exists")[0].id = Some(1);
+        request.smtp.as_mut().expect("smtp exists")[0].password = String::new();
+        request.smtp.as_mut().expect("smtp exists")[0].host = "smtp-2.example.com".to_string();
 
-        apply_admin_config(&connection, &request).expect("setup updates");
+        apply_admin_config(&mut connection, &request).expect("setup updates");
 
         let password: String = connection
             .query_row(
@@ -595,12 +632,45 @@ mod tests {
     }
 
     #[test]
-    fn admin_setup_rejects_new_smtp_config_without_password() {
-        let connection = test_connection("setup-insert-blank-password");
+    fn admin_setup_replaces_multiple_smtp_configs_and_can_clear_them() {
+        let mut connection = test_connection("setup-multiple-smtp");
         let mut request = valid_request();
-        request.smtp.as_mut().expect("smtp exists").password = String::new();
+        let first_state =
+            apply_admin_config(&mut connection, &request).expect("initial setup applies");
+        let first_id = first_state.smtp.as_ref().expect("first smtp exists")[0].id;
 
-        let error = apply_admin_config(&connection, &request).expect_err("setup rejects");
+        let mut second = request.smtp.as_ref().expect("first smtp input exists")[0].clone();
+        second.id = None;
+        second.host = "smtp-2.example.com".to_string();
+        second.password = "secret-2".to_string();
+        request.smtp = Some(vec![
+            SmtpConfigInput {
+                id: Some(first_id),
+                password: String::new(),
+                ..request.smtp.as_ref().expect("first smtp input exists")[0].clone()
+            },
+            second,
+        ]);
+
+        let state = apply_admin_config(&mut connection, &request).expect("multiple configs apply");
+        assert_eq!(state.smtp.as_ref().expect("smtp configs exist").len(), 2);
+        assert_eq!(
+            state.smtp.as_ref().expect("smtp configs exist")[1].host,
+            "smtp-2.example.com"
+        );
+
+        request.smtp = Some(Vec::new());
+        let cleared = apply_admin_config(&mut connection, &request).expect("smtp configs clear");
+        assert_eq!(cleared.smtp, None);
+    }
+
+    #[test]
+    fn admin_setup_rejects_new_smtp_config_without_password() {
+        let mut connection = test_connection("setup-insert-blank-password");
+        let mut request = valid_request();
+        request.smtp.as_mut().expect("smtp exists")[0].password = String::new();
+
+        let error = apply_admin_config(&mut connection, &request).expect_err("setup rejects");
 
         assert_eq!(error, SetupError::InvalidRequest);
     }
@@ -611,9 +681,10 @@ mod tests {
             normalize_allowed_origin("ftp://example.com"),
             Err(SetupError::InvalidRequest)
         );
+        let mut invalid_rp_id_connection = test_connection("setup-invalid-rp-id");
         assert_eq!(
             apply_admin_config(
-                &test_connection("setup-invalid-rp-id"),
+                &mut invalid_rp_id_connection,
                 &AdminConfigRequest {
                     issuer: "https://auth.example.com".to_string(),
                     rp_id: "login.example.com".to_string(),
@@ -625,9 +696,9 @@ mod tests {
             Err(SetupError::InvalidRequest)
         );
         let mut request = valid_request();
-        request.smtp.as_mut().expect("smtp exists").port = 0;
+        request.smtp.as_mut().expect("smtp exists")[0].port = 0;
         assert_eq!(
-            validate_smtp_config(request.smtp.as_ref().expect("smtp exists")),
+            validate_smtp_config(&request.smtp.as_ref().expect("smtp exists")[0]),
             Err(SetupError::InvalidRequest)
         );
     }
@@ -705,7 +776,8 @@ mod tests {
             rp_id: "auth.example.com".to_string(),
             brand_name: "Example Login".to_string(),
             brand_background_image: String::new(),
-            smtp: Some(SmtpConfigInput {
+            smtp: Some(vec![SmtpConfigInput {
+                id: None,
                 host: "smtp.example.com".to_string(),
                 port: 587,
                 username: "mailer".to_string(),
@@ -714,7 +786,7 @@ mod tests {
                 from_name: "Auth Mini".to_string(),
                 secure: true,
                 weight: 1,
-            }),
+            }]),
         }
     }
 

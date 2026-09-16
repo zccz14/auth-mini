@@ -22,7 +22,7 @@ export type AdminSetupState = {
   brand_background_image: string;
   admin_user_id: string | null;
   admin_ed25519: unknown | null;
-  smtp: null | {
+  smtp: null | Array<{
     id: number;
     host: string;
     port: number;
@@ -32,7 +32,7 @@ export type AdminSetupState = {
     secure: boolean;
     is_active: boolean;
     weight: number;
-  };
+  }>;
 };
 
 export type AdminConfigInput = {
@@ -40,7 +40,8 @@ export type AdminConfigInput = {
   rp_id: string;
   brand_name: string;
   brand_background_image: string;
-  smtp: null | {
+  smtp: null | Array<{
+    id: number | null;
     host: string;
     port: number;
     username: string;
@@ -49,7 +50,7 @@ export type AdminConfigInput = {
     from_name: string;
     secure: boolean;
     weight: number;
-  };
+  }>;
 };
 
 export type AdminJwkSlot = {
