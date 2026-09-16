@@ -66,7 +66,7 @@ const sdk = createBrowserSdk('http://127.0.0.1:7777');
 
 ## Startup state model
 
-If a refresh token is already stored, startup enters `recovering` first and then settles to `authenticated` or `anonymous` after recovery completes. While authenticated, the Browser SDK refreshes the session in the background about 10 seconds before `expiresAt`; every successful refresh rotates the refresh token, updates the session state, and schedules the next refresh. `sdk.session.getState()` only exposes session/auth fields; it never includes a cached `/me` snapshot.
+If a refresh token is already stored, startup enters `recovering` first and then settles to `authenticated` or `anonymous` after recovery completes. While authenticated, the Browser SDK refreshes a 15-minute access token after 10 minutes, leaving five minutes before `expiresAt`. Every successful refresh rotates the refresh token, preserves the 15-minute access-token lifetime, updates the session state, and schedules the next refresh. `sdk.session.getState()` only exposes session/auth fields; it never includes a cached `/me` snapshot.
 
 ## High-level SDK boundary
 

@@ -9,6 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthMiniButton } from '../src/auth-mini-button.js';
 import { AuthMiniProvider } from '../src/auth-mini-provider.js';
 
+const { jwtVerify } = vi.hoisted(() => ({ jwtVerify: vi.fn() }));
+
 const session = {
   getState: vi.fn(),
   onChange: vi.fn(),
@@ -24,7 +26,7 @@ vi.mock('auth-mini/sdk/browser', () => ({
 
 vi.mock('jose', () => ({
   createRemoteJWKSet: vi.fn(() => vi.fn()),
-  jwtVerify: vi.fn().mockResolvedValue({ payload: {} }),
+  jwtVerify,
 }));
 
 const anonymous = {
@@ -60,6 +62,7 @@ function renderButton(lang = 'en') {
 describe('AuthMiniButton', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    jwtVerify.mockResolvedValue({ payload: {} });
     window.history.replaceState(null, '', 'https://app.example.test/');
     window.sessionStorage.clear();
     session.getState.mockReturnValue(anonymous);

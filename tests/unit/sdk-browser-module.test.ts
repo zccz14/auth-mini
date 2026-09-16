@@ -268,7 +268,7 @@ describe('browser module sdk', () => {
       await sdk.ready;
       sdk.session.clearLocal();
 
-      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.advanceTimersByTimeAsync(30 * 60_000);
       expect(fetch).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
