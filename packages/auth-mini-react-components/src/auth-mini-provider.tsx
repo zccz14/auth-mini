@@ -76,7 +76,7 @@ export function AuthMiniProvider({
   const [sdk, setSdk] = useState<AuthMiniApi | null>(null);
   const [session, setSession] = useState<SessionSnapshot | null>(null);
   const [error, setError] = useState<Error | null>(null);
-  const [verifiedAccessToken, setVerifiedAccessToken] = useState<string | null>(null);
+  const [, setVerifiedAccessToken] = useState<string | null>(null);
   const audienceRef = useLatest(audience);
   const audiencesRef = useLatest(audiences);
   const callbackUrlRef = useLatest(callbackUrl);
@@ -87,6 +87,7 @@ export function AuthMiniProvider({
   const activeBaseUrlRef = useRef(authMiniBaseUrl);
   const autoRedirectStartedRef = useRef(false);
   const verifiedAccessTokenRef = useRef<string | null>(null);
+  const sessionRef = useRef<SessionSnapshot | null>(null);
 
   const reportError = useCallback(
     (cause: unknown) => {
@@ -121,6 +122,49 @@ export function AuthMiniProvider({
     }
   }, [audienceRef, audiencesRef, authMiniBaseUrl, callbackUrlRef, reportError]);
 
+  const verifyAccessToken = useCallback(
+    async (
+      accessToken: string,
+      notifyReact: boolean,
+      isCurrent: () => boolean = () => mountedRef.current,
+    ) => {
+      const issuer = new URL(authMiniBaseUrl).toString().replace(/\/$/, '');
+      const jwks = createRemoteJWKSet(new URL(`${issuer}/jwks`));
+      try {
+        await jwtVerify(accessToken, jwks, {
+          issuer,
+          audience: resolveAuthMiniAudiences(
+            audienceRef.current,
+            audiencesRef.current,
+          ),
+        });
+        if (
+          mountedRef.current &&
+          isCurrent() &&
+          sessionRef.current?.accessToken === accessToken
+        ) {
+          verifiedAccessTokenRef.current = accessToken;
+          if (notifyReact) {
+            setVerifiedAccessToken(accessToken);
+          }
+        }
+      } catch {
+        if (
+          mountedRef.current &&
+          isCurrent() &&
+          sessionRef.current?.accessToken === accessToken &&
+          verifiedAccessTokenRef.current !== accessToken
+        ) {
+          verifiedAccessTokenRef.current = null;
+          if (notifyReact) {
+            setVerifiedAccessToken(null);
+          }
+        }
+      }
+    },
+    [audienceRef, audiencesRef, authMiniBaseUrl],
+  );
+
   useEffect(() => {
     mountedRef.current = true;
     activeBaseUrlRef.current = authMiniBaseUrl;
@@ -132,6 +176,7 @@ export function AuthMiniProvider({
 
     setSdk(null);
     setSession(null);
+    sessionRef.current = null;
     setError(null);
     setVerifiedAccessToken(null);
     verifiedAccessTokenRef.current = null;
@@ -153,10 +198,28 @@ export function AuthMiniProvider({
         if (!alive) {
           return;
         }
+        const currentSession = sessionRef.current;
+        const currentAccessToken = currentSession?.accessToken;
         latestSession = nextSession;
-        setSession(nextSession);
         stateHandlerRef.current?.(nextSession);
         redirectAnonymousSession(nextSession);
+
+        if (isTokenRefresh(currentSession, nextSession)) {
+          if (nextSession.status === 'authenticated' && currentSession) {
+            Object.assign(currentSession, nextSession);
+            if (
+              nextSession.accessToken &&
+              nextSession.accessToken !== currentAccessToken
+            ) {
+              void verifyAccessToken(nextSession.accessToken, false);
+            }
+          }
+          return;
+        }
+
+        const nextPublishedSession = { ...nextSession };
+        sessionRef.current = nextPublishedSession;
+        setSession(nextPublishedSession);
       };
 
       setSdk(nextSdk);
@@ -196,6 +259,7 @@ export function AuthMiniProvider({
     reportError,
     signIn,
     stateHandlerRef,
+    verifyAccessToken,
   ]);
 
   useEffect(() => {
@@ -209,28 +273,11 @@ export function AuthMiniProvider({
       };
     }
 
-    const issuer = new URL(authMiniBaseUrl).toString().replace(/\/$/, '');
-    const jwks = createRemoteJWKSet(new URL(`${issuer}/jwks`));
-    void Promise.resolve(jwtVerify(accessToken, jwks, {
-      issuer,
-      audience: resolveAuthMiniAudiences(
-        audienceRef.current,
-        audiencesRef.current,
-      ),
-    })).then(() => {
-      if (alive) {
-        verifiedAccessTokenRef.current = accessToken;
-        setVerifiedAccessToken(accessToken);
-      }
-    }).catch(() => {
-      if (alive && verifiedAccessTokenRef.current !== accessToken) {
-        setVerifiedAccessToken(null);
-      }
-    });
+    void verifyAccessToken(accessToken, true, () => alive);
     return () => {
       alive = false;
     };
-  }, [audienceRef, authMiniBaseUrl, session?.accessToken]);
+  }, [session?.accessToken, verifyAccessToken]);
 
   const signOut = useCallback(async () => {
     if (!sdk) {
@@ -260,9 +307,11 @@ export function AuthMiniProvider({
 
   const status = session?.status ?? 'initializing';
   const isReady =
-    session !== null && (session.status !== 'recovering' || session.authenticated);
+    session !== null &&
+    (session.status !== 'recovering' || session.authenticated);
   const isAuthenticated =
-    session?.authenticated === true && verifiedAccessToken === session.accessToken;
+    session?.authenticated === true &&
+    verifiedAccessTokenRef.current === session.accessToken;
   const value = useMemo<AuthMiniContextValue>(
     () => ({
       authMiniBaseUrl,
@@ -348,6 +397,20 @@ function resolveCallbackUrl(
   return typeof value === 'function'
     ? value()
     : (value ?? window.location.href);
+}
+
+function isTokenRefresh(
+  current: SessionSnapshot | null,
+  next: SessionSnapshot,
+): boolean {
+  return Boolean(
+    current?.status === 'authenticated' &&
+    current.authenticated &&
+    next.authenticated &&
+    current.sessionId &&
+    current.sessionId === next.sessionId &&
+    (next.status === 'recovering' || next.status === 'authenticated'),
+  );
 }
 
 function toError(cause: unknown): Error {
