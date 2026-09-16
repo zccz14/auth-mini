@@ -5,7 +5,6 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppRouter } from '@/app/router';
 import { I18nProvider } from '@/lib/i18n';
-import { AdminRoute } from './admin';
 import { HomeRoute } from './home';
 import { LoginRoute } from './login';
 import { SetupRoute } from './setup';
@@ -47,7 +46,7 @@ vi.mock('@/app/providers/app-provider', () => ({
     reloadSetupState,
     sdk,
     session: {
-      accessToken: 'token',
+      accessToken: 'eyJhbGciOiJub25lIn0.eyJhdXRoX2FkbWluIjp0cnVlfQ.',
       authenticated: true,
       refreshToken: 'refresh-token',
       sessionId: 'session-current',
@@ -83,7 +82,8 @@ function renderRoute(ui: ReactNode) {
 afterEach(() => {
   localStorage.clear();
   document.documentElement.lang = 'en';
-  reloadSetupState.mockClear();
+  vi.clearAllMocks();
+  vi.restoreAllMocks();
 });
 
 describe('formal GUI routes', () => {
@@ -268,7 +268,7 @@ describe('formal GUI routes', () => {
     ).toBeInTheDocument();
   });
 
-  it('renders the administrator page', async () => {
+  it('navigates between independent admin pages and preserves their actions', async () => {
     sdk.admin.config.fetch.mockResolvedValue({
       admin_ed25519: null,
       admin_user_id: 'admin-user',
@@ -302,7 +302,17 @@ describe('formal GUI routes', () => {
       rp_id: 'auth.example.com',
       smtp: null,
     });
-    sdk.admin.users.mockResolvedValue({ users: [] });
+    sdk.admin.users.mockResolvedValue({
+      users: [
+        {
+          id: 'user-42',
+          email: 'member@example.com',
+          active_session_count: 2,
+          passkey_count: 1,
+          ed25519_count: 0,
+        },
+      ],
+    });
     sdk.admin.resources.fetch.mockResolvedValue({
       sampled_at: 1_784_200_000,
       sample_interval_ms: 5_000,
@@ -340,30 +350,64 @@ describe('formal GUI routes', () => {
     });
     const user = userEvent.setup();
 
-    renderRoute(<AdminRoute />);
-
-    expect(screen.getByRole('heading', { name: 'Admin' })).toBeInTheDocument();
-    expect(
-      screen.getByRole('heading', { name: 'System resources' }),
-    ).toBeInTheDocument();
-    await waitFor(() =>
-      expect(
-        screen.getByText('Auth Mini RSS: 64 MiB', { exact: false }),
-      ).toBeInTheDocument(),
+    const setInterval = vi.spyOn(window, 'setInterval');
+    const clearInterval = vi.spyOn(window, 'clearInterval');
+    render(
+      <MemoryRouter initialEntries={['/admin']}>
+        <AppRouter />
+        <LocationProbe />
+      </MemoryRouter>,
     );
+
     expect(
-      await screen.findByRole('heading', { name: 'Users' }),
+      screen.getByRole('heading', { name: 'Admin overview', level: 2 }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'JWKs' })).toBeInTheDocument();
-    expect(screen.getByText('CURRENT')).toBeInTheDocument();
-    expect(screen.getByText('STANDBY')).toBeInTheDocument();
+    expect(screen.getByText('admin-user')).toBeInTheDocument();
+    expect(sdk.admin.config.fetch).not.toHaveBeenCalled();
+    expect(sdk.admin.jwks.list).not.toHaveBeenCalled();
+    expect(sdk.admin.users).not.toHaveBeenCalled();
+    expect(sdk.admin.resources.fetch).not.toHaveBeenCalled();
     expect(
-      screen.getByRole('button', { name: 'JWK Rotate' }),
+      screen.queryByRole('button', { name: 'Save configuration' }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('link', { name: 'System resources' }));
+    expect(
+      await screen.findByText('Auth Mini RSS: 64 MiB', { exact: false }),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText('Brand name')).toHaveValue('auth-mini');
+    expect(screen.getByLabelText('Current location')).toHaveTextContent(
+      '/admin/resources',
+    );
+    expect(sdk.admin.config.fetch).not.toHaveBeenCalled();
+    expect(sdk.admin.jwks.list).not.toHaveBeenCalled();
+    expect(sdk.admin.users).not.toHaveBeenCalled();
+    const resourceInterval = setInterval.mock.results[0].value;
+
+    await user.click(screen.getByRole('link', { name: 'Configuration' }));
+    await waitFor(() =>
+      expect(screen.getByLabelText('Brand name')).toHaveValue('auth-mini'),
+    );
+    expect(clearInterval).toHaveBeenCalledWith(resourceInterval);
+    expect(
+      screen.queryByRole('heading', { name: 'System resources' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'JWK Rotate' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Admin overview' }),
+    ).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('link', { name: 'Configuration' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
 
     await user.clear(screen.getByLabelText('Brand name'));
     await user.type(screen.getByLabelText('Brand name'), 'Example Auth');
+    await user.selectOptions(screen.getByLabelText('Language'), 'zh-CN');
+    expect(screen.getByLabelText('品牌名称')).toHaveValue('Example Auth');
+    expect(sdk.admin.config.fetch).toHaveBeenCalledOnce();
+    await user.selectOptions(screen.getByLabelText('语言'), 'en');
     await user.type(
       screen.getByLabelText('Brand background image'),
       'https://cdn.example.com/login.jpg',
@@ -383,11 +427,92 @@ describe('formal GUI routes', () => {
     );
     await waitFor(() => expect(reloadSetupState).toHaveBeenCalledOnce());
 
+    await user.click(screen.getByRole('link', { name: 'JWKs' }));
+    expect(await screen.findByText('CURRENT')).toBeInTheDocument();
+    expect(screen.getByText('STANDBY')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Brand name')).not.toBeInTheDocument();
+
     await user.click(screen.getByRole('button', { name: 'JWK Rotate' }));
 
     expect(sdk.admin.jwks.rotate).toHaveBeenCalledOnce();
     expect(await screen.findByText(/fresh-standby-kid/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('link', { name: 'Users' }));
+    expect(await screen.findByText('member@example.com')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Export SQLite database' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('CURRENT')).not.toBeInTheDocument();
+    expect(
+      screen
+        .getAllByRole('link')
+        .filter((link) => link.getAttribute('aria-current') === 'page'),
+    ).toHaveLength(1);
+
+    const fetchDatabase = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('sqlite-test-data'));
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn(() => 'blob:test-database'),
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: vi.fn(),
+    });
+    const download = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {});
+    await user.click(
+      screen.getByRole('button', { name: 'Export SQLite database' }),
+    );
+    await waitFor(() => expect(download).toHaveBeenCalledOnce());
+    expect(fetchDatabase).toHaveBeenCalledWith(
+      'https://auth.example.com/admin/database',
+      {
+        headers: {
+          authorization:
+            'Bearer eyJhbGciOiJub25lIn0.eyJhdXRoX2FkbWluIjp0cnVlfQ.',
+        },
+      },
+    );
+    expect(download.mock.instances[0]).toHaveAttribute(
+      'download',
+      'auth-mini.sqlite',
+    );
+
+    await user.selectOptions(screen.getByLabelText('Language'), 'zh-CN');
+    expect(
+      screen.getByRole('heading', { name: '用户', level: 1 }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '管理概览' })).toBeInTheDocument();
   });
+
+  it.each([
+    ['/admin/configuration', () => sdk.admin.config.fetch],
+    ['/admin/jwks', () => sdk.admin.jwks.list],
+    ['/admin/users', () => sdk.admin.users],
+  ] as const)(
+    'shows loading failures on %s without exposing other cards',
+    async (path, query) => {
+      query().mockRejectedValueOnce(new Error('Service unavailable'));
+      render(
+        <MemoryRouter initialEntries={[path]}>
+          <AppRouter />
+        </MemoryRouter>,
+      );
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'Service unavailable',
+      );
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('heading', { name: 'System resources' }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'Save configuration' }),
+      ).not.toBeInTheDocument();
+    },
+  );
 
   it('redirects unknown pages to the default page', async () => {
     sdk.currentUser.fetch.mockResolvedValue({

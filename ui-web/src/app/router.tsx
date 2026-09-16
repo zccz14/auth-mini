@@ -2,6 +2,10 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from '@/components/app/app-shell';
 import { AppProvider } from '@/app/providers/app-provider';
 import { AdminRoute } from '@/routes/admin';
+import { AdminConfigurationRoute } from '@/routes/admin-configuration';
+import { AdminJwksRoute } from '@/routes/admin-jwks';
+import { AdminResourcesRoute } from '@/routes/admin-resources';
+import { AdminUsersRoute } from '@/routes/admin-users';
 import { HomeRoute } from '@/routes/home';
 import { OverviewRoute } from '@/routes/overview';
 import { LoginRoute } from '@/routes/login';
@@ -40,7 +44,16 @@ export function AppRouter() {
               element={<HomeRoute section="remote-login" />}
             />
             <Route path="/initialize" element={<SetupRoute />} />
-            <Route path="/admin" element={<AdminRoute />} />
+            <Route path="/admin">
+              <Route index element={<AdminRoute />} />
+              <Route
+                path="configuration"
+                element={<AdminConfigurationRoute />}
+              />
+              <Route path="jwks" element={<AdminJwksRoute />} />
+              <Route path="resources" element={<AdminResourcesRoute />} />
+              <Route path="users" element={<AdminUsersRoute />} />
+            </Route>
           </Route>
           <Route path="*" element={<Navigate replace to="/" />} />
         </Routes>
