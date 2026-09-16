@@ -395,8 +395,12 @@ function createRuntime() {
 
   function shouldRefresh(now: number, expiresAt: number, receivedAt: number) {
     const lifetimeMs = expiresAt - receivedAt;
-    const thresholdMs = lifetimeMs < 10 * 60_000 ? lifetimeMs / 2 : 5 * 60_000;
+    const thresholdMs = refreshThresholdMs(lifetimeMs);
     return now >= expiresAt - thresholdMs;
+  }
+
+  function refreshThresholdMs(lifetimeMs: number) {
+    return lifetimeMs < 10 * 60_000 ? lifetimeMs / 2 : 5 * 60_000;
   }
 
   function needsRefresh(snapshot: PersistedSdkState, now: number) {
@@ -1092,9 +1096,13 @@ function createRuntime() {
       if (!Number.isFinite(expiresAt)) {
         return;
       }
+      const receivedAt = Date.parse(snapshot.receivedAt ?? '');
+      const lifetimeMs = expiresAt - receivedAt;
+      const refreshLeewayMs = Number.isFinite(lifetimeMs)
+        ? refreshThresholdMs(lifetimeMs)
+        : BACKGROUND_REFRESH_LEEWAY_MS;
       const delay =
-        delayMs ??
-        Math.max(0, expiresAt - Date.now() - BACKGROUND_REFRESH_LEEWAY_MS);
+        delayMs ?? Math.max(0, expiresAt - Date.now() - refreshLeewayMs);
       timer = setTimeout(refreshInBackground, Math.min(delay, MAX_TIMEOUT_MS));
     }
 

@@ -364,9 +364,13 @@ export function shouldRefresh(
   receivedAt: number,
 ): boolean {
   const lifetimeMs = expiresAt - receivedAt;
-  const thresholdMs = lifetimeMs < 10 * 60_000 ? lifetimeMs / 2 : 5 * 60_000;
+  const thresholdMs = refreshThresholdMs(lifetimeMs);
 
   return now >= expiresAt - thresholdMs;
+}
+
+function refreshThresholdMs(lifetimeMs: number): number {
+  return lifetimeMs < 10 * 60_000 ? lifetimeMs / 2 : 5 * 60_000;
 }
 
 function isAuthInvalidatingError(error: unknown): boolean {

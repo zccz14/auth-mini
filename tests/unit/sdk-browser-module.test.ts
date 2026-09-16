@@ -186,7 +186,7 @@ describe('browser module sdk', () => {
     }
   });
 
-  it('refreshes browser sessions ten seconds before expiry and reschedules', async () => {
+  it('refreshes browser sessions after ten minutes and keeps the fifteen-minute expiry', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-04-03T00:00:00.000Z'));
 
@@ -196,7 +196,7 @@ describe('browser module sdk', () => {
       accessToken: 'access-1',
       refreshToken: 'refresh-1',
       receivedAt: '2026-04-03T00:00:00.000Z',
-      expiresAt: '2026-04-03T00:00:30.000Z',
+      expiresAt: '2026-04-03T00:15:00.000Z',
     });
     let refreshCount = 0;
     const fetch = vi.fn(async (input: string | URL) => {
@@ -207,7 +207,7 @@ describe('browser module sdk', () => {
           session_id: 'session-1',
           access_token: `access-${refreshCount + 1}`,
           refresh_token: `refresh-${refreshCount + 1}`,
-          expires_in: 30,
+          expires_in: 900,
         });
       }
       return jsonResponse({ error: 'unexpected' }, 500);
@@ -222,7 +222,7 @@ describe('browser module sdk', () => {
       ) as AuthMiniApi & { ready: Promise<void> };
       await sdk.ready;
 
-      await vi.advanceTimersByTimeAsync(19_999);
+      await vi.advanceTimersByTimeAsync(9 * 60_000 + 59_999);
       expect(fetch).not.toHaveBeenCalled();
 
       await vi.advanceTimersByTimeAsync(1);
@@ -230,9 +230,10 @@ describe('browser module sdk', () => {
       expect(sdk.session.getState()).toMatchObject({
         accessToken: 'access-2',
         refreshToken: 'refresh-2',
+        expiresAt: '2026-04-03T00:25:00.000Z',
       });
 
-      await vi.advanceTimersByTimeAsync(19_999);
+      await vi.advanceTimersByTimeAsync(9 * 60_000 + 59_999);
       expect(fetch).toHaveBeenCalledTimes(1);
 
       await vi.advanceTimersByTimeAsync(1);
@@ -253,7 +254,7 @@ describe('browser module sdk', () => {
       accessToken: 'access-1',
       refreshToken: 'refresh-1',
       receivedAt: '2026-04-03T00:00:00.000Z',
-      expiresAt: '2026-04-03T00:00:30.000Z',
+      expiresAt: '2026-04-03T00:15:00.000Z',
     });
     const fetch = vi.fn(async () => jsonResponse({ ok: true }));
 
@@ -285,7 +286,7 @@ describe('browser module sdk', () => {
       accessToken: 'access-1',
       refreshToken: 'refresh-1',
       receivedAt: '2026-04-03T00:00:00.000Z',
-      expiresAt: '2026-04-03T00:00:30.000Z',
+      expiresAt: '2026-04-03T00:15:00.000Z',
     });
     const fetch = vi
       .fn<typeof globalThis.fetch>()
@@ -308,7 +309,7 @@ describe('browser module sdk', () => {
       ) as AuthMiniApi & { ready: Promise<void> };
       await sdk.ready;
 
-      await vi.advanceTimersByTimeAsync(20_000);
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
       expect(fetch).toHaveBeenCalledTimes(1);
       expect(sdk.session.getState().status).toBe('authenticated');
 
@@ -337,7 +338,7 @@ describe('browser module sdk', () => {
       accessToken: 'access-1',
       refreshToken: 'refresh-1',
       receivedAt: '2026-04-03T00:00:00.000Z',
-      expiresAt: '2026-04-03T00:00:30.000Z',
+      expiresAt: '2026-04-03T00:15:00.000Z',
     });
     const fetch = vi.fn(async () =>
       jsonResponse({
@@ -361,7 +362,7 @@ describe('browser module sdk', () => {
       ) as AuthMiniApi & { ready: Promise<void> };
       await second.ready;
 
-      await vi.advanceTimersByTimeAsync(20_000);
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
       expect(fetch).toHaveBeenCalledTimes(1);
       expect(second.session.getState()).toMatchObject({
         accessToken: 'access-2',
