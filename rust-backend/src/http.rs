@@ -472,14 +472,14 @@ fn handle_admin_config_put(request: &Request, config: &Config) -> io::Result<Res
         Ok(parsed) => parsed,
         Err(_) => return Ok(Response::json_error(400, "invalid_request")),
     };
-    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+    let Some((mut connection, auth)) = authenticated_connection(request, config)? else {
         return Ok(Response::json_error(401, "invalid_access_token"));
     };
     if require_admin_auth(&connection, &auth).is_err() {
         return Ok(Response::json_error(403, "admin_required"));
     }
 
-    match apply_admin_config(&connection, &parsed) {
+    match apply_admin_config(&mut connection, &parsed) {
         Ok(state) => Ok(Response::json_value(
             200,
             serde_json::to_value(state).map_err(io::Error::other)?,

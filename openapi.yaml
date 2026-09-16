@@ -1134,7 +1134,9 @@ components:
           type: string
         smtp:
           oneOf:
-            - $ref: '#/components/schemas/AdminSetupSmtpInput'
+            - type: array
+              items:
+                $ref: '#/components/schemas/AdminSetupSmtpInput'
             - type: 'null'
     AdminSetupEd25519Input:
       type: object
@@ -1161,6 +1163,10 @@ components:
         - password
         - from_email
       properties:
+        id:
+          type: integer
+          minimum: 1
+          description: Existing SMTP configuration ID. Omit this field to add a new configuration.
         host:
           type: string
           minLength: 1
@@ -1418,7 +1424,9 @@ components:
             - type: 'null'
         smtp:
           oneOf:
-            - $ref: '#/components/schemas/AdminSmtpConfigSummary'
+            - type: array
+              items:
+                $ref: '#/components/schemas/AdminSmtpConfigSummary'
             - type: 'null'
     AdminSmtpConfigSummary:
       type: object

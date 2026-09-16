@@ -21,7 +21,7 @@ export type AdminConfigRequest = {
     rp_id: string;
     brand_name: string;
     brand_background_image: string;
-    smtp?: AdminSetupSmtpInput | null;
+    smtp?: Array<AdminSetupSmtpInput> | null;
 };
 
 export type AdminSetupEd25519Input = {
@@ -33,6 +33,10 @@ export type AdminSetupEd25519Input = {
 };
 
 export type AdminSetupSmtpInput = {
+    /**
+     * Existing SMTP configuration ID. Omit this field to add a new configuration.
+     */
+    id?: number;
     host: string;
     port: number;
     username: string;
@@ -116,7 +120,7 @@ export type AdminSetupState = {
     brand_background_image: string;
     admin_user_id: string | null;
     admin_ed25519: AdminEd25519CredentialSummary | null;
-    smtp: AdminSmtpConfigSummary | null;
+    smtp: Array<AdminSmtpConfigSummary> | null;
 };
 
 export type AdminSmtpConfigSummary = {
@@ -426,10 +430,14 @@ export type AdminConfigRequestWritable = {
     rp_id: string;
     brand_name: string;
     brand_background_image: string;
-    smtp?: AdminSetupSmtpInputWritable | null;
+    smtp?: Array<AdminSetupSmtpInputWritable> | null;
 };
 
 export type AdminSetupSmtpInputWritable = {
+    /**
+     * Existing SMTP configuration ID. Omit this field to add a new configuration.
+     */
+    id?: number;
     host: string;
     port: number;
     username: string;

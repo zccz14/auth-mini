@@ -233,6 +233,40 @@ export const en = {
   'admin.loadingSettings': 'Loading...',
   'admin.configureSmtp': 'Configure SMTP',
   'admin.leavePassword': 'Leave blank to keep current password',
+  'admin.identitySection': 'Public identity and branding',
+  'admin.identitySectionDescription':
+    'These values identify this Auth Mini instance and appear in sign-in flows.',
+  'admin.issuerDescription':
+    'The public base URL that issues sessions and tokens.',
+  'admin.rpIdDescription':
+    'The domain allowed to use passkeys for this instance.',
+  'admin.brandNameDescription':
+    'The name shown to users on the sign-in and account pages.',
+  'admin.brandBackgroundDescription':
+    'An optional image URL used behind the sign-in page.',
+  'admin.smtpSection': 'Email delivery',
+  'admin.smtpSectionDescription':
+    'Add one or more SMTP servers. Auth Mini distributes mail using each server’s weight.',
+  'admin.smtpEmpty':
+    'No SMTP servers configured. Email sign-in is unavailable.',
+  'admin.addSmtp': 'Add SMTP server',
+  'admin.removeSmtp': 'Remove SMTP server',
+  'admin.smtpNumber': 'SMTP server {number}',
+  'admin.smtpHostDescription': 'The hostname of the SMTP server.',
+  'admin.smtpPortDescription': 'The TCP port used by the SMTP server.',
+  'admin.smtpUsernameDescription':
+    'The username used to authenticate with SMTP.',
+  'admin.smtpPasswordDescription':
+    'The password used to authenticate with SMTP.',
+  'admin.fromEmailDescription':
+    'The address shown in the From header of outgoing mail.',
+  'admin.fromNameDescription':
+    'The display name shown alongside the From address.',
+  'admin.smtpWeight': 'Delivery weight',
+  'admin.smtpWeightDescription':
+    'Relative share of outgoing mail. Higher values receive more messages.',
+  'admin.smtpSecureDescription':
+    'Use the secure SMTP transport for this server.',
   'admin.save': 'Save configuration',
   'admin.saving': 'Saving...',
   'admin.jwks': 'JWKs',
@@ -483,6 +517,29 @@ export const zhCN: Record<TranslationKey, string> = {
   'admin.loadingSettings': '正在加载...',
   'admin.configureSmtp': '配置 SMTP',
   'admin.leavePassword': '留空以保留当前密码',
+  'admin.identitySection': '公开身份和品牌',
+  'admin.identitySectionDescription':
+    '这些值用于标识此 Auth Mini 实例，并会显示在登录流程中。',
+  'admin.issuerDescription': '签发会话和令牌的公开基础地址。',
+  'admin.rpIdDescription': '允许此实例使用通行密钥的域名。',
+  'admin.brandNameDescription': '登录页和账户页向用户显示的名称。',
+  'admin.brandBackgroundDescription': '登录页背景使用的可选图片地址。',
+  'admin.smtpSection': '邮件投递',
+  'admin.smtpSectionDescription':
+    '可以添加一个或多个 SMTP 服务器。Auth Mini 会按每台服务器的权重分配邮件。',
+  'admin.smtpEmpty': '尚未配置 SMTP 服务器，邮箱登录暂不可用。',
+  'admin.addSmtp': '添加 SMTP 服务器',
+  'admin.removeSmtp': '移除 SMTP 服务器',
+  'admin.smtpNumber': 'SMTP 服务器 {number}',
+  'admin.smtpHostDescription': 'SMTP 服务器的主机名。',
+  'admin.smtpPortDescription': 'SMTP 服务器使用的 TCP 端口。',
+  'admin.smtpUsernameDescription': '用于 SMTP 身份验证的用户名。',
+  'admin.smtpPasswordDescription': '用于 SMTP 身份验证的密码。',
+  'admin.fromEmailDescription': '外发邮件 From 标头中显示的地址。',
+  'admin.fromNameDescription': '显示在发件地址旁边的名称。',
+  'admin.smtpWeight': '投递权重',
+  'admin.smtpWeightDescription': '外发邮件的相对占比，权重越高收到的邮件越多。',
+  'admin.smtpSecureDescription': '对该服务器使用安全 SMTP 传输。',
   'admin.save': '保存配置',
   'admin.saving': '正在保存...',
   'admin.jwks': 'JWK',
