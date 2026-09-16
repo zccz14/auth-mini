@@ -1,3 +1,4 @@
+import { generateKeyPairSync, sign, webcrypto } from 'node:crypto';
 import { render, screen, waitFor } from '@testing-library/react';
 import { act } from 'react';
 import userEvent from '@testing-library/user-event';
@@ -143,6 +144,7 @@ afterEach(async () => {
       setTimeout(resolve, INPUT_OTP_SELECTION_SYNC_DELAY_MS),
     );
   });
+  vi.unstubAllGlobals();
 });
 
 async function typeOneTimeCode(
@@ -482,13 +484,45 @@ describe('LoginRoute', () => {
 
   it('returns to passkey registration after a local sign-in and registers', async () => {
     const user = userEvent.setup();
+    const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+    const now = Math.floor(Date.now() / 1000);
+    const signingInput = [
+      { alg: 'EdDSA', kid: 'login-test' },
+      {
+        sub: 'user-local',
+        sid: 'session-local',
+        iss: window.location.origin,
+        aud: 'localhost',
+        iat: now,
+        exp: now + 900,
+      },
+    ]
+      .map((value) => Buffer.from(JSON.stringify(value)).toString('base64url'))
+      .join('.');
+    const accessToken = `${signingInput}.${sign(null, Buffer.from(signingInput), privateKey).toString('base64url')}`;
+    vi.stubGlobal('crypto', webcrypto);
+    const fetchJwks = vi.fn(async (input: string | URL) => {
+      expect(new URL(String(input)).pathname).toBe('/jwks');
+      return new Response(
+        JSON.stringify({
+          keys: [
+            {
+              ...publicKey.export({ format: 'jwk' }),
+              kid: 'login-test',
+              alg: 'EdDSA',
+            },
+          ],
+        }),
+      );
+    });
+    vi.stubGlobal('fetch', fetchJwks);
     sdkMocks.emailStart.mockResolvedValueOnce({ ok: true });
     sdkMocks.emailVerify.mockResolvedValueOnce({
       sessionId: 'session-local',
-      accessToken: 'jwt-local',
+      accessToken,
       refreshToken: 'refresh-local',
-      receivedAt: '2026-06-30T00:00:00.000Z',
-      expiresAt: '2026-06-30T01:00:00.000Z',
+      receivedAt: new Date(now * 1000).toISOString(),
+      expiresAt: new Date((now + 900) * 1000).toISOString(),
     });
 
     renderLogin('/login?return_to=%2Fpasskey%2Fregister');
@@ -500,9 +534,9 @@ describe('LoginRoute', () => {
 
     expect(sdkMocks.acceptRedirectCallback).toHaveBeenCalledWith({
       session_id: 'session-local',
-      access_token: 'jwt-local',
+      access_token: accessToken,
       refresh_token: 'refresh-local',
-      expires_in: 3600,
+      expires_in: 900,
       token_type: 'Bearer',
     });
     expect(sdkMocks.emailVerify).toHaveBeenCalledWith({
@@ -515,6 +549,7 @@ describe('LoginRoute', () => {
       await screen.findByRole('heading', { name: 'Register a PassKey' }),
     ).toBeInTheDocument();
     await user.click(await expectButtonEnabled('Register passkey'));
+    expect(fetchJwks).toHaveBeenCalledOnce();
     expect(sdkMocks.passkeyRegister).toHaveBeenCalledOnce();
     expect(
       await screen.findByText('Your passkey is ready to use.'),
