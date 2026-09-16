@@ -217,6 +217,10 @@ export const en = {
   'admin.exportFailed': 'Database export failed.',
   'admin.rotateError': 'Unable to rotate JWKs.',
   'admin.title': 'Admin',
+  'admin.overview': 'Admin overview',
+  'admin.overviewDescription':
+    'Administrator and public identity of this Auth Mini instance.',
+  'admin.noUsers': 'No users found.',
   'admin.description': 'Configure this auth-mini instance and inspect users.',
   'admin.configurationDescription':
     'Configure public identity, branding, and optional email delivery.',
@@ -466,6 +470,9 @@ export const zhCN: Record<TranslationKey, string> = {
   'admin.exportFailed': '数据库导出失败。',
   'admin.rotateError': '无法轮换 JWK。',
   'admin.title': '管理',
+  'admin.overview': '管理概览',
+  'admin.overviewDescription': '此 Auth Mini 实例的管理员和公开身份信息。',
+  'admin.noUsers': '暂无用户。',
   'admin.description': '配置此 auth-mini 实例并查看用户。',
   'admin.configurationDescription': '配置公开身份、品牌和可选的邮件投递。',
   'admin.jwksDescription': 'CURRENT 和 STANDBY 插槽中的公开签名密钥。',

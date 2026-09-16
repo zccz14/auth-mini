@@ -1,6 +1,13 @@
 import { useState } from 'react';
 import { useAuthMini } from 'auth-mini-react-components';
-import { Link, NavLink, Navigate, Outlet, useLocation } from 'react-router-dom';
+import {
+  Link,
+  NavLink,
+  Navigate,
+  Outlet,
+  matchPath,
+  useLocation,
+} from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
 import { useApp } from '@/app/providers/app-provider';
@@ -126,7 +133,11 @@ function pageTitle(pathname: string, t: ReturnType<typeof useI18n>['t']) {
   if (pathname === '/security/ed25519') return t('shell.ed25519');
   if (pathname === '/sessions') return t('shell.sessions');
   if (pathname === '/remote-logins') return t('shell.remoteLogin');
-  if (pathname === '/admin') return t('shell.admin');
+  if (pathname === '/admin') return t('admin.overview');
+  if (pathname === '/admin/configuration') return t('admin.configuration');
+  if (pathname === '/admin/jwks') return t('admin.jwks');
+  if (pathname === '/admin/resources') return t('admin.resourcesTitle');
+  if (pathname === '/admin/users') return t('admin.users');
   return t('shell.overview');
 }
 
@@ -143,6 +154,7 @@ function SidebarLink({
 }) {
   return (
     <NavLink
+      end
       className={({ isActive }) =>
         cn(
           'flex min-h-10 items-center gap-3 rounded-md px-3 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950',
@@ -191,6 +203,10 @@ export function AppShell() {
 
   if (initialized && !authenticated && !loginPath) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (matchPath('/admin/*', location.pathname) && !admin) {
+    return <Navigate to="/" replace />;
   }
 
   const closeMobile = () => setMobileOpen(false);
@@ -278,15 +294,39 @@ export function AppShell() {
 
           {admin ? (
             <>
-              <p className="mb-2 mt-6 px-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                {t('shell.system')}
+              <p className="mb-2 mt-6 px-3 text-xs font-medium text-slate-600">
+                {t('shell.admin')}
               </p>
               <div className="grid gap-1">
                 <SidebarLink
                   icon="admin"
-                  label={t('shell.admin')}
+                  label={t('admin.overview')}
                   onNavigate={closeMobile}
                   to="/admin"
+                />
+                <SidebarLink
+                  icon="sessions"
+                  label={t('admin.resourcesTitle')}
+                  onNavigate={closeMobile}
+                  to="/admin/resources"
+                />
+                <SidebarLink
+                  icon="admin"
+                  label={t('admin.configuration')}
+                  onNavigate={closeMobile}
+                  to="/admin/configuration"
+                />
+                <SidebarLink
+                  icon="key"
+                  label={t('admin.jwks')}
+                  onNavigate={closeMobile}
+                  to="/admin/jwks"
+                />
+                <SidebarLink
+                  icon="account"
+                  label={t('admin.users')}
+                  onNavigate={closeMobile}
+                  to="/admin/users"
                 />
               </div>
             </>
