@@ -28,7 +28,7 @@ export function createSessionController(input: {
   withRefreshLock?: <T>(operation: () => Promise<T>) => Promise<T>;
 }) {
   let refreshPromise: Promise<SessionResult> | null = null;
-  let supersededRecoveryPromise: Promise<void> | null = null;
+  let supersededRecoveryPromise: Promise<SessionResult | null> | null = null;
 
   return {
     getState: () => input.state.getState(),
@@ -99,9 +99,28 @@ export function createSessionController(input: {
             },
           );
 
+          const currentState = input.state.getState();
+          const currentResult = sessionResultFromSnapshot(currentState);
+
+          if (!isSameSession(currentState, current)) {
+            if (currentResult) {
+              return currentResult;
+            }
+
+            throw createSdkError(
+              'request_failed',
+              'Session changed during refresh',
+            );
+          }
+
           return await this.acceptSessionResponse(response);
         } catch (error) {
-          input.state.setAuthenticatedLocal(current);
+          if (
+            !isSessionSupersededError(error) &&
+            isSameSession(input.state.getState(), current)
+          ) {
+            input.state.setAuthenticatedLocal(current);
+          }
           throw error;
         }
       };
@@ -114,17 +133,20 @@ export function createSessionController(input: {
         } catch (error) {
           if (isSessionSupersededError(error)) {
             const recoveryPromise = startSupersededRecovery(snapshot);
-
-            supersededRecoveryPromise = recoveryPromise.finally(() => {
-              if (supersededRecoveryPromise === recoveryPromise) {
+            const trackedRecoveryPromise = recoveryPromise.finally(() => {
+              if (supersededRecoveryPromise === trackedRecoveryPromise) {
                 supersededRecoveryPromise = null;
               }
             });
+            supersededRecoveryPromise = trackedRecoveryPromise;
+            void supersededRecoveryPromise.catch(() => {});
           } else if (
             isAuthInvalidatingError(error) ||
             isContractDriftError(error)
           ) {
-            input.state.setAnonymous();
+            if (isSameSession(input.state.getState(), snapshot)) {
+              input.state.setAnonymous();
+            }
           }
           throw error;
         } finally {
@@ -164,18 +186,13 @@ export function createSessionController(input: {
       } catch (error) {
         if (isSessionSupersededError(error)) {
           await supersededRecoveryPromise;
-
-          const current = input.state.getState();
-
-          if (isSameRecoveringSession(current, snapshot)) {
-            input.state.setAnonymousLocal();
-          }
-
           return;
         }
 
         if (isAuthInvalidatingError(error) || isContractDriftError(error)) {
-          input.state.setAnonymous();
+          if (isSameSession(input.state.getState(), snapshot)) {
+            input.state.setAnonymous();
+          }
 
           if (isContractDriftError(error)) {
             throw error;
@@ -217,7 +234,15 @@ export function createSessionController(input: {
       }
     },
   };
-  async function startSupersededRecovery(snapshot: SessionSnapshot) {
+  async function startSupersededRecovery(
+    snapshot: SessionSnapshot,
+  ): Promise<SessionResult | null> {
+    const beforeRecovery = input.state.getState();
+
+    if (!isSameSession(beforeRecovery, snapshot)) {
+      return sessionResultFromSnapshot(beforeRecovery);
+    }
+
     input.state.setRecovering({
       sessionId: snapshot.sessionId,
       accessToken: snapshot.accessToken,
@@ -233,13 +258,13 @@ export function createSessionController(input: {
       const current = input.state.getState();
 
       if (!isSameRecoveringSession(current, snapshot)) {
-        return;
+        return sessionResultFromSnapshot(current);
       }
 
       const adoption = adoptRecoveredSharedState(snapshot);
 
-      if (adoption === 'usable') {
-        return;
+      if (adoption) {
+        return adoption;
       }
 
       const remainingMs = deadline - Date.now();
@@ -248,10 +273,26 @@ export function createSessionController(input: {
         break;
       }
 
-      await input.waitForExternalStorage?.(remainingMs);
+      await waitForExternalStorage(remainingMs);
+    }
+
+    const current = input.state.getState();
+
+    if (!isSameRecoveringSession(current, snapshot)) {
+      return sessionResultFromSnapshot(current);
+    }
+
+    if (hasLiveAccessToken(current, input.now())) {
+      input.state.setAuthenticatedLocal(current);
+      return null;
+    }
+
+    if (hasSharedSessionChanged(snapshot, current)) {
+      return null;
     }
 
     input.state.setAnonymousLocal();
+    return null;
   }
 
   function newerUsableSharedSession(
@@ -290,26 +331,37 @@ export function createSessionController(input: {
 
   function adoptRecoveredSharedState(
     snapshot: SessionSnapshot,
-  ): 'usable' | 'provisional' | 'none' {
+  ): SessionResult | null {
     const shared = input.readSharedState?.();
 
     if (!shared?.sessionId || !shared.refreshToken) {
-      return 'none';
+      return null;
     }
 
     if (!hasSharedSessionChanged(snapshot, shared)) {
-      return 'none';
+      return null;
     }
 
     const adopted = newerUsableSharedSession(snapshot, shared);
 
     if (adopted) {
       input.state.setAuthenticated(adopted);
-      return 'usable';
+      return adopted;
     }
 
     input.state.applyPersistedState(shared);
-    return 'provisional';
+    return null;
+  }
+
+  async function waitForExternalStorage(timeoutMs: number): Promise<void> {
+    if (input.waitForExternalStorage) {
+      await input.waitForExternalStorage(timeoutMs);
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, timeoutMs);
+    });
   }
 }
 
@@ -437,4 +489,50 @@ function isSameRecoveringSession(
   return (
     current.status === 'recovering' && current.sessionId === snapshot.sessionId
   );
+}
+
+function isSameSession(
+  current: SessionSnapshot,
+  expected: SessionSnapshot | PersistedSdkState,
+): boolean {
+  return (
+    current.sessionId === expected.sessionId &&
+    current.accessToken === expected.accessToken &&
+    current.refreshToken === expected.refreshToken &&
+    current.receivedAt === expected.receivedAt &&
+    current.expiresAt === expected.expiresAt
+  );
+}
+
+function sessionResultFromSnapshot(
+  snapshot: SessionSnapshot,
+): SessionResult | null {
+  if (
+    snapshot.status !== 'authenticated' ||
+    !snapshot.authenticated ||
+    !snapshot.sessionId ||
+    !snapshot.refreshToken ||
+    !snapshot.accessToken ||
+    !snapshot.receivedAt ||
+    !snapshot.expiresAt
+  ) {
+    return null;
+  }
+
+  return {
+    sessionId: snapshot.sessionId,
+    accessToken: snapshot.accessToken,
+    refreshToken: snapshot.refreshToken,
+    receivedAt: snapshot.receivedAt,
+    expiresAt: snapshot.expiresAt,
+  };
+}
+
+function hasLiveAccessToken(snapshot: SessionSnapshot, now: number): boolean {
+  if (!snapshot.accessToken || !snapshot.expiresAt) {
+    return false;
+  }
+
+  const expiresAt = Date.parse(snapshot.expiresAt);
+  return Number.isFinite(expiresAt) && now < expiresAt;
 }
