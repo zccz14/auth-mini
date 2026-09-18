@@ -9,6 +9,14 @@ import {
   jsonResponse,
 } from '../helpers/sdk.js';
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 describe('sdk session flows', () => {
   it('starts in recovering and settles authenticated after boot recovery', async () => {
     const sdk = createAuthMiniForTest({
@@ -77,6 +85,107 @@ describe('sdk session flows', () => {
       accessToken: 'access-token',
     });
     expect(sdk.session.getState()).not.toHaveProperty('me');
+  });
+
+  it('does not let a late refresh response overwrite a newer redirect session', async () => {
+    const response = deferred<Response>();
+    const fetch = vi.fn().mockReturnValue(response.promise);
+    const sdk = createAuthMiniForTest({
+      storage: fakeAuthenticatedStorage(),
+      fetch,
+    });
+
+    const refresh = sdk.session.refresh();
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    await sdk.session.acceptRedirectCallback({
+      session_id: 'session-new',
+      access_token: 'access-new',
+      refresh_token: 'refresh-new',
+      expires_in: 900,
+    });
+
+    response.resolve(
+      jsonResponse({
+        session_id: 'session-old',
+        access_token: 'access-old',
+        refresh_token: 'refresh-old',
+        expires_in: 900,
+      }),
+    );
+
+    await expect(refresh).resolves.toMatchObject({
+      sessionId: 'session-new',
+      accessToken: 'access-new',
+      refreshToken: 'refresh-new',
+    });
+    expect(sdk.session.getState()).toMatchObject({
+      status: 'authenticated',
+      sessionId: 'session-new',
+      accessToken: 'access-new',
+      refreshToken: 'refresh-new',
+    });
+  });
+
+  it('keeps the approved callback session when the old refresh is superseded', async () => {
+    const response = deferred<Response>();
+    const sdk = createAuthMiniForTest({
+      storage: fakeAuthenticatedStorage(),
+      fetch: vi.fn().mockReturnValue(response.promise),
+    });
+
+    const refresh = sdk.session.refresh();
+    await sdk.session.acceptRedirectCallback({
+      session_id: 'session-approved',
+      access_token: 'access-approved',
+      refresh_token: 'refresh-approved',
+      expires_in: 900,
+    });
+    response.resolve(jsonResponse({ error: 'session_superseded' }, 401));
+
+    await expect(refresh).rejects.toMatchObject({
+      error: 'session_superseded',
+    });
+    expect(sdk.session.getState()).toMatchObject({
+      status: 'authenticated',
+      sessionId: 'session-approved',
+      accessToken: 'access-approved',
+      refreshToken: 'refresh-approved',
+    });
+  });
+
+  it('keeps a live access token authenticated while a superseded refresh recovers', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const sdk = createAuthMiniForTest({
+        recoveryTimeoutMs: 25,
+        storage: fakeAuthenticatedStorage(),
+        fetch: vi
+          .fn()
+          .mockResolvedValueOnce(
+            jsonResponse({ error: 'session_superseded' }, 401),
+          ),
+      });
+
+      await expect(sdk.session.refresh()).rejects.toMatchObject({
+        error: 'session_superseded',
+      });
+      expect(sdk.session.getState()).toMatchObject({
+        status: 'recovering',
+        accessToken: 'access-token',
+      });
+
+      await vi.advanceTimersByTimeAsync(25);
+
+      expect(sdk.session.getState()).toMatchObject({
+        status: 'authenticated',
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('startup recovery settles authenticated without any implicit /me load', async () => {

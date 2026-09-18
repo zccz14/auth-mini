@@ -180,7 +180,7 @@ export function createAuthMiniForTest(options: TestSdkOptions = {}) {
     state,
     waitForExternalStorage(timeoutMs) {
       if (!storageSync) {
-        return Promise.resolve();
+        return new Promise((resolve) => setTimeout(resolve, timeoutMs));
       }
 
       return new Promise((resolve) => {
@@ -235,6 +235,14 @@ export function createAuthMiniForTest(options: TestSdkOptions = {}) {
       },
       refresh() {
         return session.refresh();
+      },
+      acceptRedirectCallback(input: {
+        access_token: string;
+        session_id: string;
+        refresh_token: string;
+        expires_in: number;
+      }) {
+        return session.acceptSessionResponse(input);
       },
       logout() {
         return session.logout();

@@ -30,6 +30,7 @@ const initialSession = {
   receivedAt: '2026-09-16T00:00:00.000Z',
   expiresAt: '2026-09-16T00:15:00.000Z',
 };
+let observedContext: AuthMiniContextValue | undefined;
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -72,6 +73,32 @@ function Editor({
   );
 }
 
+function RefreshDialog({ childRenders }: { childRenders: () => void }) {
+  const context = useAuthMini();
+  observedContext = context;
+  const { isReady, isAuthenticated } = context;
+  if (!isReady || !isAuthenticated) {
+    return <output data-testid="dialog-loading">loading</output>;
+  }
+
+  return <DialogContent childRenders={childRenders} />;
+}
+
+function DialogContent({ childRenders }: { childRenders: () => void }) {
+  const [draft, setDraft] = useState('unfinished dialog draft');
+  childRenders();
+  return (
+    <div role="dialog" aria-label="workspace dialog">
+      <input
+        aria-label="dialog draft"
+        autoFocus
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+      />
+    </div>
+  );
+}
+
 describe('AuthMiniProvider with the Browser SDK refresh timer', () => {
   let current: AuthMiniContextValue;
   const renders = vi.fn();
@@ -110,6 +137,7 @@ describe('AuthMiniProvider with the Browser SDK refresh timer', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(initialSession.receivedAt));
     vi.clearAllMocks();
+    observedContext = undefined;
     jwtVerify.mockReset().mockResolvedValue({ payload: { sub: 'user-1' } });
     localStorage.setItem(storageKey, JSON.stringify(initialSession));
   });
@@ -168,6 +196,43 @@ describe('AuthMiniProvider with the Browser SDK refresh timer', () => {
     expect(unmount).not.toHaveBeenCalled();
     fireEvent.click(screen.getByText('Read token'));
     expect(readToken).toHaveBeenLastCalledWith('access-2');
+  });
+
+  it('keeps an open dialog mounted while a superseded refresh recovers', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: 'session_superseded' }), {
+          status: 401,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+    const childRenders = vi.fn();
+    render(
+      <AuthMiniProvider authMiniBaseUrl={issuer} autoRedirectToLogin={false}>
+        <RefreshDialog childRenders={childRenders} />
+      </AuthMiniProvider>,
+    );
+    await act(async () => {});
+
+    const dialog = screen.getByRole('dialog', { name: 'workspace dialog' });
+    const input = screen.getByLabelText('dialog draft');
+    fireEvent.change(input, { target: { value: 'keep this dialog open' } });
+    input.focus();
+    childRenders.mockClear();
+
+    await act(() => vi.advanceTimersByTimeAsync(600_000));
+    await act(() => vi.advanceTimersByTimeAsync(50));
+
+    expect(childRenders).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: 'workspace dialog' })).toBe(
+      dialog,
+    );
+    expect(input).toHaveFocus();
+    expect(input).toHaveValue('keep this dialog open');
+    expect(observedContext!.isAuthenticated).toBe(true);
+    expect(observedContext!.status).toBe('authenticated');
   });
 
   it('stays authenticated on an unrelated parent render while verifying a refreshed JWT', async () => {

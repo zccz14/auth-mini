@@ -179,7 +179,7 @@ export function AuthMiniProvider({
           if (!alive || verification !== next) return;
           verifiedAccessToken = next.accessToken;
           publish(
-            { ...latestSession, status: 'authenticated' },
+            { ...latestSession, status: 'authenticated', authenticated: true },
             sessionClaims(payload),
           );
         } catch {
@@ -194,13 +194,49 @@ export function AuthMiniProvider({
         stateHandlerRef.current?.(next);
         redirectAnonymousSession(next);
 
+        const current = source?.current;
+        const sameSession = current?.sessionId === next.sessionId;
+        const keepVerifiedSession = Boolean(
+          current?.authenticated &&
+          claims !== null &&
+          sameSession &&
+          next.sessionId &&
+          (next.status === 'recovering' || next.status === 'authenticated'),
+        );
+
+        if (keepVerifiedSession) {
+          if (next.accessToken === verifiedAccessToken) {
+            publish(
+              { ...next, status: 'authenticated', authenticated: true },
+              claims,
+            );
+            if (
+              !verification ||
+              (verification.accessToken === next.accessToken &&
+                verification.sessionId === next.sessionId)
+            ) {
+              verification = null;
+            }
+            return;
+          }
+
+          if (
+            verification?.accessToken === next.accessToken &&
+            verification.sessionId === next.sessionId
+          ) {
+            return;
+          }
+
+          void verifySession(next);
+          return;
+        }
+
         if (!next.authenticated || !next.accessToken) {
           verification = null;
           verifiedAccessToken = null;
           publish(next, null);
           return;
         }
-        const sameSession = source?.current.sessionId === next.sessionId;
         if (sameSession && next.accessToken === verifiedAccessToken) {
           verification = null;
           publish({ ...next, status: 'authenticated' }, claims);

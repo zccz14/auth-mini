@@ -460,6 +460,56 @@ describe('browser module sdk', () => {
     });
   });
 
+  it('does not let a late browser refresh overwrite a redirect callback', async () => {
+    const storage = fakeStorage();
+    const receivedAt = '2026-04-03T00:00:00.000Z';
+    seedBrowserSdkStorage(storage, 'https://auth.example.com', {
+      sessionId: 'session-old',
+      accessToken: 'access-old',
+      refreshToken: 'refresh-old',
+      receivedAt,
+      expiresAt: '2026-04-03T00:15:00.000Z',
+    });
+    const refreshResponse = deferred<Response>();
+    const fetch = vi.fn().mockReturnValue(refreshResponse.promise);
+    const sdk = createBrowserSdkInternal('https://auth.example.com', {
+      fetch,
+      storage,
+      now: () => Date.parse(receivedAt),
+    });
+
+    const refresh = sdk.session.refresh();
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    await sdk.session.acceptRedirectCallback({
+      session_id: 'session-new',
+      access_token: 'access-new',
+      refresh_token: 'refresh-new',
+      expires_in: 900,
+    });
+
+    refreshResponse.resolve(
+      jsonResponse({
+        session_id: 'session-old',
+        access_token: 'access-late',
+        refresh_token: 'refresh-late',
+        expires_in: 900,
+      }),
+    );
+
+    await expect(refresh).resolves.toMatchObject({
+      sessionId: 'session-new',
+      accessToken: 'access-new',
+      refreshToken: 'refresh-new',
+    });
+    expect(sdk.session.getState()).toMatchObject({
+      status: 'authenticated',
+      sessionId: 'session-new',
+      accessToken: 'access-new',
+      refreshToken: 'refresh-new',
+    });
+  });
+
   it('releases the cross-tab refresh lock after the winner fails', async () => {
     const storage = fakeStorage();
     seedBrowserSdkStorage(storage, 'https://auth.example.com', {
