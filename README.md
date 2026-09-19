@@ -29,6 +29,16 @@ Minimal, opinionated authentication server for apps that just need a solid authe
 - User profiles like names, avatars, bios, etc.
 - User management features like admin dashboards, user search etc.
 
+## Backend user ID directory
+
+An administrator can generate a dedicated, revocable token at **Admin → Users →
+User ID directory token**. Backends such as Linkit can use it to read the complete
+`user_id` list, without receiving emails, credentials or sessions. This token
+cannot sign in or access the administrator APIs.
+
+See [the user ID directory integration guide](docs/integration/user-id-directory.md)
+for setup, security boundaries and the HTTP contract.
+
 ## OIDC positioning
 
 Auth Mini Core is not an OIDC Provider. Its core goal is brand-owned identity across apps under the same brand, while keeping the authentication model simple.

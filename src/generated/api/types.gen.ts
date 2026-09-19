@@ -4,6 +4,11 @@ export type ClientOptions = {
     baseUrl: 'http://localhost:7777' | (string & {});
 };
 
+export type UserDirectoryTokenStatus = {
+    configured: boolean;
+    created_at: string | null;
+};
+
 export type OkResponse = {
     ok: true;
 };
@@ -470,6 +475,122 @@ export type WebauthnOptionsRequestWritable = {
 export type CredentialId = string;
 
 export type RemoteLoginRequestId = string;
+
+export type RevokeUserDirectoryTokenData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/user-directory-token';
+};
+
+export type RevokeUserDirectoryTokenErrors = {
+    /**
+     * Missing, malformed, expired, or revoked access token
+     */
+    401: ErrorResponse;
+    /**
+     * Access token is valid but does not belong to the configured administrator
+     */
+    403: ErrorResponse;
+};
+
+export type RevokeUserDirectoryTokenError = RevokeUserDirectoryTokenErrors[keyof RevokeUserDirectoryTokenErrors];
+
+export type RevokeUserDirectoryTokenResponses = {
+    /**
+     * Directory access disabled
+     */
+    204: void;
+};
+
+export type RevokeUserDirectoryTokenResponse = RevokeUserDirectoryTokenResponses[keyof RevokeUserDirectoryTokenResponses];
+
+export type GetUserDirectoryTokenStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/user-directory-token';
+};
+
+export type GetUserDirectoryTokenStatusErrors = {
+    /**
+     * Missing, malformed, expired, or revoked access token
+     */
+    401: ErrorResponse;
+    /**
+     * Access token is valid but does not belong to the configured administrator
+     */
+    403: ErrorResponse;
+};
+
+export type GetUserDirectoryTokenStatusError = GetUserDirectoryTokenStatusErrors[keyof GetUserDirectoryTokenStatusErrors];
+
+export type GetUserDirectoryTokenStatusResponses = {
+    /**
+     * Token status only; the token and its hash are never returned
+     */
+    200: UserDirectoryTokenStatus;
+};
+
+export type GetUserDirectoryTokenStatusResponse = GetUserDirectoryTokenStatusResponses[keyof GetUserDirectoryTokenStatusResponses];
+
+export type RotateUserDirectoryTokenData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/user-directory-token';
+};
+
+export type RotateUserDirectoryTokenErrors = {
+    /**
+     * Missing, malformed, expired, or revoked access token
+     */
+    401: ErrorResponse;
+    /**
+     * Access token is valid but does not belong to the configured administrator
+     */
+    403: ErrorResponse;
+};
+
+export type RotateUserDirectoryTokenError = RotateUserDirectoryTokenErrors[keyof RotateUserDirectoryTokenErrors];
+
+export type RotateUserDirectoryTokenResponses = {
+    /**
+     * A 256-bit opaque token, displayed once; no-store
+     */
+    201: {
+        token: string;
+    };
+};
+
+export type RotateUserDirectoryTokenResponse = RotateUserDirectoryTokenResponses[keyof RotateUserDirectoryTokenResponses];
+
+export type ListIntegrationUserIdsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/integration/user-ids';
+};
+
+export type ListIntegrationUserIdsErrors = {
+    /**
+     * Missing, invalid, rotated or revoked directory token
+     */
+    401: ErrorResponse;
+};
+
+export type ListIntegrationUserIdsError = ListIntegrationUserIdsErrors[keyof ListIntegrationUserIdsErrors];
+
+export type ListIntegrationUserIdsResponses = {
+    /**
+     * Complete list, including an empty array when there are no users
+     */
+    200: {
+        user_ids: Array<string>;
+    };
+};
+
+export type ListIntegrationUserIdsResponse = ListIntegrationUserIdsResponses[keyof ListIntegrationUserIdsResponses];
 
 export type GetAdminSetupData = {
     body?: never;

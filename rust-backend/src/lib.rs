@@ -1,6 +1,7 @@
 mod audience;
 mod config;
 mod db;
+mod directory;
 mod ed25519;
 mod email_start;
 mod email_verify;

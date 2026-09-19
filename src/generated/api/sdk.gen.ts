@@ -2,7 +2,7 @@
 
 import { client } from './client.gen.js';
 import type { Client, Options as Options2, TDataShape } from './client/index.js';
-import type { ApproveRemoteLoginData, ApproveRemoteLoginErrors, ApproveRemoteLoginResponses, ClaimRemoteLoginData, ClaimRemoteLoginErrors, ClaimRemoteLoginResponses, CreateEd25519CredentialData, CreateEd25519CredentialErrors, CreateEd25519CredentialResponses, CreateWebauthnAuthenticationOptionsData, CreateWebauthnAuthenticationOptionsErrors, CreateWebauthnAuthenticationOptionsResponses, CreateWebauthnRegistrationOptionsData, CreateWebauthnRegistrationOptionsErrors, CreateWebauthnRegistrationOptionsResponses, DeleteEd25519CredentialData, DeleteEd25519CredentialErrors, DeleteEd25519CredentialResponses, DeleteWebauthnCredentialData, DeleteWebauthnCredentialErrors, DeleteWebauthnCredentialResponses, DenyRemoteLoginData, DenyRemoteLoginErrors, DenyRemoteLoginResponses, ExchangeRemoteLoginData, ExchangeRemoteLoginErrors, ExchangeRemoteLoginResponses, ExportAdminDatabaseData, ExportAdminDatabaseErrors, ExportAdminDatabaseResponses, GetAdminConfigData, GetAdminConfigErrors, GetAdminConfigResponses, GetAdminSetupData, GetAdminSetupErrors, GetAdminSetupResponses, GetAdminSystemResourcesData, GetAdminSystemResourcesErrors, GetAdminSystemResourcesResponses, GetCurrentUserData, GetCurrentUserErrors, GetCurrentUserResponses, GetOpenApiJsonData, GetOpenApiJsonResponses, GetOpenApiYamlData, GetOpenApiYamlResponses, ListAdminJwksData, ListAdminJwksErrors, ListAdminJwksResponses, ListAdminUsersData, ListAdminUsersErrors, ListAdminUsersResponses, ListEd25519CredentialsData, ListEd25519CredentialsErrors, ListEd25519CredentialsResponses, ListJwksData, ListJwksResponses, ListPendingRemoteLoginsData, ListPendingRemoteLoginsErrors, ListPendingRemoteLoginsResponses, LogoutCurrentSessionData, LogoutCurrentSessionErrors, LogoutCurrentSessionResponses, LogoutPeerSessionData, LogoutPeerSessionErrors, LogoutPeerSessionResponses, RefreshSessionData, RefreshSessionErrors, RefreshSessionResponses, RotateAdminJwksData, RotateAdminJwksErrors, RotateAdminJwksResponses, StartCurrentUserEmailChangeData, StartCurrentUserEmailChangeErrors, StartCurrentUserEmailChangeResponses, StartEd25519AuthenticationData, StartEd25519AuthenticationErrors, StartEd25519AuthenticationResponses, StartEmailAuthData, StartEmailAuthErrors, StartEmailAuthResponses, StartRemoteLoginData, StartRemoteLoginErrors, StartRemoteLoginResponses, UpdateAdminConfigData, UpdateAdminConfigErrors, UpdateAdminConfigResponses, UpdateAdminSetupData, UpdateAdminSetupErrors, UpdateAdminSetupResponses, UpdateEd25519CredentialData, UpdateEd25519CredentialErrors, UpdateEd25519CredentialResponses, VerifyCurrentUserEmailChangeData, VerifyCurrentUserEmailChangeErrors, VerifyCurrentUserEmailChangeResponses, VerifyEd25519AuthenticationData, VerifyEd25519AuthenticationErrors, VerifyEd25519AuthenticationResponses, VerifyEmailAuthData, VerifyEmailAuthErrors, VerifyEmailAuthResponses, VerifyWebauthnAuthenticationData, VerifyWebauthnAuthenticationErrors, VerifyWebauthnAuthenticationResponses, VerifyWebauthnRegistrationData, VerifyWebauthnRegistrationErrors, VerifyWebauthnRegistrationResponses } from './types.gen.js';
+import type { ApproveRemoteLoginData, ApproveRemoteLoginErrors, ApproveRemoteLoginResponses, ClaimRemoteLoginData, ClaimRemoteLoginErrors, ClaimRemoteLoginResponses, CreateEd25519CredentialData, CreateEd25519CredentialErrors, CreateEd25519CredentialResponses, CreateWebauthnAuthenticationOptionsData, CreateWebauthnAuthenticationOptionsErrors, CreateWebauthnAuthenticationOptionsResponses, CreateWebauthnRegistrationOptionsData, CreateWebauthnRegistrationOptionsErrors, CreateWebauthnRegistrationOptionsResponses, DeleteEd25519CredentialData, DeleteEd25519CredentialErrors, DeleteEd25519CredentialResponses, DeleteWebauthnCredentialData, DeleteWebauthnCredentialErrors, DeleteWebauthnCredentialResponses, DenyRemoteLoginData, DenyRemoteLoginErrors, DenyRemoteLoginResponses, ExchangeRemoteLoginData, ExchangeRemoteLoginErrors, ExchangeRemoteLoginResponses, ExportAdminDatabaseData, ExportAdminDatabaseErrors, ExportAdminDatabaseResponses, GetAdminConfigData, GetAdminConfigErrors, GetAdminConfigResponses, GetAdminSetupData, GetAdminSetupErrors, GetAdminSetupResponses, GetAdminSystemResourcesData, GetAdminSystemResourcesErrors, GetAdminSystemResourcesResponses, GetCurrentUserData, GetCurrentUserErrors, GetCurrentUserResponses, GetOpenApiJsonData, GetOpenApiJsonResponses, GetOpenApiYamlData, GetOpenApiYamlResponses, GetUserDirectoryTokenStatusData, GetUserDirectoryTokenStatusErrors, GetUserDirectoryTokenStatusResponses, ListAdminJwksData, ListAdminJwksErrors, ListAdminJwksResponses, ListAdminUsersData, ListAdminUsersErrors, ListAdminUsersResponses, ListEd25519CredentialsData, ListEd25519CredentialsErrors, ListEd25519CredentialsResponses, ListIntegrationUserIdsData, ListIntegrationUserIdsErrors, ListIntegrationUserIdsResponses, ListJwksData, ListJwksResponses, ListPendingRemoteLoginsData, ListPendingRemoteLoginsErrors, ListPendingRemoteLoginsResponses, LogoutCurrentSessionData, LogoutCurrentSessionErrors, LogoutCurrentSessionResponses, LogoutPeerSessionData, LogoutPeerSessionErrors, LogoutPeerSessionResponses, RefreshSessionData, RefreshSessionErrors, RefreshSessionResponses, RevokeUserDirectoryTokenData, RevokeUserDirectoryTokenErrors, RevokeUserDirectoryTokenResponses, RotateAdminJwksData, RotateAdminJwksErrors, RotateAdminJwksResponses, RotateUserDirectoryTokenData, RotateUserDirectoryTokenErrors, RotateUserDirectoryTokenResponses, StartCurrentUserEmailChangeData, StartCurrentUserEmailChangeErrors, StartCurrentUserEmailChangeResponses, StartEd25519AuthenticationData, StartEd25519AuthenticationErrors, StartEd25519AuthenticationResponses, StartEmailAuthData, StartEmailAuthErrors, StartEmailAuthResponses, StartRemoteLoginData, StartRemoteLoginErrors, StartRemoteLoginResponses, UpdateAdminConfigData, UpdateAdminConfigErrors, UpdateAdminConfigResponses, UpdateAdminSetupData, UpdateAdminSetupErrors, UpdateAdminSetupResponses, UpdateEd25519CredentialData, UpdateEd25519CredentialErrors, UpdateEd25519CredentialResponses, VerifyCurrentUserEmailChangeData, VerifyCurrentUserEmailChangeErrors, VerifyCurrentUserEmailChangeResponses, VerifyEd25519AuthenticationData, VerifyEd25519AuthenticationErrors, VerifyEd25519AuthenticationResponses, VerifyEmailAuthData, VerifyEmailAuthErrors, VerifyEmailAuthResponses, VerifyWebauthnAuthenticationData, VerifyWebauthnAuthenticationErrors, VerifyWebauthnAuthenticationResponses, VerifyWebauthnRegistrationData, VerifyWebauthnRegistrationErrors, VerifyWebauthnRegistrationResponses } from './types.gen.js';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -17,6 +17,44 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
      */
     meta?: Record<string, unknown>;
 };
+
+/**
+ * Revoke the directory token immediately
+ */
+export const revokeUserDirectoryToken = <ThrowOnError extends boolean = false>(options?: Options<RevokeUserDirectoryTokenData, ThrowOnError>) => (options?.client ?? client).delete<RevokeUserDirectoryTokenResponses, RevokeUserDirectoryTokenErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/admin/user-directory-token',
+    ...options
+});
+
+/**
+ * Read directory token status (administrator, self-audience session)
+ */
+export const getUserDirectoryTokenStatus = <ThrowOnError extends boolean = false>(options?: Options<GetUserDirectoryTokenStatusData, ThrowOnError>) => (options?.client ?? client).get<GetUserDirectoryTokenStatusResponses, GetUserDirectoryTokenStatusErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/admin/user-directory-token',
+    ...options
+});
+
+/**
+ * Generate a directory-only token, immediately invalidating the previous token
+ */
+export const rotateUserDirectoryToken = <ThrowOnError extends boolean = false>(options?: Options<RotateUserDirectoryTokenData, ThrowOnError>) => (options?.client ?? client).post<RotateUserDirectoryTokenResponses, RotateUserDirectoryTokenErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/admin/user-directory-token',
+    ...options
+});
+
+/**
+ * Read the complete current user ID list with a directory-only token
+ *
+ * Returns every user ID, including accounts without email, sorted by ID. No pagination or other user information. Use the dedicated opaque token, not a user or administrator JWT. The token cannot access other endpoints. Server-to-server only; no CORS response headers. Cache-Control is no-store.
+ */
+export const listIntegrationUserIds = <ThrowOnError extends boolean = false>(options?: Options<ListIntegrationUserIdsData, ThrowOnError>) => (options?.client ?? client).get<ListIntegrationUserIdsResponses, ListIntegrationUserIdsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/integration/user-ids',
+    ...options
+});
 
 /**
  * Read local admin setup state

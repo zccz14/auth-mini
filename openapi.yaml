@@ -8,6 +8,90 @@ servers:
 security:
   - bearerAuth: []
 paths:
+  /admin/user-directory-token:
+    get:
+      tags: [admin]
+      operationId: getUserDirectoryTokenStatus
+      summary: Read directory token status (administrator, self-audience session)
+      responses:
+        '200':
+          description: Token status only; the token and its hash are never returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDirectoryTokenStatus'
+        '401':
+          $ref: '#/components/responses/InvalidAccessToken'
+        '403':
+          $ref: '#/components/responses/AdminRequired'
+    post:
+      tags: [admin]
+      operationId: rotateUserDirectoryToken
+      summary: Generate a directory-only token, immediately invalidating the previous token
+      responses:
+        '201':
+          description: A 256-bit opaque token, displayed once; no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [token]
+                properties:
+                  token:
+                    type: string
+                    pattern: '^am_uid_[0-9a-f]{64}$'
+        '401':
+          $ref: '#/components/responses/InvalidAccessToken'
+        '403':
+          $ref: '#/components/responses/AdminRequired'
+    delete:
+      tags: [admin]
+      operationId: revokeUserDirectoryToken
+      summary: Revoke the directory token immediately
+      responses:
+        '204':
+          description: Directory access disabled
+        '401':
+          $ref: '#/components/responses/InvalidAccessToken'
+        '403':
+          $ref: '#/components/responses/AdminRequired'
+  /integration/user-ids:
+    get:
+      tags: [integration]
+      operationId: listIntegrationUserIds
+      summary: Read the complete current user ID list with a directory-only token
+      description: >-
+        Returns every user ID, including accounts without email, sorted by ID.
+        No pagination or other user information. Use the dedicated opaque token,
+        not a user or administrator JWT. The token cannot access other endpoints.
+        Server-to-server only; no CORS response headers. Cache-Control is no-store.
+      security:
+        - directoryToken: []
+      responses:
+        '200':
+          description: Complete list, including an empty array when there are no users
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [user_ids]
+                properties:
+                  user_ids:
+                    type: array
+                    uniqueItems: true
+                    items:
+                      type: string
+                      format: uuid
+        '401':
+          description: Missing, invalid, rotated or revoked directory token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: invalid_directory_token
   /admin/setup:
     get:
       security: []
@@ -1019,6 +1103,10 @@ paths:
                 additionalProperties: true
 components:
   securitySchemes:
+    directoryToken:
+      type: http
+      scheme: bearer
+      description: Opaque am_uid_ token with access only to GET /integration/user-ids
     bearerAuth:
       type: http
       scheme: bearer
@@ -1087,6 +1175,15 @@ components:
           example:
             error: internal_error
   schemas:
+    UserDirectoryTokenStatus:
+      type: object
+      additionalProperties: false
+      required: [configured, created_at]
+      properties:
+        configured:
+          type: boolean
+        created_at:
+          type: [string, 'null']
     OkResponse:
       type: object
       additionalProperties: false
