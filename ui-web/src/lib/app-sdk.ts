@@ -98,7 +98,17 @@ export type AdminSystemResourcesSnapshot = {
   };
 };
 
+export type DirectoryTokenStatus = {
+  configured: boolean;
+  created_at: string | null;
+};
+
 type AdminApi = {
+  directoryToken: {
+    status(): Promise<DirectoryTokenStatus>;
+    rotate(): Promise<{ token: string }>;
+    revoke(): Promise<void>;
+  };
   setup: {
     fetch(): Promise<AdminSetupState>;
     initialize(input: {
@@ -272,6 +282,34 @@ export function extendAppSdk(sdk: AuthMiniApi, serverBaseUrl: string): AppSdk {
   return {
     ...sdk,
     admin: {
+      directoryToken: {
+        async status() {
+          return getJson<DirectoryTokenStatus>(
+            '/admin/user-directory-token',
+            await requireAccessToken(),
+          );
+        },
+        async rotate() {
+          return postJson<{ token: string }>(
+            '/admin/user-directory-token',
+            {},
+            await requireAccessToken(),
+          );
+        },
+        async revoke() {
+          const response = await fetch(
+            new URL('/admin/user-directory-token', serverBaseUrl),
+            {
+              method: 'DELETE',
+              headers: {
+                authorization: `Bearer ${await requireAccessToken()}`,
+              },
+            },
+          );
+          if (!response.ok)
+            throw new Error(`Request failed (${response.status})`);
+        },
+      },
       setup: {
         fetch() {
           return getJson<AdminSetupState>('/admin/setup');

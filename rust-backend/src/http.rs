@@ -102,6 +102,8 @@ fn router(config: Config) -> Router {
         .route("/admin/setup", any(axum_request))
         .route("/admin/config", any(axum_request))
         .route("/admin/users", any(axum_request))
+        .route("/admin/user-directory-token", any(axum_request))
+        .route("/integration/user-ids", any(axum_request))
         .route("/admin/jwks", any(axum_request))
         .route("/admin/jwks/rotate", any(axum_request))
         .route("/admin/database", any(axum_request))
@@ -239,6 +241,14 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
 
     if request.method == "PUT" && request.path == "/admin/config" {
         return handle_admin_config_put(request, config).map(|response| cors(request, response));
+    }
+
+    if request.path == "/admin/user-directory-token" {
+        return handle_user_directory_token(request, config);
+    }
+
+    if request.method == "GET" && request.path == "/integration/user-ids" {
+        return handle_user_directory_ids(request, config);
     }
 
     if request.method == "GET" && request.path == "/admin/users" {
@@ -487,6 +497,44 @@ fn handle_admin_config_put(request: &Request, config: &Config) -> io::Result<Res
         Err(SetupError::InvalidRequest) => Ok(Response::json_error(400, "invalid_request")),
         Err(_) => Ok(Response::json_error(500, "internal_error")),
     }
+}
+
+fn handle_user_directory_token(request: &Request, config: &Config) -> io::Result<Response> {
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    if require_admin_auth(&connection, &auth).is_err() {
+        return Ok(Response::json_error(403, "admin_required"));
+    }
+    let response = match request.method.as_str() {
+        "GET" => Response::json_value(200, crate::directory::token_status(&connection)?),
+        "POST" => Response::json_value(201, crate::directory::rotate_token(&connection)?),
+        "DELETE" => {
+            connection
+                .execute("DELETE FROM user_directory_token", [])
+                .map_err(io::Error::other)?;
+            Response::empty(204)
+        }
+        _ => Response::json_error(405, "method_not_allowed"),
+    };
+    Ok(response.with_header("cache-control", "no-store"))
+}
+
+fn handle_user_directory_ids(request: &Request, config: &Config) -> io::Result<Response> {
+    let Some(database) = &config.database else {
+        return Ok(Response::json_error(401, "invalid_directory_token"));
+    };
+    let Some(token) = bearer_token(request) else {
+        return Ok(Response::json_error(401, "invalid_directory_token"));
+    };
+    let connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
+    if !crate::directory::authenticate(&connection, &token)? {
+        return Ok(Response::json_error(401, "invalid_directory_token"));
+    }
+    Ok(
+        Response::json_value(200, crate::directory::user_ids(&connection)?)
+            .with_header("cache-control", "no-store"),
+    )
 }
 
 fn handle_admin_users(request: &Request, config: &Config) -> io::Result<Response> {
@@ -1471,6 +1519,118 @@ mod tests {
     use tower::ServiceExt;
 
     use super::*;
+
+    #[test]
+    fn directory_http_requires_dedicated_token_and_admin_management() {
+        let db_path = test_db_path("http-user-directory");
+        initialize_runtime_database(&db_path).unwrap();
+        let connection = Connection::open(&db_path).unwrap();
+        connection
+            .execute(
+                "INSERT INTO users(id,email) VALUES('admin','private@example.com'),('user',NULL)",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "UPDATE app_meta SET admin_user_id='admin' WHERE id='APP'",
+                [],
+            )
+            .unwrap();
+        let admin = mint_session_tokens(&connection, "admin", "email_otp", "auth-mini", None, None)
+            .unwrap();
+        let user =
+            mint_session_tokens(&connection, "user", "email_otp", "auth-mini", None, None).unwrap();
+        let downstream = mint_session_tokens_for_audience(
+            &connection,
+            "admin",
+            "email_otp",
+            "http://localhost:7777",
+            &["linkit.example.com".to_owned()],
+            None,
+            None,
+        )
+        .unwrap();
+        let config = Config {
+            database: Some(crate::DatabaseConfig { db_path }),
+            ..Config::default()
+        };
+        let call = |method: &str, path: &str, token: &str| {
+            route_request(
+                &Request {
+                    method: method.to_owned(),
+                    path: path.to_owned(),
+                    headers: vec![("Authorization".to_owned(), format!("Bearer {token}"))],
+                    body: String::new(),
+                },
+                &config,
+            )
+            .unwrap()
+        };
+        for method in ["GET", "POST", "DELETE"] {
+            assert_eq!(call(method, "/admin/user-directory-token", "").status, 401);
+            assert_eq!(
+                call(method, "/admin/user-directory-token", &user.access_token).status,
+                403
+            );
+            assert_eq!(
+                call(
+                    method,
+                    "/admin/user-directory-token",
+                    &downstream.access_token
+                )
+                .status,
+                401
+            );
+        }
+        assert_eq!(
+            call("GET", "/integration/user-ids", &admin.access_token).status,
+            401
+        );
+        let created = call("POST", "/admin/user-directory-token", &admin.access_token);
+        assert_eq!(created.status, 201);
+        assert!(created.headers.contains(&("cache-control", "no-store")));
+        let token = serde_json::from_slice::<serde_json::Value>(&created.body).unwrap()["token"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let ids = call("GET", "/integration/user-ids", &token);
+        assert_eq!(ids.status, 200);
+        assert!(ids.headers.contains(&("cache-control", "no-store")));
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&ids.body).unwrap(),
+            serde_json::json!({"user_ids": ["admin", "user"]})
+        );
+        assert!(
+            !call("GET", "/admin/user-directory-token", &admin.access_token)
+                .body_text()
+                .contains(&token)
+        );
+        for path in [
+            "/me",
+            "/admin/users",
+            "/admin/config",
+            "/admin/database",
+            "/admin/user-directory-token",
+        ] {
+            assert_eq!(call("GET", path, &token).status, 401);
+        }
+        assert_eq!(
+            call("POST", "/admin/user-directory-token", &admin.access_token).status,
+            201
+        );
+        assert_eq!(call("GET", "/integration/user-ids", &token).status, 401);
+        let created = call("POST", "/admin/user-directory-token", &admin.access_token);
+        let token = serde_json::from_slice::<serde_json::Value>(&created.body).unwrap()["token"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert_eq!(
+            call("DELETE", "/admin/user-directory-token", &admin.access_token).status,
+            204
+        );
+        assert_eq!(call("GET", "/integration/user-ids", &token).status, 401);
+    }
 
     #[test]
     fn client_ip_uses_direct_peer_ip() {

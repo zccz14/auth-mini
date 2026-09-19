@@ -9,6 +9,26 @@ const LOCALE_STORAGE_KEY = 'auth-mini.gui.locale';
 
 export const en = {
   'common.language': 'Language',
+  'directory.title': 'User ID directory token',
+  'directory.description':
+    'Allows a backend such as Linkit to read only the complete user ID list. No email, session or credential information is included.',
+  'directory.configured':
+    'A token is configured. Its value cannot be retrieved.',
+  'directory.unconfigured':
+    'No token is configured. Directory access is disabled.',
+  'directory.generate': 'Generate token',
+  'directory.rotate': 'Replace token',
+  'directory.revoke': 'Revoke token',
+  'directory.confirmRotate':
+    'Replace the token? The previous token will stop working immediately. Update Linkit afterward.',
+  'directory.confirmRevoke': 'Revoke the token and stop directory access?',
+  'directory.once':
+    'Copy this token into Linkit’s administration settings now. It is only shown once.',
+  'directory.token': 'Generated directory token',
+  'directory.copy': 'Copy token',
+  'directory.dismiss': 'I have saved the token',
+  'directory.error': 'Unable to update the directory token.',
+  'directory.copyError': 'Unable to copy. Select and copy the token manually.',
   'common.english': 'English',
   'common.chinese': '中文',
   'common.loadingAuthMini': 'Loading auth-mini...',
@@ -312,6 +332,23 @@ type TranslationKey = keyof typeof en;
 
 export const zhCN: Record<TranslationKey, string> = {
   'common.language': '语言',
+  'directory.title': '用户 ID 目录 Token',
+  'directory.description':
+    '允许 Linkit 等后端仅读取完整用户 ID 列表，不包含邮箱、会话或凭据信息。',
+  'directory.configured': '已配置 Token，无法再次读取原值。',
+  'directory.unconfigured': '尚未配置 Token，目录访问已关闭。',
+  'directory.generate': '生成 Token',
+  'directory.rotate': '重置 Token',
+  'directory.revoke': '撤销 Token',
+  'directory.confirmRotate':
+    '确认重置 Token？旧 Token 将立即失效，之后需要更新 Linkit 配置。',
+  'directory.confirmRevoke': '确认撤销 Token 并关闭目录访问？',
+  'directory.once': '请立即复制此 Token 到 Linkit 管理设置，仅显示一次。',
+  'directory.token': '已生成的目录 Token',
+  'directory.copy': '复制 Token',
+  'directory.dismiss': '我已保存 Token',
+  'directory.error': '无法更新目录 Token。',
+  'directory.copyError': '复制失败，请选中 Token 手动复制。',
   'common.english': 'English',
   'common.chinese': '中文',
   'common.loadingAuthMini': '正在加载 auth-mini...',

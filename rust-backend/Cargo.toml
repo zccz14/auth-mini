@@ -1,6 +1,6 @@
 [package]
 name = "auth-mini"
-version = "0.4.12"
+version = "0.4.13"
 edition = "2021"
 publish = false
 
@@ -10,6 +10,7 @@ bs58 = "0.5.1"
 chrono = { version = "0.4.38", default-features = false, features = ["clock", "std"] }
 ed25519-dalek = "2.1.1"
 flate2 = "1.0.35"
+getrandom = "0.3.4"
 lettre = { version = "0.11.22", default-features = false, features = ["builder", "hostname", "smtp-transport", "native-tls"] }
 openssl-sys = { version = "0.9.116", features = ["vendored"] }
 rusqlite = { version = "0.32.1", features = ["bundled"] }

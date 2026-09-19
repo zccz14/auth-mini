@@ -17,6 +17,9 @@ const sdk = {
     resources: { fetch: vi.fn() },
     setup: { fetch: vi.fn(), initialize: vi.fn() },
     users: vi.fn(),
+    directoryToken: {
+      status: async () => ({ configured: false, created_at: null }),
+    },
   },
   ed25519: { register: vi.fn(), start: vi.fn(), verify: vi.fn() },
   email: { start: vi.fn(), verify: vi.fn() },
