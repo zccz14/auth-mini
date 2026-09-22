@@ -2,16 +2,33 @@
 
 本文说明业务 App 如何把用户跳转到 Auth Mini 登录页，并在登录成功后回到业务 App。
 
-这个方式适合业务 App 不想自己承载邮箱 OTP、Passkey 或 ED25519 登录页面，只希望把浏览器登录交给 Auth Mini，然后接收登录结果并继续业务流程。
+这个方式适合业务 App 不想自己承载邮箱 OTP、Passkey 或 ED25519 登录页面，只希望把浏览器登录交给 Auth Mini，然后接收登录结果并继续业务流程。Auth Mini 会复用浏览器里的主站会话：已登录的用户跳转过来时不会被要求再次登录，而是直接为业务 App 签发结果（见下文「静默复用主站会话」）。
 
 ## 核心流程
 
 1. 业务 App 生成一次性 `state`，并记录到自己的会话存储中。
 2. 业务 App 构造 Auth Mini 登录 URL，把回调地址放到可选的 `redirect_uri`。
-3. 用户在 Auth Mini 登录页完成邮箱 OTP、Passkey 或 ED25519 登录。
-4. Auth Mini 登录页显示本次登录的目标域名，登录成功后创建带有对应 `aud` 的会话 token；如果传了 `redirect_uri`，跳回业务 App，否则进入 Auth Mini 自己的登录后页面。
+3. Auth Mini 登录页检查浏览器中的主站会话：已有有效主站会话时直接进入第 4 步；否则先由用户完成邮箱 OTP、Passkey 或 ED25519 登录，并把登录结果保存为新的主站会话。
+4. Auth Mini 登录页显示本次登录的目标域名，并用主站会话为业务 App 签发一个带对应 `aud` 的独立会话 token；如果传了 `redirect_uri`，跳回业务 App，否则进入 Auth Mini 自己的登录后页面。
 5. 业务 App 的回调页读取 URL fragment 中的 token 参数，校验 `state`，保存会话状态。
 6. 业务 App 清理地址栏中的 token 参数，然后进入原本的业务页面。
+
+## 静默复用主站会话
+
+只要用户在 Auth Mini 页面上完成过一次登录（无论是否由某个业务 App 跳转触发），浏览器里就会保存一个「主站会话」。
+
+业务 App 把用户跳转到登录页时：
+
+- 浏览器里已有有效的主站会话：登录页不显示登录表单，直接用主站会话为业务 App 签发一个新的独立会话，然后立即跳回业务 App。
+- 没有主站会话（或已失效）：登录页显示登录表单；登录成功后先建立新的主站会话，再完成上述签发。
+
+这个流程对业务 App 透明：跳转 URL、回调 fragment 字段和校验方式都不变。
+
+经由主站会话签发的会话，其 `amr` claim 会包含 `sso`，并保留主站会话的登录方式，例如 `["sso", "webauthn"]`。业务后端可以把 `sso` 作为「该会话由主站会话代签」的标记。
+
+主站登出（`POST /session/logout`）只吊销主站会话本身，不会吊销已经签发给业务 App 的会话；需要吊销某个业务会话时，在 Auth Mini 的会话管理页面手动踢出即可。反过来，主站会话被登出后，下一次业务 App 跳转登录会因为找不到有效主站会话而回到登录表单。
+
+主站会话保存在浏览器的本地存储中：用户长时间不访问 Auth Mini、清理浏览器数据，或在其他设备上踢出会话，都会让静默复用失效并自然回退到登录表单。
 
 ## 发起登录
 
@@ -178,7 +195,7 @@ Auth Mini 登录页负责完成具体登录方式：
 - Passkey：调用 `POST /webauthn/authenticate/options` 和 `POST /webauthn/authenticate/verify`。
 - ED25519：完成 start/verify 挑战签名流程。
 
-这些登录成功后都会创建 Auth Mini session，并得到 `session_id`、`access_token`、`refresh_token`、`token_type` 和 `expires_in`。跳转回业务 App 时，只把业务 App 需要立刻采用的结果放进回调 URL；Auth Mini 登录页会在回跳前清除自己的浏览器本地会话副本，不会在下次打开 Auth Mini 时恢复面向外部 audience 的 session。该操作不会撤销回调中交给业务 App 的 session。业务 App 是否直接保存这些 token，还是交给自己的后端换业务会话，由业务 App 决定。
+这些登录成功后都会创建 Auth Mini session，并得到 `session_id`、`access_token`、`refresh_token`、`token_type` 和 `expires_in`。跳转回业务 App 时，只把业务 App 需要立刻采用的结果放进回调 URL；面向业务 App 的 audience token 不会留在 Auth Mini 页面的浏览器存储里，浏览器里保存的是用于后续复用的主站会话。该操作不会撤销回调中交给业务 App 的 session。业务 App 是否直接保存这些 token，还是交给自己的后端换业务会话，由业务 App 决定。
 
 ## 业务后端如何信任 token
 
@@ -188,13 +205,14 @@ Auth Mini 登录页负责完成具体登录方式：
 Authorization: Bearer <access_token>
 ```
 
-业务后端应使用 Auth Mini 的 `GET /jwks` 验证 JWT 签名，并检查 issuer、`aud`、过期时间和自己的业务约束。`aud` 只表示 token 的目标资源；业务后端仍需根据 `sub`、角色或 ACL 判断该用户可以执行哪些操作。更多后端验证方式见 [Backend JWT verification](./backend-jwt-verification.md)。
+业务后端应使用 Auth Mini 的 `GET /jwks` 验证 JWT 签名，并检查 issuer、`aud`、过期时间和自己的业务约束。`aud` 只表示 token 的目标资源；业务后端仍需根据 `sub`、角色或 ACL 判断该用户可以执行哪些操作。如果后端依赖 `amr`，需要接受 `sso`（含源登录方式的双值形式）。更多后端验证方式见 [Backend JWT verification](./backend-jwt-verification.md)。
 
 ## 安全边界
 
 - 非 loopback `redirect_uri` 必须使用 HTTPS；HTTP 只允许 `localhost`、`127.0.0.1` 和 `::1`。
 - 普通回调的 `aud` 只能从 `redirect_uri` hostname 派生；本地开发回调必须显式提供 hostname audience。
-- 登录页会显示实际签发的 audience。用户应确认目标域名后再继续登录。
+- 登录页会显示实际签发的 audience；静默复用已有主站会话时不会再展示这个确认页面。
+- 非 loopback 的跳转目标不能把 Auth Mini 自身 issuer 的 hostname 放进 `audiences`，这类请求会被拒绝。
 - 业务后端必须同时校验 JWT 签名、issuer 和自己的 audience，并继续执行用户级授权。
 - `state` 应是一次性随机值，回调校验成功后立即删除。
 - token 不要放在 query string；query string 更容易出现在服务端日志、代理日志和分析系统中。

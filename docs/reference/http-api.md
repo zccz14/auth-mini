@@ -20,11 +20,12 @@ If you want a typed low-level client for that contract, use `auth-mini/sdk/api` 
 
 Send `Authorization: Bearer <access_token>`.
 
-Access tokens issued by this API include an `amr` (Authentication Methods References) claim so downstream consumers can tell which sign-in method established the session. Current session-issuing flows produce `amr` values aligned with the completed login step, such as `email_otp` for email OTP sign-in, `webauthn` for passkey sign-in, and `ed25519` for registered device-key sign-in.
+Access tokens issued by this API include an `amr` (Authentication Methods References) claim so downstream consumers can tell which sign-in method established the session. Current session-issuing flows produce `amr` values aligned with the completed login step, such as `email_otp` for email OTP sign-in, `webauthn` for passkey sign-in, and `ed25519` for registered device-key sign-in. Sessions delegated from an existing main-site session through `POST /session/authorize` carry `sso` together with the source method, for example `["sso", "webauthn"]`.
 
 - `GET /me`
 - `POST /me/email/start` sends an OTP to a new email for the authenticated user.
 - `POST /me/email/verify` verifies that OTP and changes the authenticated user email.
+- `POST /session/authorize` delegates a new downstream session from the caller's main-site session.
 - `POST /session/logout`
 - `POST /session/{session_id}/logout`
 - `GET /ed25519/credentials`
@@ -105,6 +106,32 @@ Request body:
 ```
 
 Session-issuing endpoints include `session_id` so clients can later call `POST /session/refresh`.
+
+Response shape:
+
+```json
+{
+  "session_id": "...",
+  "access_token": "...",
+  "token_type": "Bearer",
+  "expires_in": 900,
+  "refresh_token": "..."
+}
+```
+
+### `POST /session/authorize`
+
+Delegates a new session for a downstream audience from an authenticated main-site session.
+
+Request: send `Authorization: Bearer <access_token>` for a session whose audience includes the Auth Mini issuer hostname. `redirect_uri`, `aud`, and `audiences` follow the same rules as the login endpoints. A non-loopback target cannot request the issuer hostname as an audience.
+
+Request body:
+
+```json
+{ "redirect_uri": "https://app.example.com/auth/callback" }
+```
+
+The delegated session records `sso` as its authentication method, and its access token carries the source method together with `sso` in its `amr` claim. `POST /session/refresh` keeps that claim. The delegated session is independent from the main-site session: logging out of the main site does not revoke it.
 
 Response shape:
 

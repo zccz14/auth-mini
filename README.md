@@ -16,6 +16,7 @@ Minimal, opinionated authentication server for apps that just need a solid authe
   - Issue JSON Web Token (JWT) access tokens for backend stateless verification
   - CURRENT/STANDBY JWKS key pairs for smooth key rotation
   - Issue opaque refresh tokens for long-term sessions and easy revocation while keeping JWTs short-lived
+  - Silent cross-app SSO: delegate downstream sessions from the browser's main-site session over the login redirect
 - You control the server and data. Not Google. Not AWS. Not Auth0. You.
   - Simple SQLite storage without extra Database servers (no Postgres, MySQL, Redis, etc. required)
   - Wildcard CORS (`Access-Control-Allow-Origin: *`) for cross-origin front-ends.
@@ -136,6 +137,25 @@ sequenceDiagram
     Backend->>Backend: Verify JWT signature and claims
     Backend-->>Frontend: Protected resource
 ```
+
+### Cross-app silent SSO
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant App as Business App
+    participant Auth as Auth Mini Server
+
+    User->>App: Open a page that requires sign-in
+    App->>Auth: Redirect to the login page (redirect_uri, state)
+    Note over Auth: The browser already holds the Auth Mini main-site session
+    Auth->>Auth: Delegate an app-audience session (amr includes "sso")
+    Auth->>App: Redirect back with session + tokens in the fragment
+    App->>User: Continue signed in
+```
+
+When the browser has no main-site session yet, the login page first completes an email OTP, passkey, or Ed25519 sign-in, stores the main-site session, and then delegates the app session the same way. See [Login redirect integration](docs/integration/login-redirect.md) for the wire contract.
 
 ## Quick Start
 
