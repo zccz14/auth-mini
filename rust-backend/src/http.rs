@@ -74,6 +74,8 @@ pub async fn run_server(config: Config) -> Result<(), Box<dyn std::error::Error>
         initialize_runtime_database(&database.db_path)?;
     }
 
+    crate::request_audit::initialize();
+
     let listener = tokio::net::TcpListener::bind((config.host.as_str(), config.port)).await?;
     eprintln!(
         "auth-mini rust backend listening on {}:{}",
@@ -108,6 +110,7 @@ fn router(config: Config) -> Router {
         .route("/admin/jwks/rotate", any(axum_request))
         .route("/admin/database", any(axum_request))
         .route("/admin/resources", any(axum_request))
+        .route("/admin/request-audit", any(axum_request))
         .route("/email/start", any(axum_request))
         .route("/email/verify", any(axum_request))
         .route("/remote-login/start", any(axum_request))
@@ -138,6 +141,101 @@ fn router(config: Config) -> Router {
             config: Arc::new(config),
             blocking_gate: Arc::new(Semaphore::new(1)),
         })
+}
+
+// Audit labels for the API endpoints registered in `router()`. Keep in sync when routes
+// change; GUI asset requests under `/web` are intentionally outside the audited API surface.
+fn audit_endpoint(method: &str, path: &str) -> Option<String> {
+    if audit_static_endpoint(method, path) {
+        return Some(path.to_string());
+    }
+
+    audit_dynamic_endpoint(method, path)
+}
+
+fn audit_static_endpoint(method: &str, path: &str) -> bool {
+    matches!(
+        (method, path),
+        ("GET", "/healthz")
+            | ("GET", "/openapi.yaml")
+            | ("GET", "/openapi.json")
+            | ("GET", "/admin/setup")
+            | ("PUT", "/admin/setup")
+            | ("GET", "/admin/config")
+            | ("PUT", "/admin/config")
+            | ("GET", "/admin/users")
+            | ("GET", "/admin/user-directory-token")
+            | ("POST", "/admin/user-directory-token")
+            | ("DELETE", "/admin/user-directory-token")
+            | ("GET", "/integration/user-ids")
+            | ("GET", "/admin/jwks")
+            | ("POST", "/admin/jwks/rotate")
+            | ("GET", "/admin/database")
+            | ("GET", "/admin/resources")
+            | ("GET", "/admin/request-audit")
+            | ("POST", "/email/start")
+            | ("POST", "/email/verify")
+            | ("POST", "/remote-login/start")
+            | ("GET", "/remote-login/pending")
+            | ("POST", "/remote-login/claim")
+            | ("POST", "/me/email/start")
+            | ("POST", "/me/email/verify")
+            | ("POST", "/session/refresh")
+            | ("POST", "/session/logout")
+            | ("GET", "/ed25519/credentials")
+            | ("POST", "/ed25519/credentials")
+            | ("POST", "/ed25519/start")
+            | ("POST", "/ed25519/verify")
+            | ("POST", "/webauthn/register/options")
+            | ("POST", "/webauthn/register/verify")
+            | ("POST", "/webauthn/authenticate/options")
+            | ("POST", "/webauthn/authenticate/verify")
+            | ("GET", "/me")
+            | ("GET", "/jwks")
+    )
+}
+
+fn audit_dynamic_endpoint(method: &str, path: &str) -> Option<String> {
+    if method == "POST" {
+        if let Some(action) = remote_login_audit_action(path) {
+            return Some(format!("/remote-login/{{request_id}}/{action}"));
+        }
+        if path.starts_with("/session/") && path.ends_with("/logout") {
+            return Some("/session/{session_id}/logout".to_string());
+        }
+    }
+
+    if (method == "PATCH" || method == "DELETE")
+        && single_path_segment(path, "/ed25519/credentials/")
+    {
+        return Some("/ed25519/credentials/{id}".to_string());
+    }
+
+    if method == "DELETE" && single_path_segment(path, "/webauthn/credentials/") {
+        return Some("/webauthn/credentials/{id}".to_string());
+    }
+
+    None
+}
+
+fn remote_login_audit_action(path: &str) -> Option<&'static str> {
+    let rest = path.strip_prefix("/remote-login/")?;
+    let (request_id, action) = rest.split_once('/')?;
+    if !is_uuid_like(request_id) {
+        return None;
+    }
+
+    match action {
+        "approve" => Some("approve"),
+        "deny" => Some("deny"),
+        "exchange" => Some("exchange"),
+        _ => None,
+    }
+}
+
+fn single_path_segment(path: &str, prefix: &str) -> bool {
+    path.strip_prefix(prefix)
+        .is_some_and(|segment| !segment.is_empty() && !segment.contains('/'))
 }
 
 async fn axum_request(
@@ -175,6 +273,9 @@ async fn axum_request(
         headers,
         body: String::from_utf8_lossy(&body).into_owned(),
     };
+    if let Some(endpoint) = audit_endpoint(&request.method, &request.path) {
+        crate::request_audit::record(&request.method, &endpoint);
+    }
     let config = state.config;
     let permit = match state.blocking_gate.acquire_owned().await {
         Ok(permit) => permit,
@@ -269,6 +370,10 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
 
     if request.method == "GET" && request.path == "/admin/resources" {
         return handle_admin_resources(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "GET" && request.path == "/admin/request-audit" {
+        return handle_admin_request_audit(request, config).map(|response| cors(request, response));
     }
 
     if request.method == "GET" {
@@ -660,6 +765,20 @@ fn handle_admin_resources(request: &Request, config: &Config) -> io::Result<Resp
     Ok(Response::json_value(
         200,
         serde_json::to_value(snapshot).map_err(io::Error::other)?,
+    ))
+}
+
+fn handle_admin_request_audit(request: &Request, config: &Config) -> io::Result<Response> {
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    if require_admin_auth(&connection, &auth).is_err() {
+        return Ok(Response::json_error(403, "admin_required"));
+    }
+
+    Ok(Response::json_value(
+        200,
+        serde_json::to_value(crate::request_audit::snapshot()).map_err(io::Error::other)?,
     ))
 }
 
@@ -3957,6 +4076,235 @@ mod tests {
         assert!(response.body_text().contains("\"cpu\""));
         assert!(response.body_text().contains("\"memory\""));
         assert!(response.body_text().contains("\"sqlite\""));
+    }
+
+    #[test]
+    fn audit_endpoint_labels_api_routes() {
+        let cases = [
+            ("GET", "/healthz", Some("/healthz")),
+            ("GET", "/openapi.yaml", Some("/openapi.yaml")),
+            ("GET", "/openapi.json", Some("/openapi.json")),
+            ("GET", "/admin/setup", Some("/admin/setup")),
+            ("PUT", "/admin/setup", Some("/admin/setup")),
+            ("GET", "/admin/config", Some("/admin/config")),
+            ("PUT", "/admin/config", Some("/admin/config")),
+            ("GET", "/admin/users", Some("/admin/users")),
+            (
+                "GET",
+                "/admin/user-directory-token",
+                Some("/admin/user-directory-token"),
+            ),
+            (
+                "POST",
+                "/admin/user-directory-token",
+                Some("/admin/user-directory-token"),
+            ),
+            (
+                "DELETE",
+                "/admin/user-directory-token",
+                Some("/admin/user-directory-token"),
+            ),
+            (
+                "GET",
+                "/integration/user-ids",
+                Some("/integration/user-ids"),
+            ),
+            ("GET", "/admin/jwks", Some("/admin/jwks")),
+            ("POST", "/admin/jwks/rotate", Some("/admin/jwks/rotate")),
+            ("GET", "/admin/database", Some("/admin/database")),
+            ("GET", "/admin/resources", Some("/admin/resources")),
+            ("GET", "/admin/request-audit", Some("/admin/request-audit")),
+            ("POST", "/email/start", Some("/email/start")),
+            ("POST", "/email/verify", Some("/email/verify")),
+            ("POST", "/remote-login/start", Some("/remote-login/start")),
+            (
+                "GET",
+                "/remote-login/pending",
+                Some("/remote-login/pending"),
+            ),
+            ("POST", "/remote-login/claim", Some("/remote-login/claim")),
+            ("POST", "/me/email/start", Some("/me/email/start")),
+            ("POST", "/me/email/verify", Some("/me/email/verify")),
+            ("POST", "/session/refresh", Some("/session/refresh")),
+            ("POST", "/session/logout", Some("/session/logout")),
+            ("GET", "/ed25519/credentials", Some("/ed25519/credentials")),
+            ("POST", "/ed25519/credentials", Some("/ed25519/credentials")),
+            ("POST", "/ed25519/start", Some("/ed25519/start")),
+            ("POST", "/ed25519/verify", Some("/ed25519/verify")),
+            (
+                "POST",
+                "/webauthn/register/options",
+                Some("/webauthn/register/options"),
+            ),
+            (
+                "POST",
+                "/webauthn/register/verify",
+                Some("/webauthn/register/verify"),
+            ),
+            (
+                "POST",
+                "/webauthn/authenticate/options",
+                Some("/webauthn/authenticate/options"),
+            ),
+            (
+                "POST",
+                "/webauthn/authenticate/verify",
+                Some("/webauthn/authenticate/verify"),
+            ),
+            ("GET", "/me", Some("/me")),
+            ("GET", "/jwks", Some("/jwks")),
+            (
+                "POST",
+                "/session/00000000-0000-4000-8000-000000000000/logout",
+                Some("/session/{session_id}/logout"),
+            ),
+            (
+                "POST",
+                "/remote-login/00000000-0000-4000-8000-000000000000/approve",
+                Some("/remote-login/{request_id}/approve"),
+            ),
+            (
+                "POST",
+                "/remote-login/00000000-0000-4000-8000-000000000000/deny",
+                Some("/remote-login/{request_id}/deny"),
+            ),
+            (
+                "POST",
+                "/remote-login/00000000-0000-4000-8000-000000000000/exchange",
+                Some("/remote-login/{request_id}/exchange"),
+            ),
+            (
+                "PATCH",
+                "/ed25519/credentials/credential-1",
+                Some("/ed25519/credentials/{id}"),
+            ),
+            (
+                "DELETE",
+                "/ed25519/credentials/credential-1",
+                Some("/ed25519/credentials/{id}"),
+            ),
+            (
+                "DELETE",
+                "/webauthn/credentials/credential-1",
+                Some("/webauthn/credentials/{id}"),
+            ),
+            ("GET", "/email/start", None),
+            ("GET", "/ed25519/credentials/credential-1", None),
+            ("PATCH", "/webauthn/credentials/credential-1", None),
+            ("POST", "/remote-login/not-a-uuid/approve", None),
+            (
+                "POST",
+                "/remote-login/00000000-0000-4000-8000-000000000000/approve/extra",
+                None,
+            ),
+            ("GET", "/healthz?probe=1", None),
+            ("GET", "/web", None),
+            ("GET", "/web/", None),
+            ("GET", "/web/assets/index.js", None),
+            ("GET", "/unknown", None),
+        ];
+
+        for (method, path, expected) in cases {
+            assert_eq!(
+                audit_endpoint(method, path).as_deref(),
+                expected,
+                "unexpected audit label for {method} {path}"
+            );
+        }
+    }
+
+    #[test]
+    fn serves_request_audit_only_to_the_administrator() {
+        let db_path = test_db_path("http-admin-request-audit");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        let admin_pair = mint_session_tokens(
+            &connection,
+            "admin-user",
+            "email_otp",
+            "auth-mini",
+            None,
+            None,
+        )
+        .expect("session tokens mint");
+        let user_pair =
+            mint_session_tokens(&connection, "user-1", "email_otp", "auth-mini", None, None)
+                .expect("user session tokens mint");
+        connection
+            .execute(
+                "UPDATE app_meta SET admin_user_id = 'admin-user' WHERE id = 'APP'",
+                [],
+            )
+            .expect("admin user configured");
+        drop(connection);
+        let config = Config {
+            database: Some(crate::DatabaseConfig { db_path }),
+            ..Config::default()
+        };
+
+        crate::request_audit::record("POST", "/email/start");
+        crate::request_audit::record("POST", "/email/start");
+        crate::request_audit::record("GET", "/jwks");
+
+        let unauthorized = route_request(
+            &Request {
+                method: "GET".to_string(),
+                path: "/admin/request-audit".to_string(),
+                headers: Vec::new(),
+                body: String::new(),
+            },
+            &config,
+        )
+        .expect("unauthorized request audit response builds");
+        let forbidden = route_request(
+            &Request {
+                method: "GET".to_string(),
+                path: "/admin/request-audit".to_string(),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", user_pair.access_token),
+                )],
+                body: String::new(),
+            },
+            &config,
+        )
+        .expect("non-admin request audit response builds");
+        let response = route_request(
+            &Request {
+                method: "GET".to_string(),
+                path: "/admin/request-audit".to_string(),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", admin_pair.access_token),
+                )],
+                body: String::new(),
+            },
+            &config,
+        )
+        .expect("admin request audit response builds");
+
+        assert_eq!(
+            unauthorized,
+            Response::json_error(401, "invalid_access_token")
+        );
+        assert_eq!(forbidden, Response::json_error(403, "admin_required"));
+        assert_eq!(response.status, 200);
+        let body: serde_json::Value =
+            serde_json::from_str(&response.body_text()).expect("request audit response parses");
+        assert!(body["started_at"].is_i64());
+        let endpoints = body["endpoints"]
+            .as_array()
+            .expect("request audit endpoints are an array");
+        assert!(endpoints.contains(&serde_json::json!({
+            "method": "POST",
+            "endpoint": "/email/start",
+            "count": 2
+        })));
+        assert!(endpoints.contains(&serde_json::json!({
+            "method": "GET",
+            "endpoint": "/jwks",
+            "count": 1
+        })));
     }
 
     #[test]
