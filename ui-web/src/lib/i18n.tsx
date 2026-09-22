@@ -117,8 +117,6 @@ export const en = {
   'login.ed25519.signIn': 'Sign in with ED25519',
   'login.ed25519.signingIn': 'Signing in...',
   'login.email.sent': 'Check your email for the one-time code.',
-  'login.signedIn': 'Signed in.',
-  'login.redirecting': 'Redirecting back to the application.',
   'login.ssoChecking': 'Checking your sign-in status...',
   'login.ssoRedirecting': 'Continuing with your existing sign-in...',
   'login.ssoUnavailable':
@@ -453,8 +451,6 @@ export const zhCN: Record<TranslationKey, string> = {
   'login.ed25519.signIn': '使用 ED25519 登录',
   'login.ed25519.signingIn': '正在登录...',
   'login.email.sent': '请在邮箱中查收一次性验证码。',
-  'login.signedIn': '已登录。',
-  'login.redirecting': '正在返回应用。',
   'login.ssoChecking': '正在检查登录状态...',
   'login.ssoRedirecting': '正在使用已有登录状态继续...',
   'login.ssoUnavailable': '无法使用已有登录状态，请重新登录后继续。',

@@ -210,6 +210,58 @@ export function authenticationTarget(
       };
 }
 
+// INVARIANT: the rebuilt address parses back into the same request, so the
+// authorize step re-derives its target from the URL alone.
+export function authorizeLoginPath(
+  request: Extract<LoginRequest, { status: 'ready' }>,
+): string {
+  const params = new URLSearchParams();
+  const target = authenticationTarget(request);
+
+  if ('redirect_uri' in target && target.redirect_uri) {
+    params.set('redirect_uri', target.redirect_uri);
+    if ('audiences' in target && target.audiences) {
+      params.set('audiences', JSON.stringify(target.audiences));
+    } else if ('aud' in target && target.aud) {
+      params.set('aud', target.aud);
+    }
+  }
+
+  if (request.state !== null) {
+    params.set('state', request.state);
+  }
+
+  const query = params.toString();
+  return query ? `/login?${query}` : '/login';
+}
+
+// INVARIANT: the login route serves `return_to` right after signing in the
+// main site, and `return_to` only ever holds an authorize address.
+export function selfSignInPath(authorizePath: string): string {
+  return `/login?${new URLSearchParams({ return_to: authorizePath }).toString()}`;
+}
+
+// Only same-origin paths are returned, so a crafted login link cannot turn the
+// login page into an open redirect.
+export function resolveReturnTo(value: string | null): string {
+  if (!value || !value.startsWith('/') || value.startsWith('//')) {
+    return '/';
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(value, window.location.origin);
+  } catch {
+    return '/';
+  }
+
+  if (parsed.origin !== window.location.origin) {
+    return '/';
+  }
+
+  return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+}
+
 function parseAudiences(value: string): string[] | null {
   try {
     const values = JSON.parse(value);

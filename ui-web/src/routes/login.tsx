@@ -6,7 +6,7 @@ import {
   type CSSProperties,
   type FormEvent,
 } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '@/app/providers/app-provider';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -22,10 +22,13 @@ import { LanguageSelect } from '@/components/app/language-select';
 import { useI18n } from '@/lib/i18n';
 import { REGEXP_ONLY_DIGITS } from 'input-otp';
 import {
-  buildLoginCallbackUrl,
+  authorizeLoginPath,
   authenticationTarget,
+  buildLoginCallbackUrl,
   issuerAudience,
   parseLoginRequest,
+  resolveReturnTo,
+  selfSignInPath,
   sendLoginCallback,
   toAppSessionTokens,
   type LoginCallbackTokens,
@@ -45,7 +48,7 @@ type PendingAction =
   | 'ed25519'
   | 'remote-login';
 
-const PASSKEY_REGISTRATION_PATH = '/passkey/register';
+const SSO_UNAVAILABLE_NOTICE = 'sso-unavailable';
 
 export function LoginRoute() {
   const location = useLocation();
@@ -56,11 +59,14 @@ export function LoginRoute() {
     () => parseLoginRequest(location.search, window.location.search),
     [location.search],
   );
-  const selfLoginReturnPath =
-    new URLSearchParams(location.search).get('return_to') ===
-    PASSKEY_REGISTRATION_PATH
-      ? PASSKEY_REGISTRATION_PATH
-      : '/';
+  const routeParams = useMemo(
+    () => new URLSearchParams(location.search),
+    [location.search],
+  );
+  const signInFirstStage = routeParams.has('return_to');
+  const returnTo = resolveReturnTo(routeParams.get('return_to'));
+  const ssoUnavailableNotice =
+    location.state?.notice === SSO_UNAVAILABLE_NOTICE;
   const [method, setMethod] = useState<LoginMethod>('email');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
@@ -76,9 +82,7 @@ export function LoginRoute() {
   );
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [ssoPhase, setSsoPhase] = useState<
-    'idle' | 'redirecting' | 'unavailable'
-  >('idle');
+  const [ssoPhase, setSsoPhase] = useState<'idle' | 'redirecting'>('idle');
   const ssoAttemptRef = useRef(false);
 
   const sdkReady = Boolean(sdk);
@@ -86,29 +90,19 @@ export function LoginRoute() {
   const privateKeyError =
     privateKey.trim() === '' ? '' : validateEd25519PrivateKey(privateKey);
   const canStartEmail =
-    sdkReady &&
-    request.status === 'ready' &&
-    email.trim() !== '' &&
-    pendingAction === null;
+    sdkReady && email.trim() !== '' && pendingAction === null;
   const canVerifyEmail =
     sdkReady &&
-    request.status === 'ready' &&
     email.trim() !== '' &&
     code.trim() !== '' &&
     pendingAction === null;
   const canUseEd25519 =
     sdkReady &&
-    request.status === 'ready' &&
     privateKey.trim() !== '' &&
     privateKeyError === '' &&
     pendingAction === null;
-  const canUsePasskey =
-    sdkReady &&
-    request.status === 'ready' &&
-    passkeyConfigured &&
-    pendingAction === null;
-  const canStartRemoteLogin =
-    sdkReady && request.status === 'ready' && pendingAction === null;
+  const canUsePasskey = sdkReady && passkeyConfigured && pendingAction === null;
+  const canStartRemoteLogin = sdkReady && pendingAction === null;
   const brandName = setupState?.brand_name ?? 'auth-mini';
   const logoSrc = `${import.meta.env.BASE_URL}auth-mini-logo.png`;
   const issuerHostname = setupState ? issuerAudience(setupState.issuer) : null;
@@ -121,6 +115,7 @@ export function LoginRoute() {
       request.status === 'ready' && request.target.kind !== 'self'
         ? {
             params: authenticationTarget(request),
+            authorizePath: authorizeLoginPath(request),
             redirectUri: request.target.redirectUri,
             state: request.state,
           }
@@ -130,17 +125,31 @@ export function LoginRoute() {
   const persistedSession = Boolean(session.sessionId && session.refreshToken);
   const ssoPending =
     delegationTarget !== null &&
-    ssoPhase !== 'unavailable' &&
-    (ssoPhase === 'redirecting' ||
-      !sdkReady ||
-      (ssoPhase === 'idle' && persistedSession));
+    !signInFirstStage &&
+    (ssoPhase === 'redirecting' || !sdkReady || persistedSession);
+  const signInFirstTarget =
+    delegationTarget !== null &&
+    !signInFirstStage &&
+    sdkReady &&
+    !persistedSession
+      ? selfSignInPath(delegationTarget.authorizePath)
+      : null;
+  const resumeTarget =
+    signInFirstStage && sdkReady && persistedSession && !ssoUnavailableNotice
+      ? returnTo
+      : null;
+  const delegationDestination =
+    request.status === 'ready' && request.target.kind !== 'self' ? (
+      <DelegationDestination target={request.target} />
+    ) : null;
 
   useEffect(() => {
     if (
       !sdk ||
       !delegationTarget ||
-      ssoAttemptRef.current ||
-      !persistedSession
+      !persistedSession ||
+      signInFirstStage ||
+      ssoAttemptRef.current
     ) {
       return;
     }
@@ -159,10 +168,13 @@ export function LoginRoute() {
         );
       })
       .catch(() => {
-        setError(t('login.ssoUnavailable'));
-        setSsoPhase('unavailable');
+        ssoAttemptRef.current = false;
+        navigate(selfSignInPath(delegationTarget.authorizePath), {
+          replace: true,
+          state: { notice: SSO_UNAVAILABLE_NOTICE },
+        });
       });
-  }, [delegationTarget, persistedSession, sdk, t]);
+  }, [delegationTarget, navigate, persistedSession, sdk, signInFirstStage]);
 
   async function handleEmailStart(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -282,40 +294,14 @@ export function LoginRoute() {
   }
 
   async function completeLogin(tokens: LoginCallbackTokens) {
-    if (request.status !== 'ready') {
-      setError(request.error);
-      return;
-    }
-
     if (!sdk) return;
 
-    if (request.target.kind === 'self') {
-      await sdk.session.acceptRedirectCallback(toAppSessionTokens(tokens));
-      setMessage(t('login.signedIn'));
-      navigate(selfLoginReturnPath);
-      return;
-    }
-
-    if (!delegationTarget) return;
-
-    ssoAttemptRef.current = true;
-    setSsoPhase('redirecting');
-    setMessage(t('login.redirecting'));
-
-    try {
-      await sdk.session.acceptRedirectCallback(toAppSessionTokens(tokens));
-      const appTokens = await sdk.authorizeSession(delegationTarget.params);
-      sendLoginCallback(
-        buildLoginCallbackUrl({
-          redirectUri: delegationTarget.redirectUri,
-          state: delegationTarget.state,
-          tokens: appTokens,
-        }),
-      );
-    } catch (cause) {
-      setSsoPhase('unavailable');
-      setError(formatLoginError(cause, t('login.signInError')));
-    }
+    await sdk.session.acceptRedirectCallback(toAppSessionTokens(tokens));
+    // INVARIANT: the authorize step re-runs after this navigation, so its
+    // attempt guard must be cleared for the freshly issued session.
+    ssoAttemptRef.current = false;
+    setSsoPhase('idle');
+    navigate(returnTo);
   }
 
   async function runLogin(action: PendingAction, task: () => Promise<void>) {
@@ -330,6 +316,14 @@ export function LoginRoute() {
     } finally {
       setPendingAction(null);
     }
+  }
+
+  if (signInFirstTarget !== null) {
+    return <Navigate replace to={signInFirstTarget} />;
+  }
+
+  if (resumeTarget !== null) {
+    return <Navigate replace to={resumeTarget} />;
   }
 
   if (ssoPending) {
@@ -356,6 +350,9 @@ export function LoginRoute() {
                   : t('login.ssoChecking')}
               </h1>
             </div>
+            {delegationDestination ? (
+              <div className="mt-5 space-y-4">{delegationDestination}</div>
+            ) : null}
           </div>
         </section>
       </main>
@@ -388,12 +385,13 @@ export function LoginRoute() {
           </div>
 
           <div className="mt-5 space-y-4">
-            {request.status === 'ready' ? (
-              <LoginDestination
-                issuerHostname={issuerHostname}
-                request={request}
-              />
+            {ssoUnavailableNotice ? (
+              <Alert className="border-amber-200 bg-amber-50 text-amber-900">
+                <AlertDescription>{t('login.ssoUnavailable')}</AlertDescription>
+              </Alert>
             ) : null}
+
+            <SelfDestination issuerHostname={issuerHostname} />
 
             {request.status === 'invalid' ? (
               <Alert className="border-rose-200 bg-rose-50 text-rose-900">
@@ -552,45 +550,49 @@ export function LoginRoute() {
   );
 }
 
-function LoginDestination({
+type LoginRequestTarget = Extract<LoginRequest, { status: 'ready' }>['target'];
+
+function SelfDestination({
   issuerHostname,
-  request,
 }: {
   issuerHostname: string | null;
-  request: Extract<LoginRequest, { status: 'ready' }>;
 }) {
   const { t } = useI18n();
 
-  if (request.target.kind === 'self') {
-    return (
-      <Alert>
-        <AlertTitle>{t('login.destination.self')}</AlertTitle>
-        <AlertDescription className="mt-2 flex flex-col items-start gap-2">
-          {issuerHostname ? (
-            <Badge className="max-w-full break-all text-sm">
-              {issuerHostname}
-            </Badge>
-          ) : null}
-          <span>{t('login.destination.selfDescription')}</span>
-        </AlertDescription>
-      </Alert>
-    );
-  }
+  return (
+    <Alert>
+      <AlertTitle>{t('login.destination.self')}</AlertTitle>
+      <AlertDescription className="mt-2 flex flex-col items-start gap-2">
+        {issuerHostname ? (
+          <Badge className="max-w-full break-all text-sm">
+            {issuerHostname}
+          </Badge>
+        ) : null}
+        <span>{t('login.destination.selfDescription')}</span>
+      </AlertDescription>
+    </Alert>
+  );
+}
 
-  if (request.target.kind === 'loopback') {
+function DelegationDestination({
+  target,
+}: {
+  target: Exclude<LoginRequestTarget, { kind: 'self' }>;
+}) {
+  const { t } = useI18n();
+
+  if (target.kind === 'loopback') {
     return (
       <Alert>
         <AlertTitle>{t('login.destination.local')}</AlertTitle>
         <AlertDescription className="mt-2 flex flex-col items-start gap-2">
           <Badge className="max-w-full break-all text-sm">
-            {request.target.displayHost}
+            {target.displayHost}
           </Badge>
           <span>
             {t('login.destination.requestingAudience')}{' '}
             <strong className="break-all font-semibold">
-              {(request.target.audiences ?? [request.target.audience]).join(
-                ', ',
-              )}
+              {(target.audiences ?? [target.audience]).join(', ')}
             </strong>
           </span>
         </AlertDescription>
@@ -603,7 +605,7 @@ function LoginDestination({
       <AlertTitle>{t('login.destination.remote')}</AlertTitle>
       <AlertDescription className="mt-2">
         <Badge className="max-w-full break-all text-sm">
-          {(request.target.audiences ?? [request.target.audience]).join(', ')}
+          {(target.audiences ?? [target.audience]).join(', ')}
         </Badge>
       </AlertDescription>
     </Alert>
