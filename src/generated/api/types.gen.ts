@@ -108,6 +108,23 @@ export type SqliteResourceSnapshot = {
     freelist_percent: number;
 };
 
+export type RequestAuditSnapshot = {
+    /**
+     * Unix timestamp in seconds when request counting started
+     */
+    started_at: number;
+    endpoints: Array<EndpointAccessCount>;
+};
+
+export type EndpointAccessCount = {
+    method: string;
+    /**
+     * API route pattern with placeholders such as {id} for dynamic segments
+     */
+    endpoint: string;
+    count: number;
+};
+
 export type AdminUserSummary = {
     id: string;
     email: string | null;
@@ -872,6 +889,35 @@ export type GetAdminSystemResourcesResponses = {
 };
 
 export type GetAdminSystemResourcesResponse = GetAdminSystemResourcesResponses[keyof GetAdminSystemResourcesResponses];
+
+export type GetAdminRequestAuditData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/request-audit';
+};
+
+export type GetAdminRequestAuditErrors = {
+    /**
+     * Missing, malformed, expired, or revoked access token
+     */
+    401: ErrorResponse;
+    /**
+     * Access token is valid but does not belong to the configured administrator
+     */
+    403: ErrorResponse;
+};
+
+export type GetAdminRequestAuditError = GetAdminRequestAuditErrors[keyof GetAdminRequestAuditErrors];
+
+export type GetAdminRequestAuditResponses = {
+    /**
+     * Access counts per API endpoint since the server started
+     */
+    200: RequestAuditSnapshot;
+};
+
+export type GetAdminRequestAuditResponse = GetAdminRequestAuditResponses[keyof GetAdminRequestAuditResponses];
 
 export type StartEmailAuthData = {
     body: EmailStartRequest;

@@ -9,6 +9,7 @@ mod http;
 mod jwks;
 mod openapi;
 mod remote_login;
+mod request_audit;
 mod resources;
 mod session;
 mod setup;

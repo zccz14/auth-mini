@@ -310,6 +310,23 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 error: not_implemented
+  /admin/request-audit:
+    get:
+      tags:
+        - admin
+      operationId: getAdminRequestAudit
+      summary: Read in-memory API endpoint access counts
+      responses:
+        '200':
+          description: Access counts per API endpoint since the server started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestAuditSnapshot'
+        '401':
+          $ref: '#/components/responses/InvalidAccessToken'
+        '403':
+          $ref: '#/components/responses/AdminRequired'
   /email/start:
     post:
       security: []
@@ -1453,6 +1470,36 @@ components:
           minimum: 0
         freelist_percent:
           type: number
+          minimum: 0
+    RequestAuditSnapshot:
+      type: object
+      additionalProperties: false
+      required:
+        - started_at
+        - endpoints
+      properties:
+        started_at:
+          type: integer
+          description: Unix timestamp in seconds when request counting started
+        endpoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/EndpointAccessCount'
+    EndpointAccessCount:
+      type: object
+      additionalProperties: false
+      required:
+        - method
+        - endpoint
+        - count
+      properties:
+        method:
+          type: string
+        endpoint:
+          type: string
+          description: API route pattern with placeholders such as {id} for dynamic segments
+        count:
+          type: integer
           minimum: 0
     AdminUserSummary:
       type: object

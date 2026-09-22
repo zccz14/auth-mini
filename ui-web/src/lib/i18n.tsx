@@ -326,6 +326,17 @@ export const en = {
   'admin.walFile': 'WAL file',
   'admin.shmFile': 'SHM file',
   'admin.reclaimableSpace': 'Reclaimable space',
+  'admin.requestAudit': 'Request audit',
+  'admin.requestAuditDescription':
+    'In-memory access counts for every API endpoint. Counters reset when the server restarts.',
+  'admin.requestAuditSince': 'Counting since {time}',
+  'admin.requestAuditUnavailable': 'Request audit is unavailable',
+  'admin.requestAuditUnavailableDescription':
+    'The latest access counts could not be read. The panel will retry automatically.',
+  'admin.method': 'Method',
+  'admin.endpoint': 'Endpoint',
+  'admin.requestCount': 'Requests',
+  'admin.noRequests': 'No requests recorded yet.',
 } as const;
 
 type TranslationKey = keyof typeof en;
@@ -615,6 +626,17 @@ export const zhCN: Record<TranslationKey, string> = {
   'admin.walFile': 'WAL 文件',
   'admin.shmFile': 'SHM 文件',
   'admin.reclaimableSpace': '可回收空间',
+  'admin.requestAudit': '请求审计',
+  'admin.requestAuditDescription':
+    '内存中统计的各个 API 端点的访问计数，服务器重启后清零。',
+  'admin.requestAuditSince': '统计始于 {time}',
+  'admin.requestAuditUnavailable': '无法读取请求审计',
+  'admin.requestAuditUnavailableDescription':
+    '无法读取最新的访问计数，面板会自动重试。',
+  'admin.method': '方法',
+  'admin.endpoint': '端点',
+  'admin.requestCount': '请求数',
+  'admin.noRequests': '暂未记录到请求。',
 };
 
 const dictionaries: Record<Locale, Record<TranslationKey, string>> = {

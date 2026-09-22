@@ -14,6 +14,7 @@ const sdk = {
     config: { fetch: vi.fn(), save: vi.fn() },
     databaseUrl: () => 'https://auth.example.com/admin/database',
     jwks: { list: vi.fn(), rotate: vi.fn() },
+    requestAudit: { fetch: vi.fn() },
     resources: { fetch: vi.fn() },
     setup: { fetch: vi.fn(), initialize: vi.fn() },
     users: vi.fn(),
@@ -351,6 +352,13 @@ describe('formal GUI routes', () => {
         freelist_percent: 10,
       },
     });
+    sdk.admin.requestAudit.fetch.mockResolvedValue({
+      started_at: 1_784_200_000,
+      endpoints: [
+        { method: 'POST', endpoint: '/email/start', count: 12 },
+        { method: 'GET', endpoint: '/jwks', count: 3 },
+      ],
+    });
     const user = userEvent.setup();
 
     const setInterval = vi.spyOn(window, 'setInterval');
@@ -370,6 +378,7 @@ describe('formal GUI routes', () => {
     expect(sdk.admin.jwks.list).not.toHaveBeenCalled();
     expect(sdk.admin.users).not.toHaveBeenCalled();
     expect(sdk.admin.resources.fetch).not.toHaveBeenCalled();
+    expect(sdk.admin.requestAudit.fetch).not.toHaveBeenCalled();
     expect(
       screen.queryByRole('button', { name: 'Save configuration' }),
     ).not.toBeInTheDocument();
@@ -384,6 +393,7 @@ describe('formal GUI routes', () => {
     expect(sdk.admin.config.fetch).not.toHaveBeenCalled();
     expect(sdk.admin.jwks.list).not.toHaveBeenCalled();
     expect(sdk.admin.users).not.toHaveBeenCalled();
+    expect(sdk.admin.requestAudit.fetch).not.toHaveBeenCalled();
     const resourceInterval = setInterval.mock.results[0].value;
 
     await user.click(screen.getByRole('link', { name: 'Configuration' }));
@@ -440,6 +450,17 @@ describe('formal GUI routes', () => {
     expect(sdk.admin.jwks.rotate).toHaveBeenCalledOnce();
     expect(await screen.findByText(/fresh-standby-kid/)).toBeInTheDocument();
 
+    await user.click(screen.getByRole('link', { name: 'Request audit' }));
+    expect(await screen.findByText('/email/start')).toBeInTheDocument();
+    expect(screen.getByText('12')).toBeInTheDocument();
+    expect(screen.getByText('/jwks')).toBeInTheDocument();
+    expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.getByLabelText('Current location')).toHaveTextContent(
+      '/admin/request-audit',
+    );
+    expect(sdk.admin.requestAudit.fetch).toHaveBeenCalledOnce();
+    expect(screen.queryByText('CURRENT')).not.toBeInTheDocument();
+
     await user.click(screen.getByRole('link', { name: 'Users' }));
     expect(await screen.findByText('member@example.com')).toBeInTheDocument();
     expect(
@@ -494,6 +515,7 @@ describe('formal GUI routes', () => {
   it.each([
     ['/admin/configuration', () => sdk.admin.config.fetch],
     ['/admin/jwks', () => sdk.admin.jwks.list],
+    ['/admin/request-audit', () => sdk.admin.requestAudit.fetch],
     ['/admin/users', () => sdk.admin.users],
   ] as const)(
     'shows loading failures on %s without exposing other cards',
