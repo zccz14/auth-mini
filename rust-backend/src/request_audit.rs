@@ -4,10 +4,16 @@ use std::sync::{Mutex, OnceLock};
 use chrono::Utc;
 use serde::Serialize;
 
+// Unmatched requests come from the public internet, so both the number of tracked paths and
+// the length of each path are capped to keep the in-memory store bounded.
+const MAX_UNMATCHED_PATHS: usize = 512;
+const MAX_UNMATCHED_PATH_CHARS: usize = 160;
+
 #[derive(Debug, Serialize)]
 pub(crate) struct RequestAuditSnapshot {
     started_at: i64,
     endpoints: Vec<EndpointAccessCount>,
+    unmatched: Vec<UnmatchedRequest>,
 }
 
 #[derive(Debug, Serialize)]
@@ -17,9 +23,25 @@ struct EndpointAccessCount {
     count: u64,
 }
 
+#[derive(Debug, Serialize)]
+struct UnmatchedRequest {
+    method: String,
+    path: String,
+    count: u64,
+    last_seen: i64,
+}
+
+struct UnmatchedEntry {
+    count: u64,
+    last_seen: i64,
+}
+
 struct RequestAudit {
     started_at: i64,
     counts: BTreeMap<(String, String), u64>,
+    unmatched: BTreeMap<(String, String), UnmatchedEntry>,
+    unmatched_overflow: u64,
+    unmatched_overflow_last_seen: i64,
 }
 
 impl RequestAudit {
@@ -27,6 +49,9 @@ impl RequestAudit {
         Self {
             started_at,
             counts: BTreeMap::new(),
+            unmatched: BTreeMap::new(),
+            unmatched_overflow: 0,
+            unmatched_overflow_last_seen: 0,
         }
     }
 
@@ -36,6 +61,29 @@ impl RequestAudit {
             .entry((method.to_string(), endpoint.to_string()))
             .or_insert(0);
         *count += 1;
+    }
+
+    fn record_unmatched(&mut self, method: &str, path: &str) {
+        let now = Utc::now().timestamp();
+        let key = (method.to_string(), truncate_path(path));
+
+        if let Some(entry) = self.unmatched.get_mut(&key) {
+            entry.count += 1;
+            entry.last_seen = now;
+            return;
+        }
+        if self.unmatched.len() >= MAX_UNMATCHED_PATHS {
+            self.unmatched_overflow += 1;
+            self.unmatched_overflow_last_seen = now;
+            return;
+        }
+        self.unmatched.insert(
+            key,
+            UnmatchedEntry {
+                count: 1,
+                last_seen: now,
+            },
+        );
     }
 
     fn snapshot(&self) -> RequestAuditSnapshot {
@@ -55,11 +103,52 @@ impl RequestAudit {
                 .then_with(|| left.method.cmp(&right.method))
                 .then_with(|| left.endpoint.cmp(&right.endpoint))
         });
+
+        let mut unmatched = self
+            .unmatched
+            .iter()
+            .map(|((method, path), entry)| UnmatchedRequest {
+                method: method.clone(),
+                path: path.clone(),
+                count: entry.count,
+                last_seen: entry.last_seen,
+            })
+            .collect::<Vec<_>>();
+        if self.unmatched_overflow > 0 {
+            unmatched.push(UnmatchedRequest {
+                method: "*".to_string(),
+                path: "(other)".to_string(),
+                count: self.unmatched_overflow,
+                last_seen: self.unmatched_overflow_last_seen,
+            });
+        }
+        unmatched.sort_by(|left, right| {
+            right
+                .count
+                .cmp(&left.count)
+                .then_with(|| left.method.cmp(&right.method))
+                .then_with(|| left.path.cmp(&right.path))
+        });
+
         RequestAuditSnapshot {
             started_at: self.started_at,
             endpoints,
+            unmatched,
         }
     }
+}
+
+fn truncate_path(path: &str) -> String {
+    if path.chars().count() <= MAX_UNMATCHED_PATH_CHARS {
+        return path.to_string();
+    }
+
+    let mut truncated = path
+        .chars()
+        .take(MAX_UNMATCHED_PATH_CHARS)
+        .collect::<String>();
+    truncated.push('…');
+    truncated
 }
 
 pub(crate) fn initialize() {
@@ -71,6 +160,13 @@ pub(crate) fn record(method: &str, endpoint: &str) {
         .lock()
         .expect("request audit lock poisoned")
         .record(method, endpoint);
+}
+
+pub(crate) fn record_unmatched(method: &str, path: &str) {
+    audit()
+        .lock()
+        .expect("request audit lock poisoned")
+        .record_unmatched(method, path);
 }
 
 pub(crate) fn snapshot() -> RequestAuditSnapshot {
@@ -127,5 +223,54 @@ mod tests {
             labels,
             vec![("GET", "/a"), ("GET", "/c"), ("POST", "/a"), ("POST", "/b"),]
         );
+    }
+
+    #[test]
+    fn records_unmatched_requests_with_last_seen() {
+        let mut audit = RequestAudit::new(0);
+        audit.record_unmatched("GET", "/missing");
+        audit.record_unmatched("GET", "/missing");
+        audit.record_unmatched("POST", "/other");
+
+        let snapshot = audit.snapshot();
+
+        assert_eq!(snapshot.unmatched.len(), 2);
+        assert_eq!(snapshot.unmatched[0].method, "GET");
+        assert_eq!(snapshot.unmatched[0].path, "/missing");
+        assert_eq!(snapshot.unmatched[0].count, 2);
+        assert!(snapshot.unmatched[0].last_seen > 0);
+        assert_eq!(snapshot.unmatched[1].method, "POST");
+        assert_eq!(snapshot.unmatched[1].path, "/other");
+        assert_eq!(snapshot.unmatched[1].count, 1);
+    }
+
+    #[test]
+    fn caps_and_truncates_unmatched_requests() {
+        let mut audit = RequestAudit::new(0);
+        let long_path = format!("/{}", "a".repeat(MAX_UNMATCHED_PATH_CHARS + 10));
+        audit.record_unmatched("GET", &long_path);
+        for index in 0..MAX_UNMATCHED_PATHS {
+            audit.record_unmatched("GET", &format!("/missing-{index}"));
+        }
+        audit.record_unmatched("GET", "/beyond-cap");
+
+        let snapshot = audit.snapshot();
+
+        assert_eq!(snapshot.unmatched.len(), MAX_UNMATCHED_PATHS + 1);
+        let truncated = snapshot
+            .unmatched
+            .iter()
+            .find(|entry| entry.path.starts_with("/aaa"))
+            .expect("truncated path is tracked");
+        assert_eq!(truncated.path.chars().count(), MAX_UNMATCHED_PATH_CHARS + 1);
+        assert!(truncated.path.ends_with('…'));
+        let overflow = snapshot
+            .unmatched
+            .iter()
+            .find(|entry| entry.path == "(other)")
+            .expect("overflow row is tracked");
+        assert_eq!(overflow.method, "*");
+        assert_eq!(overflow.count, 2);
+        assert!(overflow.last_seen > 0);
     }
 }

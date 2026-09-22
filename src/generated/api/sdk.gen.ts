@@ -141,7 +141,7 @@ export const getAdminSystemResources = <ThrowOnError extends boolean = false>(op
 });
 
 /**
- * Read in-memory API endpoint access counts
+ * Read in-memory endpoint access counts and unknown endpoint requests
  */
 export const getAdminRequestAudit = <ThrowOnError extends boolean = false>(options?: Options<GetAdminRequestAuditData, ThrowOnError>) => (options?.client ?? client).get<GetAdminRequestAuditResponses, GetAdminRequestAuditErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],

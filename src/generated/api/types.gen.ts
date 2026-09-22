@@ -114,6 +114,10 @@ export type RequestAuditSnapshot = {
      */
     started_at: number;
     endpoints: Array<EndpointAccessCount>;
+    /**
+     * Requests that did not match any API endpoint, capped at a fixed number of distinct paths; overflow aggregates into a single `(other)` row
+     */
+    unmatched: Array<UnmatchedRequest>;
 };
 
 export type EndpointAccessCount = {
@@ -123,6 +127,19 @@ export type EndpointAccessCount = {
      */
     endpoint: string;
     count: number;
+};
+
+export type UnmatchedRequest = {
+    method: string;
+    /**
+     * Request path, truncated when very long; `(other)` aggregates paths beyond the tracking cap
+     */
+    path: string;
+    count: number;
+    /**
+     * Unix timestamp in seconds of the most recent request
+     */
+    last_seen: number;
 };
 
 export type AdminUserSummary = {
@@ -912,7 +929,7 @@ export type GetAdminRequestAuditError = GetAdminRequestAuditErrors[keyof GetAdmi
 
 export type GetAdminRequestAuditResponses = {
     /**
-     * Access counts per API endpoint since the server started
+     * Access counts per API endpoint and unmatched request summaries since the server started
      */
     200: RequestAuditSnapshot;
 };
