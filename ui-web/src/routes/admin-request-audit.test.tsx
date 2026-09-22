@@ -30,6 +30,14 @@ describe('admin request audit route', () => {
         { method: 'POST', endpoint: '/email/start', count: 12 },
         { method: 'GET', endpoint: '/jwks', count: 3 },
       ],
+      unmatched: [
+        {
+          method: 'GET',
+          path: '/wp-login.php',
+          count: 42,
+          last_seen: 1_784_199_000,
+        },
+      ],
     });
 
     renderRoute(<AdminRequestAuditRoute />);
@@ -39,18 +47,26 @@ describe('admin request audit route', () => {
     expect(screen.getByText('/jwks')).toBeInTheDocument();
     expect(screen.getByText('3')).toBeInTheDocument();
     expect(screen.getByText(/Counting since/)).toBeInTheDocument();
+
+    expect(screen.getByText('Unknown endpoints')).toBeInTheDocument();
+    expect(screen.getByText('/wp-login.php')).toBeInTheDocument();
+    expect(screen.getByText('42')).toBeInTheDocument();
   });
 
   it('shows an empty state before any endpoint is accessed', async () => {
     sdk.admin.requestAudit.fetch.mockResolvedValue({
       started_at: 1_784_200_000,
       endpoints: [],
+      unmatched: [],
     });
 
     renderRoute(<AdminRequestAuditRoute />);
 
     expect(
       await screen.findByText('No requests recorded yet.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('No unknown-endpoint requests.'),
     ).toBeInTheDocument();
   });
 });

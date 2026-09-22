@@ -328,7 +328,7 @@ export const en = {
   'admin.reclaimableSpace': 'Reclaimable space',
   'admin.requestAudit': 'Request audit',
   'admin.requestAuditDescription':
-    'In-memory access counts for every API endpoint. Counters reset when the server restarts.',
+    'In-memory access counts for every API endpoint, plus calls to unknown endpoints. Counters reset when the server restarts.',
   'admin.requestAuditSince': 'Counting since {time}',
   'admin.requestAuditUnavailable': 'Request audit is unavailable',
   'admin.requestAuditUnavailableDescription':
@@ -337,6 +337,12 @@ export const en = {
   'admin.endpoint': 'Endpoint',
   'admin.requestCount': 'Requests',
   'admin.noRequests': 'No requests recorded yet.',
+  'admin.path': 'Path',
+  'admin.lastSeen': 'Last seen',
+  'admin.unknownEndpoints': 'Unknown endpoints',
+  'admin.unknownEndpointsDescription':
+    'Requests that did not match any API endpoint, including scanners and misconfigured clients.',
+  'admin.noUnknownEndpoints': 'No unknown-endpoint requests.',
 } as const;
 
 type TranslationKey = keyof typeof en;
@@ -628,7 +634,7 @@ export const zhCN: Record<TranslationKey, string> = {
   'admin.reclaimableSpace': '可回收空间',
   'admin.requestAudit': '请求审计',
   'admin.requestAuditDescription':
-    '内存中统计的各个 API 端点的访问计数，服务器重启后清零。',
+    '内存中统计的各个 API 端点的访问计数，以及未知端点的调用记录，服务器重启后清零。',
   'admin.requestAuditSince': '统计始于 {time}',
   'admin.requestAuditUnavailable': '无法读取请求审计',
   'admin.requestAuditUnavailableDescription':
@@ -637,6 +643,12 @@ export const zhCN: Record<TranslationKey, string> = {
   'admin.endpoint': '端点',
   'admin.requestCount': '请求数',
   'admin.noRequests': '暂未记录到请求。',
+  'admin.path': '路径',
+  'admin.lastSeen': '最近出现',
+  'admin.unknownEndpoints': '未知端点',
+  'admin.unknownEndpointsDescription':
+    '未命中任何 API 端点的请求，包括扫描探测和客户端错误。',
+  'admin.noUnknownEndpoints': '未发现未知端点的调用。',
 };
 
 const dictionaries: Record<Locale, Record<TranslationKey, string>> = {

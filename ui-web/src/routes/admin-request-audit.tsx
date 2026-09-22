@@ -65,65 +65,128 @@ export function AdminRequestAuditRoute() {
     );
   }
 
-  const startedAt = new Intl.DateTimeFormat(locale, {
+  return (
+    <>
+      <Card className="rounded-lg">
+        <CardHeader>
+          <CardTitle>{t('admin.requestAudit')}</CardTitle>
+          <CardDescription>
+            {t('admin.requestAuditDescription')}
+          </CardDescription>
+          <p className="pt-1 text-xs text-slate-500">
+            {t('admin.requestAuditSince', {
+              time: formatTimestamp(snapshot.started_at, locale),
+            })}{' '}
+            · {t('admin.refreshEvery5s')}
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {error ? (
+            <Alert>
+              <AlertTitle>{t('admin.requestAuditUnavailable')}</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
+          {snapshot.endpoints.length === 0 ? (
+            <p className="text-sm text-slate-600">{t('admin.noRequests')}</p>
+          ) : (
+            <div
+              className="overflow-x-auto"
+              role="region"
+              aria-label={t('admin.requestAudit')}
+              tabIndex={0}
+            >
+              <table className="min-w-full whitespace-nowrap text-sm">
+                <thead>
+                  <tr className="border-b text-left text-slate-500">
+                    <th className="p-2">{t('admin.method')}</th>
+                    <th className="p-2">{t('admin.endpoint')}</th>
+                    <th className="p-2 text-right">
+                      {t('admin.requestCount')}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {snapshot.endpoints.map((entry) => (
+                    <tr
+                      key={`${entry.method} ${entry.endpoint}`}
+                      className="border-b border-slate-100"
+                    >
+                      <td className="p-2 font-mono">{entry.method}</td>
+                      <td className="p-2 font-mono">{entry.endpoint}</td>
+                      <td className="p-2 text-right tabular-nums">
+                        {entry.count}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-lg">
+        <CardHeader>
+          <CardTitle>{t('admin.unknownEndpoints')}</CardTitle>
+          <CardDescription>
+            {t('admin.unknownEndpointsDescription')}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {snapshot.unmatched.length === 0 ? (
+            <p className="text-sm text-slate-600">
+              {t('admin.noUnknownEndpoints')}
+            </p>
+          ) : (
+            <div
+              className="overflow-x-auto"
+              role="region"
+              aria-label={t('admin.unknownEndpoints')}
+              tabIndex={0}
+            >
+              <table className="min-w-full whitespace-nowrap text-sm">
+                <thead>
+                  <tr className="border-b text-left text-slate-500">
+                    <th className="p-2">{t('admin.method')}</th>
+                    <th className="p-2">{t('admin.path')}</th>
+                    <th className="p-2 text-right">
+                      {t('admin.requestCount')}
+                    </th>
+                    <th className="p-2">{t('admin.lastSeen')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {snapshot.unmatched.map((entry) => (
+                    <tr
+                      key={`${entry.method} ${entry.path}`}
+                      className="border-b border-slate-100"
+                    >
+                      <td className="p-2 font-mono">{entry.method}</td>
+                      <td className="p-2 font-mono">{entry.path}</td>
+                      <td className="p-2 text-right tabular-nums">
+                        {entry.count}
+                      </td>
+                      <td className="p-2 text-xs text-slate-600">
+                        {formatTimestamp(entry.last_seen, locale)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </>
+  );
+}
+
+function formatTimestamp(seconds: number, locale: string) {
+  return new Intl.DateTimeFormat(locale, {
     dateStyle: 'medium',
     timeStyle: 'medium',
-  }).format(new Date(snapshot.started_at * 1_000));
-
-  return (
-    <Card className="rounded-lg">
-      <CardHeader>
-        <CardTitle>{t('admin.requestAudit')}</CardTitle>
-        <CardDescription>{t('admin.requestAuditDescription')}</CardDescription>
-        <p className="pt-1 text-xs text-slate-500">
-          {t('admin.requestAuditSince', { time: startedAt })} ·{' '}
-          {t('admin.refreshEvery5s')}
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {error ? (
-          <Alert>
-            <AlertTitle>{t('admin.requestAuditUnavailable')}</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        ) : null}
-        {snapshot.endpoints.length === 0 ? (
-          <p className="text-sm text-slate-600">{t('admin.noRequests')}</p>
-        ) : (
-          <div
-            className="overflow-x-auto"
-            role="region"
-            aria-label={t('admin.requestAudit')}
-            tabIndex={0}
-          >
-            <table className="min-w-full whitespace-nowrap text-sm">
-              <thead>
-                <tr className="border-b text-left text-slate-500">
-                  <th className="p-2">{t('admin.method')}</th>
-                  <th className="p-2">{t('admin.endpoint')}</th>
-                  <th className="p-2 text-right">{t('admin.requestCount')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {snapshot.endpoints.map((entry) => (
-                  <tr
-                    key={`${entry.method} ${entry.endpoint}`}
-                    className="border-b border-slate-100"
-                  >
-                    <td className="p-2 font-mono">{entry.method}</td>
-                    <td className="p-2 font-mono">{entry.endpoint}</td>
-                    <td className="p-2 text-right tabular-nums">
-                      {entry.count}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
+  }).format(new Date(seconds * 1_000));
 }
 
 function RequestAuditLoading() {
