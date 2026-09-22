@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  authorizeLoginPath,
   authenticationTarget,
   buildLoginCallbackUrl,
   issuerAudience,
   parseLoginRequest,
+  resolveReturnTo,
+  selfSignInPath,
   toAppSessionTokens,
 } from '@/lib/login-callback';
 
@@ -219,6 +222,82 @@ describe('login callback helpers', () => {
         redirectUri: 'https://app.example.com/callback',
       },
     });
+  });
+
+  it('rebuilds a downstream request as the authorize address', () => {
+    const request = parseLoginRequest(
+      '?redirect_uri=https%3A%2F%2FAPP.Example.com%3A443%2Fcallback%3Fnext%3D1&state=state-1',
+    );
+    expect(request.status).toBe('ready');
+    if (request.status !== 'ready') return;
+
+    const authorizePath = authorizeLoginPath(request);
+
+    expect(authorizePath).toBe(
+      '/login?redirect_uri=https%3A%2F%2Fapp.example.com%2Fcallback%3Fnext%3D1&audiences=%5B%22app.example.com%22%5D&state=state-1',
+    );
+    // The rebuilt address parses back into the same request.
+    expect(parseLoginRequest(authorizePath.slice('/login'.length))).toEqual(
+      request,
+    );
+  });
+
+  it('rebuilds a loopback request with audiences instead of aud', () => {
+    const request = parseLoginRequest(
+      '?redirect_uri=http%3A%2F%2Flocalhost%3A5173%2Fcallback&aud=LOCALHOST',
+    );
+    expect(request.status).toBe('ready');
+    if (request.status !== 'ready') return;
+
+    const authorizePath = authorizeLoginPath(request);
+
+    expect(authorizePath).toBe(
+      '/login?redirect_uri=http%3A%2F%2Flocalhost%3A5173%2Fcallback&audiences=%5B%22localhost%22%5D',
+    );
+    expect(parseLoginRequest(authorizePath.slice('/login'.length))).toEqual(
+      request,
+    );
+  });
+
+  it('keeps a self request free of query parameters', () => {
+    const request = parseLoginRequest('');
+
+    expect(request.status).toBe('ready');
+    if (request.status !== 'ready') return;
+
+    expect(authorizeLoginPath(request)).toBe('/login');
+  });
+
+  it('nests the authorize address inside the sign-in step', () => {
+    const authorizePath =
+      '/login?redirect_uri=https%3A%2F%2Fapp.example.com%2Fcallback&state=state-1';
+
+    expect(selfSignInPath(authorizePath)).toBe(
+      '/login?return_to=%2Flogin%3Fredirect_uri%3Dhttps%253A%252F%252Fapp.example.com%252Fcallback%26state%3Dstate-1',
+    );
+  });
+
+  it('keeps same-origin return paths and their query and hash', () => {
+    expect(resolveReturnTo('/passkey/register')).toBe('/passkey/register');
+    expect(
+      resolveReturnTo(
+        '/login?redirect_uri=https%3A%2F%2Fapp.example.com%2Fcallback&state=state-1',
+      ),
+    ).toBe(
+      '/login?redirect_uri=https%3A%2F%2Fapp.example.com%2Fcallback&state=state-1',
+    );
+    expect(resolveReturnTo('/login?next=%2Fapp#section')).toBe(
+      '/login?next=%2Fapp#section',
+    );
+  });
+
+  it('falls back to the home page for return paths that leave the origin', () => {
+    expect(resolveReturnTo(null)).toBe('/');
+    expect(resolveReturnTo('')).toBe('/');
+    expect(resolveReturnTo('https://evil.example/callback')).toBe('/');
+    expect(resolveReturnTo('//evil.example/callback')).toBe('/');
+    expect(resolveReturnTo('/\\evil.example/callback')).toBe('/');
+    expect(resolveReturnTo('javascript:alert(1)')).toBe('/');
   });
 
   it('converts browser session results for self sign-in', () => {

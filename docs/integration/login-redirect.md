@@ -2,14 +2,14 @@
 
 本文说明业务 App 如何把用户跳转到 Auth Mini 登录页，并在登录成功后回到业务 App。
 
-这个方式适合业务 App 不想自己承载邮箱 OTP、Passkey 或 ED25519 登录页面，只希望把浏览器登录交给 Auth Mini，然后接收登录结果并继续业务流程。Auth Mini 会复用浏览器里的主站会话：已登录的用户跳转过来时不会被要求再次登录，而是直接为业务 App 签发结果（见下文「静默复用主站会话」）。
+这个方式适合业务 App 不想自己承载邮箱 OTP、Passkey 或 ED25519 登录页面，只希望把浏览器登录交给 Auth Mini，然后接收登录结果并继续业务流程。登录页分两步走：先建立（或复用）浏览器里的主站会话，再用它为业务 App 签发结果。已登录的用户跳转过来时不会被要求再次登录，而是直接进入第二步（见下文「静默复用主站会话」）。
 
 ## 核心流程
 
 1. 业务 App 生成一次性 `state`，并记录到自己的会话存储中。
 2. 业务 App 构造 Auth Mini 登录 URL，把回调地址放到可选的 `redirect_uri`。
-3. Auth Mini 登录页检查浏览器中的主站会话：已有有效主站会话时直接进入第 4 步；否则先由用户完成邮箱 OTP、Passkey 或 ED25519 登录，并把登录结果保存为新的主站会话。
-4. Auth Mini 登录页显示本次登录的目标域名，并用主站会话为业务 App 签发一个带对应 `aud` 的独立会话 token；如果传了 `redirect_uri`，跳回业务 App，否则进入 Auth Mini 自己的登录后页面。
+3. Auth Mini 登录页先处理主站身份（登录步骤）：浏览器里已有有效主站会话时直接跳到第 4 步；否则用户先完成邮箱 OTP、Passkey 或 ED25519 登录，把结果保存为新的主站会话（`aud` 是 Auth Mini 部署域名的 hostname）。
+4. 登录页随即回到授权步骤：显示本次登录的目标域名，并用主站会话为业务 App 签发一个带对应 `aud` 的独立会话 token；如果传了 `redirect_uri`，跳回业务 App，否则进入 Auth Mini 自己的登录后页面。
 5. 业务 App 的回调页读取 URL fragment 中的 token 参数，校验 `state`，保存会话状态。
 6. 业务 App 清理地址栏中的 token 参数，然后进入原本的业务页面。
 
@@ -19,8 +19,10 @@
 
 业务 App 把用户跳转到登录页时：
 
-- 浏览器里已有有效的主站会话：登录页不显示登录表单，直接用主站会话为业务 App 签发一个新的独立会话，然后立即跳回业务 App。
-- 没有主站会话（或已失效）：登录页显示登录表单；登录成功后先建立新的主站会话，再完成上述签发。
+- 浏览器里已有有效的主站会话：登录页不显示登录表单，直接进入授权步骤，用主站会话为业务 App 签发一个新的独立会话，然后立即跳回业务 App。
+- 没有主站会话（或已失效）：登录页先把地址切换到登录步骤（`/login?return_to=…`）显示登录表单；登录成功后建立新的主站会话，再回到授权步骤完成上述签发。
+
+授权步骤如果无法使用已有主站会话（例如主站会话在跳转途中失效），登录页会回到登录步骤并提示「无法使用已有登录状态，请重新登录后继续。」；页面停在这里等待用户重新登录，不会自动再次回跳业务 App，避免在两步之间反复横跳。
 
 这个流程对业务 App 透明：跳转 URL、回调 fragment 字段和校验方式都不变。
 
@@ -43,6 +45,7 @@ https://auth.example.com/web/#/login?redirect_uri=https%3A%2F%2Fapp.example.com%
 - `redirect_uri`：可选。传入时，登录完成后回到的业务 App 地址；不传时，登录完成后进入 Auth Mini 自己的页面。业务 App 使用 HTTPS URL；本地开发可以使用下文限定的 loopback HTTP URL。
 - `aud`：仅用于本地开发回调。普通 HTTPS 业务 App 不应传入；Auth Mini 会从 `redirect_uri` 的规范化 hostname 派生 `aud`。
 - `state`：推荐。业务 App 生成的随机值，用来防止回调被串用或伪造。
+- `return_to`：登录页内部参数，业务 App 不需要传。它在登录步骤和授权步骤之间传递地址，只接受 Auth Mini 同源的绝对路径；其他取值会被忽略并回退到首页。
 
 业务 App 示例：
 
@@ -75,7 +78,7 @@ HTTP 回调仅允许使用精确的 loopback hostname：`localhost`、`127.0.0.1
 https://auth.example.com/web/#/login?redirect_uri=http%3A%2F%2Flocalhost%3A5173%2Fauth%2Fcallback&aud=app.example.com&state=state-123
 ```
 
-登录页会同时显示：
+授权步骤会同时显示：
 
 - 本地开发应用 `localhost:5173`；
 - 请求访问 `app.example.com`。
@@ -195,7 +198,7 @@ Auth Mini 登录页负责完成具体登录方式：
 - Passkey：调用 `POST /webauthn/authenticate/options` 和 `POST /webauthn/authenticate/verify`。
 - ED25519：完成 start/verify 挑战签名流程。
 
-这些登录成功后都会创建 Auth Mini session，并得到 `session_id`、`access_token`、`refresh_token`、`token_type` 和 `expires_in`。跳转回业务 App 时，只把业务 App 需要立刻采用的结果放进回调 URL；面向业务 App 的 audience token 不会留在 Auth Mini 页面的浏览器存储里，浏览器里保存的是用于后续复用的主站会话。该操作不会撤销回调中交给业务 App 的 session。业务 App 是否直接保存这些 token，还是交给自己的后端换业务会话，由业务 App 决定。
+这些登录成功后都会创建 Auth Mini session，并得到 `session_id`、`access_token`、`refresh_token`、`token_type` 和 `expires_in`。登录步骤和授权步骤是同一个页面（`/login`）的两种状态：登录步骤只处理 Auth Mini 自身的主站会话，授权步骤才解析业务 App 的请求、显示目标域名并用主站会话代签。跳转回业务 App 时，只把业务 App 需要立刻采用的结果放进回调 URL；面向业务 App 的 audience token 不会留在 Auth Mini 页面的浏览器存储里，浏览器里保存的是用于后续复用的主站会话。该操作不会撤销回调中交给业务 App 的 session。业务 App 是否直接保存这些 token，还是交给自己的后端换业务会话，由业务 App 决定。
 
 ## 业务后端如何信任 token
 
@@ -211,7 +214,8 @@ Authorization: Bearer <access_token>
 
 - 非 loopback `redirect_uri` 必须使用 HTTPS；HTTP 只允许 `localhost`、`127.0.0.1` 和 `::1`。
 - 普通回调的 `aud` 只能从 `redirect_uri` hostname 派生；本地开发回调必须显式提供 hostname audience。
-- 登录页会显示实际签发的 audience；静默复用已有主站会话时不会再展示这个确认页面。
+- 登录页只在授权步骤显示本次签发的目标域名；登录步骤只说明正在登录 Auth Mini 自身。静默复用主站会话时会短暂展示授权步骤的「正在使用已有登录状态继续」页面。
+- 登录步骤的 `return_to` 只接受同源绝对路径（以 `/` 开头，且解析后仍是 Auth Mini 自己的 origin），其他取值一律回退到首页；登录页不会因此跳转到其他站点。
 - 非 loopback 的跳转目标不能把 Auth Mini 自身 issuer 的 hostname 放进 `audiences`，这类请求会被拒绝。
 - 业务后端必须同时校验 JWT 签名、issuer 和自己的 audience，并继续执行用户级授权。
 - `state` 应是一次性随机值，回调校验成功后立即删除。

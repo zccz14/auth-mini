@@ -3,8 +3,9 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { act } from 'react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { AppRouter } from '@/app/router';
+import { selfSignInPath } from '@/lib/login-callback';
 
 type MockSessionState = {
   status: string;
@@ -124,12 +125,35 @@ function loginPath(
   return `/login?${params.toString()}`;
 }
 
+function LoginLocationProbe() {
+  const location = useLocation();
+
+  return (
+    <output aria-label="Current location">
+      {location.pathname + location.search}
+    </output>
+  );
+}
+
 function renderLogin(path = loginPath()) {
   render(
     <MemoryRouter initialEntries={[path]}>
+      <LoginLocationProbe />
       <AppRouter />
     </MemoryRouter>,
   );
+}
+
+function signInMainSite() {
+  sdkMocks.sessionState.current = {
+    status: 'authenticated',
+    authenticated: true,
+    sessionId: 'session-main',
+    accessToken: 'main-access-token',
+    refreshToken: 'main-refresh-token',
+    receivedAt: '2026-06-30T00:00:00.000Z',
+    expiresAt: '2026-06-30T01:00:00.000Z',
+  };
 }
 
 async function expectButtonEnabled(name: string) {
@@ -278,13 +302,41 @@ describe('LoginRoute', () => {
     expect(sdkMocks.remoteStart).toHaveBeenCalledWith({});
   });
 
-  it('always identifies the HTTPS application domain', async () => {
+  it('signs in to Auth Mini first and defers the app request', async () => {
+    renderLogin(loginPath('https://APP.Example.com:443/callback'));
+
+    expect(
+      await screen.findByRole('heading', { name: 'Sign in' }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByLabelText('Current location')).toHaveTextContent(
+        'return_to=%2Flogin%3Fredirect_uri%3Dhttps%253A%252F%252Fapp.example.com%252Fcallback',
+      ),
+    );
+    expect(
+      screen.getByText('You are signing in to Auth Mini'),
+    ).toBeInTheDocument();
+    // The app request stays out of the sign-in step.
+    expect(screen.queryByText('You are signing in to')).not.toBeInTheDocument();
+    expect(sdkMocks.authorizeSession).not.toHaveBeenCalled();
+    expect(sdkMocks.sendLoginCallback).not.toHaveBeenCalled();
+  });
+
+  it('identifies the HTTPS application domain on the authorize step', async () => {
+    signInMainSite();
+
     renderLogin(loginPath('https://APP.Example.com:443/callback'));
 
     expect(
       await screen.findByText('You are signing in to'),
     ).toBeInTheDocument();
     expect(screen.getByText('app.example.com')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByLabelText('Current location')).toHaveTextContent(
+        '/login?redirect_uri=https%3A%2F%2FAPP.Example.com%3A443%2Fcallback',
+      ),
+    );
+    expect(screen.queryByLabelText('Email address')).not.toBeInTheDocument();
   });
 
   it('identifies Auth Mini itself when no redirect is requested', async () => {
@@ -299,8 +351,10 @@ describe('LoginRoute', () => {
     expect(screen.getByText('auth-mini')).toBeInTheDocument();
   });
 
-  it('identifies a local app and its requested audience in both languages', async () => {
+  it('shows the local app and its requested audience on the authorize step', async () => {
     const user = userEvent.setup();
+    signInMainSite();
+
     renderLogin(
       loginPath('http://localhost:5173/callback', ['localhost', 'app.ntnl.io']),
     );
@@ -310,7 +364,9 @@ describe('LoginRoute', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('localhost:5173')).toBeInTheDocument();
     expect(screen.getByText('Requesting access to')).toBeInTheDocument();
-    expect(screen.getByText(/app\.ntnl\.io/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/app\.ntnl\.io/, { selector: 'strong' }),
+    ).toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText('Language'), 'zh-CN');
 
@@ -353,11 +409,16 @@ describe('LoginRoute', () => {
 
     renderLogin();
 
-    await user.type(screen.getByLabelText('Email address'), 'user@example.com');
+    await user.type(
+      await screen.findByLabelText('Email address'),
+      'user@example.com',
+    );
     await user.click(await expectButtonEnabled('Send email code'));
     expect(
       await screen.findByText('Check your email for the one-time code.'),
     ).toBeInTheDocument();
+    // The authorize step waits for the main-site sign-in.
+    expect(sdkMocks.authorizeSession).not.toHaveBeenCalled();
 
     await typeOneTimeCode(user, '123456');
     await user.click(await expectButtonEnabled('Verify and continue'));
@@ -373,13 +434,21 @@ describe('LoginRoute', () => {
       expires_in: 3600,
       token_type: 'Bearer',
     });
-    expect(sdkMocks.authorizeSession).toHaveBeenCalledWith({
-      redirect_uri: 'https://app.example.com/callback',
-      audiences: ['app.example.com'],
-    });
-    expect(sdkMocks.sendLoginCallback).toHaveBeenCalledWith(
-      'https://app.example.com/callback#access_token=jwt-app&token_type=Bearer&session_id=session-app&refresh_token=refresh-app&expires_in=3600&expires_at=2026-06-30T01%3A00%3A00.000Z&state=state-1',
+    await waitFor(() =>
+      expect(sdkMocks.authorizeSession).toHaveBeenCalledWith({
+        redirect_uri: 'https://app.example.com/callback',
+        audiences: ['app.example.com'],
+      }),
     );
+    await waitFor(() =>
+      expect(sdkMocks.sendLoginCallback).toHaveBeenCalledWith(
+        'https://app.example.com/callback#access_token=jwt-app&token_type=Bearer&session_id=session-app&refresh_token=refresh-app&expires_in=3600&expires_at=2026-06-30T01%3A00%3A00.000Z&state=state-1',
+      ),
+    );
+    // The main-site session is issued before the downstream session is created.
+    expect(
+      sdkMocks.acceptRedirectCallback.mock.invocationCallOrder[0],
+    ).toBeLessThan(sdkMocks.authorizeSession.mock.invocationCallOrder[0]);
     expect(sdkMocks.clearLocal).not.toHaveBeenCalled();
   });
 
@@ -401,17 +470,30 @@ describe('LoginRoute', () => {
 
     renderLogin('/login');
 
-    await user.type(screen.getByLabelText('Email address'), 'user@example.com');
+    // The sign-in step keeps the document request as its return target.
+    await waitFor(() =>
+      expect(screen.getByLabelText('Current location')).toHaveTextContent(
+        '/login?return_to=%2Flogin%3Fredirect_uri%3Dhttps%253A%252F%252Fapp.example.com%252Fcallback%26audiences%3D%255B%2522app.example.com%2522%255D%26state%3Dstate-document',
+      ),
+    );
+    await user.type(
+      await screen.findByLabelText('Email address'),
+      'user@example.com',
+    );
     await user.click(await expectButtonEnabled('Send email code'));
     await typeOneTimeCode(user, '123456');
     await user.click(await expectButtonEnabled('Verify and continue'));
 
-    expect(sdkMocks.authorizeSession).toHaveBeenCalledWith({
-      redirect_uri: 'https://app.example.com/callback',
-      audiences: ['app.example.com'],
-    });
-    expect(sdkMocks.sendLoginCallback).toHaveBeenCalledWith(
-      'https://app.example.com/callback#access_token=jwt-app&token_type=Bearer&session_id=session-app&refresh_token=refresh-app&expires_in=3600&expires_at=2026-06-30T01%3A00%3A00.000Z&state=state-document',
+    await waitFor(() =>
+      expect(sdkMocks.authorizeSession).toHaveBeenCalledWith({
+        redirect_uri: 'https://app.example.com/callback',
+        audiences: ['app.example.com'],
+      }),
+    );
+    await waitFor(() =>
+      expect(sdkMocks.sendLoginCallback).toHaveBeenCalledWith(
+        'https://app.example.com/callback#access_token=jwt-app&token_type=Bearer&session_id=session-app&refresh_token=refresh-app&expires_in=3600&expires_at=2026-06-30T01%3A00%3A00.000Z&state=state-document',
+      ),
     );
   });
 
@@ -430,14 +512,18 @@ describe('LoginRoute', () => {
     await user.click(await expectButtonEnabled('Sign In with PassKey'));
 
     expect(sdkMocks.passkeyAuthenticate).toHaveBeenCalledWith();
-    expect(sdkMocks.authorizeSession).toHaveBeenCalledWith({
-      redirect_uri: 'https://app.example.com/callback',
-      audiences: ['app.example.com'],
-    });
-    expect(sdkMocks.clearLocal).not.toHaveBeenCalled();
-    expect(sdkMocks.sendLoginCallback).toHaveBeenCalledWith(
-      'https://app.example.com/callback#access_token=jwt-app&token_type=Bearer&session_id=session-app&refresh_token=refresh-app&expires_in=3600&expires_at=2026-06-30T01%3A00%3A00.000Z&state=state-1',
+    await waitFor(() =>
+      expect(sdkMocks.authorizeSession).toHaveBeenCalledWith({
+        redirect_uri: 'https://app.example.com/callback',
+        audiences: ['app.example.com'],
+      }),
     );
+    await waitFor(() =>
+      expect(sdkMocks.sendLoginCallback).toHaveBeenCalledWith(
+        'https://app.example.com/callback#access_token=jwt-app&token_type=Bearer&session_id=session-app&refresh_token=refresh-app&expires_in=3600&expires_at=2026-06-30T01%3A00%3A00.000Z&state=state-1',
+      ),
+    );
+    expect(sdkMocks.clearLocal).not.toHaveBeenCalled();
   });
 
   it('hides passkey sign-in when rp_id is not configured', async () => {
@@ -474,9 +560,9 @@ describe('LoginRoute', () => {
 
     renderLogin(loginPath('https://app.example.com/#/callback?next=%2Fapp'));
 
-    await user.click(screen.getByRole('tab', { name: 'ED25519' }));
+    await user.click(await screen.findByRole('tab', { name: 'ED25519' }));
     await user.type(
-      screen.getByLabelText(
+      await screen.findByLabelText(
         'Private key (base58, 64 bytes, Solana-compatible)',
       ),
       '7rANewlCLceTsUo9feN0DLjnu-ayYsdhkVWvHT4FelM',
@@ -497,14 +583,18 @@ describe('LoginRoute', () => {
       expires_in: 900,
       token_type: 'Bearer',
     });
-    expect(sdkMocks.authorizeSession).toHaveBeenCalledWith({
-      redirect_uri: 'https://app.example.com/#/callback?next=%2Fapp',
-      audiences: ['app.example.com'],
-    });
-    expect(sdkMocks.clearLocal).not.toHaveBeenCalled();
-    expect(sdkMocks.sendLoginCallback).toHaveBeenCalledWith(
-      'https://app.example.com/#/callback?next=%2Fapp&access_token=jwt-app&token_type=Bearer&session_id=session-app&refresh_token=refresh-app&expires_in=3600&expires_at=2026-06-30T01%3A00%3A00.000Z&state=state-1',
+    await waitFor(() =>
+      expect(sdkMocks.authorizeSession).toHaveBeenCalledWith({
+        redirect_uri: 'https://app.example.com/#/callback?next=%2Fapp',
+        audiences: ['app.example.com'],
+      }),
     );
+    await waitFor(() =>
+      expect(sdkMocks.sendLoginCallback).toHaveBeenCalledWith(
+        'https://app.example.com/#/callback?next=%2Fapp&access_token=jwt-app&token_type=Bearer&session_id=session-app&refresh_token=refresh-app&expires_in=3600&expires_at=2026-06-30T01%3A00%3A00.000Z&state=state-1',
+      ),
+    );
+    expect(sdkMocks.clearLocal).not.toHaveBeenCalled();
   });
 
   it('returns to passkey registration after a local sign-in and registers', async () => {
@@ -596,7 +686,10 @@ describe('LoginRoute', () => {
       loginPath('http://127.0.0.1:4173/callback', ['127.0.0.1', 'app.ntnl.io']),
     );
 
-    await user.type(screen.getByLabelText('Email address'), 'user@example.com');
+    await user.type(
+      await screen.findByLabelText('Email address'),
+      'user@example.com',
+    );
     await user.click(await expectButtonEnabled('Send email code'));
     await typeOneTimeCode(user, '123456');
     await user.click(await expectButtonEnabled('Verify and continue'));
@@ -605,26 +698,16 @@ describe('LoginRoute', () => {
       email: 'user@example.com',
       code: '123456',
     });
-    expect(sdkMocks.authorizeSession).toHaveBeenCalledWith({
-      redirect_uri: 'http://127.0.0.1:4173/callback',
-      audiences: ['127.0.0.1', 'app.ntnl.io'],
-    });
+    await waitFor(() =>
+      expect(sdkMocks.authorizeSession).toHaveBeenCalledWith({
+        redirect_uri: 'http://127.0.0.1:4173/callback',
+        audiences: ['127.0.0.1', 'app.ntnl.io'],
+      }),
+    );
   });
 
   it('silently delegates when the browser already has a main-site session', async () => {
-    sdkMocks.sessionState.current = {
-      status: 'authenticated',
-      authenticated: true,
-      sessionId: 'session-main',
-      accessToken: 'main-access-token',
-      refreshToken: 'main-refresh-token',
-      receivedAt: '2026-06-30T00:00:00.000Z',
-      expiresAt: '2026-06-30T01:00:00.000Z',
-    };
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response(JSON.stringify({ keys: [] }))),
-    );
+    signInMainSite();
 
     renderLogin();
 
@@ -641,24 +724,31 @@ describe('LoginRoute', () => {
     expect(sdkMocks.clearLocal).not.toHaveBeenCalled();
   });
 
-  it('falls back to the sign-in form when silent delegation fails', async () => {
-    sdkMocks.sessionState.current = {
-      status: 'authenticated',
-      authenticated: true,
-      sessionId: 'session-main',
-      accessToken: 'main-access-token',
-      refreshToken: 'main-refresh-token',
-      receivedAt: '2026-06-30T00:00:00.000Z',
-      expiresAt: '2026-06-30T01:00:00.000Z',
-    };
+  it('resumes the authorize step from the sign-in step with an existing session', async () => {
+    signInMainSite();
+
+    renderLogin(selfSignInPath(loginPath()));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Current location')).toHaveTextContent(
+        '/login?redirect_uri=https%3A%2F%2Fapp.example.com%2Fcallback',
+      ),
+    );
+    await waitFor(() =>
+      expect(sdkMocks.sendLoginCallback).toHaveBeenCalledWith(
+        'https://app.example.com/callback#access_token=jwt-app&token_type=Bearer&session_id=session-app&refresh_token=refresh-app&expires_in=3600&expires_at=2026-06-30T01%3A00%3A00.000Z&state=state-1',
+      ),
+    );
+    expect(screen.queryByLabelText('Email address')).not.toBeInTheDocument();
+  });
+
+  it('returns to the sign-in step with a notice when the authorize step cannot use the session', async () => {
+    const user = userEvent.setup();
+    signInMainSite();
     sdkMocks.authorizeSession.mockRejectedValueOnce({
       status: 400,
       error: 'invalid_request',
     });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response(JSON.stringify({ keys: [] }))),
-    );
 
     renderLogin();
 
@@ -668,6 +758,32 @@ describe('LoginRoute', () => {
       ),
     ).toBeInTheDocument();
     expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
+    expect(screen.getByLabelText('Current location')).toHaveTextContent(
+      'return_to=',
+    );
     expect(sdkMocks.sendLoginCallback).not.toHaveBeenCalled();
+    // The failed attempt stays put instead of bouncing back to the app.
+    expect(sdkMocks.authorizeSession).toHaveBeenCalledTimes(1);
+
+    sdkMocks.emailStart.mockResolvedValueOnce({ ok: true });
+    sdkMocks.emailVerify.mockResolvedValueOnce({
+      sessionId: 'session-retry',
+      accessToken: 'jwt-retry',
+      refreshToken: 'refresh-retry',
+      receivedAt: '2026-06-30T00:00:00.000Z',
+      expiresAt: '2026-06-30T01:00:00.000Z',
+    });
+
+    await user.type(screen.getByLabelText('Email address'), 'user@example.com');
+    await user.click(await expectButtonEnabled('Send email code'));
+    await typeOneTimeCode(user, '123456');
+    await user.click(await expectButtonEnabled('Verify and continue'));
+
+    await waitFor(() =>
+      expect(sdkMocks.sendLoginCallback).toHaveBeenCalledWith(
+        'https://app.example.com/callback#access_token=jwt-app&token_type=Bearer&session_id=session-app&refresh_token=refresh-app&expires_in=3600&expires_at=2026-06-30T01%3A00%3A00.000Z&state=state-1',
+      ),
+    );
+    expect(sdkMocks.authorizeSession).toHaveBeenCalledTimes(2);
   });
 });
