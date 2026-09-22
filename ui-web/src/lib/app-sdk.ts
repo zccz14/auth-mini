@@ -103,6 +103,15 @@ export type DirectoryTokenStatus = {
   created_at: string | null;
 };
 
+export type AdminRequestAuditSnapshot = {
+  started_at: number;
+  endpoints: Array<{
+    method: string;
+    endpoint: string;
+    count: number;
+  }>;
+};
+
 type AdminApi = {
   directoryToken: {
     status(): Promise<DirectoryTokenStatus>;
@@ -125,6 +134,9 @@ type AdminApi = {
   };
   resources: {
     fetch(): Promise<AdminSystemResourcesSnapshot>;
+  };
+  requestAudit: {
+    fetch(): Promise<AdminRequestAuditSnapshot>;
   };
   users(): Promise<{ users: Array<Record<string, unknown>> }>;
   databaseUrl(): string;
@@ -352,6 +364,14 @@ export function extendAppSdk(sdk: AuthMiniApi, serverBaseUrl: string): AppSdk {
         async fetch() {
           return getJson<AdminSystemResourcesSnapshot>(
             '/admin/resources',
+            await requireAccessToken(),
+          );
+        },
+      },
+      requestAudit: {
+        async fetch() {
+          return getJson<AdminRequestAuditSnapshot>(
+            '/admin/request-audit',
             await requireAccessToken(),
           );
         },

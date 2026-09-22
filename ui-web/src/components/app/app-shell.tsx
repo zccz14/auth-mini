@@ -22,6 +22,7 @@ type IconName =
   | 'key'
   | 'sessions'
   | 'remote'
+  | 'audit'
   | 'admin'
   | 'menu'
   | 'close';
@@ -69,6 +70,13 @@ function Icon({ name }: { name: IconName }) {
     remote: (
       <>
         <path d="M7 7h10m-7-3 3 3-3 3M17 17H7m7 3-3-3 3-3" />
+      </>
+    ),
+    audit: (
+      <>
+        <rect x="8" y="3" width="8" height="4" rx="1" />
+        <path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2" />
+        <path d="m9 14 2 2 4-4" />
       </>
     ),
     admin: (
@@ -137,6 +145,7 @@ function pageTitle(pathname: string, t: ReturnType<typeof useI18n>['t']) {
   if (pathname === '/admin/configuration') return t('admin.configuration');
   if (pathname === '/admin/jwks') return t('admin.jwks');
   if (pathname === '/admin/resources') return t('admin.resourcesTitle');
+  if (pathname === '/admin/request-audit') return t('admin.requestAudit');
   if (pathname === '/admin/users') return t('admin.users');
   return t('shell.overview');
 }
@@ -309,6 +318,12 @@ export function AppShell() {
                   label={t('admin.resourcesTitle')}
                   onNavigate={closeMobile}
                   to="/admin/resources"
+                />
+                <SidebarLink
+                  icon="audit"
+                  label={t('admin.requestAudit')}
+                  onNavigate={closeMobile}
+                  to="/admin/request-audit"
                 />
                 <SidebarLink
                   icon="admin"
