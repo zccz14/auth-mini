@@ -1,4 +1,11 @@
-import { useEffect, useState, type CSSProperties, type FormEvent } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+} from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '@/app/providers/app-provider';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -43,9 +50,12 @@ const PASSKEY_REGISTRATION_PATH = '/passkey/register';
 export function LoginRoute() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { sdk, setupState } = useApp();
+  const { sdk, session, setupState } = useApp();
   const { t } = useI18n();
-  const request = parseLoginRequest(location.search, window.location.search);
+  const request = useMemo(
+    () => parseLoginRequest(location.search, window.location.search),
+    [location.search],
+  );
   const selfLoginReturnPath =
     new URLSearchParams(location.search).get('return_to') ===
     PASSKEY_REGISTRATION_PATH
@@ -66,6 +76,10 @@ export function LoginRoute() {
   );
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [ssoPhase, setSsoPhase] = useState<
+    'idle' | 'redirecting' | 'unavailable'
+  >('idle');
+  const ssoAttemptRef = useRef(false);
 
   const sdkReady = Boolean(sdk);
   const passkeyConfigured = Boolean(setupState?.rp_id);
@@ -102,8 +116,53 @@ export function LoginRoute() {
   const loginBackgroundStyle: CSSProperties | undefined = brandBackgroundImage
     ? { backgroundImage: `url("${brandBackgroundImage}")` }
     : undefined;
-  const target =
-    request.status === 'ready' ? authenticationTarget(request) : null;
+  const delegationTarget = useMemo(
+    () =>
+      request.status === 'ready' && request.target.kind !== 'self'
+        ? {
+            params: authenticationTarget(request),
+            redirectUri: request.target.redirectUri,
+            state: request.state,
+          }
+        : null,
+    [request],
+  );
+  const persistedSession = Boolean(session.sessionId && session.refreshToken);
+  const ssoPending =
+    delegationTarget !== null &&
+    ssoPhase !== 'unavailable' &&
+    (ssoPhase === 'redirecting' ||
+      !sdkReady ||
+      (ssoPhase === 'idle' && persistedSession));
+
+  useEffect(() => {
+    if (
+      !sdk ||
+      !delegationTarget ||
+      ssoAttemptRef.current ||
+      !persistedSession
+    ) {
+      return;
+    }
+
+    ssoAttemptRef.current = true;
+    setSsoPhase('redirecting');
+    void sdk
+      .authorizeSession(delegationTarget.params)
+      .then((tokens) => {
+        sendLoginCallback(
+          buildLoginCallbackUrl({
+            redirectUri: delegationTarget.redirectUri,
+            state: delegationTarget.state,
+            tokens,
+          }),
+        );
+      })
+      .catch(() => {
+        setError(t('login.ssoUnavailable'));
+        setSsoPhase('unavailable');
+      });
+  }, [delegationTarget, persistedSession, sdk, t]);
 
   async function handleEmailStart(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -136,7 +195,6 @@ export function LoginRoute() {
         await sdk.email.verify({
           email: email.trim(),
           code: code.trim(),
-          ...(target ?? {}),
         }),
       ),
     );
@@ -148,7 +206,7 @@ export function LoginRoute() {
     }
 
     await runLogin('passkey', async () =>
-      completeLogin(await sdk.passkey.authenticate(target ?? {})),
+      completeLogin(await sdk.passkey.authenticate()),
     );
   }
 
@@ -158,7 +216,7 @@ export function LoginRoute() {
     }
 
     await runLogin('remote-login', async () => {
-      const started = await sdk.remoteLogin.start(target ?? {});
+      const started = await sdk.remoteLogin.start({});
       setRemoteLogin({
         requestId: started.request_id,
         exchangeCode: started.exchange_code,
@@ -218,7 +276,6 @@ export function LoginRoute() {
       const tokens = await sdk.ed25519.verify({
         request_id: challenge.request_id,
         signature,
-        ...(target ?? {}),
       });
       await completeLogin(tokens);
     });
@@ -239,15 +296,26 @@ export function LoginRoute() {
       return;
     }
 
-    sdk?.session.clearLocal();
+    if (!delegationTarget) return;
+
+    ssoAttemptRef.current = true;
+    setSsoPhase('redirecting');
     setMessage(t('login.redirecting'));
-    sendLoginCallback(
-      buildLoginCallbackUrl({
-        redirectUri: request.target.redirectUri,
-        state: request.state,
-        tokens,
-      }),
-    );
+
+    try {
+      await sdk.session.acceptRedirectCallback(toAppSessionTokens(tokens));
+      const appTokens = await sdk.authorizeSession(delegationTarget.params);
+      sendLoginCallback(
+        buildLoginCallbackUrl({
+          redirectUri: delegationTarget.redirectUri,
+          state: delegationTarget.state,
+          tokens: appTokens,
+        }),
+      );
+    } catch (cause) {
+      setSsoPhase('unavailable');
+      setError(formatLoginError(cause, t('login.signInError')));
+    }
   }
 
   async function runLogin(action: PendingAction, task: () => Promise<void>) {
@@ -262,6 +330,36 @@ export function LoginRoute() {
     } finally {
       setPendingAction(null);
     }
+  }
+
+  if (ssoPending) {
+    return (
+      <main
+        className="min-h-screen bg-slate-50 bg-cover bg-center px-4 py-6 text-slate-950 sm:px-6"
+        style={loginBackgroundStyle}
+      >
+        <section className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-xl flex-col justify-center">
+          <div className="mb-4 flex justify-end">
+            <LanguageSelect />
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <div className="space-y-3">
+              <img
+                src={logoSrc}
+                alt={`${brandName} logo`}
+                className="h-10 w-auto max-w-48 object-contain"
+              />
+              <p className="text-sm font-medium text-slate-500">{brandName}</p>
+              <h1 className="text-2xl font-semibold text-slate-950">
+                {ssoPhase === 'redirecting'
+                  ? t('login.ssoRedirecting')
+                  : t('login.ssoChecking')}
+              </h1>
+            </div>
+          </div>
+        </section>
+      </main>
+    );
   }
 
   return (

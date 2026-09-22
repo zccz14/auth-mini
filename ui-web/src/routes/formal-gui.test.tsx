@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRouter } from '@/app/router';
 import { I18nProvider } from '@/lib/i18n';
 import { HomeRoute } from './home';
@@ -39,6 +39,17 @@ const sdk = {
 
 const reloadSetupState = vi.hoisted(() => vi.fn());
 
+const sessionState = vi.hoisted(() => ({
+  current: {
+    accessToken: 'eyJhbGciOiJub25lIn0.eyJhdXRoX2FkbWluIjp0cnVlfQ.' as
+      | string
+      | null,
+    authenticated: true as boolean,
+    refreshToken: 'refresh-token' as string | null,
+    sessionId: 'session-current' as string | null,
+  },
+}));
+
 vi.mock('auth-mini-react-components', () => ({
   useAuthMini: () => ({ isReady: true, signOut: vi.fn() }),
 }));
@@ -49,12 +60,7 @@ vi.mock('@/app/providers/app-provider', () => ({
     serverBaseUrl: 'https://auth.example.com/',
     reloadSetupState,
     sdk,
-    session: {
-      accessToken: 'eyJhbGciOiJub25lIn0.eyJhdXRoX2FkbWluIjp0cnVlfQ.',
-      authenticated: true,
-      refreshToken: 'refresh-token',
-      sessionId: 'session-current',
-    },
+    session: sessionState.current,
     setupError: '',
     setupLoading: false,
     setupState: {
@@ -83,6 +89,15 @@ function renderRoute(ui: ReactNode) {
   return render(<I18nProvider>{ui}</I18nProvider>);
 }
 
+beforeEach(() => {
+  sessionState.current = {
+    accessToken: 'eyJhbGciOiJub25lIn0.eyJhdXRoX2FkbWluIjp0cnVlfQ.',
+    authenticated: true,
+    refreshToken: 'refresh-token',
+    sessionId: 'session-current',
+  };
+});
+
 afterEach(() => {
   localStorage.clear();
   document.documentElement.lang = 'en';
@@ -103,6 +118,13 @@ describe('formal GUI routes', () => {
   });
 
   it('renders the dedicated login page with all sign-in methods', () => {
+    sessionState.current = {
+      accessToken: null,
+      authenticated: false,
+      refreshToken: null,
+      sessionId: null,
+    };
+
     renderRoute(
       <MemoryRouter
         initialEntries={[
