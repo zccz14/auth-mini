@@ -74,7 +74,7 @@ pub(crate) fn sign_access_token(
     session_id: &str,
     issuer: &str,
     audiences: &[String],
-    auth_method: &str,
+    authentication_methods: &[String],
 ) -> rusqlite::Result<String> {
     bootstrap_keys(connection)?;
     let key = current_key(connection)?;
@@ -85,7 +85,7 @@ pub(crate) fn sign_access_token(
         "sid": session_id,
         "iss": issuer,
         "aud": crate::audience::audience_json(audiences),
-        "amr": [auth_method],
+        "amr": authentication_methods,
         "auth_admin": auth_admin,
         "typ": "access",
         "iat": iat,
@@ -498,7 +498,7 @@ mod tests {
             "session-1",
             "https://auth.example.com",
             &["app.example.com".to_owned()],
-            "email_otp",
+            &["email_otp".to_owned()],
         )
         .expect("token signs");
         let segments = token.split('.').collect::<Vec<_>>();
@@ -538,7 +538,7 @@ mod tests {
             "session-1",
             "https://auth.example.com",
             &["app.example.com".to_owned()],
-            "email_otp",
+            &["email_otp".to_owned()],
         )
         .expect("token signs");
         let mut segments = token.split('.').collect::<Vec<_>>();

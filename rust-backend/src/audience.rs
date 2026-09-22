@@ -51,6 +51,13 @@ pub(crate) fn resolve_audiences(
     Ok(values)
 }
 
+pub(crate) fn is_loopback_redirect(redirect_uri: Option<&str>) -> bool {
+    redirect_uri
+        .and_then(|value| Url::parse(value).ok())
+        .and_then(|url| url.host().map(|host| is_allowed_loopback(&host)))
+        .unwrap_or(false)
+}
+
 pub(crate) fn issuer_audience(issuer: &str) -> Result<String, AudienceError> {
     let issuer = Url::parse(issuer).map_err(|_| AudienceError::InvalidIssuer)?;
     let host = issuer.host().ok_or(AudienceError::InvalidIssuer)?;

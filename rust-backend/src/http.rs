@@ -11,7 +11,7 @@ use axum::routing::any;
 use axum::Router;
 use tokio::sync::Semaphore;
 
-use crate::audience::resolve_audiences;
+use crate::audience::{is_loopback_redirect, issuer_audience, resolve_audiences};
 use crate::config::Config;
 use crate::db::{initialize_runtime_database, read_app_issuer};
 use crate::ed25519::{
@@ -44,7 +44,7 @@ use crate::session::{
     authenticate_access_token, authorize_passkey_registration, current_user_response,
     logout_peer_session, logout_session, mint_session_tokens_for_audience, parse_refresh_request,
     refresh_session_tokens, require_admin_auth, require_passkey_management_auth,
-    require_self_audience, token_json, SessionError,
+    require_self_audience, token_json, SessionAuthorizeRequest, SessionError,
 };
 use crate::setup::{
     apply_admin_config, apply_admin_setup, parse_admin_config_request, parse_admin_setup_request,
@@ -122,6 +122,7 @@ fn router(config: Config) -> Router {
         .route("/me/email/start", any(axum_request))
         .route("/me/email/verify", any(axum_request))
         .route("/session/refresh", any(axum_request))
+        .route("/session/authorize", any(axum_request))
         .route("/session/logout", any(axum_request))
         .route("/session/{session_id}/logout", any(axum_request))
         .route("/ed25519/credentials", any(axum_request))
@@ -188,6 +189,7 @@ fn audit_static_endpoint(method: &str, path: &str) -> bool {
             | ("POST", "/me/email/start")
             | ("POST", "/me/email/verify")
             | ("POST", "/session/refresh")
+            | ("POST", "/session/authorize")
             | ("POST", "/session/logout")
             | ("GET", "/ed25519/credentials")
             | ("POST", "/ed25519/credentials")
@@ -443,6 +445,10 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
 
     if request.method == "POST" && request.path == "/session/refresh" {
         return handle_session_refresh(request, config).map(|response| cors(request, response));
+    }
+
+    if request.method == "POST" && request.path == "/session/authorize" {
+        return handle_session_authorize(request, config).map(|response| cors(request, response));
     }
 
     if request.method == "POST" && request.path == "/session/logout" {
@@ -1010,6 +1016,7 @@ fn handle_email_verify(request: &Request, config: &Config) -> io::Result<Respons
                 &connection,
                 &user_id,
                 "email_otp",
+                None,
                 &issuer,
                 &audiences,
                 request.client_ip().as_deref(),
@@ -1096,6 +1103,47 @@ fn handle_session_refresh(request: &Request, config: &Config) -> io::Result<Resp
         Err(SessionError::SessionSuperseded) => Ok(Response::json_error(401, "session_superseded")),
         Err(_) => Ok(Response::json_error(401, "session_invalidated")),
     }
+}
+
+fn handle_session_authorize(request: &Request, config: &Config) -> io::Result<Response> {
+    let Some((connection, auth)) = authenticated_connection(request, config)? else {
+        return Ok(Response::json_error(401, "invalid_access_token"));
+    };
+    let parsed = match serde_json::from_str::<SessionAuthorizeRequest>(&request.body) {
+        Ok(parsed) => parsed,
+        Err(_) => return Ok(Response::json_error(400, "invalid_request")),
+    };
+    let issuer = read_app_issuer(&connection).map_err(io::Error::other)?;
+    let audiences = match resolve_audiences(
+        &issuer,
+        parsed.redirect_uri.as_deref(),
+        parsed.aud.as_deref(),
+        parsed.audiences.as_deref(),
+    ) {
+        Ok(audiences) => audiences,
+        Err(_) => return Ok(Response::json_error(400, "invalid_request")),
+    };
+    let issuer_host = issuer_audience(&issuer).map_err(|_| io::Error::other("invalid issuer"))?;
+    // Only loopback targets may receive the issuer audience; a remote site must not silently
+    // obtain main-site tokens through delegation.
+    if audiences.iter().any(|value| value == &issuer_host)
+        && !is_loopback_redirect(parsed.redirect_uri.as_deref())
+    {
+        return Ok(Response::json_error(400, "invalid_request"));
+    }
+    let pair = mint_session_tokens_for_audience(
+        &connection,
+        &auth.user_id,
+        "sso",
+        Some(&auth.auth_method),
+        &issuer,
+        &audiences,
+        request.client_ip().as_deref(),
+        request.header("User-Agent").as_deref(),
+    )
+    .map_err(io::Error::other)?;
+
+    Ok(Response::json_value(200, token_json(pair)))
 }
 
 fn handle_session_logout(request: &Request, config: &Config) -> io::Result<Response> {
@@ -1349,6 +1397,7 @@ fn handle_webauthn_authentication_verify(
                 &connection,
                 &outcome.user_id,
                 "webauthn",
+                None,
                 &issuer,
                 &audiences,
                 request.client_ip().as_deref(),
@@ -1680,6 +1729,7 @@ mod tests {
             &connection,
             "admin",
             "email_otp",
+            None,
             "http://localhost:7777",
             &["linkit.example.com".to_owned()],
             None,
@@ -2008,6 +2058,11 @@ mod tests {
                 "/session/refresh",
                 r#"{"session_id":"session-1","refresh_token":"token-1"}"#,
             ),
+            (
+                "POST",
+                "/session/authorize",
+                r#"{"redirect_uri":"https://app.example.com/callback"}"#,
+            ),
             ("POST", "/session/logout", ""),
             ("POST", "/session/session-1/logout", ""),
             (
@@ -2205,6 +2260,7 @@ mod tests {
                     user_id TEXT NOT NULL,
                     refresh_token_hash TEXT NOT NULL,
                     auth_method TEXT NOT NULL,
+                    source_auth_method TEXT,
                     audience TEXT NOT NULL DEFAULT '',
                     ip TEXT,
                     user_agent TEXT,
@@ -2378,6 +2434,7 @@ mod tests {
             &connection,
             "user-1",
             "email_otp",
+            None,
             "https://app.example.com",
             &["api.example.com".to_owned()],
             None,
@@ -2420,6 +2477,172 @@ mod tests {
     }
 
     #[test]
+    fn authorizes_downstream_session_from_self_session_over_http_boundary() {
+        let db_path = test_db_path("http-session-authorize");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserted");
+        let self_pair = mint_session_tokens_for_audience(
+            &connection,
+            "user-1",
+            "webauthn",
+            None,
+            "https://app.example.com",
+            &["app.example.com".to_owned()],
+            None,
+            None,
+        )
+        .expect("self session minted");
+        drop(connection);
+
+        let response = route_request(
+            &Request {
+                method: "POST".to_string(),
+                path: "/session/authorize".to_string(),
+                headers: vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", self_pair.access_token),
+                )],
+                body: r#"{"redirect_uri":"https://portal.example.com/callback"}"#.to_string(),
+            },
+            &Config {
+                database: Some(crate::DatabaseConfig {
+                    db_path: db_path.clone(),
+                }),
+                ..Config::default()
+            },
+        )
+        .expect("authorize response builds");
+
+        assert_eq!(response.status, 200);
+        let body: serde_json::Value =
+            serde_json::from_str(&response.body_text()).expect("authorize response parses");
+        let connection = Connection::open(&db_path).expect("database reopens");
+        let payload = crate::jwks::verify_access_token(
+            &connection,
+            body["access_token"].as_str().expect("access token exists"),
+        )
+        .expect("delegated access token verifies");
+        assert_eq!(payload["aud"], "portal.example.com");
+        assert_eq!(payload["amr"], serde_json::json!(["sso", "webauthn"]));
+        let (auth_method, source): (String, Option<String>) = connection
+            .query_row(
+                "SELECT auth_method, source_auth_method FROM sessions WHERE id = ?1",
+                [body["session_id"].as_str().expect("session id exists")],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("delegated session reads");
+        assert_eq!(auth_method, "sso");
+        assert_eq!(source.as_deref(), Some("webauthn"));
+    }
+
+    #[test]
+    fn session_authorize_requires_self_audience() {
+        let db_path = test_db_path("http-session-authorize-self");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserted");
+        let external_pair = mint_session_tokens_for_audience(
+            &connection,
+            "user-1",
+            "email_otp",
+            None,
+            "https://app.example.com",
+            &["api.example.com".to_owned()],
+            None,
+            None,
+        )
+        .expect("external session minted");
+        drop(connection);
+        let config = Config {
+            database: Some(crate::DatabaseConfig { db_path }),
+            ..Config::default()
+        };
+        let body = r#"{"redirect_uri":"https://portal.example.com/callback"}"#.to_string();
+
+        for authorization in [
+            Vec::<(String, String)>::new(),
+            vec![(
+                "Authorization".to_string(),
+                format!("Bearer {}", external_pair.access_token),
+            )],
+        ] {
+            let response = route_request(
+                &Request {
+                    method: "POST".to_string(),
+                    path: "/session/authorize".to_string(),
+                    headers: authorization,
+                    body: body.clone(),
+                },
+                &config,
+            )
+            .expect("authorize rejection response builds");
+            assert_eq!(response.status, 401);
+        }
+    }
+
+    #[test]
+    fn session_authorize_rejects_invalid_target_audience() {
+        let db_path = test_db_path("http-session-authorize-target");
+        let connection = Connection::open(&db_path).expect("database opens");
+        create_auth_schema(&connection);
+        connection
+            .execute(
+                "INSERT INTO users (id, email, email_verified_at) VALUES (?1, ?2, ?3)",
+                ("user-1", "user@example.com", "2026-01-01T00:00:00.000Z"),
+            )
+            .expect("user inserted");
+        let self_pair = mint_session_tokens_for_audience(
+            &connection,
+            "user-1",
+            "email_otp",
+            None,
+            "https://app.example.com",
+            &["app.example.com".to_owned()],
+            None,
+            None,
+        )
+        .expect("self session minted");
+        drop(connection);
+        let config = Config {
+            database: Some(crate::DatabaseConfig { db_path }),
+            ..Config::default()
+        };
+        let authorization = (
+            "Authorization".to_string(),
+            format!("Bearer {}", self_pair.access_token),
+        );
+
+        for body in [
+            r#"{"redirect_uri":"http://localhost:5173/callback"}"#,
+            r#"{"redirect_uri":"https://portal.example.com/callback","aud":"other.example.com"}"#,
+            r#"{"redirect_uri":"https://portal.example.com/callback","audiences":["portal.example.com","app.example.com"]}"#,
+        ] {
+            let response = route_request(
+                &Request {
+                    method: "POST".to_string(),
+                    path: "/session/authorize".to_string(),
+                    headers: vec![authorization.clone()],
+                    body: body.to_string(),
+                },
+                &config,
+            )
+            .expect("authorize target rejection response builds");
+            assert_eq!(response.status, 400);
+        }
+    }
+
+    #[test]
     fn external_audience_cannot_use_self_apis_but_can_logout_current_session() {
         let db_path = test_db_path("external-audience-self-api-boundary");
         let connection = Connection::open(&db_path).expect("database opens");
@@ -2434,6 +2657,7 @@ mod tests {
             &connection,
             "user-1",
             "email_otp",
+            None,
             "https://app.example.com",
             &["api.example.com".to_owned()],
             None,
@@ -2454,6 +2678,7 @@ mod tests {
             ("GET", "/me"),
             ("POST", "/me/email/start"),
             ("POST", "/me/email/verify"),
+            ("POST", "/session/authorize"),
             ("GET", "/ed25519/credentials"),
             ("GET", "/admin/jwks"),
         ] {
@@ -4142,6 +4367,7 @@ mod tests {
             ("POST", "/me/email/start", Some("/me/email/start")),
             ("POST", "/me/email/verify", Some("/me/email/verify")),
             ("POST", "/session/refresh", Some("/session/refresh")),
+            ("POST", "/session/authorize", Some("/session/authorize")),
             ("POST", "/session/logout", Some("/session/logout")),
             ("GET", "/ed25519/credentials", Some("/ed25519/credentials")),
             ("POST", "/ed25519/credentials", Some("/ed25519/credentials")),
@@ -4636,6 +4862,7 @@ mod tests {
             &connection,
             "user-1",
             "email_otp",
+            None,
             "https://auth.example.com",
             &["auth.example.com".to_string()],
             None,
@@ -4821,6 +5048,7 @@ mod tests {
                     user_id TEXT NOT NULL,
                     refresh_token_hash TEXT NOT NULL,
                     auth_method TEXT NOT NULL,
+                    source_auth_method TEXT,
                     audience TEXT NOT NULL DEFAULT '',
                     ip TEXT,
                     user_agent TEXT,

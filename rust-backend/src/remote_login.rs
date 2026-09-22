@@ -263,6 +263,7 @@ pub(crate) fn exchange(
         &transaction,
         &user_id,
         "agent_approval",
+        None,
         issuer,
         &audiences,
         ip,
