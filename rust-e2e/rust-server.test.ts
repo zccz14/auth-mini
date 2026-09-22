@@ -222,6 +222,8 @@ describe.sequential('rust external server e2e smoke', () => {
 
     const auditProbe = await fetch(`${baseUrl}/audit-probe-missing`);
     expect(auditProbe.status).toBe(404);
+    const methodProbe = await fetch(`${baseUrl}/jwks`, { method: 'DELETE' });
+    expect(methodProbe.status).toBe(404);
     const unauthorizedAudit = await fetch(`${baseUrl}/admin/request-audit`);
     expect(unauthorizedAudit.status).toBe(401);
     expect(await unauthorizedAudit.json()).toEqual({
@@ -235,6 +237,12 @@ describe.sequential('rust external server e2e smoke', () => {
     const requestAuditSnapshot = (await requestAudit.json()) as {
       started_at: number;
       endpoints: Array<{ method: string; endpoint: string; count: number }>;
+      unmatched: Array<{
+        method: string;
+        path: string;
+        count: number;
+        last_seen: number;
+      }>;
     };
     expect(requestAuditSnapshot.started_at).toEqual(expect.any(Number));
     expect(
@@ -262,6 +270,31 @@ describe.sequential('rust external server e2e smoke', () => {
       requestAuditSnapshot.endpoints.some(
         (entry) =>
           entry.endpoint === '/web' || entry.endpoint.startsWith('/web/'),
+      ),
+    ).toBe(false);
+
+    const unmatchedProbe = requestAuditSnapshot.unmatched.find(
+      (entry) =>
+        entry.method === 'GET' && entry.path === '/audit-probe-missing',
+    );
+    expect(unmatchedProbe?.count).toBeGreaterThanOrEqual(1);
+    expect(unmatchedProbe?.last_seen).toEqual(expect.any(Number));
+    expect(
+      requestAuditSnapshot.unmatched.some(
+        (entry) => entry.method === 'DELETE' && entry.path === '/jwks',
+      ),
+    ).toBe(true);
+    expect(
+      requestAuditSnapshot.unmatched.some((entry) => entry.path === '/healthz'),
+    ).toBe(false);
+    expect(
+      requestAuditSnapshot.unmatched.some(
+        (entry) => entry.method === 'OPTIONS',
+      ),
+    ).toBe(false);
+    expect(
+      requestAuditSnapshot.unmatched.some(
+        (entry) => entry.path === '/web' || entry.path.startsWith('/web/'),
       ),
     ).toBe(false);
 
