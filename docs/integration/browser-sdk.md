@@ -27,7 +27,7 @@ Browser SDK persistence semantics remain browser-only: the maintained browser mo
 
 Passkey registration and sign-in are completed on the Auth Mini server page. Downstream apps should send users to the Auth Mini instance for browser auth and then consume the returned session or token result, similar to a "Sign in with Auth Mini" flow. WebAuthn origin is derived from the configured issuer; clients do not configure a separate business-app page origin.
 
-For the redirect URL contract, callback fragment fields, and business App responsibilities, see [业务 App 跳转登录接入](./login-redirect.md).
+For the redirect URL contract, callback fragment fields, and business App responsibilities, see [业务 App 跳转登录接入](./login-redirect.md). When the browser already holds the Auth Mini main-site session, the login page delegates the app session without an interactive step; such sessions carry `amr` containing `sso`.
 
 After the business App validates the one-time redirect `state`, it can adopt the
 returned session into Browser SDK persistence with `acceptRedirectCallback`:

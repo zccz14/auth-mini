@@ -38,6 +38,7 @@ const sdkMocks = vi.hoisted(() => {
   const setupFetch = vi.fn();
   const remoteStart = vi.fn();
   const remoteExchange = vi.fn();
+  const authorizeSession = vi.fn();
   const clearLocal = vi.fn();
   const acceptRedirectCallback = vi.fn();
   const listeners = new Set<(state: MockSessionState) => void>();
@@ -53,6 +54,7 @@ const sdkMocks = vi.hoisted(() => {
       },
       currentUser: { fetch: vi.fn() },
       remoteLogin: { start: remoteStart, exchange: remoteExchange },
+      authorizeSession,
       passkey: { register: passkeyRegister, authenticate: passkeyAuthenticate },
       session: {
         getState: () => sessionState.current,
@@ -76,6 +78,7 @@ const sdkMocks = vi.hoisted(() => {
     setupFetch,
     remoteStart,
     remoteExchange,
+    authorizeSession,
     clearLocal,
     acceptRedirectCallback,
     listeners,
@@ -181,6 +184,14 @@ describe('LoginRoute', () => {
     sdkMocks.setupFetch.mockReset();
     sdkMocks.remoteStart.mockReset();
     sdkMocks.remoteExchange.mockReset();
+    sdkMocks.authorizeSession.mockReset();
+    sdkMocks.authorizeSession.mockResolvedValue({
+      sessionId: 'session-app',
+      accessToken: 'jwt-app',
+      refreshToken: 'refresh-app',
+      receivedAt: '2026-06-30T00:00:00.000Z',
+      expiresAt: '2026-06-30T01:00:00.000Z',
+    });
     sdkMocks.clearLocal.mockReset();
     sdkMocks.setupFetch.mockResolvedValue({
       admin_ed25519: null,
@@ -264,10 +275,7 @@ describe('LoginRoute', () => {
 
     expect(await screen.findByText('Waiting for approval')).toBeInTheDocument();
     expect(screen.getByText('A1B2C3D4')).toBeInTheDocument();
-    expect(sdkMocks.remoteStart).toHaveBeenCalledWith({
-      audiences: ['app.example.com'],
-      redirect_uri: 'https://app.example.com/callback',
-    });
+    expect(sdkMocks.remoteStart).toHaveBeenCalledWith({});
   });
 
   it('always identifies the HTTPS application domain', async () => {
@@ -357,13 +365,22 @@ describe('LoginRoute', () => {
     expect(sdkMocks.emailVerify).toHaveBeenCalledWith({
       email: 'user@example.com',
       code: '123456',
+    });
+    expect(sdkMocks.acceptRedirectCallback).toHaveBeenCalledWith({
+      session_id: 'session-email',
+      access_token: 'jwt-email',
+      refresh_token: 'refresh-email',
+      expires_in: 3600,
+      token_type: 'Bearer',
+    });
+    expect(sdkMocks.authorizeSession).toHaveBeenCalledWith({
       redirect_uri: 'https://app.example.com/callback',
       audiences: ['app.example.com'],
     });
     expect(sdkMocks.sendLoginCallback).toHaveBeenCalledWith(
-      'https://app.example.com/callback#access_token=jwt-email&token_type=Bearer&session_id=session-email&refresh_token=refresh-email&expires_in=3600&expires_at=2026-06-30T01%3A00%3A00.000Z&state=state-1',
+      'https://app.example.com/callback#access_token=jwt-app&token_type=Bearer&session_id=session-app&refresh_token=refresh-app&expires_in=3600&expires_at=2026-06-30T01%3A00%3A00.000Z&state=state-1',
     );
-    expect(sdkMocks.clearLocal).toHaveBeenCalledTimes(1);
+    expect(sdkMocks.clearLocal).not.toHaveBeenCalled();
   });
 
   it('redirects when redirect_uri is on the document query before the hash route', async () => {
@@ -389,8 +406,12 @@ describe('LoginRoute', () => {
     await typeOneTimeCode(user, '123456');
     await user.click(await expectButtonEnabled('Verify and continue'));
 
+    expect(sdkMocks.authorizeSession).toHaveBeenCalledWith({
+      redirect_uri: 'https://app.example.com/callback',
+      audiences: ['app.example.com'],
+    });
     expect(sdkMocks.sendLoginCallback).toHaveBeenCalledWith(
-      'https://app.example.com/callback#access_token=jwt-document-query&token_type=Bearer&session_id=session-document-query&refresh_token=refresh-document-query&expires_in=3600&expires_at=2026-06-30T01%3A00%3A00.000Z&state=state-document',
+      'https://app.example.com/callback#access_token=jwt-app&token_type=Bearer&session_id=session-app&refresh_token=refresh-app&expires_in=3600&expires_at=2026-06-30T01%3A00%3A00.000Z&state=state-document',
     );
   });
 
@@ -408,13 +429,14 @@ describe('LoginRoute', () => {
 
     await user.click(await expectButtonEnabled('Sign In with PassKey'));
 
-    expect(sdkMocks.passkeyAuthenticate).toHaveBeenCalledWith({
+    expect(sdkMocks.passkeyAuthenticate).toHaveBeenCalledWith();
+    expect(sdkMocks.authorizeSession).toHaveBeenCalledWith({
       redirect_uri: 'https://app.example.com/callback',
       audiences: ['app.example.com'],
     });
-    expect(sdkMocks.clearLocal).toHaveBeenCalledTimes(1);
+    expect(sdkMocks.clearLocal).not.toHaveBeenCalled();
     expect(sdkMocks.sendLoginCallback).toHaveBeenCalledWith(
-      'https://app.example.com/callback#access_token=jwt-passkey&token_type=Bearer&session_id=session-passkey&refresh_token=refresh-passkey&expires_in=3600&expires_at=2026-06-30T01%3A00%3A00.000Z&state=state-1',
+      'https://app.example.com/callback#access_token=jwt-app&token_type=Bearer&session_id=session-app&refresh_token=refresh-app&expires_in=3600&expires_at=2026-06-30T01%3A00%3A00.000Z&state=state-1',
     );
   });
 
@@ -449,9 +471,6 @@ describe('LoginRoute', () => {
       expires_in: 900,
       token_type: 'Bearer',
     });
-    vi.spyOn(Date, 'now').mockReturnValue(
-      new Date('2026-06-30T00:00:00.000Z').getTime(),
-    );
 
     renderLogin(loginPath('https://app.example.com/#/callback?next=%2Fapp'));
 
@@ -470,16 +489,22 @@ describe('LoginRoute', () => {
     expect(sdkMocks.ed25519Verify).toHaveBeenCalledWith({
       request_id: 'request-1',
       signature: 'signature-1',
+    });
+    expect(sdkMocks.acceptRedirectCallback).toHaveBeenCalledWith({
+      session_id: 'session-ed25519',
+      access_token: 'jwt-ed25519',
+      refresh_token: 'refresh-ed25519',
+      expires_in: 900,
+      token_type: 'Bearer',
+    });
+    expect(sdkMocks.authorizeSession).toHaveBeenCalledWith({
       redirect_uri: 'https://app.example.com/#/callback?next=%2Fapp',
       audiences: ['app.example.com'],
     });
-    expect(sdkMocks.acceptRedirectCallback).not.toHaveBeenCalled();
-    expect(sdkMocks.clearLocal).toHaveBeenCalledTimes(1);
+    expect(sdkMocks.clearLocal).not.toHaveBeenCalled();
     expect(sdkMocks.sendLoginCallback).toHaveBeenCalledWith(
-      'https://app.example.com/#/callback?next=%2Fapp&access_token=jwt-ed25519&token_type=Bearer&session_id=session-ed25519&refresh_token=refresh-ed25519&expires_in=900&expires_at=2026-06-30T00%3A15%3A00.000Z&state=state-1',
+      'https://app.example.com/#/callback?next=%2Fapp&access_token=jwt-app&token_type=Bearer&session_id=session-app&refresh_token=refresh-app&expires_in=3600&expires_at=2026-06-30T01%3A00%3A00.000Z&state=state-1',
     );
-
-    vi.mocked(Date.now).mockRestore();
   });
 
   it('returns to passkey registration after a local sign-in and registers', async () => {
@@ -556,7 +581,7 @@ describe('LoginRoute', () => {
     ).toBeInTheDocument();
   });
 
-  it('passes redirect_uri and aud when a local app verifies login', async () => {
+  it('delegates a local app session with redirect_uri and audiences', async () => {
     const user = userEvent.setup();
     sdkMocks.emailStart.mockResolvedValueOnce({ ok: true });
     sdkMocks.emailVerify.mockResolvedValueOnce({
@@ -579,8 +604,70 @@ describe('LoginRoute', () => {
     expect(sdkMocks.emailVerify).toHaveBeenCalledWith({
       email: 'user@example.com',
       code: '123456',
+    });
+    expect(sdkMocks.authorizeSession).toHaveBeenCalledWith({
       redirect_uri: 'http://127.0.0.1:4173/callback',
       audiences: ['127.0.0.1', 'app.ntnl.io'],
     });
+  });
+
+  it('silently delegates when the browser already has a main-site session', async () => {
+    sdkMocks.sessionState.current = {
+      status: 'authenticated',
+      authenticated: true,
+      sessionId: 'session-main',
+      accessToken: 'main-access-token',
+      refreshToken: 'main-refresh-token',
+      receivedAt: '2026-06-30T00:00:00.000Z',
+      expiresAt: '2026-06-30T01:00:00.000Z',
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ keys: [] }))),
+    );
+
+    renderLogin();
+
+    await waitFor(() =>
+      expect(sdkMocks.sendLoginCallback).toHaveBeenCalledWith(
+        'https://app.example.com/callback#access_token=jwt-app&token_type=Bearer&session_id=session-app&refresh_token=refresh-app&expires_in=3600&expires_at=2026-06-30T01%3A00%3A00.000Z&state=state-1',
+      ),
+    );
+    expect(sdkMocks.authorizeSession).toHaveBeenCalledWith({
+      redirect_uri: 'https://app.example.com/callback',
+      audiences: ['app.example.com'],
+    });
+    expect(screen.queryByLabelText('Email address')).not.toBeInTheDocument();
+    expect(sdkMocks.clearLocal).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the sign-in form when silent delegation fails', async () => {
+    sdkMocks.sessionState.current = {
+      status: 'authenticated',
+      authenticated: true,
+      sessionId: 'session-main',
+      accessToken: 'main-access-token',
+      refreshToken: 'main-refresh-token',
+      receivedAt: '2026-06-30T00:00:00.000Z',
+      expiresAt: '2026-06-30T01:00:00.000Z',
+    };
+    sdkMocks.authorizeSession.mockRejectedValueOnce({
+      status: 400,
+      error: 'invalid_request',
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ keys: [] }))),
+    );
+
+    renderLogin();
+
+    expect(
+      await screen.findByText(
+        'Your existing sign-in could not be used. Sign in to continue.',
+      ),
+    ).toBeInTheDocument();
+    expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
+    expect(sdkMocks.sendLoginCallback).not.toHaveBeenCalled();
   });
 });

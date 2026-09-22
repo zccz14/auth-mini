@@ -110,4 +110,68 @@ describe('extendAppSdk', () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it('refreshes and retries authorizeSession when the current access token is stale', async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: 'invalid_access_token' }), {
+          status: 401,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            session_id: 'delegated-1',
+            access_token: 'delegated-access-token',
+            refresh_token: 'delegated-refresh-token',
+            expires_in: 900,
+            token_type: 'Bearer',
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      );
+
+    vi.stubGlobal('fetch', fetch);
+
+    try {
+      const sdk = extendAppSdk(sdkMocks.sdk, 'https://auth.example.com');
+
+      await expect(
+        sdk.authorizeSession({
+          redirect_uri: 'https://app.example.com/callback',
+          audiences: ['app.example.com'],
+        }),
+      ).resolves.toMatchObject({
+        session_id: 'delegated-1',
+        access_token: 'delegated-access-token',
+      });
+
+      expect(sdkMocks.refresh).toHaveBeenCalledTimes(1);
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(fetch.mock.calls[0]?.[0]?.toString()).toBe(
+        'https://auth.example.com/session/authorize',
+      );
+      expect(fetch.mock.calls[0]?.[1]).toMatchObject({
+        headers: expect.objectContaining({
+          authorization: 'Bearer stale-access-token',
+        }),
+        body: JSON.stringify({
+          redirect_uri: 'https://app.example.com/callback',
+          audiences: ['app.example.com'],
+        }),
+      });
+      expect(fetch.mock.calls[1]?.[1]).toMatchObject({
+        headers: expect.objectContaining({
+          authorization: 'Bearer fresh-access-token',
+        }),
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });

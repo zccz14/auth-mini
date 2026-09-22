@@ -322,6 +322,44 @@ describe.sequential('rust external server e2e smoke', () => {
     });
     const emailUserId = String(authenticatedMeState.user_id);
 
+    const delegatedSession = await postJson(
+      `${baseUrl}/session/authorize`,
+      { redirect_uri: 'https://delegated.example.com/callback' },
+      emailTokens.access_token,
+    );
+    expect(delegatedSession.status).toBe(200);
+    const delegatedTokens = (await delegatedSession.json()) as TokenResponse;
+    expect(decodeJwtPayload(delegatedTokens.access_token)).toMatchObject({
+      aud: 'delegated.example.com',
+      amr: ['sso', 'email_otp'],
+    });
+
+    const delegatedMe = await fetch(`${baseUrl}/me`, {
+      headers: bearerHeaders(delegatedTokens.access_token),
+    });
+    expect(delegatedMe.status).toBe(401);
+
+    const delegatedRefresh = await postJson(`${baseUrl}/session/refresh`, {
+      session_id: delegatedTokens.session_id,
+      refresh_token: delegatedTokens.refresh_token,
+    });
+    expect(delegatedRefresh.status).toBe(200);
+    const delegatedRefreshed = (await delegatedRefresh.json()) as TokenResponse;
+    expect(decodeJwtPayload(delegatedRefreshed.access_token)).toMatchObject({
+      aud: 'delegated.example.com',
+      amr: ['sso', 'email_otp'],
+    });
+
+    const issuerDelegation = await postJson(
+      `${baseUrl}/session/authorize`,
+      {
+        redirect_uri: 'https://delegated.example.com/callback',
+        audiences: ['delegated.example.com', new URL(webauthnOrigin).hostname],
+      },
+      emailTokens.access_token,
+    );
+    expect(issuerDelegation.status).toBe(400);
+
     const deviceKey = createTestEd25519Keypair('alternate');
     const credentialResponse = await postJson(
       `${baseUrl}/ed25519/credentials`,
@@ -644,6 +682,14 @@ describe.sequential('rust external server e2e smoke', () => {
     });
   });
 });
+
+function decodeJwtPayload(token: string): Record<string, unknown> {
+  const payload = token.split('.')[1];
+  if (!payload) {
+    throw new Error('JWT payload segment is missing');
+  }
+  return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+}
 
 type TokenResponse = {
   session_id: string;

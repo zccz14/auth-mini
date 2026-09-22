@@ -678,6 +678,36 @@ paths:
                 session_superseded:
                   value:
                     error: session_superseded
+  /session/authorize:
+    post:
+      security:
+        - bearerAuth: []
+      tags:
+        - session
+      operationId: authorizeSession
+      summary: Delegate a downstream session from the authenticated main-site session
+      description: |
+        Creates an additional session for the requested downstream audience. The caller must
+        present a valid main-site (issuer-audience) access token. The delegated session records
+        `sso` as its authentication method and carries the source authentication method together
+        with `sso` in its `amr` claim. Non-loopback targets cannot request the issuer audience.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionAuthorizeRequest'
+      responses:
+        '200':
+          description: Delegated session tokens created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionTokenResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/InvalidAccessToken'
   /session/logout:
     post:
       tags:
@@ -1814,6 +1844,21 @@ components:
           type: string
           pattern: ^\d{6}$
           example: '123456'
+    SessionAuthorizeRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        redirect_uri:
+          type: string
+          format: uri
+        aud:
+          type: string
+        audiences:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
     RefreshRequest:
       type: object
       additionalProperties: false

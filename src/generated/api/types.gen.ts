@@ -240,6 +240,12 @@ export type EmailChangeVerifyRequest = {
     code: string;
 };
 
+export type SessionAuthorizeRequest = {
+    redirect_uri?: string;
+    aud?: string;
+    audiences?: Array<string>;
+};
+
 export type RefreshRequest = {
     session_id: string;
     refresh_token: string;
@@ -1281,6 +1287,35 @@ export type RefreshSessionResponses = {
 };
 
 export type RefreshSessionResponse = RefreshSessionResponses[keyof RefreshSessionResponses];
+
+export type AuthorizeSessionData = {
+    body: SessionAuthorizeRequest;
+    path?: never;
+    query?: never;
+    url: '/session/authorize';
+};
+
+export type AuthorizeSessionErrors = {
+    /**
+     * Request body or path parameters do not match the route contract
+     */
+    400: ErrorResponse;
+    /**
+     * Missing, malformed, expired, or revoked access token
+     */
+    401: ErrorResponse;
+};
+
+export type AuthorizeSessionError = AuthorizeSessionErrors[keyof AuthorizeSessionErrors];
+
+export type AuthorizeSessionResponses = {
+    /**
+     * Delegated session tokens created
+     */
+    200: SessionTokenResponse;
+};
+
+export type AuthorizeSessionResponse = AuthorizeSessionResponses[keyof AuthorizeSessionResponses];
 
 export type LogoutCurrentSessionData = {
     body?: never;

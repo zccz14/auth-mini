@@ -192,6 +192,7 @@ export type AppSdk = AuthMiniApi & {
   currentUser: CurrentUserApi;
   remoteLogin: RemoteLoginApi;
   ed25519: Ed25519Api;
+  authorizeSession(input: SessionAuthorizeInput): Promise<AppSessionTokens>;
 };
 
 export type AppSessionTokens = {
@@ -200,6 +201,12 @@ export type AppSessionTokens = {
   refresh_token: string;
   expires_in: number;
   token_type: 'Bearer';
+};
+
+export type SessionAuthorizeInput = {
+  redirect_uri?: string;
+  aud?: string;
+  audiences?: string[];
 };
 
 export function extendAppSdk(sdk: AuthMiniApi, serverBaseUrl: string): AppSdk {
@@ -299,6 +306,28 @@ export function extendAppSdk(sdk: AuthMiniApi, serverBaseUrl: string): AppSdk {
 
   return {
     ...sdk,
+    async authorizeSession(input) {
+      try {
+        return await postJson<AppSessionTokens>(
+          '/session/authorize',
+          input,
+          await requireAccessToken(),
+        );
+      } catch (error) {
+        if (
+          !isRetryableAuthError(error) ||
+          !sdk.session.getState().refreshToken
+        ) {
+          throw error;
+        }
+
+        return await postJson<AppSessionTokens>(
+          '/session/authorize',
+          input,
+          await requireAccessToken(true),
+        );
+      }
+    },
     admin: {
       directoryToken: {
         async status() {
