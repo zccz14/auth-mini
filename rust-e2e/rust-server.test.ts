@@ -220,6 +220,51 @@ describe.sequential('rust external server e2e smoke', () => {
     );
     expect(preflight.headers.get('access-control-allow-headers')).toBe('*');
 
+    const auditProbe = await fetch(`${baseUrl}/audit-probe-missing`);
+    expect(auditProbe.status).toBe(404);
+    const unauthorizedAudit = await fetch(`${baseUrl}/admin/request-audit`);
+    expect(unauthorizedAudit.status).toBe(401);
+    expect(await unauthorizedAudit.json()).toEqual({
+      error: 'invalid_access_token',
+    });
+
+    const requestAudit = await fetch(`${baseUrl}/admin/request-audit`, {
+      headers: bearerHeaders(adminTokens.access_token),
+    });
+    expect(requestAudit.status).toBe(200);
+    const requestAuditSnapshot = (await requestAudit.json()) as {
+      started_at: number;
+      endpoints: Array<{ method: string; endpoint: string; count: number }>;
+    };
+    expect(requestAuditSnapshot.started_at).toEqual(expect.any(Number));
+    expect(
+      requestAuditSnapshot.endpoints.find(
+        (entry) => entry.method === 'GET' && entry.endpoint === '/healthz',
+      )?.count,
+    ).toBeGreaterThanOrEqual(1);
+    expect(
+      requestAuditSnapshot.endpoints.some(
+        (entry) =>
+          entry.method === 'POST' && entry.endpoint === '/session/refresh',
+      ),
+    ).toBe(true);
+    expect(
+      requestAuditSnapshot.endpoints.some(
+        (entry) => entry.method === 'OPTIONS',
+      ),
+    ).toBe(false);
+    expect(
+      requestAuditSnapshot.endpoints.some((entry) =>
+        entry.endpoint.includes('audit-probe-missing'),
+      ),
+    ).toBe(false);
+    expect(
+      requestAuditSnapshot.endpoints.some(
+        (entry) =>
+          entry.endpoint === '/web' || entry.endpoint.startsWith('/web/'),
+      ),
+    ).toBe(false);
+
     const emailSession = await postJson(`${baseUrl}/email/verify`, {
       email: 'rust-user@example.com',
       code: '123456',
