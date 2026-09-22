@@ -358,6 +358,14 @@ describe('formal GUI routes', () => {
         { method: 'POST', endpoint: '/email/start', count: 12 },
         { method: 'GET', endpoint: '/jwks', count: 3 },
       ],
+      unmatched: [
+        {
+          method: 'GET',
+          path: '/wp-login.php',
+          count: 42,
+          last_seen: 1_784_199_000,
+        },
+      ],
     });
     const user = userEvent.setup();
 
@@ -455,6 +463,9 @@ describe('formal GUI routes', () => {
     expect(screen.getByText('12')).toBeInTheDocument();
     expect(screen.getByText('/jwks')).toBeInTheDocument();
     expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.getByText('Unknown endpoints')).toBeInTheDocument();
+    expect(screen.getByText('/wp-login.php')).toBeInTheDocument();
+    expect(screen.getByText('42')).toBeInTheDocument();
     expect(screen.getByLabelText('Current location')).toHaveTextContent(
       '/admin/request-audit',
     );

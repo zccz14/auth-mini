@@ -143,8 +143,15 @@ fn router(config: Config) -> Router {
         })
 }
 
-// Audit labels for the API endpoints registered in `router()`. Keep in sync when routes
-// change; GUI asset requests under `/web` are intentionally outside the audited API surface.
+fn audit_request(request: &Request) {
+    if let Some(endpoint) = audit_endpoint(&request.method, &request.path) {
+        crate::request_audit::record(&request.method, &endpoint);
+    } else if !is_audit_ignored(request) {
+        crate::request_audit::record_unmatched(&request.method, &request.path);
+    }
+}
+
+// Audit labels for the API endpoints registered in `router()`. Keep in sync when routes change.
 fn audit_endpoint(method: &str, path: &str) -> Option<String> {
     if audit_static_endpoint(method, path) {
         return Some(path.to_string());
@@ -238,6 +245,17 @@ fn single_path_segment(path: &str, prefix: &str) -> bool {
         .is_some_and(|segment| !segment.is_empty() && !segment.contains('/'))
 }
 
+// GUI asset traffic and CORS preflights are not endpoint calls, so they are excluded from
+// both the endpoint counts and the unmatched-endpoint report.
+fn is_audit_ignored(request: &Request) -> bool {
+    let preflight = request.method == "OPTIONS"
+        && request.header("Origin").is_some()
+        && request.header("Access-Control-Request-Method").is_some();
+    let web_asset =
+        request.method == "GET" && (request.path == "/web" || request.path.starts_with("/web/"));
+    preflight || web_asset
+}
+
 async fn axum_request(
     State(state): State<AppState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -273,9 +291,7 @@ async fn axum_request(
         headers,
         body: String::from_utf8_lossy(&body).into_owned(),
     };
-    if let Some(endpoint) = audit_endpoint(&request.method, &request.path) {
-        crate::request_audit::record(&request.method, &endpoint);
-    }
+    audit_request(&request);
     let config = state.config;
     let permit = match state.blocking_gate.acquire_owned().await {
         Ok(permit) => permit,
@@ -4245,6 +4261,7 @@ mod tests {
         crate::request_audit::record("POST", "/email/start");
         crate::request_audit::record("POST", "/email/start");
         crate::request_audit::record("GET", "/jwks");
+        crate::request_audit::record_unmatched("GET", "/missing-page");
 
         let unauthorized = route_request(
             &Request {
@@ -4305,6 +4322,48 @@ mod tests {
             "endpoint": "/jwks",
             "count": 1
         })));
+        let unmatched = body["unmatched"]
+            .as_array()
+            .expect("request audit unmatched is an array");
+        let missing = unmatched
+            .iter()
+            .find(|entry| entry["path"] == "/missing-page")
+            .expect("unmatched request recorded");
+        assert_eq!(missing["method"], "GET");
+        assert_eq!(missing["count"], 1);
+        assert!(missing["last_seen"].is_i64());
+    }
+
+    #[test]
+    fn excludes_gui_assets_and_preflights_from_unmatched_audit() {
+        let request = |method: &str, path: &str, headers: &[(&str, &str)]| Request {
+            method: method.to_string(),
+            path: path.to_string(),
+            headers: headers
+                .iter()
+                .map(|(name, value)| (name.to_string(), value.to_string()))
+                .collect(),
+            body: String::new(),
+        };
+
+        assert!(is_audit_ignored(&request(
+            "OPTIONS",
+            "/email/start",
+            &[
+                ("Origin", "https://app.example.com"),
+                ("Access-Control-Request-Method", "POST"),
+            ],
+        )));
+        assert!(is_audit_ignored(&request("GET", "/web", &[])));
+        assert!(is_audit_ignored(&request("GET", "/web/", &[])));
+        assert!(is_audit_ignored(&request(
+            "GET",
+            "/web/assets/index.js",
+            &[]
+        )));
+        assert!(!is_audit_ignored(&request("POST", "/web/anything", &[])));
+        assert!(!is_audit_ignored(&request("OPTIONS", "/jwks", &[])));
+        assert!(!is_audit_ignored(&request("GET", "/missing", &[])));
     }
 
     #[test]

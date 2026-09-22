@@ -110,6 +110,12 @@ export type AdminRequestAuditSnapshot = {
     endpoint: string;
     count: number;
   }>;
+  unmatched: Array<{
+    method: string;
+    path: string;
+    count: number;
+    last_seen: number;
+  }>;
 };
 
 type AdminApi = {

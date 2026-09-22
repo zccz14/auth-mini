@@ -315,10 +315,10 @@ paths:
       tags:
         - admin
       operationId: getAdminRequestAudit
-      summary: Read in-memory API endpoint access counts
+      summary: Read in-memory endpoint access counts and unknown endpoint requests
       responses:
         '200':
-          description: Access counts per API endpoint since the server started
+          description: Access counts per API endpoint and unmatched request summaries since the server started
           content:
             application/json:
               schema:
@@ -1477,6 +1477,7 @@ components:
       required:
         - started_at
         - endpoints
+        - unmatched
       properties:
         started_at:
           type: integer
@@ -1485,6 +1486,13 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/EndpointAccessCount'
+        unmatched:
+          type: array
+          description: >-
+            Requests that did not match any API endpoint, capped at a fixed number of distinct
+            paths; overflow aggregates into a single `(other)` row
+          items:
+            $ref: '#/components/schemas/UnmatchedRequest'
     EndpointAccessCount:
       type: object
       additionalProperties: false
@@ -1501,6 +1509,28 @@ components:
         count:
           type: integer
           minimum: 0
+    UnmatchedRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - method
+        - path
+        - count
+        - last_seen
+      properties:
+        method:
+          type: string
+        path:
+          type: string
+          description: >-
+            Request path, truncated when very long; `(other)` aggregates paths beyond the
+            tracking cap
+        count:
+          type: integer
+          minimum: 0
+        last_seen:
+          type: integer
+          description: Unix timestamp in seconds of the most recent request
     AdminUserSummary:
       type: object
       additionalProperties: false
