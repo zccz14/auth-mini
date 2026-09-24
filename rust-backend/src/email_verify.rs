@@ -75,7 +75,7 @@ pub(crate) fn consume_email_verify_otp(
     request: &EmailVerifyRequest,
 ) -> rusqlite::Result<EmailVerifyOutcome> {
     let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
-    let connection = Connection::open(db_path)?;
+    let connection = crate::db::open_connection(db_path)?;
 
     consume_email_verify_otp_with_now(&connection, request, &now)
 }
@@ -86,7 +86,7 @@ pub(crate) fn complete_email_change(
     request: &EmailChangeVerifyRequest,
 ) -> rusqlite::Result<EmailChangeVerifyOutcome> {
     let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
-    let mut connection = Connection::open(db_path)?;
+    let mut connection = crate::db::open_connection(db_path)?;
 
     complete_email_change_with_now(&mut connection, user_id, request, &now)
 }
