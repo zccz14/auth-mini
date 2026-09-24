@@ -173,6 +173,15 @@ pub(crate) fn bootstrap_keys(connection: &Connection) -> rusqlite::Result<()> {
 }
 
 fn insert_key_if_missing(connection: &Connection, slot: &str) -> rusqlite::Result<()> {
+    let exists: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM jwks_keys WHERE id = ?1)",
+        [slot],
+        |row| row.get(0),
+    )?;
+    if exists {
+        return Ok(());
+    }
+
     let key = generated_key(connection)?;
 
     connection.execute(

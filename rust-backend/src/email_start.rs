@@ -60,7 +60,7 @@ pub(crate) fn start_email_auth(
     db_path: &Path,
     request: &EmailStartRequest,
 ) -> Result<(), EmailStartError> {
-    let connection = Connection::open(db_path).map_err(|_| EmailStartError::Database)?;
+    let connection = crate::db::open_connection(db_path).map_err(|_| EmailStartError::Database)?;
 
     start_email_auth_with_connection(&connection, request)
 }
@@ -70,7 +70,7 @@ pub(crate) fn start_email_change(
     user_id: &str,
     request: &EmailStartRequest,
 ) -> Result<(), EmailStartError> {
-    let connection = Connection::open(db_path).map_err(|_| EmailStartError::Database)?;
+    let connection = crate::db::open_connection(db_path).map_err(|_| EmailStartError::Database)?;
 
     start_email_change_with_connection(&connection, user_id, request)
 }

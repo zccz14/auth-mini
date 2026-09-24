@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::Path;
+use std::time::Duration;
 
 use rusqlite::Connection;
 
@@ -24,7 +25,7 @@ pub fn initialize_runtime_database(db_path: &Path) -> Result<(), Box<dyn std::er
         fs::create_dir_all(parent)?;
     }
 
-    let mut connection = Connection::open(db_path)?;
+    let mut connection = open_connection(db_path)?;
     connection.pragma_update(None, "foreign_keys", "ON")?;
     connection.pragma_update(None, "journal_mode", "WAL")?;
     connection.execute_batch(SCHEMA_SQL)?;
@@ -44,7 +45,7 @@ pub fn initialize_database_from_schema(
         fs::create_dir_all(parent)?;
     }
 
-    let connection = Connection::open(db_path)?;
+    let connection = open_connection(db_path)?;
 
     connection.pragma_update(None, "foreign_keys", "ON")?;
     connection.pragma_update(None, "journal_mode", "WAL")?;
@@ -53,6 +54,13 @@ pub fn initialize_database_from_schema(
     assert_required_schema(&connection)?;
 
     Ok(())
+}
+
+pub(crate) fn open_connection(db_path: &Path) -> rusqlite::Result<Connection> {
+    let connection = Connection::open(db_path)?;
+    connection.busy_timeout(Duration::from_secs(5))?;
+
+    Ok(connection)
 }
 
 pub(crate) fn read_app_issuer(connection: &Connection) -> rusqlite::Result<String> {

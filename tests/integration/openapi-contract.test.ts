@@ -3,8 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
 const contractOperations = [
-  { path: '/openapi.yaml', methods: ['get'] },
-  { path: '/openapi.json', methods: ['get'] },
   { path: '/email/start', methods: ['post'] },
   { path: '/email/verify', methods: ['post'] },
   { path: '/remote-login/start', methods: ['post'] },
@@ -264,8 +262,6 @@ type OpenApiOperation = {
 };
 
 const publicOperations = [
-  { path: '/openapi.yaml', method: 'get' },
-  { path: '/openapi.json', method: 'get' },
   { path: '/email/start', method: 'post' },
   { path: '/email/verify', method: 'post' },
   { path: '/remote-login/start', method: 'post' },

@@ -116,8 +116,7 @@ jobs:
           }
 
           verify_deployment() {
-            wait_for_health "http://127.0.0.1:7777/openapi.yaml" 30 2
-            verify_endpoint "http://127.0.0.1:7777/openapi.json"
+            wait_for_health "http://127.0.0.1:7777/healthz" 30 2
             verify_endpoint "http://127.0.0.1:7777/web/"
           }
 
@@ -126,7 +125,7 @@ jobs:
             if test -n "${backup_path}"; then
               install -m 0755 "${backup_path}" "${install_path}"
               systemctl restart "${service_name}"
-              wait_for_health "http://127.0.0.1:7777/openapi.yaml" 30 2
+              wait_for_health "http://127.0.0.1:7777/healthz" 30 2
             fi
             exit 1
           }

@@ -9,11 +9,10 @@ use axum::http::{HeaderValue, StatusCode};
 use axum::response::Response as AxumResponse;
 use axum::routing::any;
 use axum::Router;
-use tokio::sync::Semaphore;
 
 use crate::audience::{is_loopback_redirect, issuer_audience, resolve_audiences};
 use crate::config::Config;
-use crate::db::{initialize_runtime_database, read_app_issuer};
+use crate::db::{initialize_runtime_database, open_connection, read_app_issuer};
 use crate::ed25519::{
     create_credential as create_ed25519_credential, delete_credential as delete_ed25519_credential,
     list_credentials as list_ed25519_credentials, parse_credential_create_request,
@@ -30,7 +29,6 @@ use crate::email_verify::{
     parse_email_verify_request, EmailChangeVerifyOutcome, EmailVerifyOutcome,
 };
 use crate::jwks::{list_admin_keys, list_public_keys, rotate_keys};
-use crate::openapi::{read_openapi_json, read_openapi_yaml};
 use crate::remote_login::{
     approve as approve_remote_login, claim as claim_remote_login, deny as deny_remote_login,
     exchange as exchange_remote_login, list_pending as list_pending_remote_logins,
@@ -93,14 +91,11 @@ pub async fn run_server(config: Config) -> Result<(), Box<dyn std::error::Error>
 #[derive(Clone)]
 struct AppState {
     config: Arc<Config>,
-    blocking_gate: Arc<Semaphore>,
 }
 
 fn router(config: Config) -> Router {
     Router::new()
         .route("/healthz", any(axum_request))
-        .route("/openapi.yaml", any(axum_request))
-        .route("/openapi.json", any(axum_request))
         .route("/admin/setup", any(axum_request))
         .route("/admin/config", any(axum_request))
         .route("/admin/users", any(axum_request))
@@ -140,7 +135,6 @@ fn router(config: Config) -> Router {
         .fallback(any(axum_request))
         .with_state(AppState {
             config: Arc::new(config),
-            blocking_gate: Arc::new(Semaphore::new(1)),
         })
 }
 
@@ -165,8 +159,6 @@ fn audit_static_endpoint(method: &str, path: &str) -> bool {
     matches!(
         (method, path),
         ("GET", "/healthz")
-            | ("GET", "/openapi.yaml")
-            | ("GET", "/openapi.json")
             | ("GET", "/admin/setup")
             | ("PUT", "/admin/setup")
             | ("GET", "/admin/config")
@@ -295,17 +287,8 @@ async fn axum_request(
     };
     audit_request(&request);
     let config = state.config;
-    let permit = match state.blocking_gate.acquire_owned().await {
-        Ok(permit) => permit,
-        Err(_) => return axum_json_error(StatusCode::INTERNAL_SERVER_ERROR, "internal_error"),
-    };
 
-    match tokio::task::spawn_blocking(move || {
-        let _permit = permit;
-        route_request(&request, &config)
-    })
-    .await
-    {
+    match tokio::task::spawn_blocking(move || route_request(&request, &config)).await {
         Ok(Ok(response)) => response.into_axum(),
         Ok(Err(_)) | Err(_) => axum_json_error(StatusCode::INTERNAL_SERVER_ERROR, "internal_error"),
     }
@@ -331,19 +314,6 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
 
     if request.method == "GET" && request.path == "/healthz" {
         return Ok(cors(request, Response::text(200, "ok")));
-    }
-
-    if request.method == "GET" && request.path == "/openapi.yaml" {
-        let body = read_openapi_yaml();
-        return Ok(cors(
-            request,
-            Response::new(200, "application/yaml; charset=utf-8", body),
-        ));
-    }
-
-    if request.method == "GET" && request.path == "/openapi.json" {
-        let body = read_openapi_json()?;
-        return Ok(cors(request, Response::json_value(200, body)));
     }
 
     if request.method == "GET" && request.path == "/admin/setup" {
@@ -654,7 +624,7 @@ fn handle_user_directory_ids(request: &Request, config: &Config) -> io::Result<R
     let Some(token) = bearer_token(request) else {
         return Ok(Response::json_error(401, "invalid_directory_token"));
     };
-    let connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
+    let connection = open_connection(&database.db_path).map_err(io::Error::other)?;
     if !crate::directory::authenticate(&connection, &token)? {
         return Ok(Response::json_error(401, "invalid_directory_token"));
     }
@@ -812,7 +782,7 @@ fn admin_setup_connection(request: &Request, config: &Config) -> io::Result<Admi
         return Ok(AdminSetupAccess::NoDatabase);
     };
 
-    rusqlite::Connection::open(&database.db_path)
+    open_connection(&database.db_path)
         .map(AdminSetupAccess::Allowed)
         .map_err(io::Error::other)
 }
@@ -855,7 +825,7 @@ fn handle_remote_login_start(request: &Request, config: &Config) -> io::Result<R
     let Some(database) = &config.database else {
         return Ok(Response::json_error(501, "not_implemented"));
     };
-    let connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
+    let connection = open_connection(&database.db_path).map_err(io::Error::other)?;
     let issuer = read_app_issuer(&connection).map_err(io::Error::other)?;
     let audiences = match resolve_audiences(
         &issuer,
@@ -954,7 +924,7 @@ fn handle_remote_login_exchange(request: &Request, config: &Config) -> io::Resul
     let Some(database) = &config.database else {
         return Ok(Response::json_error(501, "not_implemented"));
     };
-    let mut connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
+    let mut connection = open_connection(&database.db_path).map_err(io::Error::other)?;
     let issuer = read_app_issuer(&connection).map_err(io::Error::other)?;
     match exchange_remote_login(
         &mut connection,
@@ -997,7 +967,7 @@ fn handle_email_verify(request: &Request, config: &Config) -> io::Result<Respons
     let Some(database) = &config.database else {
         return Ok(Response::json_error(501, "not_implemented"));
     };
-    let connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
+    let connection = open_connection(&database.db_path).map_err(io::Error::other)?;
     let issuer = read_app_issuer(&connection).map_err(io::Error::other)?;
     let audiences = match resolve_audiences(
         &issuer,
@@ -1095,7 +1065,7 @@ fn handle_session_refresh(request: &Request, config: &Config) -> io::Result<Resp
     let Some(database) = &config.database else {
         return Ok(Response::json_error(501, "not_implemented"));
     };
-    let connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
+    let connection = open_connection(&database.db_path).map_err(io::Error::other)?;
     let issuer = read_app_issuer(&connection).map_err(io::Error::other)?;
 
     match refresh_session_tokens(&connection, &parsed, &issuer) {
@@ -1355,7 +1325,7 @@ fn handle_webauthn_authentication_options(
     let Some(database) = &config.database else {
         return Ok(Response::json_error(501, "not_implemented"));
     };
-    let connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
+    let connection = open_connection(&database.db_path).map_err(io::Error::other)?;
 
     match webauthn_authentication_options(&connection, &parsed) {
         Ok(body) => Ok(Response::json_value(200, body)),
@@ -1379,7 +1349,7 @@ fn handle_webauthn_authentication_verify(
     let Some(database) = &config.database else {
         return Ok(Response::json_error(501, "not_implemented"));
     };
-    let connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
+    let connection = open_connection(&database.db_path).map_err(io::Error::other)?;
     let issuer = read_app_issuer(&connection).map_err(io::Error::other)?;
     let audiences = match resolve_audiences(
         &issuer,
@@ -1421,7 +1391,7 @@ fn handle_ed25519_start(request: &Request, config: &Config) -> io::Result<Respon
     let Some(database) = &config.database else {
         return Ok(Response::json_error(501, "not_implemented"));
     };
-    let connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
+    let connection = open_connection(&database.db_path).map_err(io::Error::other)?;
     let challenge = start_ed25519_authentication(&connection, &parsed).map_err(io::Error::other)?;
 
     match challenge {
@@ -1438,7 +1408,7 @@ fn handle_ed25519_verify(request: &Request, config: &Config) -> io::Result<Respo
     let Some(database) = &config.database else {
         return Ok(Response::json_error(501, "not_implemented"));
     };
-    let mut connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
+    let mut connection = open_connection(&database.db_path).map_err(io::Error::other)?;
     let issuer = read_app_issuer(&connection).map_err(io::Error::other)?;
     let audiences = match resolve_audiences(
         &issuer,
@@ -1481,7 +1451,7 @@ fn handle_jwks(config: &Config) -> io::Result<Response> {
     let Some(database) = &config.database else {
         return Ok(Response::json_error(501, "not_implemented"));
     };
-    let connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
+    let connection = open_connection(&database.db_path).map_err(io::Error::other)?;
     let body = list_public_keys(&connection).map_err(io::Error::other)?;
 
     Ok(Response::json_value(200, body))
@@ -1511,7 +1481,7 @@ fn authenticated_session_connection(
     let Some(token) = bearer_token(request) else {
         return Ok(None);
     };
-    let connection = rusqlite::Connection::open(&database.db_path).map_err(io::Error::other)?;
+    let connection = open_connection(&database.db_path).map_err(io::Error::other)?;
     let auth = match authenticate_access_token(&connection, &token) {
         Ok(auth) => auth,
         Err(_) => return Ok(None),
@@ -1902,45 +1872,6 @@ mod tests {
     }
 
     #[test]
-    fn serves_embedded_openapi_yaml() {
-        let response = route_request(
-            &Request {
-                method: "GET".to_string(),
-                path: "/openapi.yaml".to_string(),
-                headers: Vec::new(),
-                body: String::new(),
-            },
-            &no_database_config(),
-        )
-        .expect("openapi yaml response builds");
-
-        assert_eq!(response.status, 200);
-        assert_eq!(response.content_type, "application/yaml; charset=utf-8");
-        assert!(response.body_text().contains("title: auth-mini HTTP API"));
-    }
-
-    #[test]
-    fn serves_openapi_json_contract() {
-        let response = route_request(
-            &Request {
-                method: "GET".to_string(),
-                path: "/openapi.json".to_string(),
-                headers: Vec::new(),
-                body: String::new(),
-            },
-            &Config::default(),
-        )
-        .expect("json response builds");
-        let document: serde_json::Value =
-            serde_json::from_str(&response.body_text()).expect("openapi json parses");
-
-        assert_eq!(response.status, 200);
-        assert_eq!(document["openapi"], "3.1.0");
-        assert!(document["paths"].is_object());
-        assert!(document["components"].is_object());
-    }
-
-    #[test]
     fn redirects_web_root_to_trailing_slash() {
         let response = route_request(
             &Request {
@@ -2044,7 +1975,7 @@ mod tests {
     }
 
     #[test]
-    fn public_openapi_routes_are_registered() {
+    fn public_routes_are_registered() {
         let routes = [
             ("POST", "/email/start", r#"{"email":"user@example.com"}"#),
             (
@@ -2101,8 +2032,6 @@ mod tests {
             ),
             ("DELETE", "/webauthn/credentials/credential-1", ""),
             ("GET", "/jwks", ""),
-            ("GET", "/openapi.yaml", ""),
-            ("GET", "/openapi.json", ""),
         ];
 
         for (method, path, body) in routes {
@@ -4323,8 +4252,6 @@ mod tests {
     fn audit_endpoint_labels_api_routes() {
         let cases = [
             ("GET", "/healthz", Some("/healthz")),
-            ("GET", "/openapi.yaml", Some("/openapi.yaml")),
-            ("GET", "/openapi.json", Some("/openapi.json")),
             ("GET", "/admin/setup", Some("/admin/setup")),
             ("PUT", "/admin/setup", Some("/admin/setup")),
             ("GET", "/admin/config", Some("/admin/config")),
