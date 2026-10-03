@@ -28,6 +28,7 @@ const contractOperations = [
   { path: '/webauthn/authenticate/verify', methods: ['post'] },
   { path: '/webauthn/credentials/{id}', methods: ['delete'] },
   { path: '/jwks', methods: ['get'] },
+  { path: '/time', methods: ['get'] },
 ] as const;
 
 describe('openapi contract', () => {
@@ -272,6 +273,7 @@ const publicOperations = [
   { path: '/webauthn/authenticate/options', method: 'post' },
   { path: '/webauthn/authenticate/verify', method: 'post' },
   { path: '/jwks', method: 'get' },
+  { path: '/time', method: 'get' },
 ] as const;
 
 const authenticatedOperations = [

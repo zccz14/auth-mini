@@ -15,6 +15,7 @@ If you want a typed low-level client for that contract, use `auth-mini/sdk/api` 
 - `POST /webauthn/authenticate/options` creates a username-less passkey challenge.
 - `POST /webauthn/authenticate/verify` verifies the passkey assertion and returns a session plus `session_id`.
 - `GET /jwks` returns public keys for verifying access tokens.
+- `GET /time` returns the current server time for client clock-offset calibration.
 
 ## Authenticated endpoints
 
@@ -583,5 +584,23 @@ Example response:
       "x": "..."
     }
   ]
+}
+```
+
+## `GET /time`
+
+Returns the current server clock as Unix seconds (`now`), Unix milliseconds
+(`now_ms`), and an RFC 3339 timestamp (`iso`). Responses are `no-store`, so
+clients can sample the clock repeatedly.
+
+Browsers that verify access tokens locally use this endpoint to estimate the
+offset between the device clock and the Auth Mini clock before running their
+JWT verification:
+
+```json
+{
+  "now": 1759498001,
+  "now_ms": 1759498001123,
+  "iso": "2026-10-03T11:26:41.123Z"
 }
 ```

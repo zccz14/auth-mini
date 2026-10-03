@@ -130,6 +130,7 @@ fn router(config: Config) -> Router {
         .route("/webauthn/authenticate/verify", any(axum_request))
         .route("/me", any(axum_request))
         .route("/jwks", any(axum_request))
+        .route("/time", any(axum_request))
         .route("/web", any(axum_request))
         .route("/web/{*path}", any(axum_request))
         .fallback(any(axum_request))
@@ -193,6 +194,7 @@ fn audit_static_endpoint(method: &str, path: &str) -> bool {
             | ("POST", "/webauthn/authenticate/verify")
             | ("GET", "/me")
             | ("GET", "/jwks")
+            | ("GET", "/time")
     )
 }
 
@@ -490,6 +492,10 @@ fn route_request(request: &Request, config: &Config) -> io::Result<Response> {
 
     if request.method == "GET" && request.path == "/jwks" {
         return handle_jwks(config).map(|response| cors(request, response));
+    }
+
+    if request.method == "GET" && request.path == "/time" {
+        return handle_time().map(|response| cors(request, response));
     }
 
     Ok(cors(request, Response::json_error(404, "not_found")))
@@ -1447,6 +1453,20 @@ fn handle_me(request: &Request, config: &Config) -> io::Result<Response> {
     }
 }
 
+fn handle_time() -> io::Result<Response> {
+    let now = chrono::Utc::now();
+
+    Ok(Response::json_value(
+        200,
+        serde_json::json!({
+            "now": now.timestamp(),
+            "now_ms": now.timestamp_millis(),
+            "iso": now.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        }),
+    )
+    .with_header("cache-control", "no-store"))
+}
+
 fn handle_jwks(config: &Config) -> io::Result<Response> {
     let Some(database) = &config.database else {
         return Ok(Response::json_error(501, "not_implemented"));
@@ -2032,6 +2052,7 @@ mod tests {
             ),
             ("DELETE", "/webauthn/credentials/credential-1", ""),
             ("GET", "/jwks", ""),
+            ("GET", "/time", ""),
         ];
 
         for (method, path, body) in routes {
@@ -4141,6 +4162,37 @@ mod tests {
     }
 
     #[test]
+    fn serves_time_over_http_boundary() {
+        let response = route_request(
+            &Request {
+                method: "GET".to_string(),
+                path: "/time".to_string(),
+                headers: Vec::new(),
+                body: String::new(),
+            },
+            &no_database_config(),
+        )
+        .expect("time response builds");
+
+        assert_eq!(response.status, 200);
+        assert!(response
+            .headers
+            .iter()
+            .any(|(name, value)| *name == "cache-control" && *value == "no-store"));
+
+        let body: serde_json::Value =
+            serde_json::from_str(&response.body_text()).expect("time body is json");
+        let now = body["now"].as_i64().expect("now is set");
+        let now_ms = body["now_ms"].as_i64().expect("now_ms is set");
+        let iso = body["iso"].as_str().expect("iso is set");
+
+        assert_eq!(now, now_ms / 1000);
+        assert!(iso.contains('T') && iso.ends_with('Z'));
+        let drift = (now_ms - chrono::Utc::now().timestamp_millis()).abs();
+        assert!(drift < 10_000, "server time drifted by {drift}ms");
+    }
+
+    #[test]
     fn serves_admin_jwk_slots_with_admin_auth() {
         let db_path = test_db_path("http-admin-jwks");
         let connection = Connection::open(&db_path).expect("database opens");
@@ -4322,6 +4374,7 @@ mod tests {
             ),
             ("GET", "/me", Some("/me")),
             ("GET", "/jwks", Some("/jwks")),
+            ("GET", "/time", Some("/time")),
             (
                 "POST",
                 "/session/00000000-0000-4000-8000-000000000000/logout",
