@@ -40,6 +40,40 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+function timeResponse() {
+  const now = Date.now();
+  return new Response(
+    JSON.stringify({
+      now: Math.floor(now / 1000),
+      now_ms: now,
+      iso: new Date(now).toISOString(),
+    }),
+    { headers: { 'content-type': 'application/json' } },
+  );
+}
+
+function routedFetch(
+  handle?: (url: string) => Response | Promise<Response> | undefined,
+) {
+  return vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith('/time')) {
+      return timeResponse();
+    }
+    const response = handle?.(url);
+    if (!response) {
+      throw new Error(`unhandled fetch: ${url}`);
+    }
+    return response;
+  });
+}
+
+function refreshCalls(fetchMock: ReturnType<typeof vi.fn>) {
+  return fetchMock.mock.calls.filter(([input]) => {
+    return new URL(String(input)).pathname === '/session/refresh';
+  });
+}
+
 function response(accessToken = 'access-2', refreshToken = 'refresh-2') {
   return new Response(
     JSON.stringify({
@@ -153,7 +187,7 @@ describe('AuthMiniProvider with the Browser SDK refresh timer', () => {
 
   it('keeps consumers, their DOM, focus and state unchanged across network and JWT verification', async () => {
     const network = deferred<Response>();
-    const fetch = vi.fn().mockReturnValue(network.promise);
+    const fetch = routedFetch(() => network.promise);
     vi.stubGlobal('fetch', fetch);
     await start();
     const context = current!;
@@ -163,10 +197,10 @@ describe('AuthMiniProvider with the Browser SDK refresh timer', () => {
     input.focus();
 
     await act(() => vi.advanceTimersByTimeAsync(599_999));
-    expect(fetch).not.toHaveBeenCalled();
+    expect(refreshCalls(fetch)).toHaveLength(0);
     await act(() => vi.advanceTimersByTimeAsync(1));
-    expect(fetch).toHaveBeenCalledTimes(1);
-    expect(new URL(String(fetch.mock.calls[0][0])).pathname).toBe(
+    expect(refreshCalls(fetch)).toHaveLength(1);
+    expect(new URL(String(refreshCalls(fetch)[0][0])).pathname).toBe(
       '/session/refresh',
     );
     expect(renders).not.toHaveBeenCalled();
@@ -201,11 +235,12 @@ describe('AuthMiniProvider with the Browser SDK refresh timer', () => {
   it('keeps an open dialog mounted while a superseded refresh recovers', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ error: 'session_superseded' }), {
-          status: 401,
-          headers: { 'content-type': 'application/json' },
-        }),
+      routedFetch(
+        () =>
+          new Response(JSON.stringify({ error: 'session_superseded' }), {
+            status: 401,
+            headers: { 'content-type': 'application/json' },
+          }),
       ),
     );
     const childRenders = vi.fn();
@@ -236,7 +271,10 @@ describe('AuthMiniProvider with the Browser SDK refresh timer', () => {
   });
 
   it('stays authenticated on an unrelated parent render while verifying a refreshed JWT', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response()));
+    vi.stubGlobal(
+      'fetch',
+      routedFetch(() => response()),
+    );
     const view = await start();
     const verification = deferred<{ payload: { sub: string } }>();
     jwtVerify.mockReturnValueOnce(verification.promise);
@@ -257,7 +295,10 @@ describe('AuthMiniProvider with the Browser SDK refresh timer', () => {
   });
 
   it('notifies consumers if the refreshed JWT fails verification', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response()));
+    vi.stubGlobal(
+      'fetch',
+      routedFetch(() => response()),
+    );
     await start();
     jwtVerify.mockRejectedValueOnce(new Error('invalid signature'));
     await act(() => vi.advanceTimersByTimeAsync(600_000));
@@ -267,7 +308,7 @@ describe('AuthMiniProvider with the Browser SDK refresh timer', () => {
   });
 
   it('keeps a transient failure and retry silent, but publishes a rejected refresh session', async () => {
-    const fetch = vi
+    const refresh = vi
       .fn()
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ error: 'internal_error' }), {
@@ -280,12 +321,13 @@ describe('AuthMiniProvider with the Browser SDK refresh timer', () => {
           status: 401,
         }),
       );
+    const fetch = routedFetch(() => refresh());
     vi.stubGlobal('fetch', fetch);
     await start();
     await act(() => vi.advanceTimersByTimeAsync(600_000));
     expect(renders).not.toHaveBeenCalled();
     await act(() => vi.advanceTimersByTimeAsync(10_000));
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(refresh).toHaveBeenCalledTimes(2);
     expect(renders).not.toHaveBeenCalled();
     expect(current!.session?.accessToken).toBe('access-2');
     await act(() => vi.advanceTimersByTimeAsync(600_000));
@@ -294,7 +336,10 @@ describe('AuthMiniProvider with the Browser SDK refresh timer', () => {
   });
 
   it('ignores a verification that completes after logout', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response()));
+    vi.stubGlobal(
+      'fetch',
+      routedFetch(() => response()),
+    );
     await start();
     const verification = deferred<{ payload: { sub: string } }>();
     jwtVerify.mockReturnValueOnce(verification.promise);
@@ -311,7 +356,7 @@ describe('AuthMiniProvider with the Browser SDK refresh timer', () => {
   });
 
   it("adopts another tab's verified token rotation without rendering", async () => {
-    vi.stubGlobal('fetch', vi.fn());
+    vi.stubGlobal('fetch', routedFetch());
     await start();
     const next = {
       ...initialSession,
@@ -339,7 +384,10 @@ describe('AuthMiniProvider with the Browser SDK refresh timer', () => {
   });
 
   it('publishes updated permission claims even when the session ID is unchanged', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response()));
+    vi.stubGlobal(
+      'fetch',
+      routedFetch(() => response()),
+    );
     await start();
     jwtVerify.mockResolvedValueOnce({
       payload: { sub: 'user-1', auth_admin: true },
@@ -351,7 +399,10 @@ describe('AuthMiniProvider with the Browser SDK refresh timer', () => {
   });
 
   it("publishes a different session and ignores the previous session's pending verification", async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response()));
+    vi.stubGlobal(
+      'fetch',
+      routedFetch(() => response()),
+    );
     await start();
     const verification = deferred<{ payload: { sub: string } }>();
     jwtVerify.mockReturnValueOnce(verification.promise);

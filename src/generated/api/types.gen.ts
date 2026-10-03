@@ -458,6 +458,21 @@ export type JwksResponse = {
     keys: Array<JwkPublicEd25519>;
 };
 
+export type TimeResponse = {
+    /**
+     * Current server time as Unix seconds
+     */
+    now: number;
+    /**
+     * Current server time as Unix milliseconds
+     */
+    now_ms: number;
+    /**
+     * Current server time as RFC 3339 with millisecond precision
+     */
+    iso: string;
+};
+
 export type AdminJwkSlot = {
     slot: 'CURRENT' | 'STANDBY';
     public_jwk: JwkPublicEd25519;
@@ -1733,3 +1748,19 @@ export type ListJwksResponses = {
 };
 
 export type ListJwksResponse = ListJwksResponses[keyof ListJwksResponses];
+
+export type GetSystemTimeData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/time';
+};
+
+export type GetSystemTimeResponses = {
+    /**
+     * Server clock snapshot
+     */
+    200: TimeResponse;
+};
+
+export type GetSystemTimeResponse = GetSystemTimeResponses[keyof GetSystemTimeResponses];

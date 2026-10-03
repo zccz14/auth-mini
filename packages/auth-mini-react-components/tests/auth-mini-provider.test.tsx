@@ -37,6 +37,18 @@ vi.mock('jose', () => ({
   jwtVerify,
 }));
 
+function timeResponse() {
+  const now = Date.now();
+  return new Response(
+    JSON.stringify({
+      now: Math.floor(now / 1000),
+      now_ms: now,
+      iso: new Date(now).toISOString(),
+    }),
+    { headers: { 'content-type': 'application/json' } },
+  );
+}
+
 const recovering = {
   status: 'recovering' as const,
   authenticated: false,
@@ -93,6 +105,7 @@ describe('AuthMiniProvider', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(timeResponse()));
     jwtVerify.mockResolvedValue({ payload: {} });
     listener = undefined;
     window.history.replaceState(null, '', 'https://app.example.test/');

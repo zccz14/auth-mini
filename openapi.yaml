@@ -1119,6 +1119,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/JwksResponse'
+  /time:
+    get:
+      security: []
+      tags:
+        - system
+      operationId: getSystemTime
+      summary: Current server time for client clock-offset calibration
+      responses:
+        '200':
+          description: Server clock snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimeResponse'
 components:
   securitySchemes:
     directoryToken:
@@ -2368,6 +2382,23 @@ components:
           minItems: 2
           items:
             $ref: '#/components/schemas/JwkPublicEd25519'
+    TimeResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - now
+        - now_ms
+        - iso
+      properties:
+        now:
+          type: integer
+          description: Current server time as Unix seconds
+        now_ms:
+          type: integer
+          description: Current server time as Unix milliseconds
+        iso:
+          type: string
+          description: Current server time as RFC 3339 with millisecond precision
     AdminJwkSlot:
       type: object
       additionalProperties: false
