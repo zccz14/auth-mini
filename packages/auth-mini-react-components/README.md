@@ -158,8 +158,9 @@ Mini session.
 ## useAuthMini
 
 `useAuthMini()` must be called below `AuthMiniProvider`. It returns the shared
-`sdk`, `session`, `status`, `isReady`, `isAuthenticated`, `error`, `signIn`,
-`signOut`, and `openPasskeyRegistrationPage` values. The Browser SDK remains
+`sdk`, `session`, `status`, `isReady`, `isAuthenticated`, `error`,
+`verificationFailure`, `signIn`, `signOut`, and `openPasskeyRegistrationPage`
+values. The Browser SDK remains
 the authority for session tokens; the hook does not create a second token
 store. Multiple Provider instances in same-origin tabs inherit the Browser SDK's
 exclusive refresh coordination, so the Provider does not create its own token
@@ -173,6 +174,12 @@ getters. Read token fields when performing an action; a token string captured
 during render will not update itself. Use `sdk.session.onChange()` to explicitly
 subscribe to raw token changes. Login, logout, verification failures, and changes
 to identity or permission claims still notify React consumers.
+
+`verificationFailure` carries the reason of the most recent failed local JWT
+verification (`reason`, jose `code`, `failedAt`, the device `localTime`, the
+clock-offset `adjustedTime`, and the measured `clockOffsetMs`). Hosts can render
+it on a loading screen so sign-in verification failures stay diagnosable
+instead of silently spinning; it is cleared once a verification succeeds.
 
 The Browser SDK refreshes a 15-minute access token after 10 minutes. The server's
 15-minute expiry is unchanged. `onAuthStateChange` still receives every raw SDK

@@ -38,6 +38,21 @@ export type AuthMiniProviderProps = {
   onAuthStateChange?: (session: SessionSnapshot) => void;
 };
 
+export type AuthMiniVerificationFailure = {
+  /** Human-readable failure, e.g. `JWTExpired: "exp" claim timestamp check failed`. */
+  reason: string;
+  /** jose error code when available, e.g. `ERR_JWT_EXPIRED`. */
+  code: string | null;
+  /** ISO timestamp of when the local verification failed. */
+  failedAt: string;
+  /** Device clock reading used for the failed check (ISO). */
+  localTime: string;
+  /** Device time adjusted by the measured clock offset (ISO); null when the Auth Mini clock was unavailable. */
+  adjustedTime: string | null;
+  /** Measured `server - device` offset in milliseconds; null when it could not be measured. */
+  clockOffsetMs: number | null;
+};
+
 export type AuthMiniContextValue = {
   authMiniBaseUrl: string;
   sdk: AuthMiniApi | null;
@@ -46,6 +61,8 @@ export type AuthMiniContextValue = {
   isReady: boolean;
   isAuthenticated: boolean;
   error: Error | null;
+  /** Reason for the most recent local JWT verification failure, for diagnostics. */
+  verificationFailure: AuthMiniVerificationFailure | null;
   signIn: () => void;
   signOut: () => Promise<void>;
   openPasskeyRegistrationPage: () => Window | null;
@@ -77,6 +94,8 @@ export function AuthMiniProvider({
   const [sdk, setSdk] = useState<AuthMiniApi | null>(null);
   const [session, setSession] = useState<SessionSnapshot | null>(null);
   const [error, setError] = useState<Error | null>(null);
+  const [verificationFailure, setVerificationFailure] =
+    useState<AuthMiniVerificationFailure | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const audienceRef = useLatest(audience);
   const audiencesRef = useLatest(audiences);
@@ -133,6 +152,7 @@ export function AuthMiniProvider({
     setSdk(null);
     setSession(null);
     setError(null);
+    setVerificationFailure(null);
     setIsAuthenticated(false);
 
     const publish = (next: SessionSnapshot, nextClaims: string | null) => {
@@ -159,7 +179,7 @@ export function AuthMiniProvider({
       // Estimate the offset between the device clock and the Auth Mini clock so
       // JWT verification stays meaningful on devices with a skewed clock. Any
       // failure falls back to the local clock.
-      let clockOffsetMs = 0;
+      let clockOffsetMs: number | null = null;
       const clockOffset = measureClockOffset({ issuer })
         .then((sample) => {
           if (alive && sample) {
@@ -188,18 +208,34 @@ export function AuthMiniProvider({
               audienceRef.current,
               audiencesRef.current,
             ),
-            currentDate: new Date(Date.now() + clockOffsetMs),
+            currentDate: new Date(Date.now() + (clockOffsetMs ?? 0)),
             clockTolerance: 10,
           });
           if (!alive || verification !== next) return;
           verifiedAccessToken = next.accessToken;
+          setVerificationFailure(null);
           publish(
             { ...latestSession, status: 'authenticated', authenticated: true },
             sessionClaims(payload),
           );
-        } catch {
+        } catch (cause) {
           if (!alive || verification !== next) return;
           verifiedAccessToken = null;
+          const failedAt = new Date();
+          setVerificationFailure({
+            reason:
+              cause instanceof Error
+                ? `${cause.name}: ${cause.message}`
+                : String(cause),
+            code: errorCode(cause),
+            failedAt: failedAt.toISOString(),
+            localTime: failedAt.toISOString(),
+            adjustedTime:
+              clockOffsetMs === null
+                ? null
+                : new Date(failedAt.getTime() + clockOffsetMs).toISOString(),
+            clockOffsetMs,
+          });
           publish({ ...latestSession, authenticated: false }, null);
         }
       };
@@ -340,6 +376,7 @@ export function AuthMiniProvider({
       isReady,
       isAuthenticated,
       error,
+      verificationFailure,
       signIn,
       signOut,
       openPasskeyRegistrationPage,
@@ -347,6 +384,7 @@ export function AuthMiniProvider({
     [
       authMiniBaseUrl,
       error,
+      verificationFailure,
       isAuthenticated,
       isReady,
       sdk,
@@ -458,6 +496,14 @@ function sessionClaims(payload: JWTPayload): string {
     payload.amr,
     payload.auth_admin,
   ]);
+}
+
+function errorCode(cause: unknown): string | null {
+  if (cause && typeof cause === 'object' && 'code' in cause) {
+    const code = (cause as { code?: unknown }).code;
+    return typeof code === 'string' ? code : null;
+  }
+  return null;
 }
 
 function toError(cause: unknown): Error {

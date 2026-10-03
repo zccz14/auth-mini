@@ -73,6 +73,17 @@ const authenticated = {
   refreshToken: 'refresh',
 };
 
+function VerificationReader() {
+  const { verificationFailure } = useAuthMini();
+  return (
+    <output data-testid="verification">
+      {verificationFailure
+        ? `${verificationFailure.code ?? ''}|${verificationFailure.reason}`
+        : 'none'}
+    </output>
+  );
+}
+
 function SessionReader({ name }: { name: string }) {
   const { error, isReady, session, signIn } = useAuthMini();
   return (
@@ -146,6 +157,39 @@ describe('AuthMiniProvider', () => {
     expect(screen.getByTestId('first')).toHaveTextContent('authenticated');
     expect(screen.getByTestId('second')).toHaveTextContent('authenticated');
     expect(screen.getByTestId('first-ready')).toHaveTextContent('true');
+  });
+
+  it('exposes a verification failure for diagnostics and clears it after a successful retry', async () => {
+    const expired = Object.assign(
+      new Error('"exp" claim timestamp check failed'),
+      { name: 'JWTExpired', code: 'ERR_JWT_EXPIRED' },
+    );
+    jwtVerify.mockRejectedValueOnce(expired);
+
+    render(
+      <AuthMiniProvider
+        autoRedirectToLogin={false}
+        authMiniBaseUrl="https://auth.example.test"
+      >
+        <VerificationReader />
+      </AuthMiniProvider>,
+    );
+
+    act(() => listener?.(authenticated));
+    await waitFor(() =>
+      expect(screen.getByTestId('verification')).toHaveTextContent(
+        'ERR_JWT_EXPIRED',
+      ),
+    );
+    expect(screen.getByTestId('verification')).toHaveTextContent(
+      'JWTExpired: "exp" claim timestamp check failed',
+    );
+
+    jwtVerify.mockResolvedValue({ payload: {} });
+    act(() => listener?.({ ...authenticated, accessToken: 'access-2' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('verification')).toHaveTextContent('none'),
+    );
   });
 
   it('adopts a trusted redirect for the whole application', async () => {
