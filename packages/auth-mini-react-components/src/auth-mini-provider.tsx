@@ -22,6 +22,7 @@ import {
   getAuthMiniLoginUrl,
   readAuthMiniRedirectCallback,
 } from './auth-callback.js';
+import { measureClockOffset } from './time-sync.js';
 import { Toaster } from './components/ui/sonner.js';
 
 export type AuthMiniProviderProps = {
@@ -155,6 +156,17 @@ export function AuthMiniProvider({
       const nextSdk = createBrowserSdk(authMiniBaseUrl);
       const issuer = new URL(authMiniBaseUrl).toString().replace(/\/$/, '');
       const jwks = createRemoteJWKSet(new URL(`${issuer}/jwks`));
+      // Estimate the offset between the device clock and the Auth Mini clock so
+      // JWT verification stays meaningful on devices with a skewed clock. Any
+      // failure falls back to the local clock.
+      let clockOffsetMs = 0;
+      const clockOffset = measureClockOffset({ issuer })
+        .then((sample) => {
+          if (alive && sample) {
+            clockOffsetMs = sample.offsetMs;
+          }
+        })
+        .catch(() => undefined);
       const redirectAnonymousSession = (nextSession: SessionSnapshot) => {
         if (
           callbackHandled &&
@@ -169,12 +181,15 @@ export function AuthMiniProvider({
       const verifySession = async (next: SessionSnapshot) => {
         verification = next;
         try {
+          await clockOffset;
           const { payload } = await jwtVerify(next.accessToken!, jwks, {
             issuer,
             audience: resolveAuthMiniAudiences(
               audienceRef.current,
               audiencesRef.current,
             ),
+            currentDate: new Date(Date.now() + clockOffsetMs),
+            clockTolerance: 10,
           });
           if (!alive || verification !== next) return;
           verifiedAccessToken = next.accessToken;
