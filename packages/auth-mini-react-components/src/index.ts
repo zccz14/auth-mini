@@ -7,4 +7,5 @@ export { AuthMiniProvider, useAuthMini } from './auth-mini-provider.js';
 export type {
   AuthMiniContextValue,
   AuthMiniProviderProps,
+  AuthMiniVerificationFailure,
 } from './auth-mini-provider.js';
