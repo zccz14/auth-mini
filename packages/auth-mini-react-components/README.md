@@ -107,6 +107,28 @@ SDK to persist the token response. Callback tokens are removed from the address
 bar immediately and never rendered. It is the only component that initializes
 the Browser SDK, subscribes to session changes, or adopts a callback.
 
+## Audience coverage and automatic re-login
+
+When `audiences` (or the legacy `audience`) is configured, the Provider
+requires the access token to cover every configured audience. jose rejects a
+token only when it shares no audience with the requested set, and a refresh
+re-signs the audience set the session was minted with, so a session created
+before the configured set grew still verifies locally while the services behind
+the missing audiences reject it. The Provider treats such a session as unusable
+for the application: it deletes the saved local session and starts a new login,
+so Auth Mini mints a session that covers the configured set. The deletion is
+local (`clearLocal`); the previously issued session is not revoked on the
+server. With `autoRedirectToLogin`, the browser is redirected to the login page
+through the ordinary anonymous-session flow.
+
+The Provider performs at most one automatic restart per browser tab. If the new
+login still returns a token that does not cover every configured audience, the
+Provider stops restarting and reports `ERR_JWT_CLAIM_VALIDATION_FAILED` through
+`verificationFailure`, so a host can render the failure instead of looping
+through sign-out and sign-in. The guard marker lives in `sessionStorage` under
+the Auth Mini base URL and is cleared once a session covering every configured
+audience verifies.
+
 ## Security settings
 
 The signed-in User IconButton opens a dialog that displays a copyable UID with a

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getAuthMiniAudienceReloginKey,
   getAuthMiniLoginStateKey,
   getAuthMiniLoginUrl,
   resolveAuthMiniAudience,
@@ -98,6 +99,12 @@ describe('Auth Mini redirect helpers', () => {
         'https://app.example.test/callback#access_token=access&token_type=Bearer&session_id=session&refresh_token=refresh&expires_in=0&state=state-123',
       ),
     ).toThrow('Invalid Auth Mini login callback');
+  });
+
+  it('namespaces the audience-relogin marker per Auth Mini base URL', () => {
+    expect(
+      getAuthMiniAudienceReloginKey('https://auth.example.test/base'),
+    ).toBe('auth-mini.react.audience-relogin:https://auth.example.test/base/');
   });
 
   it('uses an origin-normalized state key and the real security route', () => {
