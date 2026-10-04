@@ -60,11 +60,25 @@ jobs:
           release_base_url="https://github.com/zccz14/auth-mini/releases/download/${release_tag}"
           work_dir="$(mktemp -d)"
           backup_path=""
+          # Keep only the newest N backups; older ones are pruned after each deploy.
+          backup_keep_count=5
 
           cleanup() {
             rm -rf "${work_dir}"
           }
           trap cleanup EXIT
+
+          prune_old_backups() {
+            local index=0
+            local backup
+            for backup in $(ls -t "${install_path}".bak.* 2>/dev/null || true); do
+              index=$((index + 1))
+              if test "${index}" -gt "${backup_keep_count}"; then
+                rm -f -- "${backup}"
+                echo "Pruned old backup: ${backup}"
+              fi
+            done
+          }
 
           cd "${work_dir}"
 
@@ -91,6 +105,8 @@ jobs:
             backup_path="${install_path}.bak.${timestamp}"
             cp "${install_path}" "${backup_path}"
           fi
+
+          prune_old_backups
 
           install -m 0755 auth-mini "${install_path}"
           systemctl restart "${service_name}"
