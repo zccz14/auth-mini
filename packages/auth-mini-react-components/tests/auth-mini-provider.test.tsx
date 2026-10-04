@@ -85,11 +85,14 @@ function VerificationReader() {
 }
 
 function SessionReader({ name }: { name: string }) {
-  const { error, isReady, session, signIn } = useAuthMini();
+  const { error, isAuthenticated, isReady, session, signIn } = useAuthMini();
   return (
     <>
       <output data-testid={name}>{session?.status ?? 'initializing'}</output>
       <output data-testid={`${name}-ready`}>{String(isReady)}</output>
+      <output data-testid={`${name}-authenticated`}>
+        {String(isAuthenticated)}
+      </output>
       {error ? <p role="alert">{error.message}</p> : null}
       <button onClick={signIn} type="button">
         Sign in
@@ -127,6 +130,10 @@ describe('AuthMiniProvider', () => {
       return () => undefined;
     });
     session.acceptRedirectCallback.mockResolvedValue({});
+    // The Browser SDK publishes an anonymous snapshot when clearLocal is
+    // applied; replay that contract so an audience restart drives the login
+    // redirect through the existing anonymous-session path.
+    session.clearLocal.mockImplementation(() => listener?.(anonymous));
   });
 
   afterEach(() => {
@@ -190,6 +197,180 @@ describe('AuthMiniProvider', () => {
     await waitFor(() =>
       expect(screen.getByTestId('verification')).toHaveTextContent('none'),
     );
+  });
+
+  it('deletes a session that misses configured audiences and starts a login', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.stubGlobal('crypto', { randomUUID: () => 'state-123' });
+    jwtVerify.mockResolvedValue({ payload: { aud: ['other.example.test'] } });
+
+    render(
+      <AuthMiniProvider
+        audiences={['app.example.test', 'other.example.test']}
+        autoRedirectToLogin
+        authMiniBaseUrl="https://auth.example.test"
+      >
+        <SessionReader name="session" />
+      </AuthMiniProvider>,
+    );
+    await act(async () => {});
+
+    act(() => listener?.(authenticated));
+
+    await waitFor(() => expect(session.clearLocal).toHaveBeenCalledOnce());
+    expect(session.logout).not.toHaveBeenCalled();
+    expect(
+      window.sessionStorage.getItem(
+        'auth-mini.react.audience-relogin:https://auth.example.test/',
+      ),
+    ).toBe('1');
+    expect(
+      window.sessionStorage.getItem(
+        'auth-mini.react.login.state:https://auth.example.test/',
+      ),
+    ).toBe('state-123');
+  });
+
+  it('deletes a session that jose rejects on the audience claim', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.stubGlobal('crypto', { randomUUID: () => 'state-123' });
+    const audienceRejection = Object.assign(
+      new Error('unexpected "aud" claim value'),
+      {
+        name: 'JWTClaimValidationFailed',
+        code: 'ERR_JWT_CLAIM_VALIDATION_FAILED',
+        claim: 'aud',
+      },
+    );
+    jwtVerify.mockRejectedValueOnce(audienceRejection);
+
+    render(
+      <AuthMiniProvider
+        audience="app.example.test"
+        autoRedirectToLogin
+        authMiniBaseUrl="https://auth.example.test"
+      >
+        <VerificationReader />
+      </AuthMiniProvider>,
+    );
+    await act(async () => {});
+
+    act(() => listener?.(authenticated));
+
+    await waitFor(() => expect(session.clearLocal).toHaveBeenCalledOnce());
+    expect(
+      window.sessionStorage.getItem(
+        'auth-mini.react.login.state:https://auth.example.test/',
+      ),
+    ).toBe('state-123');
+    expect(screen.getByTestId('verification')).toHaveTextContent('none');
+  });
+
+  it('does not restart a second time and reports the missed audiences', async () => {
+    window.sessionStorage.setItem(
+      'auth-mini.react.audience-relogin:https://auth.example.test/',
+      '1',
+    );
+    jwtVerify.mockResolvedValue({ payload: { aud: ['other.example.test'] } });
+
+    render(
+      <AuthMiniProvider
+        audiences={['app.example.test', 'other.example.test']}
+        autoRedirectToLogin
+        authMiniBaseUrl="https://auth.example.test"
+      >
+        <VerificationReader />
+      </AuthMiniProvider>,
+    );
+    await act(async () => {});
+
+    act(() => listener?.(authenticated));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('verification')).toHaveTextContent(
+        'ERR_JWT_CLAIM_VALIDATION_FAILED',
+      ),
+    );
+    expect(screen.getByTestId('verification')).toHaveTextContent(
+      'missing app.example.test',
+    );
+    expect(session.clearLocal).not.toHaveBeenCalled();
+    expect(session.logout).not.toHaveBeenCalled();
+    expect(
+      window.sessionStorage.getItem(
+        'auth-mini.react.login.state:https://auth.example.test/',
+      ),
+    ).toBeNull();
+    expect(
+      window.sessionStorage.getItem(
+        'auth-mini.react.audience-relogin:https://auth.example.test/',
+      ),
+    ).toBe('1');
+  });
+
+  it('clears the restart marker once every configured audience is covered', async () => {
+    window.sessionStorage.setItem(
+      'auth-mini.react.audience-relogin:https://auth.example.test/',
+      '1',
+    );
+    jwtVerify.mockResolvedValue({
+      payload: { aud: ['app.example.test', 'other.example.test'] },
+    });
+
+    render(
+      <AuthMiniProvider
+        audiences={['app.example.test', 'other.example.test']}
+        autoRedirectToLogin={false}
+        authMiniBaseUrl="https://auth.example.test"
+      >
+        <SessionReader name="session" />
+      </AuthMiniProvider>,
+    );
+    await act(async () => {});
+
+    act(() => listener?.(authenticated));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('session-authenticated')).toHaveTextContent(
+        'true',
+      ),
+    );
+    expect(
+      window.sessionStorage.getItem(
+        'auth-mini.react.audience-relogin:https://auth.example.test/',
+      ),
+    ).toBeNull();
+    expect(session.clearLocal).not.toHaveBeenCalled();
+  });
+
+  it('skips the audience-coverage check when no audience set is configured', async () => {
+    jwtVerify.mockResolvedValue({
+      payload: { aud: ['unrelated.example.test'] },
+    });
+
+    render(
+      <AuthMiniProvider
+        autoRedirectToLogin={false}
+        authMiniBaseUrl="https://auth.example.test"
+      >
+        <SessionReader name="session" />
+      </AuthMiniProvider>,
+    );
+    await act(async () => {});
+
+    act(() => listener?.(authenticated));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('session-authenticated')).toHaveTextContent(
+        'true',
+      ),
+    );
+    expect(session.clearLocal).not.toHaveBeenCalled();
+    expect(
+      window.sessionStorage.getItem(
+        'auth-mini.react.audience-relogin:https://auth.example.test/',
+      ),
+    ).toBeNull();
   });
 
   it('adopts a trusted redirect for the whole application', async () => {

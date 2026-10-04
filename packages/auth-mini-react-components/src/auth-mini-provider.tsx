@@ -17,6 +17,7 @@ import {
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 import {
   AuthMiniCallbackError,
+  getAuthMiniAudienceReloginKey,
   getAuthMiniLoginStateKey,
   resolveAuthMiniAudiences,
   getAuthMiniLoginUrl,
@@ -198,21 +199,66 @@ export function AuthMiniProvider({
           signIn();
         }
       };
+      const recordVerificationFailure = (
+        reason: string,
+        code: string | null,
+      ) => {
+        const failedAt = new Date();
+        setVerificationFailure({
+          reason,
+          code,
+          failedAt: failedAt.toISOString(),
+          localTime: failedAt.toISOString(),
+          adjustedTime:
+            clockOffsetMs === null
+              ? null
+              : new Date(failedAt.getTime() + clockOffsetMs).toISOString(),
+          clockOffsetMs,
+        });
+      };
+      // A session's audiences are minted at login and refresh never widens
+      // them, so a token that cannot cover every configured audience can never
+      // serve this Provider: delete the saved session and let the login flow
+      // mint a fresh one. The per-tab marker turns a login that cannot mint
+      // them either into one reported failure instead of a sign-out/sign-in
+      // loop.
+      const restartLoginForAudiences = () => {
+        const reloginKey = getAuthMiniAudienceReloginKey(authMiniBaseUrl);
+        if (window.sessionStorage.getItem(reloginKey) === '1') return false;
+        window.sessionStorage.setItem(reloginKey, '1');
+        nextSdk.session.clearLocal();
+        return true;
+      };
       const verifySession = async (next: SessionSnapshot) => {
         verification = next;
         try {
           await clockOffset;
+          const requiredAudiences = resolveAuthMiniAudiences(
+            audienceRef.current,
+            audiencesRef.current,
+          );
           const { payload } = await jwtVerify(next.accessToken!, jwks, {
             issuer,
-            audience: resolveAuthMiniAudiences(
-              audienceRef.current,
-              audiencesRef.current,
-            ),
+            audience: requiredAudiences,
             currentDate: new Date(Date.now() + (clockOffsetMs ?? 0)),
             clockTolerance: 10,
           });
           if (!alive || verification !== next) return;
+          const missing = missingAudiences(payload, requiredAudiences);
+          if (missing.length > 0) {
+            if (restartLoginForAudiences()) return;
+            verifiedAccessToken = null;
+            recordVerificationFailure(
+              `JWTClaimValidationFailed: the session token does not cover every configured audience (missing ${missing.join(', ')})`,
+              'ERR_JWT_CLAIM_VALIDATION_FAILED',
+            );
+            publish({ ...latestSession, authenticated: false }, null);
+            return;
+          }
           verifiedAccessToken = next.accessToken;
+          window.sessionStorage.removeItem(
+            getAuthMiniAudienceReloginKey(authMiniBaseUrl),
+          );
           setVerificationFailure(null);
           publish(
             { ...latestSession, status: 'authenticated', authenticated: true },
@@ -221,21 +267,15 @@ export function AuthMiniProvider({
         } catch (cause) {
           if (!alive || verification !== next) return;
           verifiedAccessToken = null;
-          const failedAt = new Date();
-          setVerificationFailure({
-            reason:
-              cause instanceof Error
-                ? `${cause.name}: ${cause.message}`
-                : String(cause),
-            code: errorCode(cause),
-            failedAt: failedAt.toISOString(),
-            localTime: failedAt.toISOString(),
-            adjustedTime:
-              clockOffsetMs === null
-                ? null
-                : new Date(failedAt.getTime() + clockOffsetMs).toISOString(),
-            clockOffsetMs,
-          });
+          if (isAudienceClaimFailure(cause) && restartLoginForAudiences()) {
+            return;
+          }
+          recordVerificationFailure(
+            cause instanceof Error
+              ? `${cause.name}: ${cause.message}`
+              : String(cause),
+            errorCode(cause),
+          );
           publish({ ...latestSession, authenticated: false }, null);
         }
       };
@@ -496,6 +536,31 @@ function sessionClaims(payload: JWTPayload): string {
     payload.amr,
     payload.auth_admin,
   ]);
+}
+
+// jose validates the audience *intersection*, so a token missing configured
+// audiences still verifies here; the explicit coverage check above owns that
+// case. A jose audience rejection still means the configured set is not
+// covered at all and takes the same delete-and-re-login path.
+function missingAudiences(
+  payload: JWTPayload,
+  required: string[] | undefined,
+): string[] {
+  if (!required) return [];
+  const aud = payload.aud;
+  const tokenAudiences =
+    typeof aud === 'string'
+      ? [aud]
+      : Array.isArray(aud)
+        ? aud.filter((value): value is string => typeof value === 'string')
+        : [];
+  return required.filter((audience) => !tokenAudiences.includes(audience));
+}
+
+function isAudienceClaimFailure(cause: unknown): boolean {
+  if (!cause || typeof cause !== 'object') return false;
+  const { code, claim } = cause as { code?: unknown; claim?: unknown };
+  return code === 'ERR_JWT_CLAIM_VALIDATION_FAILED' && claim === 'aud';
 }
 
 function errorCode(cause: unknown): string | null {

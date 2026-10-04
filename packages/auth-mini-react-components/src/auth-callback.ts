@@ -30,6 +30,10 @@ export function getAuthMiniLoginStateKey(authMiniBaseUrl: string): string {
   return `auth-mini.react.login.state:${normalizedBaseUrl(authMiniBaseUrl)}`;
 }
 
+export function getAuthMiniAudienceReloginKey(authMiniBaseUrl: string): string {
+  return `auth-mini.react.audience-relogin:${normalizedBaseUrl(authMiniBaseUrl)}`;
+}
+
 export function getAuthMiniSecurityUrl(authMiniBaseUrl: string): string {
   const url = new URL('/web/', authMiniBaseUrl);
   url.hash = '/';
