@@ -144,12 +144,20 @@ function renderLogin(path = loginPath()) {
   );
 }
 
+function mainSiteAccessToken(sub: string, sessionId: string) {
+  return [
+    Buffer.from(JSON.stringify({ alg: 'EdDSA' })).toString('base64url'),
+    Buffer.from(JSON.stringify({ sub, sid: sessionId })).toString('base64url'),
+    'signature',
+  ].join('.');
+}
+
 function signInMainSite() {
   sdkMocks.sessionState.current = {
     status: 'authenticated',
     authenticated: true,
     sessionId: 'session-main',
-    accessToken: 'main-access-token',
+    accessToken: mainSiteAccessToken('user-main', 'session-main'),
     refreshToken: 'main-refresh-token',
     receivedAt: '2026-06-30T00:00:00.000Z',
     expiresAt: '2026-06-30T01:00:00.000Z',
@@ -706,10 +714,26 @@ describe('LoginRoute', () => {
     );
   });
 
-  it('silently delegates when the browser already has a main-site session', async () => {
+  it('shows the account picker instead of delegating silently', async () => {
+    const user = userEvent.setup();
     signInMainSite();
 
     renderLogin();
+
+    // The browser holds a main-site session, but the user chooses it before
+    // a downstream session is signed.
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Choose an account to continue',
+      }),
+    ).toBeInTheDocument();
+    expect(sdkMocks.authorizeSession).not.toHaveBeenCalled();
+    expect(sdkMocks.sendLoginCallback).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('Email address')).not.toBeInTheDocument();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Account user-main' }),
+    );
 
     await waitFor(() =>
       expect(sdkMocks.sendLoginCallback).toHaveBeenCalledWith(
@@ -720,11 +744,11 @@ describe('LoginRoute', () => {
       redirect_uri: 'https://app.example.com/callback',
       audiences: ['app.example.com'],
     });
-    expect(screen.queryByLabelText('Email address')).not.toBeInTheDocument();
     expect(sdkMocks.clearLocal).not.toHaveBeenCalled();
   });
 
   it('resumes the authorize step from the sign-in step with an existing session', async () => {
+    const user = userEvent.setup();
     signInMainSite();
 
     renderLogin(selfSignInPath(loginPath()));
@@ -734,6 +758,12 @@ describe('LoginRoute', () => {
         '/login?redirect_uri=https%3A%2F%2Fapp.example.com%2Fcallback',
       ),
     );
+
+    // The resumed authorize step still asks which account to use.
+    await user.click(
+      await screen.findByRole('button', { name: 'Account user-main' }),
+    );
+
     await waitFor(() =>
       expect(sdkMocks.sendLoginCallback).toHaveBeenCalledWith(
         'https://app.example.com/callback#access_token=jwt-app&token_type=Bearer&session_id=session-app&refresh_token=refresh-app&expires_in=3600&expires_at=2026-06-30T01%3A00%3A00.000Z&state=state-1',
@@ -742,7 +772,7 @@ describe('LoginRoute', () => {
     expect(screen.queryByLabelText('Email address')).not.toBeInTheDocument();
   });
 
-  it('returns to the sign-in step with a notice when the authorize step cannot use the session', async () => {
+  it('returns to the sign-in step with a notice when the chosen account cannot be used', async () => {
     const user = userEvent.setup();
     signInMainSite();
     sdkMocks.authorizeSession.mockRejectedValueOnce({
@@ -751,6 +781,10 @@ describe('LoginRoute', () => {
     });
 
     renderLogin();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Account user-main' }),
+    );
 
     expect(
       await screen.findByText(
@@ -785,5 +819,249 @@ describe('LoginRoute', () => {
       ),
     );
     expect(sdkMocks.authorizeSession).toHaveBeenCalledTimes(2);
+  });
+
+  it('adds another account from the picker and continues with it', async () => {
+    const user = userEvent.setup();
+    signInMainSite();
+    sdkMocks.emailStart.mockResolvedValueOnce({ ok: true });
+    sdkMocks.emailVerify.mockResolvedValueOnce({
+      sessionId: 'session-b',
+      accessToken: mainSiteAccessToken('user-b', 'session-b'),
+      refreshToken: 'refresh-b',
+      receivedAt: '2026-06-30T00:00:00.000Z',
+      expiresAt: '2026-06-30T01:00:00.000Z',
+    });
+
+    renderLogin();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Use another account' }),
+    );
+
+    // The picker hands over to the sign-in step instead of resuming the
+    // session that is already stored in the browser.
+    expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
+    expect(screen.getByLabelText('Current location')).toHaveTextContent(
+      'return_to=',
+    );
+    expect(sdkMocks.sendLoginCallback).not.toHaveBeenCalled();
+
+    await user.type(
+      screen.getByLabelText('Email address'),
+      'second@example.com',
+    );
+    await user.click(await expectButtonEnabled('Send email code'));
+    await typeOneTimeCode(user, '123456');
+    await user.click(await expectButtonEnabled('Verify and continue'));
+
+    await waitFor(() => expect(sdkMocks.sendLoginCallback).toHaveBeenCalled());
+    expect(sdkMocks.authorizeSession).toHaveBeenCalledWith({
+      redirect_uri: 'https://app.example.com/callback',
+      audiences: ['app.example.com'],
+    });
+
+    const stored = JSON.parse(
+      localStorage.getItem('auth-mini.accounts') ?? '{"accounts":[]}',
+    ) as { accounts: Array<{ userId: string }> };
+    expect(stored.accounts.map((account) => account.userId).sort()).toEqual([
+      'user-b',
+      'user-main',
+    ]);
+  });
+
+  it('delegates with a stored account after refreshing its session', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(
+      'auth-mini.accounts',
+      JSON.stringify({
+        accounts: [
+          {
+            userId: 'user-other',
+            email: 'other@example.com',
+            sessionId: 'session-other',
+            accessToken: 'stored-access',
+            refreshToken: 'stored-refresh',
+            receivedAt: '2026-06-30T00:00:00.000Z',
+            expiresAt: '2026-06-30T01:00:00.000Z',
+            lastUsedAt: '2026-06-30T00:00:00.000Z',
+          },
+        ],
+      }),
+    );
+    const fetchMock = vi.fn(async (...call: Parameters<typeof fetch>) => {
+      const path = new URL(String(call[0])).pathname;
+      if (path === '/session/refresh') {
+        return new Response(
+          JSON.stringify({
+            session_id: 'session-other',
+            access_token: 'rotated-access',
+            refresh_token: 'rotated-refresh',
+            token_type: 'Bearer',
+            expires_in: 900,
+          }),
+        );
+      }
+      if (path === '/session/authorize') {
+        return new Response(
+          JSON.stringify({
+            session_id: 'session-app',
+            access_token: 'jwt-app',
+            refresh_token: 'refresh-app',
+            token_type: 'Bearer',
+            expires_in: 3600,
+          }),
+        );
+      }
+      return new Response('', { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderLogin();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'other@example.com' }),
+    );
+
+    const refreshCall = fetchMock.mock.calls.find(([input]) =>
+      String(input).includes('/session/refresh'),
+    );
+    expect(refreshCall).toBeDefined();
+    expect(JSON.parse(String((refreshCall?.[1] as RequestInit).body))).toEqual({
+      session_id: 'session-other',
+      refresh_token: 'stored-refresh',
+    });
+
+    const authorizeCall = fetchMock.mock.calls.find(([input]) =>
+      String(input).includes('/session/authorize'),
+    );
+    expect(authorizeCall).toBeDefined();
+    expect((authorizeCall?.[1] as RequestInit).headers).toMatchObject({
+      authorization: 'Bearer rotated-access',
+    });
+
+    await waitFor(() => expect(sdkMocks.sendLoginCallback).toHaveBeenCalled());
+    const callbackUrl = String(sdkMocks.sendLoginCallback.mock.calls[0]?.[0]);
+    const callbackParams = new URLSearchParams(callbackUrl.split('#')[1]);
+    expect(callbackParams.get('access_token')).toBe('jwt-app');
+    expect(callbackParams.get('refresh_token')).toBe('refresh-app');
+    expect(callbackParams.get('state')).toBe('state-1');
+
+    await waitFor(() => {
+      const stored = JSON.parse(
+        localStorage.getItem('auth-mini.accounts') ?? '{"accounts":[]}',
+      ) as { accounts: Array<{ refreshToken: string }> };
+      expect(stored.accounts[0]?.refreshToken).toBe('rotated-refresh');
+    });
+  });
+
+  it('removes a dead stored account and returns to the sign-in step', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(
+      'auth-mini.accounts',
+      JSON.stringify({
+        accounts: [
+          {
+            userId: 'user-dead',
+            email: 'dead@example.com',
+            sessionId: 'session-dead',
+            accessToken: 'stored-access',
+            refreshToken: 'stored-refresh',
+            receivedAt: '2026-06-30T00:00:00.000Z',
+            expiresAt: '2026-06-30T01:00:00.000Z',
+            lastUsedAt: '2026-06-30T00:00:00.000Z',
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: 'session_invalidated' }), {
+            status: 401,
+          }),
+      ),
+    );
+
+    renderLogin();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'dead@example.com' }),
+    );
+
+    expect(
+      await screen.findByText(
+        'Your existing sign-in could not be used. Sign in to continue.',
+      ),
+    ).toBeInTheDocument();
+    expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
+    expect(screen.getByLabelText('Current location')).toHaveTextContent(
+      'return_to=',
+    );
+    await waitFor(() => {
+      const stored = JSON.parse(
+        localStorage.getItem('auth-mini.accounts') ?? '{"accounts":[]}',
+      ) as { accounts: unknown[] };
+      expect(stored.accounts).toEqual([]);
+    });
+  });
+
+  it('keeps the remaining accounts when one stored session is invalid', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(
+      'auth-mini.accounts',
+      JSON.stringify({
+        accounts: [
+          {
+            userId: 'user-a',
+            email: 'a@example.com',
+            sessionId: 'session-a',
+            accessToken: 'stored-access',
+            refreshToken: 'stored-refresh',
+            receivedAt: '2026-06-30T00:00:00.000Z',
+            expiresAt: '2026-06-30T01:00:00.000Z',
+            lastUsedAt: '2026-06-30T00:00:00.000Z',
+          },
+          {
+            userId: 'user-b',
+            email: 'b@example.com',
+            sessionId: 'session-b',
+            accessToken: 'stored-access',
+            refreshToken: 'stored-refresh',
+            receivedAt: '2026-06-30T00:00:00.000Z',
+            expiresAt: '2026-06-30T01:00:00.000Z',
+            lastUsedAt: '2026-06-30T00:00:00.000Z',
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: 'session_superseded' }), {
+            status: 401,
+          }),
+      ),
+    );
+
+    renderLogin();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'a@example.com' }),
+    );
+
+    expect(
+      await screen.findByText(
+        'That account is no longer signed in. Choose another account or sign in again.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'b@example.com' }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Current location')).toHaveTextContent(
+      '/login?redirect_uri=',
+    );
   });
 });
