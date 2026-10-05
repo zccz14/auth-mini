@@ -22,6 +22,19 @@ import { LanguageSelect } from '@/components/app/language-select';
 import { useI18n } from '@/lib/i18n';
 import { REGEXP_ONLY_DIGITS } from 'input-otp';
 import {
+  accountFromAppTokens,
+  accountFromSessionSnapshot,
+  authorizeStoredAccount,
+  fetchAccountEmail,
+  isInvalidAccountSessionError,
+  readStoredAccounts,
+  refreshStoredAccount,
+  removeStoredAccount,
+  upsertStoredAccount,
+  writeStoredAccounts,
+  type StoredAccount,
+} from '@/lib/accounts';
+import {
   authorizeLoginPath,
   authenticationTarget,
   buildLoginCallbackUrl,
@@ -48,12 +61,10 @@ type PendingAction =
   | 'ed25519'
   | 'remote-login';
 
-const SSO_UNAVAILABLE_NOTICE = 'sso-unavailable';
-
 export function LoginRoute() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { sdk, session, setupState } = useApp();
+  const { sdk, session, setupState, serverBaseUrl } = useApp();
   const { t } = useI18n();
   const request = useMemo(
     () => parseLoginRequest(location.search, window.location.search),
@@ -65,8 +76,6 @@ export function LoginRoute() {
   );
   const signInFirstStage = routeParams.has('return_to');
   const returnTo = resolveReturnTo(routeParams.get('return_to'));
-  const ssoUnavailableNotice =
-    location.state?.notice === SSO_UNAVAILABLE_NOTICE;
   const [method, setMethod] = useState<LoginMethod>('email');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
@@ -82,8 +91,20 @@ export function LoginRoute() {
   );
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [accounts, setAccounts] = useState<StoredAccount[]>(() =>
+    readStoredAccounts(),
+  );
   const [ssoPhase, setSsoPhase] = useState<'idle' | 'redirecting'>('idle');
+  const [ssoError, setSsoError] = useState('');
+  const [ssoNoticeShown, setSsoNoticeShown] = useState(false);
+  const [freshSignIn, setFreshSignIn] = useState(false);
+  const [pendingDelegationSessionId, setPendingDelegationSessionId] = useState<
+    string | null
+  >(null);
   const ssoAttemptRef = useRef(false);
+  const emailFetchAttemptsRef = useRef(new Set<string>());
+  const accountsRef = useRef(accounts);
+  accountsRef.current = accounts;
 
   const sdkReady = Boolean(sdk);
   const passkeyConfigured = Boolean(setupState?.rp_id);
@@ -123,19 +144,52 @@ export function LoginRoute() {
     [request],
   );
   const persistedSession = Boolean(session.sessionId && session.refreshToken);
-  const ssoPending =
+  const autoDelegationActive = Boolean(
+    pendingDelegationSessionId !== null &&
+    session.sessionId === pendingDelegationSessionId &&
+    persistedSession,
+  );
+  const sdkAccount = useMemo(
+    () => (sdkReady ? accountFromSessionSnapshot(session) : null),
+    // The provider exposes a stable session view; its fields are the inputs.
+    [
+      sdkReady,
+      session.sessionId,
+      session.accessToken,
+      session.refreshToken,
+      session.receivedAt,
+      session.expiresAt,
+    ],
+  );
+  const ssoBusy =
     delegationTarget !== null &&
     !signInFirstStage &&
-    (ssoPhase === 'redirecting' || !sdkReady || persistedSession);
+    (ssoPhase === 'redirecting' || !sdkReady || autoDelegationActive);
   const signInFirstTarget =
     delegationTarget !== null &&
     !signInFirstStage &&
     sdkReady &&
-    !persistedSession
+    !persistedSession &&
+    accounts.length === 0
       ? selfSignInPath(delegationTarget.authorizePath)
       : null;
+  const showAccountPicker =
+    delegationTarget !== null &&
+    !signInFirstStage &&
+    sdkReady &&
+    !ssoBusy &&
+    (accounts.length > 0 || persistedSession);
+  const pickerAccounts = useMemo(
+    () =>
+      [...accounts].sort((a, b) => b.lastUsedAt.localeCompare(a.lastUsedAt)),
+    [accounts],
+  );
   const resumeTarget =
-    signInFirstStage && sdkReady && persistedSession && !ssoUnavailableNotice
+    signInFirstStage &&
+    sdkReady &&
+    persistedSession &&
+    !ssoNoticeShown &&
+    !freshSignIn
       ? returnTo
       : null;
   const delegationDestination =
@@ -144,10 +198,52 @@ export function LoginRoute() {
     ) : null;
 
   useEffect(() => {
+    if (!sdkAccount) return;
+
+    const existing = accounts.find(
+      (account) => account.userId === sdkAccount.userId,
+    );
+    const next = existing
+      ? { ...sdkAccount, lastUsedAt: existing.lastUsedAt }
+      : sdkAccount;
+    const updated = upsertStoredAccount(accounts, next);
+    if (updated !== accounts) setAccounts(updated);
+  }, [accounts, sdkAccount]);
+
+  useEffect(() => {
+    writeStoredAccounts(accounts);
+  }, [accounts]);
+
+  useEffect(() => {
+    if (!sdkReady || !delegationTarget || signInFirstStage) return;
+
+    const now = Date.now();
+    for (const account of accounts) {
+      if (account.email) continue;
+      // Only enrich when the stored access token can still read /me.
+      if (!(Date.parse(account.expiresAt) > now)) continue;
+      if (emailFetchAttemptsRef.current.has(account.userId)) continue;
+      emailFetchAttemptsRef.current.add(account.userId);
+
+      void fetchAccountEmail(serverBaseUrl, account.accessToken).then(
+        (email) => {
+          if (!email) return;
+          setAccounts((prev) => {
+            const current = prev.find((item) => item.userId === account.userId);
+            return current
+              ? upsertStoredAccount(prev, { ...current, email })
+              : prev;
+          });
+        },
+      );
+    }
+  }, [accounts, delegationTarget, sdkReady, serverBaseUrl, signInFirstStage]);
+
+  useEffect(() => {
     if (
       !sdk ||
       !delegationTarget ||
-      !persistedSession ||
+      !autoDelegationActive ||
       signInFirstStage ||
       ssoAttemptRef.current
     ) {
@@ -169,12 +265,14 @@ export function LoginRoute() {
       })
       .catch(() => {
         ssoAttemptRef.current = false;
+        setSsoPhase('idle');
+        setPendingDelegationSessionId(null);
+        setSsoNoticeShown(true);
         navigate(selfSignInPath(delegationTarget.authorizePath), {
           replace: true,
-          state: { notice: SSO_UNAVAILABLE_NOTICE },
         });
       });
-  }, [delegationTarget, navigate, persistedSession, sdk, signInFirstStage]);
+  }, [autoDelegationActive, delegationTarget, navigate, sdk, signInFirstStage]);
 
   async function handleEmailStart(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -296,11 +394,21 @@ export function LoginRoute() {
   async function completeLogin(tokens: LoginCallbackTokens) {
     if (!sdk) return;
 
-    await sdk.session.acceptRedirectCallback(toAppSessionTokens(tokens));
-    // INVARIANT: the authorize step re-runs after this navigation, so its
-    // attempt guard must be cleared for the freshly issued session.
+    const sessionTokens = toAppSessionTokens(tokens);
+    await sdk.session.acceptRedirectCallback(sessionTokens);
+
+    const account = accountFromAppTokens(sessionTokens);
+    if (account) {
+      setAccounts((prev) => upsertStoredAccount(prev, account));
+    }
+
+    // INVARIANT: the authorize step re-runs after this navigation, so the
+    // pending delegation and its attempt guard are reset for this session.
     ssoAttemptRef.current = false;
     setSsoPhase('idle');
+    setSsoNoticeShown(false);
+    setFreshSignIn(false);
+    setPendingDelegationSessionId(sessionTokens.session_id);
     navigate(returnTo);
   }
 
@@ -318,6 +426,79 @@ export function LoginRoute() {
     }
   }
 
+  function touchAccount(userId: string) {
+    setAccounts((prev) => {
+      const existing = prev.find((account) => account.userId === userId);
+      return existing
+        ? upsertStoredAccount(prev, {
+            ...existing,
+            lastUsedAt: new Date().toISOString(),
+          })
+        : prev;
+    });
+  }
+
+  async function handleAccountSelect(account: StoredAccount) {
+    if (!sdk || !delegationTarget || ssoAttemptRef.current) return;
+
+    const target = delegationTarget;
+    ssoAttemptRef.current = true;
+    setSsoError('');
+    setSsoPhase('redirecting');
+
+    try {
+      let tokens: LoginCallbackTokens;
+      if (account.sessionId === session.sessionId) {
+        touchAccount(account.userId);
+        tokens = await sdk.authorizeSession(target.params);
+      } else {
+        const refreshed = await refreshStoredAccount(serverBaseUrl, account);
+        setAccounts((prev) => upsertStoredAccount(prev, refreshed));
+        tokens = await authorizeStoredAccount(
+          serverBaseUrl,
+          refreshed.accessToken,
+          target.params,
+        );
+      }
+
+      sendLoginCallback(
+        buildLoginCallbackUrl({
+          redirectUri: target.redirectUri,
+          state: target.state,
+          tokens,
+        }),
+      );
+    } catch (cause) {
+      ssoAttemptRef.current = false;
+      setSsoPhase('idle');
+
+      if (!isInvalidAccountSessionError(cause)) {
+        setSsoNoticeShown(true);
+        navigate(selfSignInPath(target.authorizePath), { replace: true });
+        return;
+      }
+
+      const remaining = removeStoredAccount(
+        accountsRef.current,
+        account.userId,
+      );
+      setAccounts(remaining);
+      if (remaining.length === 0) {
+        setSsoNoticeShown(true);
+        navigate(selfSignInPath(target.authorizePath), { replace: true });
+        return;
+      }
+
+      setSsoError(t('login.pickerInvalidSession'));
+    }
+  }
+
+  function openAddAccount() {
+    if (!delegationTarget) return;
+    setFreshSignIn(true);
+    navigate(selfSignInPath(delegationTarget.authorizePath));
+  }
+
   if (signInFirstTarget !== null) {
     return <Navigate replace to={signInFirstTarget} />;
   }
@@ -326,7 +507,7 @@ export function LoginRoute() {
     return <Navigate replace to={resumeTarget} />;
   }
 
-  if (ssoPending) {
+  if (ssoBusy) {
     return (
       <main
         className="min-h-screen bg-slate-50 bg-cover bg-center px-4 py-6 text-slate-950 sm:px-6"
@@ -359,6 +540,66 @@ export function LoginRoute() {
     );
   }
 
+  if (showAccountPicker) {
+    return (
+      <main
+        className="min-h-screen bg-slate-50 bg-cover bg-center px-4 py-6 text-slate-950 sm:px-6"
+        style={loginBackgroundStyle}
+      >
+        <section className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-xl flex-col justify-center">
+          <div className="mb-4 flex justify-end">
+            <LanguageSelect />
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <div className="space-y-3">
+              <img
+                src={logoSrc}
+                alt={`${brandName} logo`}
+                className="h-10 w-auto max-w-48 object-contain"
+              />
+              <p className="text-sm font-medium text-slate-500">{brandName}</p>
+              <h1 className="text-2xl font-semibold text-slate-950">
+                {t('login.pickerTitle')}
+              </h1>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              {delegationDestination}
+
+              <div className="space-y-3">
+                {pickerAccounts.map((account) => (
+                  <Button
+                    key={account.userId}
+                    className="w-full bg-white text-slate-900 ring-1 ring-slate-300 hover:bg-slate-100"
+                    onClick={() => void handleAccountSelect(account)}
+                  >
+                    <span className="max-w-full truncate">
+                      {account.email ??
+                        t('login.pickerAccountFallback', {
+                          id: shortAccountId(account.userId),
+                        })}
+                    </span>
+                  </Button>
+                ))}
+
+                <Button
+                  className="w-full bg-white text-slate-900 ring-1 ring-slate-300 hover:bg-slate-100"
+                  onClick={() => openAddAccount()}
+                >
+                  {t('login.pickerAddAccount')}
+                </Button>
+              </div>
+
+              {ssoError ? (
+                <p className="text-sm text-rose-600">{ssoError}</p>
+              ) : null}
+            </div>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main
       className="min-h-screen bg-slate-50 bg-cover bg-center px-4 py-6 text-slate-950 sm:px-6"
@@ -385,7 +626,7 @@ export function LoginRoute() {
           </div>
 
           <div className="mt-5 space-y-4">
-            {ssoUnavailableNotice ? (
+            {ssoNoticeShown ? (
               <Alert className="border-amber-200 bg-amber-50 text-amber-900">
                 <AlertDescription>{t('login.ssoUnavailable')}</AlertDescription>
               </Alert>
@@ -610,6 +851,11 @@ function DelegationDestination({
       </AlertDescription>
     </Alert>
   );
+}
+
+function shortAccountId(userId: string) {
+  if (userId.length <= 12) return userId;
+  return `${userId.slice(0, 8)}...${userId.slice(-4)}`;
 }
 
 function isAuthorizationPending(cause: unknown) {

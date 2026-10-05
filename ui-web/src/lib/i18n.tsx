@@ -121,6 +121,11 @@ export const en = {
   'login.ssoRedirecting': 'Continuing with your existing sign-in...',
   'login.ssoUnavailable':
     'Your existing sign-in could not be used. Sign in to continue.',
+  'login.pickerTitle': 'Choose an account to continue',
+  'login.pickerAddAccount': 'Use another account',
+  'login.pickerAccountFallback': 'Account {id}',
+  'login.pickerInvalidSession':
+    'That account is no longer signed in. Choose another account or sign in again.',
   'login.startError': 'Unable to start email sign-in.',
   'login.signInError': 'Sign-in failed.',
   'login.remote.start': 'Approve on another device',
@@ -454,6 +459,11 @@ export const zhCN: Record<TranslationKey, string> = {
   'login.ssoChecking': '正在检查登录状态...',
   'login.ssoRedirecting': '正在使用已有登录状态继续...',
   'login.ssoUnavailable': '无法使用已有登录状态，请重新登录后继续。',
+  'login.pickerTitle': '选择要使用的账户',
+  'login.pickerAddAccount': '使用其他账户登录',
+  'login.pickerAccountFallback': '账户 {id}',
+  'login.pickerInvalidSession':
+    '该账户的登录状态已失效，请选择其他账户或重新登录。',
   'login.startError': '无法开始邮箱登录。',
   'login.signInError': '登录失败。',
   'login.remote.start': '在其他设备上批准',
