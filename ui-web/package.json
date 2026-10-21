@@ -18,7 +18,7 @@
     "@radix-ui/react-label": "^2.1.15",
     "@radix-ui/react-separator": "^1.1.7",
     "@radix-ui/react-tabs": "^1.1.13",
-    "auth-mini": "file:..",
+    "auth-mini": "link:..",
     "auth-mini-react-components": "0.6.7",
     "clsx": "^2.1.1",
     "input-otp": "^1.4.2",
