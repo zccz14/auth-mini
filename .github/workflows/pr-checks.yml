@@ -20,26 +20,29 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24.x
-          cache: npm
+          cache: pnpm
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Run lint
-        run: npm run lint
+        run: pnpm run lint
 
       - name: Run typecheck
-        run: npm run typecheck
+        run: pnpm run typecheck
 
       - name: Run tests
-        run: npm test
+        run: pnpm test
 
       - name: Build package
-        run: npm run build
+        run: pnpm run build
 
   react-components:
     runs-on: ubuntu-latest
@@ -48,26 +51,29 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24.x
-          cache: npm
+          cache: pnpm
           cache-dependency-path: |
-            package-lock.json
-            packages/auth-mini-react-components/package-lock.json
+            pnpm-lock.yaml
+            packages/auth-mini-react-components/pnpm-lock.yaml
 
       - name: Install and build Browser SDK
         run: |
-          npm ci
-          npm run build
+          pnpm install --frozen-lockfile
+          pnpm run build
 
       - name: Install component dependencies
-        run: npm --prefix packages/auth-mini-react-components ci --ignore-scripts
+        run: pnpm --dir packages/auth-mini-react-components install --frozen-lockfile --ignore-scripts
 
       - name: Check component package
         run: |
-          npm --prefix packages/auth-mini-react-components run typecheck
-          npm --prefix packages/auth-mini-react-components test
-          npm --prefix packages/auth-mini-react-components run build
-          npm --prefix packages/auth-mini-react-components run pack:check
+          pnpm --dir packages/auth-mini-react-components run typecheck
+          pnpm --dir packages/auth-mini-react-components test
+          pnpm --dir packages/auth-mini-react-components run build
+          pnpm --dir packages/auth-mini-react-components run pack:check

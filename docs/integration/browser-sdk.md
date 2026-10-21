@@ -109,9 +109,9 @@ The embedded `/web/` GUI calls the same Rust server that served it by resolving 
 
 The Rust release workflow builds the GUI with the root-level `gui:build:embedded` script and embeds the resulting assets in the release binary. The same auth-mini server serves the GUI at `/web/`.
 
-- Use `npm run gui:dev` for local GUI development and `npm run gui:typecheck` to check its types.
-- Use `npm run gui:build` to build the GUI into `ui-web/dist`.
-- Use `npm run gui:build:embedded` to build `rust-backend/web` and regenerate the checked-in `rust-backend/web-assets.bin.gz` archive for Cargo builds.
+- Use `pnpm run gui:dev` for local GUI development and `pnpm run gui:typecheck` to check its types.
+- Use `pnpm run gui:build` to build the GUI into `ui-web/dist`.
+- Use `pnpm run gui:build:embedded` to build `rust-backend/web` and regenerate the checked-in `rust-backend/web-assets.bin.gz` archive for Cargo builds.
 - Configure the issuer to the final Auth Mini server origin and set `rp_id` to that host or a valid parent domain.
 - If a downstream app serves its own frontend separately from auth-mini, it should redirect users to the Auth Mini page for browser sign-in; the built-in `/web` GUI is same-server only.
 

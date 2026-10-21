@@ -210,7 +210,7 @@ async function createStagedWorkspace(): Promise<string> {
     'README.md',
     'openapi.yaml',
     'openapi-ts.config.ts',
-    'package-lock.json',
+    'pnpm-lock.yaml',
     'package.json',
     'tsconfig.build.json',
     'tsconfig.json',

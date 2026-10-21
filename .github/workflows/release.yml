@@ -54,14 +54,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24.x
-          cache: npm
+          cache: pnpm
           cache-dependency-path: |
-            package-lock.json
-            ui-web/package-lock.json
+            pnpm-lock.yaml
+            ui-web/pnpm-lock.yaml
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -69,13 +72,13 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Install root dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Install GUI dependencies
-        run: npm --prefix ui-web ci
+        run: pnpm --dir ui-web install --frozen-lockfile
 
       - name: Build embedded web assets
-        run: npm run gui:build:embedded
+        run: pnpm run gui:build:embedded
 
       - name: Build release binary
         run: cargo build --manifest-path rust-backend/Cargo.toml --release --locked --target ${{ matrix.target }} --target-dir rust-backend/target

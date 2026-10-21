@@ -141,7 +141,7 @@ async function preparePackedWorkspace(stageDir: string): Promise<void> {
     'LICENSE',
     'README.md',
     'package.json',
-    'package-lock.json',
+    'pnpm-lock.yaml',
   ];
   const directoriesToCopy = ['dist'];
 

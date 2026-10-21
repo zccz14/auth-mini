@@ -3,7 +3,7 @@ import { copyFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 const isWatchMode = process.argv.includes('--watch');
-const generateApiCommand = 'npm run generate:api';
+const generateApiCommand = 'pnpm run generate:api';
 const buildCommand = 'tsc -p tsconfig.build.json --declaration';
 const watchCommand =
   'tsc -p tsconfig.build.json --declaration --watch --preserveWatchOutput';
