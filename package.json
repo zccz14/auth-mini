@@ -40,13 +40,13 @@
     "generate:api": "openapi-ts",
     "check:generated:api": "node scripts/check-generated-api-sdk.mjs",
     "check:release-version": "node scripts/check-release-version.mjs",
-    "test": "npm run typecheck && npm run test:unit && npm run test:integration",
+    "test": "pnpm run typecheck && pnpm run test:unit && pnpm run test:integration",
     "test:unit": "node scripts/run-tests.js",
-    "gui:build": "npm run build && npm --prefix ui-web run build",
-    "gui:build:embedded": "npm run build && npm --prefix ui-web run build:web && node scripts/build-web-assets-archive.mjs",
+    "gui:build": "pnpm run build && pnpm --dir ui-web run build",
+    "gui:build:embedded": "pnpm run build && pnpm --dir ui-web run build:web && node scripts/build-web-assets-archive.mjs",
     "gui:dev": "node scripts/dev-ui-web.mjs",
-    "gui:typecheck": "npm --prefix ui-web run typecheck",
-    "test:integration": "npm run build && vitest run tests/integration",
+    "gui:typecheck": "pnpm --dir ui-web run typecheck",
+    "test:integration": "pnpm run build && vitest run tests/integration",
     "test:rust-e2e": "CARGO_HOME=$PWD/.cargo-home cargo build --manifest-path rust-backend/Cargo.toml && vitest run rust-e2e",
     "gco:main": "git fetch && git checkout origin/main",
     "lint": "eslint .",
@@ -72,5 +72,6 @@
     "typescript-eslint": "^8.46.0",
     "vitest": "^4.0.0",
     "yaml": "2.8.3"
-  }
+  },
+  "packageManager": "pnpm@10.15.0"
 }

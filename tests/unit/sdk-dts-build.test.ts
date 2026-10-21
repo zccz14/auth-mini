@@ -55,8 +55,8 @@ describe('sdk d.ts build artifact', () => {
       'utf8',
     );
 
-    expect(buildScriptSource).toContain('npm run generate:api');
-    expect(buildScriptSource.indexOf('npm run generate:api')).toBeLessThan(
+    expect(buildScriptSource).toContain('pnpm run generate:api');
+    expect(buildScriptSource.indexOf('pnpm run generate:api')).toBeLessThan(
       buildScriptSource.indexOf('tsc -p tsconfig.build.json --declaration'),
     );
     expect(buildScriptSource.match(/await runCommand\(/g)).toHaveLength(3);

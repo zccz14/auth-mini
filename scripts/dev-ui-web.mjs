@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 
-const sdkBuildWatchCommand = 'npm run build -- --watch';
-const guiDevCommand = 'npm --prefix ui-web run dev';
+const sdkBuildWatchCommand = 'pnpm run build --watch';
+const guiDevCommand = 'pnpm --dir ui-web run dev';
 const shutdownTimeoutMs = 3000;
 const shutdownPollIntervalMs = 50;
 const processes = [];

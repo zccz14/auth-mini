@@ -194,32 +194,32 @@ describe('ui-web dev helper script', () => {
       `ui-web-dev-script-${process.pid}-${Date.now()}`,
     );
     const fakeBinDir = resolve(tempDir, 'bin');
-    const fakeNpmPath = resolve(fakeBinDir, 'npm');
+    const fakePnpmPath = resolve(fakeBinDir, 'pnpm');
     const backgroundPidPath = resolve(tempDir, 'build-sleep.pid');
 
     await mkdir(fakeBinDir, { recursive: true });
     await writeFile(
-      fakeNpmPath,
+      fakePnpmPath,
       `#!/bin/sh
 set -eu
 
 case "$*" in
-  "run build -- --watch")
+  "run build --watch")
     TEST_TMP="${tempDir}" exec sh -c 'sleep 30 >/dev/null 2>&1 & bg=$!; printf "%s" "$bg" > "$TEST_TMP/build-sleep.pid"; trap "exit 0" TERM INT; while :; do sleep 1; done'
     ;;
-  "--prefix ui-web run dev")
+  "--dir ui-web run dev")
     sleep 0.2
     exit 23
     ;;
   *)
-    printf "unexpected fake npm argv: %s\n" "$*" >&2
+    printf "unexpected fake pnpm argv: %s\n" "$*" >&2
     exit 99
     ;;
 esac
 `,
       'utf8',
     );
-    await chmod(fakeNpmPath, 0o755);
+    await chmod(fakePnpmPath, 0o755);
 
     const child = spawn(process.execPath, ['scripts/dev-ui-web.mjs'], {
       cwd: repoRoot,
@@ -262,7 +262,7 @@ esac
     }
   });
 
-  it('uses npm run build -- --watch for GUI orchestration and backs it with a real sdk watch pipeline', () => {
+  it('uses pnpm run build --watch for GUI orchestration and backs it with a real sdk watch pipeline', () => {
     const testSource = readFileSync(new URL(import.meta.url), 'utf8');
     const legacyReadySignal = ['Watching for file', 'changes'].join(' ');
     const devScript = readFileSync(
@@ -283,8 +283,8 @@ esac
     expect(packageJson.scripts?.['gui:dev']).toBe(
       'node scripts/dev-ui-web.mjs',
     );
-    expect(devScript).toContain('npm run build -- --watch');
-    expect(devScript).toContain('npm --prefix ui-web run dev');
+    expect(devScript).toContain('pnpm run build --watch');
+    expect(devScript).toContain('pnpm --dir ui-web run dev');
     expect(devScript).not.toContain(
       'tsc -p tsconfig.build.json --declaration --watch --preserveWatchOutput',
     );
@@ -307,11 +307,11 @@ esac
     };
 
     expect(packageJson.scripts?.['gui:typecheck']).toBe(
-      'npm --prefix ui-web run typecheck',
+      'pnpm --dir ui-web run typecheck',
     );
   });
 
-  it('keeps npm run build -- --watch alive and rebuilds sdk artifacts', async () => {
+  it('keeps pnpm run build --watch alive and rebuilds sdk artifacts', async () => {
     if (import.meta.url.includes('ui-web/node_modules/auth-mini')) {
       return;
     }

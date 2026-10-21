@@ -13,10 +13,10 @@ describe('ui-web release contract', () => {
     };
 
     expect(packageJson.scripts?.['gui:build']).toBe(
-      'npm run build && npm --prefix ui-web run build',
+      'pnpm run build && pnpm --dir ui-web run build',
     );
     expect(packageJson.scripts?.['gui:build:embedded']).toBe(
-      'npm run build && npm --prefix ui-web run build:web && node scripts/build-web-assets-archive.mjs',
+      'pnpm run build && pnpm --dir ui-web run build:web && node scripts/build-web-assets-archive.mjs',
     );
   });
 
@@ -29,10 +29,10 @@ describe('ui-web release contract', () => {
     const buildJob = workflow.slice(buildJobStart);
     const expectedSequence = [
       'uses: actions/setup-node@v4',
-      'ui-web/package-lock.json',
-      'run: npm ci',
-      'run: npm --prefix ui-web ci',
-      'run: npm run gui:build:embedded',
+      'ui-web/pnpm-lock.yaml',
+      'run: pnpm install --frozen-lockfile',
+      'run: pnpm --dir ui-web install --frozen-lockfile',
+      'run: pnpm run gui:build:embedded',
       'cargo build --manifest-path rust-backend/Cargo.toml --release',
     ];
     const sequenceIndexes = expectedSequence.map((snippet) =>
@@ -106,8 +106,8 @@ describe('ui-web release contract', () => {
 
     expect(browserSdkDoc).toContain('relative base URL `..`');
     expect(browserSdkDoc).toContain('AuthMiniProvider');
-    expect(browserSdkDoc).toContain('npm run gui:build:embedded');
-    expect(browserSdkDoc).toContain('npm run gui:dev');
+    expect(browserSdkDoc).toContain('pnpm run gui:build:embedded');
+    expect(browserSdkDoc).toContain('pnpm run gui:dev');
     expect(browserSdkDoc).not.toContain('auth-origin=');
     expect(browserSdkDoc).not.toContain('sdk-origin=');
     expect(browserSdkDoc).not.toMatch(/import map/i);
