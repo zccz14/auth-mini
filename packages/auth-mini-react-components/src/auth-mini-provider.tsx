@@ -176,7 +176,15 @@ export function AuthMiniProvider({
     try {
       const nextSdk = createBrowserSdk(authMiniBaseUrl);
       const issuer = new URL(authMiniBaseUrl).toString().replace(/\/$/, '');
-      const jwks = createRemoteJWKSet(new URL(`${issuer}/jwks`));
+      // jose refetches whenever its key-set cache is older than `cacheMaxAge`
+      // (ten minutes by default), which made every open tab poll `/jwks` six
+      // times an hour for a key set that changes when an operator rotates keys.
+      // An unknown `kid` still forces a refetch, so revalidate rarely and
+      // rate-limit that forced path instead.
+      const jwks = createRemoteJWKSet(new URL(`${issuer}/jwks`), {
+        cacheMaxAge: 6 * 60 * 60 * 1000,
+        cooldownDuration: 30 * 1000,
+      });
       // Estimate the offset between the device clock and the Auth Mini clock so
       // JWT verification stays meaningful on devices with a skewed clock. Any
       // failure falls back to the local clock.

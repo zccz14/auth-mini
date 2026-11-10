@@ -71,7 +71,12 @@ redirects and non-Ed25519 signing keys, verifies the signature before exposing
 `AuthMiniPrincipal`, and never exposes Auth Mini's `auth_admin` claim as a
 downstream authorization role. The cache uses stale-while-revalidate for known
 keys, single-flights key rotation refreshes, backs off failed refreshes from one
-second to one minute, and refuses cache entries at or beyond `max_stale`.
+second to one minute, and refuses cache entries at or beyond `max_stale`. It
+refreshes on a six-hour interval by default, and only for a backstop: an unknown
+`kid` refreshes immediately, at most once per `min_refresh_interval` (thirty
+seconds by default), so a token with an invented `kid` cannot turn into a
+`/jwks` request per request. Claim failures such as an expired token, a wrong
+issuer, or a wrong audience never refresh the key set.
 
 When a process must expose liveness before the issuer round trip completes, use
 `AuthMiniLayer::from_issuer_background` instead. It starts the same initial
