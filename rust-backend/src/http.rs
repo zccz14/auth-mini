@@ -1474,7 +1474,9 @@ fn handle_jwks(config: &Config) -> io::Result<Response> {
     let connection = open_connection(&database.db_path).map_err(io::Error::other)?;
     let body = list_public_keys(&connection).map_err(io::Error::other)?;
 
-    Ok(Response::json_value(200, body))
+    // The key set is public and changes only on rotation, so let browsers and
+    // intermediaries keep it briefly instead of asking for it again per request.
+    Ok(Response::json_value(200, body).with_header("cache-control", "public, max-age=60"))
 }
 
 fn authenticated_connection(
@@ -4157,6 +4159,9 @@ mod tests {
         .expect("jwks response builds");
 
         assert_eq!(response.status, 200);
+        assert!(response
+            .headers
+            .contains(&("cache-control", "public, max-age=60")));
         assert!(response.body_text().contains("\"keys\""));
         assert!(!response.body_text().contains("\"d\""));
     }

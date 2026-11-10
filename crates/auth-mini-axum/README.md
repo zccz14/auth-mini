@@ -7,9 +7,15 @@ signatures using the issuer's `/jwks` endpoint, accepts only `access` tokens,
 and validates `iss`, `aud`, `sub`, `sid`, and `exp` claims.
 
 JWKS state is warmed before the layer is returned. Known keys are served while
-the cache is stale and one background refresh runs. A poller refreshes keys on
-the configured interval. An unknown `kid` always causes a synchronous,
-coalesced refresh; keys older than `max_stale` are never used.
+the cache is stale and one background refresh runs; keys older than `max_stale`
+are never used. The defaults fetch a key set every six hours, because a key set
+changes only when an operator rotates keys.
+
+Rotation does not wait for that interval. An unknown `kid` causes a synchronous,
+coalesced refresh, rate-limited to one attempt per `min_refresh_interval` (thirty
+seconds by default) so invented `kid`s cannot turn every rejected token into a
+`/jwks` request. Claim failures — expired, wrong issuer, wrong audience — never
+refresh the key set.
 
 Services whose liveness must not wait for an issuer network round trip can use
 `AuthMiniLayer::from_issuer_background` instead. It starts the same JWKS warmup
@@ -19,18 +25,13 @@ token-bearing requests fail closed with `503 Service Unavailable`.
 ```no_run
 use auth_mini_axum::{AuthMiniLayer, JwksCachePolicy};
 use axum::{routing::get, Router};
-use std::time::Duration;
 
 #[tokio::main]
 async fn main() -> Result<(), auth_mini_axum::AuthMiniError> {
     let layer = AuthMiniLayer::from_issuer(
         "https://auth.example.com",
         "api.example.com",
-        JwksCachePolicy {
-            refresh_after: Duration::from_secs(300),
-            max_stale: Duration::from_secs(3600),
-            poll_interval: Duration::from_secs(300),
-        },
+        JwksCachePolicy::default(),
     )
     .await?;
 

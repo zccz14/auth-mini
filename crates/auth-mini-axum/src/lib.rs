@@ -49,14 +49,29 @@ pub struct JwksCachePolicy {
     pub max_stale: Duration,
     /// How often the background worker checks whether a refresh is due.
     pub poll_interval: Duration,
+    /// Minimum spacing between two refreshes forced by an unknown `kid`.
+    ///
+    /// A token naming a key that is not cached asks for a refresh, which is how a
+    /// rotation is picked up without waiting for [`Self::refresh_after`]. That
+    /// path is reachable by anyone: a rejected token only has to carry a made-up
+    /// `kid`. The cooldown keeps a stream of such tokens from becoming a stream
+    /// of `/jwks` requests. `Duration::ZERO` disables it.
+    pub min_refresh_interval: Duration,
 }
 
 impl Default for JwksCachePolicy {
     fn default() -> Self {
+        // Rotation is an explicit administrative action that already publishes the
+        // standby key, and an unknown `kid` pulls a new key set within
+        // `min_refresh_interval`. The periodic refresh is therefore only a backstop
+        // against an unnoticed key change, so it runs hours apart: the previous
+        // five-minute window cost every deployed service one `/jwks` request every
+        // five minutes for a document that changes about once a year.
         Self {
-            refresh_after: Duration::from_secs(300),
-            max_stale: Duration::from_secs(900),
+            refresh_after: Duration::from_secs(6 * 60 * 60),
+            max_stale: Duration::from_secs(24 * 60 * 60),
             poll_interval: Duration::from_secs(60),
+            min_refresh_interval: Duration::from_secs(30),
         }
     }
 }
@@ -351,6 +366,12 @@ impl AuthMiniVerifier {
             return Ok(*key);
         }
 
+        // The key is unknown: either a rotation this cache has not seen yet, or a
+        // token nobody signed. Refresh at most once per cooldown so a stream of
+        // made-up kids cannot turn every rejected token into a `/jwks` request.
+        if age < self.inner.policy.min_refresh_interval {
+            return Err(AuthMiniError::InvalidToken);
+        }
         if self
             .refresh_for_generation(Some(cache.generation))
             .await
@@ -932,6 +953,7 @@ mod tests {
         JwksCachePolicy {
             refresh_after: Duration::from_secs(300),
             max_stale: Duration::from_secs(900),
+            min_refresh_interval: Duration::ZERO,
             poll_interval: Duration::from_secs(60),
         }
     }
@@ -1038,6 +1060,114 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn unknown_kid_inside_the_cooldown_does_not_refresh() {
+        let current = signing_key(1);
+        let next = signing_key(2);
+        let (issuer, state) = mock_issuer(jwks_document("current", &current)).await;
+        let layer = AuthMiniLayer::from_issuer(
+            &issuer,
+            "api.example.com",
+            JwksCachePolicy {
+                refresh_after: Duration::from_secs(6 * 60 * 60),
+                max_stale: Duration::from_secs(24 * 60 * 60),
+                poll_interval: Duration::from_secs(60),
+                min_refresh_interval: Duration::from_secs(30),
+            },
+        )
+        .await
+        .expect("jwks warms");
+        state.lock().await.document = jwks_document("next", &next);
+
+        for _ in 0..8 {
+            assert!(matches!(
+                layer
+                    .verifier()
+                    .verify(&token("next", &next, &issuer, "api.example.com"))
+                    .await,
+                Err(AuthMiniError::InvalidToken)
+            ));
+        }
+
+        assert_eq!(state.lock().await.calls, 1);
+    }
+
+    #[tokio::test]
+    async fn unknown_kid_refreshes_again_once_the_cooldown_elapses() {
+        let current = signing_key(1);
+        let next = signing_key(2);
+        let (issuer, state) = mock_issuer(jwks_document("current", &current)).await;
+        let layer = AuthMiniLayer::from_issuer(
+            &issuer,
+            "api.example.com",
+            JwksCachePolicy {
+                refresh_after: Duration::from_secs(6 * 60 * 60),
+                max_stale: Duration::from_secs(24 * 60 * 60),
+                poll_interval: Duration::from_secs(60),
+                min_refresh_interval: Duration::from_millis(40),
+            },
+        )
+        .await
+        .expect("jwks warms");
+        state.lock().await.document = jwks_document("next", &next);
+
+        assert!(layer
+            .verifier()
+            .verify(&token("next", &next, &issuer, "api.example.com"))
+            .await
+            .is_err());
+        assert_eq!(state.lock().await.calls, 1);
+
+        sleep(Duration::from_millis(80)).await;
+
+        assert!(layer
+            .verifier()
+            .verify(&token("next", &next, &issuer, "api.example.com"))
+            .await
+            .is_ok());
+        assert_eq!(state.lock().await.calls, 2);
+    }
+
+    #[tokio::test]
+    async fn rejected_claims_never_refresh_the_key_set() {
+        let key = signing_key(1);
+        let (issuer, state) = mock_issuer(jwks_document("current", &key)).await;
+        let layer = AuthMiniLayer::from_issuer(&issuer, "api.example.com", policy())
+            .await
+            .expect("jwks warms");
+        let verifier = layer.verifier();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time")
+            .as_secs() as i64;
+        let expired = signed_token(
+            &key,
+            json!({ "alg": "EdDSA", "kid": "current" }),
+            json!({
+                "sub": "user-1",
+                "sid": "session-1",
+                "iss": &issuer,
+                "aud": "api.example.com",
+                "amr": ["webauthn"],
+                "typ": "access",
+                "iat": now - 900,
+                "exp": now - 1,
+            }),
+        );
+
+        for _ in 0..4 {
+            assert!(matches!(
+                verifier.verify(&expired).await,
+                Err(AuthMiniError::InvalidToken)
+            ));
+        }
+        assert!(verifier
+            .verify(&token("current", &key, &issuer, "api.example.com"))
+            .await
+            .is_ok());
+        assert_eq!(state.lock().await.calls, 1);
+    }
+
+    #[tokio::test]
     async fn concurrent_unknown_kid_requests_share_one_rotation_refresh() {
         let current = signing_key(1);
         let next = signing_key(2);
@@ -1074,6 +1204,7 @@ mod tests {
             JwksCachePolicy {
                 refresh_after: Duration::ZERO,
                 max_stale: Duration::from_secs(900),
+                min_refresh_interval: Duration::ZERO,
                 poll_interval: Duration::from_secs(60),
             },
         )
@@ -1124,6 +1255,7 @@ mod tests {
             JwksCachePolicy {
                 refresh_after: Duration::ZERO,
                 max_stale: Duration::ZERO,
+                min_refresh_interval: Duration::ZERO,
                 poll_interval: Duration::from_secs(60),
             },
         )
@@ -1165,6 +1297,7 @@ mod tests {
             JwksCachePolicy {
                 refresh_after: Duration::ZERO,
                 max_stale: Duration::from_secs(900),
+                min_refresh_interval: Duration::ZERO,
                 poll_interval: Duration::from_secs(60),
             },
         )
